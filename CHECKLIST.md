@@ -18,14 +18,15 @@
 - ✅ Live provenance trace of a real Candy MLB card (Zack Wheeler 1/250: mint → sale → owner)
 - ✅ Hostile-input probes (bad address, phantom collection)
 - ✅ npm audit 0 vulnerabilities
-- ⬜ Re-run smoke after final polish (final gate before commit)
+- ✅ Re-run smoke after final polish - 14 pass / 1 warn / 0 fail
+- ✅ eslint (typescript-eslint typed rules) clean
 
 ## Phase 4 - Ship & launch
 - ✅ README (45s quickstart, Claude Desktop + Claude Code snippets)
 - ✅ docs/DEEP-DIVE.md · docs/DEMO-SCRIPT.md · docs/LAUNCH-KIT.md
 - ✅ Visuals: logo.svg, banner.svg (social/OG), architecture.svg
 - ✅ LAUNCH-NOTES.md (threat ledger + usage map)
-- ⬜ git init + pre-commit gate + first commit (noreply email)
+- ✅ git init + pre-commit gate + 2 commits (noreply email, gate-clean)
 - ⬜ GitHub repo creation + push - WAITING FOR DANIE'S GO
 - ⬜ Record 45s demo video (script ready) - DANIE
 - ⬜ Submit to directories (checklist in LAUNCH-KIT.md) - after push
