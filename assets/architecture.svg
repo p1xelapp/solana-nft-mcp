@@ -35,23 +35,23 @@
   <text x="176" y="386" font-size="13.5" fill="#8fa0c9">never-blank cache: upstream fails → serve last-good, labeled stale</text>
 
   <!-- arrows to sources -->
-  <path d="M290 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M215 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
   <path d="M500 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
-  <path d="M710 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M785 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
 
   <!-- sources -->
-  <rect x="165" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#e42575" stroke-width="2"/>
-  <text x="290" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Magic Eden v2</text>
-  <text x="290" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">floors · sales · wallets</text>
-  <text x="290" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">keyless · 1.6 req/s gate</text>
+  <rect x="80" y="474" width="270" height="100" rx="10" fill="#131a33" stroke="#e42575" stroke-width="2"/>
+  <text x="215" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Magic Eden v2</text>
+  <text x="215" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">floors · sales · wallets</text>
+  <text x="215" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">keyless · 1.6 req/s gate</text>
 
-  <rect x="375" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#38bdf8" stroke-width="2"/>
+  <rect x="365" y="474" width="270" height="100" rx="10" fill="#131a33" stroke="#38bdf8" stroke-width="2"/>
   <text x="500" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">CryptoSlam</text>
   <text x="500" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">live pack pulls (Panini)</text>
   <text x="500" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">keyless · cached hard</text>
 
-  <rect x="585" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#3ddc97" stroke-width="2"/>
-  <text x="710" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Solana RPC</text>
-  <text x="710" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">Core accounts + provenance</text>
-  <text x="710" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">hand-decoded · no DAS</text>
+  <rect x="650" y="474" width="270" height="100" rx="10" fill="#131a33" stroke="#3ddc97" stroke-width="2"/>
+  <text x="785" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Solana RPC</text>
+  <text x="785" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">Core accounts + provenance</text>
+  <text x="785" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">hand-decoded · no DAS</text>
 </svg>

@@ -98,18 +98,9 @@ Optional: set `SOLANA_RPC_URL` to your own endpoint for faster on-chain reads. S
 
 ## Architecture
 
-```
-Claude / any MCP client
-        │  stdio (JSON-RPC)
-        ▼
-  collector-mcp ──► curated registry (licensed collections)
-        │
-        ├──► Magic Eden v2 ......... floors, sales, wallets   (keyless, 1.6 req/s gate)
-        ├──► CryptoSlam ............ pack pulls, cross-chain  (keyless, cached hard)
-        └──► Solana RPC ............ Core accounts + provenance (keyless, hand-decoded)
+<img src="assets/architecture.svg" alt="architecture: MCP client -> collector-mcp (MCP layer, domain registry, plumbing) -> Magic Eden v2 / CryptoSlam / Solana RPC" width="820" />
 
-  every source: retry + timeout + rate gate + stale-on-error cache
-```
+Every source: retry + timeout + rate gate + stale-on-error cache. Deep dive: [docs/DEEP-DIVE.md](docs/DEEP-DIVE.md).
 
 ## Verify it yourself
 
