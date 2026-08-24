@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620" font-family="ui-monospace, 'Cascadia Code', Consolas, monospace">
+  <!-- collector-mcp architecture diagram -->
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8fa0c9"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="620" fill="#0b0e1c"/>
+  <text x="500" y="44" text-anchor="middle" font-size="24" fill="#f2f5ff" font-weight="700">collector-mcp · architecture</text>
+
+  <!-- client -->
+  <rect x="330" y="70" width="340" height="56" rx="10" fill="#1a2140" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="500" y="104" text-anchor="middle" font-size="18" fill="#f2f5ff">Claude / Cursor / any MCP client</text>
+
+  <path d="M500 126 V166" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="516" y="152" font-size="14" fill="#5d6c94">stdio · JSON-RPC</text>
+
+  <!-- server box -->
+  <rect x="130" y="170" width="740" height="250" rx="14" fill="#10152b" stroke="#f5c04a" stroke-width="2.5"/>
+  <text x="160" y="202" font-size="18" fill="#f5c04a" font-weight="700">collector-mcp (local, read-only, 0 keys)</text>
+
+  <rect x="160" y="220" width="330" height="76" rx="8" fill="#1a2140" stroke="#2a3354"/>
+  <text x="176" y="248" font-size="15" fill="#f2f5ff">MCP layer · official SDK</text>
+  <text x="176" y="272" font-size="13.5" fill="#8fa0c9">8 tools · registry resource · prompt</text>
+  <text x="176" y="288" font-size="13.5" fill="#8fa0c9">zod validation on every input</text>
+
+  <rect x="510" y="220" width="330" height="76" rx="8" fill="#1a2140" stroke="#2a3354"/>
+  <text x="526" y="248" font-size="15" fill="#f2f5ff">Domain registry</text>
+  <text x="526" y="272" font-size="13.5" fill="#8fa0c9">"candy gold" → Core address</text>
+  <text x="526" y="288" font-size="13.5" fill="#8fa0c9">"panini" → CryptoSlam contract</text>
+
+  <rect x="160" y="316" width="680" height="82" rx="8" fill="#1a2140" stroke="#3ddc97"/>
+  <text x="176" y="344" font-size="15" fill="#3ddc97">Plumbing · what keeps keyless viable</text>
+  <text x="176" y="368" font-size="13.5" fill="#8fa0c9">per-source rate gates · retry + backoff · timeouts everywhere</text>
+  <text x="176" y="386" font-size="13.5" fill="#8fa0c9">never-blank cache: upstream fails → serve last-good, labeled stale</text>
+
+  <!-- arrows to sources -->
+  <path d="M290 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M500 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M710 420 V470" stroke="#8fa0c9" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- sources -->
+  <rect x="165" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#e42575" stroke-width="2"/>
+  <text x="290" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Magic Eden v2</text>
+  <text x="290" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">floors · sales · wallets</text>
+  <text x="290" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">keyless · 1.6 req/s gate</text>
+
+  <rect x="375" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#38bdf8" stroke-width="2"/>
+  <text x="500" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">CryptoSlam</text>
+  <text x="500" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">live pack pulls (Panini)</text>
+  <text x="500" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">keyless · cached hard</text>
+
+  <rect x="585" y="474" width="250" height="100" rx="10" fill="#131a33" stroke="#3ddc97" stroke-width="2"/>
+  <text x="710" y="504" text-anchor="middle" font-size="16" fill="#f2f5ff">Solana RPC</text>
+  <text x="710" y="528" text-anchor="middle" font-size="13" fill="#8fa0c9">Core accounts + provenance</text>
+  <text x="710" y="548" text-anchor="middle" font-size="13" fill="#5d6c94">hand-decoded · no DAS</text>
+</svg>

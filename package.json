@@ -1,0 +1,53 @@
+{
+  "name": "collector-mcp",
+  "version": "1.0.0",
+  "description": "Zero-key MCP server for Solana digital collectibles. Floor prices, sales, wallet holdings, pack pulls, and on-chain Metaplex Core provenance for any AI agent - no API keys, no wallet, no config.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "collector-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "start": "node dist/index.js",
+    "test": "npm run build && node test/smoke.mjs",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "solana",
+    "nft",
+    "digital-collectibles",
+    "candy-digital",
+    "panini",
+    "metaplex-core",
+    "magic-eden",
+    "claude",
+    "ai-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p1xelapp/collector-mcp.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.67.0"
+  }
+}

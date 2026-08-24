@@ -1,0 +1,42 @@
+# CI backstop: secrets scan + strict build + offline protocol test on every push.
+# The live smoke suite (npm test) talks to real endpoints, so it stays a local/dev
+# command - CI must not hammer public APIs on every push, that's the polite-client
+# rule applied to ourselves.
+name: ci
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions pinned to full commit SHAs - a moved tag is a supply-chain vector.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # gitleaks scans history
+
+      - name: Secrets scan (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runner's preinstalled Node (>=20) satisfies engines; no third-party setup action needed.
+      - name: Install (locked)
+        run: npm ci
+
+      - name: Build (strict TypeScript)
+        run: npm run build
+
+      - name: Protocol test (offline - full MCP surface over real stdio)
+        run: node test/protocol.mjs
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
