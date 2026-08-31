@@ -301,6 +301,7 @@ export async function getProvenance(mint: string, depth = 15) {
   events.reverse(); // oldest first - reads as a story
   return {
     mint,
+    explorer: `https://solscan.io/token/${mint}`,
     name: account.name,
     collection: account.collection,
     currentOwner: account.owner,

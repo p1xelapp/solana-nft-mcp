@@ -69,7 +69,13 @@ That's the whole setup. No account creation, no `.env`, no RPC signup. Restart y
 | `get_wallet_holdings` | What a wallet holds (names, collections, images, listing state) |
 | `get_pack_pulls` | Live licensed-card pack rips (Panini NBA/NFL/Soccer): player, serial, population, owner |
 
-Plus a `collector://registry` resource and a `collection_report` prompt template.
+Plus a `collector://registry` resource and a `collection_report` prompt template. Every tool declares `readOnlyHint` in its MCP annotations - the safety contract lives in the protocol, not just the README.
+
+## What it looks like in practice
+
+> **You:** who has owned this card since it was minted? `FbcX6hX7...`
+>
+> **Claude** *(calls `get_asset_provenance`)*: This is **"Zack Wheeler (1/250)"** from Candy Digital's 2026 MLB ICON Series. Minted July 15, listed on Magic Eden July 30, **sold July 31**, and the current owner is `FfRvED...`. Every event has a transaction signature you can verify on Solscan.
 
 ## The provenance party trick
 
@@ -121,7 +127,9 @@ Spawns the built server over real stdio, connects with the official MCP client, 
 
 - npm publish (`npx collector-mcp`) and hosted SSE variant
 - More licensed platforms as public, TOS-clean data surfaces exist for them
-- Collection registry contributions welcome - PR a verified entry
+- Collection registry contributions welcome - see [CONTRIBUTING.md](CONTRIBUTING.md)
+
+Security model and reporting: [SECURITY.md](SECURITY.md)
 
 ## Who made this
 

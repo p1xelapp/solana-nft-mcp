@@ -25,6 +25,10 @@ const server = new McpServer({ name: "collector-mcp", version: "1.0.0" });
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
+// Every tool reads public data and mutates nothing; declare it so MCP clients
+// (and their users) can see the safety contract in the protocol itself.
+const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
+
 const ok = (data: unknown): ToolResult => ({
   content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
 });
@@ -72,6 +76,7 @@ server.registerTool(
       "Returns curated entries with the identifiers other tools need (Magic Eden symbol, Core collection " +
       "address, CryptoSlam contract). Collections not in the registry still work: pass a Magic Eden symbol " +
       "or a Metaplex Core collection address directly to the other tools.",
+    annotations: READ_ONLY,
     inputSchema: { query: z.string().trim().max(200).describe("Free-text name search") },
   },
   guard(({ query }) => {
@@ -97,6 +102,7 @@ server.registerTool(
       "Market + supply stats for a collection. Accepts a registry id, a Magic Eden symbol, or a Metaplex " +
       "Core collection ADDRESS. Addresses are decoded straight from the chain (name, minted, current size) - " +
       "works for collections no marketplace indexes, e.g. Candy Digital drops.",
+    annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80).describe("Registry id, ME symbol, or Core collection address"),
     },
@@ -138,6 +144,7 @@ server.registerTool(
     description:
       "Current floor price (SOL) for up to 10 Magic Eden collections in one call. " +
       "Use search_collections first if you only know a human name.",
+    annotations: READ_ONLY,
     inputSchema: { symbols: z.array(symbolSchema).min(1).max(10).describe("Magic Eden collection symbols") },
   },
   guard(async ({ symbols }) => {
@@ -162,6 +169,7 @@ server.registerTool(
     description:
       "Most recent completed sales for a collection (price in SOL, buyer, seller, tx signature). " +
       "Accepts a registry id or Magic Eden symbol.",
+    annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80),
       limit: z.number().int().min(1).max(50).default(10),
@@ -186,6 +194,7 @@ server.registerTool(
     description:
       "Everything known about one asset by mint address: marketplace metadata (name, image, collection, " +
       "traits, listing state) plus authoritative on-chain owner for Metaplex Core assets.",
+    annotations: READ_ONLY,
     inputSchema: { mint: addressSchema.describe("Asset mint address") },
   },
   guard(async ({ mint }) => {
@@ -222,6 +231,7 @@ server.registerTool(
       "Full on-chain ownership history of a Metaplex Core asset: mint -> every transfer (with marketplace " +
       "labels) -> current owner. Decoded from TransferV1 instruction accounts - data most NFT APIs return " +
       "EMPTY for on Core assets. Ideal for Candy Digital cards and any Core collectible.",
+    annotations: READ_ONLY,
     inputSchema: {
       mint: addressSchema.describe("Core asset mint address"),
       depth: z.number().int().min(1).max(25).default(15).describe("Max transactions to decode"),
@@ -237,6 +247,7 @@ server.registerTool(
     description:
       "Collectibles held by a wallet (as indexed by Magic Eden): names, collections, images, listing state. " +
       "Read-only - this server never asks for keys and cannot move anything.",
+    annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
       limit: z.number().int().min(1).max(100).default(50),
@@ -252,6 +263,7 @@ server.registerTool(
     description:
       "Live feed of licensed-card pack rips (default: Panini America - NBA/NFL/Soccer/Baseball). Each entry " +
       "is a card just pulled from a pack: player, set/parallel, serial number, population, owner wallet, image.",
+    annotations: READ_ONLY,
     inputSchema: {
       contract: z
         .string()
