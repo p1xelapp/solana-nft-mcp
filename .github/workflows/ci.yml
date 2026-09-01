@@ -23,10 +23,24 @@ jobs:
         with:
           fetch-depth: 0 # gitleaks scans history
 
-      - name: Secrets scan (gitleaks)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      # Full-history scan, not a diff of the pushed range. The gitleaks action
+      # derives a commit range from the push event, which has no valid parent
+      # for a repo's first push - it scanned ~0 bytes and still printed
+      # "no leaks found". A gate that reports clean without reading anything is
+      # worse than no gate, and this repo is going public, where every commit
+      # ever made becomes readable. So: pinned binary, verified checksum,
+      # whole history, every run.
+      - name: Secrets scan (gitleaks, full history)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.24.3
+          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar xzf "$tarball" gitleaks
+          ./gitleaks detect --source=. --redact --exit-code=1 --verbose
 
       # Runner's preinstalled Node (>=20) satisfies engines; no third-party setup action needed.
       - name: Install (locked)
