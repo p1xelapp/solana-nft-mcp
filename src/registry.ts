@@ -55,14 +55,40 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Mad Lads",
     platform: "Backpack / Solana",
     meSymbol: "mad_lads",
+    openseaSlug: "mad-lads",
     keywords: ["mad lads", "madlads", "backpack", "solana pfp"],
+    notes: 'OpenSea slug is "mad-lads" with the hyphen. "madlads" is a different, near-empty collection that still answers HTTP 200 - a wrong slug here returns junk, not an error.',
   },
   {
     id: "claynosaurz",
     name: "Claynosaurz",
     platform: "Solana",
     meSymbol: "claynosaurz",
+    openseaSlug: "claynosaurz",
     keywords: ["clay", "claynosaurz", "dino", "solana collectibles"],
+  },
+  {
+    // OpenSea files every Candy MLB card under ONE collection spanning all
+    // series, so it is deliberately NOT attached to the per-series Core
+    // entries above: pairing it with one series would compare a single
+    // series' on-chain supply against every series' floor and read as if
+    // they described the same population.
+    id: "candy-mlb-opensea",
+    name: "Candy Digital - MLB (all series, OpenSea view)",
+    platform: "Candy Digital (official MLB license)",
+    openseaSlug: "candy-mlb",
+    keywords: ["candy", "candy digital", "mlb", "opensea", "baseball", "cross-marketplace"],
+    notes:
+      "Needs OPENSEA_API_KEY. Covers every Candy MLB series at once - use the per-series Core entries for a single series.",
+  },
+  {
+    id: "collector-crypt",
+    name: "Collector Crypt",
+    platform: "Solana (graded physical cards, vaulted)",
+    openseaSlug: "collector-crypt",
+    keywords: ["collector crypt", "collectorcrypt", "graded", "psa", "pokemon", "physical", "vault"],
+    notes:
+      "Needs OPENSEA_API_KEY. Prices are USDC, not SOL - read floorCurrency rather than assuming a denomination.",
   },
 ];
 

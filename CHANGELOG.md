@@ -33,3 +33,20 @@ Initial public release.
   taken from `get_asset_provenance` is often exactly that - a listed item's
   on-chain owner is the escrow, not the seller. The tool now says so and
   points at the transfer that names the seller.
+
+## 1.2.0 - 2026-09-01
+
+- **The OpenSea path is now verified against the live API**, not just compiled.
+  Verifying it found that it never worked end to end: a stdio MCP server is
+  launched with a small allowlisted environment and does not inherit shell
+  variables, so `OPENSEA_API_KEY` never reached the server and the
+  cross-marketplace view silently stayed off. Documented the `env` block that
+  MCP clients actually require, and the smoke suite now forwards the key the
+  same way a real client does.
+- Registry gained four verified OpenSea slugs: `mad-lads`, `claynosaurz`,
+  `candy-mlb` (a new `candy-mlb-opensea` entry - OpenSea files every Candy MLB
+  series under one collection, so it is deliberately not attached to the
+  per-series Core entries, which would compare different populations), and a
+  new `collector-crypt` entry priced in USDC rather than SOL.
+- Smoke suite gained a SKIP status and an OpenSea case that skips cleanly with
+  no key, so the zero-key path stays the tested default.
