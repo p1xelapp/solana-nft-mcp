@@ -12,7 +12,7 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { findRecentCollectionAssets } from "../dist/sources/solana.js";
 
 const GOLD = "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K"; // Candy MLB Gold Series Auction #1
@@ -21,10 +21,10 @@ const ICON = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"; // Candy 2026 MLB IC
 let pass = 0, warn = 0, fail = 0;
 const failures = [];
 function report(status, name, detail) {
-  const icon = status === "PASS" ? "✅" : status === "WARN" ? "⚠️ " : "❌";
+  const icon = status === "PASS" ? "✅" : status === "WARN" ? "⚠️ " : status === "SKIP" ? "⏭️ " : "❌";
   console.log(`${icon} ${status}  ${name}${detail ? ` - ${detail}` : ""}`);
   if (status === "PASS") pass++;
-  else if (status === "WARN") warn++;
+  else if (status === "WARN" || status === "SKIP") warn++;
   else { fail++; failures.push(name); }
 }
 
@@ -36,7 +36,18 @@ function parse(res) {
 
 const client = new Client({ name: "collector-mcp-smoke", version: "1.0.0" });
 await client.connect(
-  new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"] }),
+  // A stdio MCP server does NOT inherit the parent's environment - the SDK
+  // passes a small safe allowlist, so OPENSEA_API_KEY has to be forwarded by
+  // name. Real MCP clients work the same way, which is why the README tells
+  // users to put the key in their config's "env" block rather than their shell.
+  new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: {
+      ...getDefaultEnvironment(),
+      ...(process.env.OPENSEA_API_KEY ? { OPENSEA_API_KEY: process.env.OPENSEA_API_KEY } : {}),
+    },
+  }),
 );
 console.log("connected to collector-mcp over stdio\n");
 
@@ -162,6 +173,36 @@ try {
       good ? `latest rip: ${r.pulls[0].card} (${r.pulls[0].set ?? "?"}) #${r.pulls[0].serial ?? "?"}` : "empty feed");
   }
 } catch (e) { report("WARN", "get_pack_pulls", e.message); }
+
+// -- OpenSea (OPTIONAL) --------------------------------------------------
+// The zero-key promise means CI and ordinary users must never need a key.
+// With no key set this SKIPS; it only asserts when one is present.
+if (!process.env.OPENSEA_API_KEY) {
+  report("SKIP", "opensea (optional)", "no OPENSEA_API_KEY set - zero-key path, nothing to verify");
+} else {
+  try {
+    const r = parse(await client.callTool({
+      name: "get_collection_stats", arguments: { collection: "mad_lads" },
+    }));
+    const os = r.opensea;
+    // A wrong slug still answers HTTP 200 on OpenSea, so assert on the payload,
+    // not the status: a real collection has a floor and more than one owner.
+    const good = os && typeof os.floor === "number" && os.floor > 0 && os.owners > 1;
+    report(good ? "PASS" : "FAIL", "opensea stats (cross-marketplace)",
+      good ? `mad-lads floor=${os.floor} ${os.floorCurrency} owners=${os.owners}` : JSON.stringify(os ?? r).slice(0, 160));
+  } catch (e) { report("FAIL", "opensea stats (cross-marketplace)", e.message); }
+
+  try {
+    // Collector Crypt prices in USDC - proves currency is read, not assumed.
+    const r = parse(await client.callTool({
+      name: "get_recent_sales", arguments: { collection: "collector-crypt", limit: 3 },
+    }));
+    const sales = r.opensea?.sales ?? [];
+    const good = sales.length > 0 && sales.every((x) => typeof x.price === "number" && x.currency);
+    report(good ? "PASS" : "WARN", "opensea sales (non-SOL currency)",
+      good ? `${sales.length} sales, top ${sales[0].price} ${sales[0].currency}` : "no priced sales returned");
+  } catch (e) { report("FAIL", "opensea sales (non-SOL currency)", e.message); }
+}
 
 // -- validation / hostile inputs ---------------------------------------
 try {

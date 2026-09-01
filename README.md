@@ -125,7 +125,25 @@ Spawns the built server over real stdio, connects with the official MCP client, 
 
 ## Optional: cross-marketplace view via OpenSea
 
-Solana collections increasingly trade on OpenSea too (Candy Digital, Mad Lads, Claynosaurz, Collector Crypt). collector-mcp stays **zero-config by default**, but if you set `OPENSEA_API_KEY` (OpenSea issues instant free keys - no signup; permanent keys via their developer portal), `get_collection_stats` and `get_recent_sales` accept an `openseaSlug` and add the OpenSea side of the market next to the Magic Eden + on-chain view. Without the key, nothing changes and nothing asks for it.
+Solana collections increasingly trade on OpenSea too (Candy Digital, Mad Lads, Claynosaurz, Collector Crypt). collector-mcp stays **zero-config by default**, but if you set `OPENSEA_API_KEY`, `get_collection_stats` and `get_recent_sales` accept an `openseaSlug` and add the OpenSea side of the market next to the Magic Eden + on-chain view. Without the key, nothing changes and nothing asks for it.
+
+Set the key in your MCP config's `env` block, **not** in your shell - a stdio MCP server is launched by the client with a small allowlisted environment and does not inherit your shell variables:
+
+```json
+{
+  "mcpServers": {
+    "collector": {
+      "command": "node",
+      "args": ["/absolute/path/to/collector-mcp/dist/index.js"],
+      "env": { "OPENSEA_API_KEY": "your-key-here" }
+    }
+  }
+}
+```
+
+OpenSea issues free keys instantly with `curl -X POST https://api.opensea.io/api/v2/auth/keys` - no signup, no wallet - but they are capped (2 new keys per day, 600 reads/hour) and **expire after 7 days**. Use their developer portal for a permanent key.
+
+Registry entries carrying a verified slug: `mad_lads`, `claynosaurz`, `candy-mlb-opensea` (all Candy MLB series in one OpenSea collection), and `collector-crypt` (priced in **USDC**, not SOL - read `floorCurrency` rather than assuming). Note that OpenSea answers `200` for slugs that do not really exist, returning an empty shell collection, so check the payload rather than the status code.
 
 ## Roadmap
 
