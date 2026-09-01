@@ -11,7 +11,10 @@ const client = new Client({ name: "protocol-test", version: "1.0.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"] }));
 
 const { tools } = await client.listTools();
-assert.strictEqual(tools.length, 8, `expected 8 tools, got ${tools.length}`);
+assert.strictEqual(tools.length, 10, `expected 10 tools, got ${tools.length}`);
+for (const n of ["identify", "get_integration_recipe"]) {
+  assert.ok(tools.some((t) => t.name === n), `${n} tool missing`);
+}
 for (const t of tools) {
   assert.ok(t.description && t.description.length > 40, `${t.name} needs a real description`);
 }
@@ -44,6 +47,23 @@ assert.ok(/base58|invalid|must be/i.test(badText), `bad address not rejected cle
 // Registry search is pure logic - no network.
 const search = await client.callTool({ name: "search_collections", arguments: { query: "candy gold" } });
 assert.ok(JSON.parse(search.content[0].text).results[0].id === "candy-mlb-gold-auction-1");
+
+// -- build recipes (pure data, no network) -------------------------------
+const recipe = JSON.parse(
+  (await client.callTool({ name: "get_integration_recipe", arguments: { goal: "sales-bot" } })).content[0].text,
+);
+assert.ok(recipe.pitfalls.length >= 3, "a recipe without pitfalls is just documentation");
+for (const p of recipe.pitfalls) {
+  // Every pitfall must say what to do instead - naming a trap without an exit
+  // is the failure mode these recipes exist to avoid.
+  assert.ok(p.trap && p.why && p.instead, `incomplete pitfall: ${JSON.stringify(p).slice(0, 80)}`);
+}
+assert.ok(recipe.beforeShipping.length >= 3, "recipe needs a pre-launch checklist");
+assert.ok(/\$180|cost|free/i.test(recipe.costNote), "recipe must state running cost");
+
+const badGoal = await client.callTool({ name: "get_integration_recipe", arguments: { goal: "nope" } }).catch((e) => e);
+const badGoalText = badGoal?.content?.[0]?.text ?? String(badGoal?.message ?? badGoal);
+assert.ok(/invalid|expected|enum|unknown/i.test(badGoalText), `bad goal not rejected: ${badGoalText.slice(0, 100)}`);
 
 // -- cross-source reconciliation (pure logic, no network) ----------------
 const { reconcileFloors } = await import("../dist/lib/reconcile.js");
@@ -79,5 +99,5 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 // A floor is never presented without the warning that it is an ask, not a value.
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
-console.log("protocol test: all assertions passed (8 tools, 2 resources, prompt, validation, reconciliation)");
+console.log("protocol test: all assertions passed (10 tools, 2 resources, prompt, validation, reconciliation, recipes)");
 await client.close();

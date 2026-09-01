@@ -57,9 +57,10 @@ try {
   const names = tools.map((t) => t.name).sort();
   const expected = [
     "get_asset", "get_asset_provenance", "get_collection_stats", "get_floor_prices",
-    "get_pack_pulls", "get_recent_sales", "get_wallet_holdings", "search_collections",
+    "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_holdings",
+    "identify", "search_collections",
   ];
-  if (JSON.stringify(names) === JSON.stringify(expected)) report("PASS", "listTools", `8 tools`);
+  if (JSON.stringify(names) === JSON.stringify(expected)) report("PASS", "listTools", `${names.length} tools`);
   else report("FAIL", "listTools", `got ${names.join(",")}`);
 } catch (e) { report("FAIL", "listTools", e.message); }
 

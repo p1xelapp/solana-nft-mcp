@@ -1,6 +1,6 @@
 {
   "name": "collector-mcp",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Zero-key MCP server for Solana digital collectibles. Floor prices, sales, wallet holdings, pack pulls, and on-chain Metaplex Core provenance for any AI agent - no API keys, no wallet, no config.",
   "license": "MIT",
   "type": "module",
