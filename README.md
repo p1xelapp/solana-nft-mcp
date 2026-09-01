@@ -123,6 +123,10 @@ Spawns the built server over real stdio, connects with the official MCP client, 
 - **No telemetry.** The server calls the three data sources above and nothing else.
 - **stdout is sacred:** it carries the MCP protocol. All logs go to stderr.
 
+## Optional: cross-marketplace view via OpenSea
+
+Solana collections increasingly trade on OpenSea too (Candy Digital, Mad Lads, Claynosaurz, Collector Crypt). collector-mcp stays **zero-config by default**, but if you set `OPENSEA_API_KEY` (OpenSea issues instant free keys - no signup; permanent keys via their developer portal), `get_collection_stats` and `get_recent_sales` accept an `openseaSlug` and add the OpenSea side of the market next to the Magic Eden + on-chain view. Without the key, nothing changes and nothing asks for it.
+
 ## Roadmap
 
 - npm publish (`npx collector-mcp`) and hosted SSE variant
@@ -140,7 +144,3 @@ Data courtesy of the public APIs of [Magic Eden](https://magiceden.io) and [Cryp
 ## License
 
 MIT
-
-## Optional: cross-marketplace view via OpenSea
-
-Solana collections increasingly trade on OpenSea too (Candy Digital, Mad Lads, Claynosaurz, Collector Crypt). collector-mcp stays **zero-config by default**, but if you set `OPENSEA_API_KEY` (OpenSea issues instant free keys - no signup; permanent keys via their developer portal), `get_collection_stats` and `get_recent_sales` accept an `openseaSlug` and add the OpenSea side of the market next to the Magic Eden + on-chain view. Without the key, nothing changes and nothing asks for it.
