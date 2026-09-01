@@ -18,6 +18,8 @@ export interface RegistryEntry {
   coreCollection?: string;
   /** CryptoSlam contract name for the mints/pulls feed. */
   cryptoslamContract?: string;
+  /** OpenSea collection slug - used only when OPENSEA_API_KEY is set (optional cross-marketplace view). */
+  openseaSlug?: string;
   keywords: string[];
   notes?: string;
 }
