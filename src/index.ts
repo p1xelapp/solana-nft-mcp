@@ -23,6 +23,8 @@ import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
 import { reconcileFloors, type FloorQuote } from "./lib/reconcile.js";
 import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
+import { identify } from "./identify.js";
+import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -31,6 +33,15 @@ const { version: VERSION } = createRequire(import.meta.url)("../package.json") a
 };
 
 const server = new McpServer({ name: "collector-mcp", version: VERSION });
+
+// Counted, not hand-written. The banner said "8 tools" for two releases after
+// the ninth was added - a stale count is a small lie that erodes trust in the
+// larger numbers this server reports.
+let toolCount = 0;
+const registerTool: typeof server.registerTool = (...args) => {
+  toolCount++;
+  return server.registerTool(...args);
+};
 
 // ---------------------------------------------------------------- helpers
 
@@ -78,7 +89,65 @@ function resolve(idOrSymbolOrAddress: string) {
 
 // ------------------------------------------------------------------ tools
 
-server.registerTool(
+registerTool(
+  "identify",
+  {
+    title: "Identify anything",
+    description:
+      "START HERE when you do not already know what an identifier is. Takes ANY string a user might " +
+      "paste - a Solana address, a marketplace symbol or slug, or a plain collection name - works out " +
+      "what it actually is, which venues list it, and which tools to call next. Works on collections " +
+      "that launched today and are in no registry, because it probes live sources rather than matching " +
+      "a hardcoded list. Returns the evidence: every source checked INCLUDING the ones that found " +
+      "nothing, what was not checked and why, and a confidence rating. Never report 'this does not " +
+      "exist' from an empty result - report what was searched.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      query: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .describe("An address, marketplace symbol/slug, or collection name"),
+    },
+  },
+  guard(async ({ query }) => ok(await identify(query))),
+);
+
+registerTool(
+  "get_integration_recipe",
+  {
+    title: "Get a build recipe",
+    description:
+      "Use when the user wants to BUILD something with collectible data - a sales bot, a floor " +
+      "dashboard, a provenance page, a wallet tracker, a pack-pull watcher - rather than just look a " +
+      "number up. Returns the verified endpoints and their real rate limits, a runnable skeleton, the " +
+      "steady-state running cost, a pre-launch checklist, and most importantly the specific ways this " +
+      "kind of integration fails SILENTLY. The pitfalls come from production incidents on live " +
+      "trackers (a feed capped too low silently dropped 8,409 real records; an idle two-minute cron " +
+      "cost $180 in a month) and are not in any API documentation. Read this BEFORE writing " +
+      "integration code, not after it breaks.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      goal: z
+        .enum(["sales-bot", "floor-dashboard", "provenance-lookup", "wallet-tracker", "pack-watcher"])
+        .describe("What the user is building"),
+    },
+  },
+  guard(({ goal }) => {
+    const recipe = RECIPES[goal];
+    if (!recipe) throw new Error(`unknown goal "${goal}" - available: ${RECIPE_GOALS.join(", ")}`);
+    return Promise.resolve(
+      ok({
+        ...recipe,
+        readFirst:
+          "Read collector://glossary before writing user-facing copy - it names the wrong answers this domain invites.",
+      }),
+    );
+  }),
+);
+
+registerTool(
   "search_collections",
   {
     title: "Search collections",
@@ -105,7 +174,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+registerTool(
   "get_collection_stats",
   {
     title: "Collection stats",
@@ -186,7 +255,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+registerTool(
   "get_floor_prices",
   {
     title: "Floor prices",
@@ -211,7 +280,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+registerTool(
   "get_recent_sales",
   {
     title: "Recent sales",
@@ -250,7 +319,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+registerTool(
   "get_asset",
   {
     title: "Asset lookup",
@@ -286,7 +355,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+registerTool(
   "get_asset_provenance",
   {
     title: "Asset provenance (Core)",
@@ -303,7 +372,7 @@ server.registerTool(
   guard(async ({ mint, depth }) => ok(await sol.getProvenance(mint, depth))),
 );
 
-server.registerTool(
+registerTool(
   "get_wallet_holdings",
   {
     title: "Wallet holdings",
@@ -319,7 +388,7 @@ server.registerTool(
   guard(async ({ wallet, limit }) => ok(await me.walletTokens(wallet, limit))),
 );
 
-server.registerTool(
+registerTool(
   "get_pack_pulls",
   {
     title: "Live pack pulls",
@@ -413,7 +482,7 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`collector-mcp v${VERSION} ready (stdio) - 8 tools, 0 API keys`);
+  console.error(`collector-mcp v${VERSION} ready (stdio) - ${toolCount} tools, 0 API keys`);
 }
 
 main().catch((err) => {

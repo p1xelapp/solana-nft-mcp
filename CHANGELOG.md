@@ -71,3 +71,24 @@ Initial public release.
 - Collector Crypt registry entry corrected: it trades on BOTH venues - SOL on
   Magic Eden under `collector_crypt` (underscore), and predominantly USDC on
   OpenSea. The previous note claimed USDC only.
+
+## 1.4.0 - 2026-09-01
+
+- **`identify` - works on collections that did not exist yesterday.** A curated
+  registry is permanently incomplete: collections launch daily and providers
+  disappear (SimpleHash closed March 2025, Reservoir sunset October 2025,
+  Magic Eden wound down EVM and Bitcoin by March 2026). `identify` takes any
+  address, symbol, slug or plain name, probes live sources, and reports what
+  each one said - including the probes that found nothing, what was NOT checked
+  and why, and a confidence rating. Verified against `okay_bears`, which has no
+  registry entry and was still resolved from live data. An empty result now
+  means "the places I can see do not list it", never "it does not exist".
+- **`get_integration_recipe` - the reason to use this over a search engine.**
+  Looking a number up is solved. Building something that keeps looking it up
+  correctly for months is not. Five recipes (sales bot, floor dashboard,
+  provenance page, wallet tracker, pack watcher) carrying verified endpoints,
+  real rate limits, a runnable skeleton, steady-state cost, a pre-launch
+  checklist, and the ways each integration fails SILENTLY - drawn from
+  production incidents rather than documentation.
+- Startup banner counts its tools instead of asserting a hand-written number,
+  which had already gone stale.
