@@ -140,7 +140,15 @@ try {
   const r = parse(await client.callTool({ name: "get_wallet_holdings", arguments: { wallet, limit: 20 } }));
   const good = typeof r.count === "number";
   report(good ? "PASS" : "FAIL", "get_wallet_holdings", `wallet ${wallet.slice(0, 6)}.. holds ${r.count} (capped=${r.capped})`);
-} catch (e) { report("FAIL", "get_wallet_holdings", e.message); }
+} catch (e) {
+  // A wallet taken from provenance is often a marketplace escrow (the item is
+  // listed), and Magic Eden blocks its own escrow from the wallet endpoint.
+  // That is upstream policy, not a defect - but the message must EXPLAIN it,
+  // so a bare "HTTP 400" still fails the suite.
+  const explained = /marketplace escrow or program account/.test(e.message);
+  report(explained ? "WARN" : "FAIL", "get_wallet_holdings",
+    explained ? "provenance owner is a marketplace escrow; ME blocks it (explained cleanly)" : e.message);
+}
 
 try {
   const res = await client.callTool({ name: "get_pack_pulls", arguments: { limit: 5 } });

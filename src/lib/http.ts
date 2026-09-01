@@ -105,6 +105,37 @@ class RetryableError extends Error {
   }
 }
 
+/**
+ * Pull the human-readable reason out of an upstream error body.
+ *
+ * A bare "HTTP 400" tells an AI agent nothing it can act on, and the agent
+ * relays that dead end to the user. Upstreams almost always explain
+ * themselves in the body ("Blocked NFT owner: ...", "collection not found"),
+ * so we surface that instead. Redacted and truncated: an error body is
+ * attacker-influenced text that ends up in logs and model context.
+ */
+async function upstreamReason(res: Response): Promise<string> {
+  let body: string;
+  try {
+    body = (await res.text()).slice(0, 2000);
+  } catch {
+    return "";
+  }
+  let msg = body;
+  try {
+    const j = JSON.parse(body) as Record<string, unknown>;
+    const field = j.message ?? j.error ?? j.detail ?? j.errors;
+    if (field) msg = typeof field === "string" ? field : JSON.stringify(field);
+  } catch {
+    /* not JSON - fall through to the raw snippet */
+  }
+  // Never let a key we sent bounce back into an error string.
+  const key = process.env.OPENSEA_API_KEY;
+  if (key && key.length > 6) msg = msg.split(key).join("[REDACTED]");
+  msg = msg.replace(/\s+/g, " ").trim().slice(0, 200);
+  return msg;
+}
+
 /** Fetch JSON with a clean error naming the upstream when the shape is wrong. */
 export async function fetchJson<T>(
   source: string,
@@ -113,10 +144,25 @@ export async function fetchJson<T>(
   retryOpts?: { retries?: number; timeoutMs?: number },
 ): Promise<T> {
   const res = await fetchRetry(url, opts, retryOpts);
-  if (!res.ok) throw new Error(`${source} responded HTTP ${res.status}`);
+  if (!res.ok) {
+    const reason = await upstreamReason(res);
+    throw new HttpError(
+      `${source} responded HTTP ${res.status}${reason ? ` - ${reason}` : ""}`,
+      res.status,
+      reason,
+    );
+  }
   try {
     return (await res.json()) as T;
   } catch {
     throw new Error(`${source} returned non-JSON (upstream outage or shape change)`);
+  }
+}
+
+/** Carries the upstream status + reason so callers can special-case them. */
+export class HttpError extends Error {
+  constructor(msg: string, public status: number, public reason: string) {
+    super(msg);
+    this.name = "HttpError";
   }
 }
