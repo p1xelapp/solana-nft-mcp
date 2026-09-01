@@ -92,3 +92,28 @@ Initial public release.
   production incidents rather than documentation.
 - Startup banner counts its tools instead of asserting a hand-written number,
   which had already gone stale.
+
+## 1.5.0 - 2026-09-01
+
+Security, verification, and protocol-currency release.
+
+- **Untrusted metadata is now neutralised before it reaches a model.** Every
+  "name" a collectibles API returns is text somebody chose when they minted,
+  and minting is permissionless. An attacker can mint an asset whose name is a
+  fake message boundary followed by instructions, list it, and wait for an
+  agent to read it - an indirect prompt injection with a permanent, publicly
+  addressable payload (OWASP: MCP Tool Poisoning). All name fields from chain,
+  Magic Eden, OpenSea and CryptoSlam now pass through a neutraliser that strips
+  invisible and bidirectional-override characters, collapses line breaks,
+  defangs delimiter markup, caps length, and flags what it found. Real names
+  are untouched.
+- **`verify_claim` - "don't trust, verify" as a tool.** Checks whether a
+  statement is actually true rather than just reporting data: supply,
+  never-traded, ownership, and floor claims. Returns confirmed, contradicted or
+  unverifiable, with the observed numbers, where they were read, and
+  instructions to reproduce the check independently - so the answer does not
+  require trusting this server either. It answers UNVERIFIABLE rather than
+  guessing.
+- **Tool results now include `structuredContent`** alongside the existing JSON
+  text block, so spec-current clients parse typed data instead of scraping a
+  string. The text block is retained for older clients, as the spec asks.

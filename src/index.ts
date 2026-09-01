@@ -25,6 +25,7 @@ import { reconcileFloors, type FloorQuote } from "./lib/reconcile.js";
 import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
 import { identify } from "./identify.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
+import { verifyClaim } from "./verify.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -45,15 +46,32 @@ const registerTool: typeof server.registerTool = (...args) => {
 
 // ---------------------------------------------------------------- helpers
 
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+type ToolResult = {
+  content: { type: "text"; text: string }[];
+  structuredContent?: Record<string, unknown>;
+  isError?: boolean;
+};
 
 // Every tool reads public data and mutates nothing; declare it so MCP clients
 // (and their users) can see the safety contract in the protocol itself.
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
 
-const ok = (data: unknown): ToolResult => ({
-  content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
-});
+/**
+ * Every tool result carries the same payload twice, on purpose.
+ *
+ * `structuredContent` is what a spec-current client parses directly - typed,
+ * no string-scraping, no chance of a model mis-reading a number it had to
+ * pull out of prose. `content` keeps the pretty-printed JSON so older clients
+ * and plain transcripts still work, which the spec explicitly asks for.
+ */
+const ok = (data: unknown): ToolResult => {
+  const text = JSON.stringify(data, null, 2);
+  const structured =
+    data !== null && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : { result: data };
+  return { content: [{ type: "text", text }], structuredContent: structured };
+};
 
 /** Uniform error surface: the agent gets a plain, actionable message. */
 const guard =
@@ -112,6 +130,40 @@ registerTool(
     },
   },
   guard(async ({ query }) => ok(await identify(query))),
+);
+
+registerTool(
+  "verify_claim",
+  {
+    title: "Verify a claim against the chain",
+    description:
+      "Check whether something a user was TOLD is actually true. Use this whenever a claim about a " +
+      "collection or asset carries stakes - a project announcing a supply, a seller saying a card has " +
+      "never been traded, a post claiming a wallet holds something, a quoted floor price. Returns " +
+      "confirmed, contradicted, or unverifiable, together with the exact numbers observed, where they " +
+      "were read, and instructions to reproduce the check independently - so the answer does not " +
+      "require trusting this server either. Willingly answers UNVERIFIABLE rather than guessing; a " +
+      "tool that always returns true or false will eventually return false with confidence.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      claim: z
+        .enum(["supply", "never-traded", "ownership", "floor"])
+        .describe("What kind of statement is being checked"),
+      subject: z
+        .string()
+        .trim()
+        .min(1)
+        .max(120)
+        .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor"),
+      value: z
+        .number()
+        .positive()
+        .optional()
+        .describe("The claimed number - required for supply (count) and floor (SOL)"),
+      wallet: addressSchema.optional().describe("The wallet said to own it - required for ownership claims"),
+    },
+  },
+  guard(async (args) => ok(await verifyClaim(args))),
 );
 
 registerTool(
