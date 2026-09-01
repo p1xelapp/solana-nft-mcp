@@ -10,6 +10,8 @@
  * the MCP protocol channel. Diagnostics go to stderr (console.error).
  */
 
+import { createRequire } from "node:module";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -20,7 +22,13 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
 
-const server = new McpServer({ name: "collector-mcp", version: "1.1.0" });
+// Single-sourced from package.json so the MCP handshake, the startup banner,
+// and the published package can never disagree about what version this is.
+const { version: VERSION } = createRequire(import.meta.url)("../package.json") as {
+  version: string;
+};
+
+const server = new McpServer({ name: "collector-mcp", version: VERSION });
 
 // ---------------------------------------------------------------- helpers
 
@@ -358,7 +366,7 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("collector-mcp v1.1.0 ready (stdio) - 8 tools, 0 API keys");
+  console.error(`collector-mcp v${VERSION} ready (stdio) - 8 tools, 0 API keys`);
 }
 
 main().catch((err) => {
