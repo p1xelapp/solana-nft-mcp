@@ -8,6 +8,7 @@
  */
 
 import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
+import { clean } from "../lib/untrusted.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -198,9 +199,9 @@ export async function walletTokens(wallet: string, limit: number) {
     capped: data.length >= Math.min(limit, 100),
     tokens: data.map((t) => ({
       mint: t.mintAddress ?? null,
-      name: t.name ?? null,
+      name: t.name ? clean(t.name) : null,
       collection: t.collection ?? null,
-      collectionName: t.collectionName ?? null,
+      collectionName: t.collectionName ? clean(t.collectionName) : null,
       image: t.image ?? null,
       listed: t.listStatus === "listed",
     })),

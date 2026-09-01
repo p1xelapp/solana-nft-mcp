@@ -9,6 +9,7 @@
  */
 
 import { cached, fetchJson } from "../lib/http.js";
+import { clean } from "../lib/untrusted.js";
 
 const BASE = "https://web-api.cryptoslam.io/v1";
 const HEADERS = {
@@ -48,7 +49,7 @@ export async function recentMints(contract: string, limit: number) {
       return {
         tokenId: m.tokenId ?? null,
         time: m.timeStamp ?? null,
-        card: str(a["Name"]),
+        card: clean(str(a["Name"])),
         set: str(a["CardSet"]),
         serial: str(a["Mint"]),
         population: str(a["Population"]),

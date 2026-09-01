@@ -11,6 +11,7 @@
  */
 
 import { cached, fetchJson, rateLimiter } from "../lib/http.js";
+import { clean } from "../lib/untrusted.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
@@ -81,7 +82,7 @@ export async function recentSales(slug: string, limit: number) {
           ? Number(e.payment.quantity) / 10 ** e.payment.decimals
           : null,
       currency: e.payment?.symbol ?? null,
-      item: e.nft?.name ?? e.nft?.identifier ?? null,
+      item: e.nft?.name || e.nft?.identifier ? clean(e.nft?.name ?? e.nft?.identifier) : null,
       buyer: e.buyer ?? null,
       seller: e.seller ?? null,
       transaction: e.transaction ?? null,

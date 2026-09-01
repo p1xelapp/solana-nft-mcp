@@ -19,6 +19,7 @@
  */
 
 import { cached, rateLimiter } from "../lib/http.js";
+import { clean } from "../lib/untrusted.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -155,7 +156,9 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
         off += 32;
       }
       const { value: name } = readString(buf, off);
-      return { kind: "asset", owner, collection, name };
+      // The name is whatever the minter typed. Neutralise it here, at the point
+      // it stops being bytes and becomes text a model will read.
+      return { kind: "asset", owner, collection, name: clean(name) };
     }
     if (key === 5) {
       const updateAuthority = base58Encode(buf.subarray(1, 33));
@@ -164,7 +167,7 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
       const u = readString(buf, n.next);
       const numMinted = buf.readUInt32LE(u.next);
       const currentSize = buf.readUInt32LE(u.next + 4);
-      return { kind: "collection", updateAuthority, name: n.value, uri: u.value, numMinted, currentSize };
+      return { kind: "collection", updateAuthority, name: clean(n.value), uri: u.value, numMinted, currentSize };
     }
     return null;
   } catch {
