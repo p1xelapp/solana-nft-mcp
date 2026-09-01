@@ -50,3 +50,24 @@ Initial public release.
   new `collector-crypt` entry priced in USDC rather than SOL.
 - Smoke suite gained a SKIP status and an OpenSea case that skips cleanly with
   no key, so the zero-key path stays the tested default.
+
+## 1.3.0 - 2026-09-01
+
+- **Cross-source reconciliation.** `get_collection_stats` now returns a
+  `reconciliation` block whenever two venues quote the same collection: which
+  is actually cheapest, the spread between them, and - crucially - whether the
+  two numbers can be compared at all. Collector Crypt is the case that forced
+  it: Magic Eden quotes 0.053 SOL, OpenSea quotes 9 USDC. Printed side by side
+  those read as a 170x gap; converted they roughly agree. The block refuses to
+  rank across currencies and says why, rather than letting an agent pick one
+  and be confidently wrong. No USD conversion on purpose - a stale price feed
+  produces wrong answers with the same confidence as a good one.
+- **`collector://glossary` resource.** Domain vocabulary where each entry names
+  the specific wrong answer it prevents: a floor is an ask not a valuation, a
+  listed item's on-chain owner is the marketplace escrow, an opened Candy pack
+  is returned to treasury rather than burned, a PSA 10 and PSA 9 are different
+  assets. Ships with presentation rules so agents render comparisons as tables
+  and provenance as a dated timeline.
+- Collector Crypt registry entry corrected: it trades on BOTH venues - SOL on
+  Magic Eden under `collector_crypt` (underscore), and predominantly USDC on
+  OpenSea. The previous note claimed USDC only.

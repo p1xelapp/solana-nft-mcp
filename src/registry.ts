@@ -85,10 +85,15 @@ export const REGISTRY: RegistryEntry[] = [
     id: "collector-crypt",
     name: "Collector Crypt",
     platform: "Solana (graded physical cards, vaulted)",
+    meSymbol: "collector_crypt",
     openseaSlug: "collector-crypt",
-    keywords: ["collector crypt", "collectorcrypt", "graded", "psa", "pokemon", "physical", "vault"],
+    keywords: ["collector crypt", "collectorcrypt", "graded", "psa", "pokemon", "physical", "vault", "slab"],
     notes:
-      "Needs OPENSEA_API_KEY. Prices are USDC, not SOL - read floorCurrency rather than assuming a denomination.",
+      "Trades in DIFFERENT currencies per venue: SOL on Magic Eden, and both USDC and SOL on OpenSea where " +
+      "USDC dominates (100% of the last 50 sales sampled 2026-09-01). The two floors are therefore not " +
+      "directly comparable as printed - read floorCurrency per source. Magic Eden's symbol uses an " +
+      "underscore (collector_crypt); the hyphenated and unspaced variants both answer HTTP 200 with an " +
+      "empty collection.",
   },
 ];
 
