@@ -117,3 +117,17 @@ Security, verification, and protocol-currency release.
 - **Tool results now include `structuredContent`** alongside the existing JSON
   text block, so spec-current clients parse typed data instead of scraping a
   string. The text block is retained for older clients, as the spec asks.
+
+## 1.5.1 - 2026-09-01
+
+Panel-review release - positioning and the things three kinds of users asked for.
+
+- `verify_claim` now returns a one-line `receipt` safe to paste into a Discord
+  argument: verdict, the numbers the chain showed, and where it came from.
+- README leads with three tools and the prompt that reaches each, instead of
+  eleven names. Tool names are frozen from here: agents reference them in
+  prompts and a rename breaks integrations silently.
+- Dropped "the first MCP server for licensed digital collectibles" - an
+  unfalsifiable claim that adjacent tools could contest. The pitch is now the
+  testable one: zero keys, and the Metaplex Core transfer history mainstream
+  indexers return empty.

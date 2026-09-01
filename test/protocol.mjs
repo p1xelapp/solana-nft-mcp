@@ -95,6 +95,15 @@ assert.deepStrictEqual(
   "structuredContent and the text block must not disagree",
 );
 
+// -- verify receipt shape (pure logic) -----------------------------------
+// The receipt gets pasted into arguments. It must be one line, carry the
+// verdict, and say where it came from - never a bare "true".
+const { verifyClaim } = await import("../dist/verify.js");
+const vr = await verifyClaim({ claim: "floor", subject: "definitely_not_real_xyz123", value: 1 });
+assert.strictEqual(vr.verdict, "unverifiable");
+assert.ok(typeof vr.receipt === "string" && !/[\r\n]/.test(vr.receipt), "receipt must be one line");
+assert.ok(/UNVERIFIABLE/.test(vr.receipt) && /collector-mcp/.test(vr.receipt), "receipt must carry verdict + source");
+
 // -- build recipes (pure data, no network) -------------------------------
 const recipe = JSON.parse(
   (await client.callTool({ name: "get_integration_recipe", arguments: { goal: "sales-bot" } })).content[0].text,

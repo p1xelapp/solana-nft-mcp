@@ -45,6 +45,12 @@ export interface VerificationResult {
   /** How to reproduce this check without trusting this tool. */
   reproduce: string;
   caveats: string[];
+  /**
+   * One plain line, safe to paste anywhere. A verification that ends an
+   * argument in a Discord thread is worth more than a page of JSON, and every
+   * pasted receipt names where it came from.
+   */
+  receipt: string;
 }
 
 const near = (a: number, b: number, tolerance = 0) => Math.abs(a - b) <= tolerance;
@@ -55,7 +61,7 @@ const near = (a: number, b: number, tolerance = 0) => Math.abs(a - b) <= toleran
  * Supply is the claim most worth checking, because it is the one that
  * determines scarcity and the one a project controls the presentation of.
  */
-async function verifySupply(collectionAddress: string, claimed: number): Promise<VerificationResult> {
+async function verifySupply(collectionAddress: string, claimed: number): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
     claim: `supply is ${claimed}`,
     subject: collectionAddress,
@@ -130,7 +136,7 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
 }
 
 /** Verify that an asset has, or has not, changed hands since it was minted. */
-async function verifyUntraded(mint: string): Promise<VerificationResult> {
+async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
     claim: "never traded since mint",
     subject: mint,
@@ -190,7 +196,7 @@ async function verifyUntraded(mint: string): Promise<VerificationResult> {
 }
 
 /** Verify a wallet currently holds a specific asset. */
-async function verifyOwnership(mint: string, wallet: string): Promise<VerificationResult> {
+async function verifyOwnership(mint: string, wallet: string): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
     claim: `${wallet} owns ${mint}`,
     subject: mint,
@@ -243,7 +249,7 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Verificati
 }
 
 /** Verify a floor-price claim against the live marketplace. */
-async function verifyFloor(symbol: string, claimed: number): Promise<VerificationResult> {
+async function verifyFloor(symbol: string, claimed: number): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
     claim: `floor is ${claimed} SOL`,
     subject: symbol,
@@ -298,12 +304,36 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Verificatio
 
 export type ClaimType = "supply" | "never-traded" | "ownership" | "floor";
 
+const MARK: Record<Verdict, string> = { confirmed: "CONFIRMED", contradicted: "CONTRADICTED", unverifiable: "UNVERIFIABLE" };
+const short = (s: string) => (s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : s);
+
+function withReceipt(r: Omit<VerificationResult, "receipt">): VerificationResult {
+  const observed = r.evidence.map((e) => e.observed).join(", ");
+  return {
+    ...r,
+    receipt:
+      `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
+      (observed ? ` - chain shows ${observed}` : "") +
+      ` · checked on-chain via collector-mcp, reproducible with no key · github.com/p1xelapp/collector-mcp`,
+  };
+}
+
 export async function verifyClaim(args: {
   claim: ClaimType;
   subject: string;
   value?: number;
   wallet?: string;
 }): Promise<VerificationResult> {
+  const { claim, subject, value, wallet } = args;
+  return withReceipt(await route({ claim, subject, value, wallet }));
+}
+
+async function route(args: {
+  claim: ClaimType;
+  subject: string;
+  value?: number;
+  wallet?: string;
+}): Promise<Omit<VerificationResult, "receipt">> {
   const { claim, subject, value, wallet } = args;
   switch (claim) {
     case "supply":

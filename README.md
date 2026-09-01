@@ -6,7 +6,7 @@
 
 **Give your AI agent eyes on Solana digital collectibles.**
 
-The first MCP server for licensed digital collectibles - Candy Digital (MLB), Panini America, and any Metaplex Core or Magic Eden collection.
+Reproducible, read-only Solana collectibles ground truth for AI agents - including the Metaplex Core assets (Candy Digital MLB, most 2026 drops) whose transfer history mainstream indexers return empty. Zero API keys.
 
 **Zero API keys. Zero wallet. Zero config. Read-only by design.**
 
@@ -26,7 +26,7 @@ Ask Claude things like:
 > *"Show me the last 10 Panini pack rips."*
 > *"What's in this wallet?"*
 
-...and it answers from live on-chain and marketplace data, through 8 tools this server provides.
+...and it answers from live on-chain and marketplace data, through the tools this server provides.
 
 ## 45-second quickstart
 
@@ -55,6 +55,18 @@ claude mcp add collector -- node /absolute/path/to/collector-mcp/dist/index.js
 ```
 
 That's the whole setup. No account creation, no `.env`, no RPC signup. Restart your client and ask: *"search collections for candy gold"*.
+
+## Start here: three tools, three prompts
+
+Eleven tools is a lot to read. These three cover most real questions; the rest are there when you need them.
+
+| Ask your assistant | Tool it reaches for | What comes back |
+|---|---|---|
+| *"Someone says only 250 of these exist and it never sold under 2 SOL. True?"* | `verify_claim` | confirmed / contradicted / unverifiable, the numbers observed, and how to re-check without trusting this server |
+| *"Who has owned this card?"* (paste a mint) | `get_asset_provenance` | every owner, dated, marketplaces named - the history other indexers return empty for Metaplex Core |
+| *"What is this?"* (paste anything) | `identify` | what it is, where it trades, what to call next - works on collections launched this morning |
+
+Tool names are frozen from v1.5.0: agents reference them by name in prompts, and a rename breaks integrations silently.
 
 ## Tools
 
