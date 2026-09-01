@@ -6,7 +6,7 @@ Everything about what this is, how it works, why it exists, and who it's for.
 
 ## 1. What it is, in one paragraph
 
-collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, live pack rips, and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is the first MCP server built for **licensed digital collectibles** - Candy Digital (official MLB license), Panini America (NBA/NFL/Soccer), and any Metaplex Core or Magic Eden collection.
+collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, live pack rips, and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is built for **licensed digital collectibles** - Candy Digital (official MLB license), Panini America (NBA/NFL/Soccer), and any Metaplex Core or Magic Eden collection.
 
 ## 2. The problem it solves
 

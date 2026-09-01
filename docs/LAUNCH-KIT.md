@@ -8,7 +8,7 @@ All copy below is ready to paste. "-" only, no em-dashes, no hashtag spam.
 
 ### PulseMCP / mcp.so / Glama (short blurb, ~50 words)
 
-> The first MCP server for licensed digital collectibles. Live Solana collectibles data for any AI agent: floor prices, sales, wallet holdings, live Panini pack rips, and full on-chain ownership history for Metaplex Core assets (Candy Digital MLB cards and more). Zero API keys, zero wallet, read-only by design. TypeScript, MIT.
+> Read-only Solana collectibles ground truth for AI agents - zero API keys, and the Metaplex Core transfer history other indexers return empty. Live Solana collectibles data for any AI agent: floor prices, sales, wallet holdings, live Panini pack rips, and full on-chain ownership history for Metaplex Core assets (Candy Digital MLB cards and more). Zero API keys, zero wallet, read-only by design. TypeScript, MIT.
 
 ### Smithery (one-liner)
 
@@ -58,7 +58,7 @@ If you run an agent, a tracker, or you just collect - try it, break it, star it.
 
 ### Card (short)
 
-**collector-mcp** - First MCP server for digital collectibles
+**collector-mcp** - zero-key Solana collectibles data for AI agents
 Open-source TypeScript MCP server giving AI agents live Solana collectibles data with zero API keys. Hand-decodes Metaplex Core ownership history that mainstream NFT APIs return empty. 8 tools, full test suite against live endpoints, MIT.
 `TypeScript` `MCP` `Solana` `Web3 data`
 
@@ -78,7 +78,7 @@ Open-source TypeScript MCP server giving AI agents live Solana collectibles data
 
 ### LinkedIn post
 
-I open-sourced collector-mcp - the first MCP server for digital collectibles.
+I open-sourced collector-mcp - a zero-key, read-only MCP server for Solana collectibles.
 
 It lets any AI agent (Claude, Cursor, etc.) answer questions like "who has owned this card since mint?" or "what did this collection sell for this week?" from live Solana data - with zero API keys and no wallet access, because it is read-only by design.
 
@@ -108,4 +108,4 @@ First comment: the Core-decoding story (technical depth is what HN wants), the r
 - "Give your AI eyes on your collection - not keys to it."
 - "The ownership history your NFT API returns empty? It's on-chain. This reads it."
 - "0 API keys. 0 wallet. 8 tools. 45 seconds."
-- "First MCP server for licensed digital collectibles."
+- "Zero keys, read-only, and the Core transfer history every other indexer returns empty."

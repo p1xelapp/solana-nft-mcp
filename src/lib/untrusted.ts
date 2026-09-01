@@ -1,7 +1,7 @@
 /**
  * Neutralising attacker-controlled text before it reaches a model.
  *
- * This is the hole nobody in this category seems to have closed. Every field a
+ * We found no other blockchain MCP server that closes this hole; the MCP spec itself leaves tool text unsanitised. Every field a
  * collectibles API returns as a "name" - the NFT name, the collection name, an
  * attribute value, a card title - is text somebody chose when they minted it.
  * Minting is permissionless and costs cents. So an attacker can mint an asset
