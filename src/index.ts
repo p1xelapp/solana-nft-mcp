@@ -21,6 +21,8 @@ import * as cs from "./sources/cryptoslam.js";
 import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
+import { reconcileFloors, type FloorQuote } from "./lib/reconcile.js";
+import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -158,6 +160,28 @@ server.registerTool(
         `could not resolve "${collection}" - not a known registry id, and no market/on-chain source answered.`,
       );
     }
+
+    // Cross-source reconciliation. Two venues quoting the same collection is
+    // the normal case now, and handing an agent two bare numbers is how it
+    // ends up comparing SOL to USDC and calling one "cheaper". Only venues
+    // that actually returned a floor become quotes.
+    const quotes: FloorQuote[] = [];
+    const mkt = out.market as { floorPriceSol?: number | null } | undefined;
+    if (typeof mkt?.floorPriceSol === "number" && mkt.floorPriceSol > 0) {
+      quotes.push({ source: "magiceden", value: mkt.floorPriceSol, currency: "SOL" });
+    }
+    const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null } | undefined;
+    if (osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency) {
+      quotes.push({ source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency });
+    }
+
+    const extra: string[] = [];
+    if (out.onchain && mkt?.floorPriceSol !== undefined) {
+      extra.push(
+        "On-chain supply counts every asset that exists; a marketplace's listed count only covers what is currently for sale on that venue. They answer different questions and will not match.",
+      );
+    }
+    if (quotes.length > 0) out.reconciliation = reconcileFloors(quotes, extra);
     return ok(out);
   }),
 );
@@ -317,6 +341,29 @@ server.registerTool(
 );
 
 // -------------------------------------------------------------- resources
+
+server.registerResource(
+  "glossary",
+  "collector://glossary",
+  {
+    title: "Collectibles glossary + presentation rules",
+    description:
+      "Domain vocabulary with the specific wrong answer each term exists to prevent (floor is not a valuation, " +
+      "a listed item's on-chain owner is the marketplace escrow, an opened Candy pack is returned not burned), " +
+      "plus how to present this data to a person. Read this before interpreting or summarising any output.",
+    mimeType: "application/json",
+  },
+  (uri) =>
+    Promise.resolve({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ glossary: GLOSSARY, presentationRules: PRESENTATION_RULES }, null, 2),
+        },
+      ],
+    }),
+);
 
 server.registerResource(
   "registry",
