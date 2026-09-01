@@ -20,3 +20,16 @@ Initial public release.
   `get_collection_stats` and OpenSea sales to `get_recent_sales`. Without the
   key nothing changes - the server stays zero-config by default.
 - Registry entries can now carry `openseaSlug`.
+
+## 1.1.1 - 2026-09-01
+
+- Upstream errors now carry the reason, not just a status code. Every source
+  previously surfaced a bare `HTTP 400`, discarding the body that explained
+  what actually went wrong; an agent relaying that dead end sends the user
+  hunting for a bug that isn't there. Error bodies are redacted (any
+  configured key is stripped) and truncated before they reach output.
+- `get_wallet_holdings` now explains the marketplace-escrow case. Magic Eden
+  blocks its own escrow accounts from the wallet endpoint, and an address
+  taken from `get_asset_provenance` is often exactly that - a listed item's
+  on-chain owner is the escrow, not the seller. The tool now says so and
+  points at the transfer that names the seller.

@@ -7,7 +7,7 @@
  * polite client is a feature: it is what keeps a zero-key server viable.
  */
 
-import { cached, fetchJson, rateLimiter } from "../lib/http.js";
+import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -169,9 +169,28 @@ export async function token(mint: string): Promise<MeToken | null> {
 
 /** Wallet holdings as Magic Eden sees them (indexed collections only). */
 export async function walletTokens(wallet: string, limit: number) {
-  const { data, stale, cachedAt } = await cached(`me:wallet:${wallet}`, 120_000, () =>
-    me<MeToken[]>(`/wallets/${wallet}/tokens?offset=0&limit=${Math.min(limit, 100)}&listedOnly=false`),
-  );
+  let hit;
+  try {
+    hit = await cached(`me:wallet:${wallet}`, 120_000, () =>
+      me<MeToken[]>(`/wallets/${wallet}/tokens?offset=0&limit=${Math.min(limit, 100)}&listedOnly=false`),
+    );
+  } catch (e) {
+    // ME refuses this endpoint for its own escrow/program accounts. That is
+    // the common case for an address taken from provenance: a listed item's
+    // on-chain owner IS the marketplace escrow, not the seller. Say so,
+    // because "HTTP 400" sends the agent hunting for a bug that isn't there.
+    if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
+      throw new Error(
+        `Magic Eden will not list holdings for ${wallet} - it blocks this address, ` +
+          `which usually means it is a marketplace escrow or program account rather than ` +
+          `a user wallet. If you got this address from get_asset_provenance, the item is ` +
+          `most likely listed for sale and held in escrow; the seller is the wallet that ` +
+          `transferred it in.`,
+      );
+    }
+    throw e;
+  }
+  const { data, stale, cachedAt } = hit;
   if (!Array.isArray(data)) throw new Error("Magic Eden returned an unexpected wallet shape");
   return {
     wallet,
