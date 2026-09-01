@@ -12,3 +12,11 @@ Initial public release.
 - Zero API keys: Magic Eden v2, CryptoSlam, and plain Solana RPC only
 - Per-source rate gates, retries, and stale-on-error caching
 - Live smoke suite (`npm test`) exercising every tool over real stdio
+
+## 1.1.0 - 2026-09-01
+
+- Optional OpenSea cross-marketplace source: set `OPENSEA_API_KEY` and pass
+  (or registry-resolve) an `openseaSlug` to add OpenSea floor/volume/owners to
+  `get_collection_stats` and OpenSea sales to `get_recent_sales`. Without the
+  key nothing changes - the server stays zero-config by default.
+- Registry entries can now carry `openseaSlug`.

@@ -16,10 +16,11 @@ import { z } from "zod";
 
 import * as me from "./sources/magiceden.js";
 import * as cs from "./sources/cryptoslam.js";
+import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
 
-const server = new McpServer({ name: "collector-mcp", version: "1.0.0" });
+const server = new McpServer({ name: "collector-mcp", version: "1.1.0" });
 
 // ---------------------------------------------------------------- helpers
 
@@ -101,13 +102,21 @@ server.registerTool(
     description:
       "Market + supply stats for a collection. Accepts a registry id, a Magic Eden symbol, or a Metaplex " +
       "Core collection ADDRESS. Addresses are decoded straight from the chain (name, minted, current size) - " +
-      "works for collections no marketplace indexes, e.g. Candy Digital drops.",
+      "works for collections no marketplace indexes, e.g. Candy Digital drops. If OPENSEA_API_KEY is set, " +
+      "an OpenSea cross-marketplace view is added (pass openseaSlug, or rely on registry entries that carry one).",
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80).describe("Registry id, ME symbol, or Core collection address"),
+      openseaSlug: z
+        .string()
+        .trim()
+        .max(120)
+        .regex(/^[a-z0-9-]+$/i, "OpenSea collection slug")
+        .optional()
+        .describe("Optional OpenSea slug for a cross-marketplace view (requires OPENSEA_API_KEY)"),
     },
   },
-  guard(async ({ collection }) => {
+  guard(async ({ collection, openseaSlug }) => {
     const r = resolve(collection);
     const out: Record<string, unknown> = { requested: collection };
     if ("name" in r) out.registry = { id: r.id, name: r.name, platform: r.platform };
@@ -127,6 +136,14 @@ server.registerTool(
     if (r.meSymbol) {
       out.market = await me.collectionStats(r.meSymbol);
       out.meta = await me.collectionMeta(r.meSymbol).catch(() => undefined);
+    }
+    const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
+    if (slug && os.openSeaEnabled()) {
+      out.opensea = await os.collectionStats(slug).catch((e: unknown) => ({
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    } else if (slug) {
+      out.openseaNote = "OpenSea slug known but OPENSEA_API_KEY not set - cross-marketplace view skipped (server stays zero-config by default).";
     }
     if (!out.onchain && !out.market) {
       throw new Error(
@@ -168,22 +185,36 @@ server.registerTool(
     title: "Recent sales",
     description:
       "Most recent completed sales for a collection (price in SOL, buyer, seller, tx signature). " +
-      "Accepts a registry id or Magic Eden symbol.",
+      "Accepts a registry id or Magic Eden symbol. With OPENSEA_API_KEY set and an openseaSlug, " +
+      "OpenSea sales are included for a cross-marketplace picture.",
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80),
       limit: z.number().int().min(1).max(50).default(10),
+      openseaSlug: z
+        .string()
+        .trim()
+        .max(120)
+        .regex(/^[a-z0-9-]+$/i, "OpenSea collection slug")
+        .optional(),
     },
   },
-  guard(async ({ collection, limit }) => {
+  guard(async ({ collection, limit, openseaSlug }) => {
     const r = resolve(collection);
+    const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
+    const openseaPart =
+      slug && os.openSeaEnabled()
+        ? await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
+        : undefined;
     if (!r.meSymbol) {
+      if (openseaPart) return ok({ requested: collection, opensea: openseaPart });
       throw new Error(
         `"${collection}" has no Magic Eden symbol. For Candy Digital collections use get_asset_provenance ` +
-          `on a specific card, or get_pack_pulls for Panini rips.`,
+          `on a specific card, or get_pack_pulls for Panini rips - or pass an openseaSlug with OPENSEA_API_KEY set.`,
       );
     }
-    return ok(await me.recentSales(r.meSymbol, limit));
+    const magiceden = await me.recentSales(r.meSymbol, limit);
+    return ok(openseaPart ? { ...magiceden, opensea: openseaPart } : magiceden);
   }),
 );
 
@@ -327,7 +358,7 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("collector-mcp v1.0.0 ready (stdio) - 8 tools, 0 API keys");
+  console.error("collector-mcp v1.1.0 ready (stdio) - 8 tools, 0 API keys");
 }
 
 main().catch((err) => {

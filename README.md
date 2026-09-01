@@ -140,3 +140,7 @@ Data courtesy of the public APIs of [Magic Eden](https://magiceden.io) and [Cryp
 ## License
 
 MIT
+
+## Optional: cross-marketplace view via OpenSea
+
+Solana collections increasingly trade on OpenSea too (Candy Digital, Mad Lads, Claynosaurz, Collector Crypt). collector-mcp stays **zero-config by default**, but if you set `OPENSEA_API_KEY` (OpenSea issues instant free keys - no signup; permanent keys via their developer portal), `get_collection_stats` and `get_recent_sales` accept an `openseaSlug` and add the OpenSea side of the market next to the Magic Eden + on-chain view. Without the key, nothing changes and nothing asks for it.
