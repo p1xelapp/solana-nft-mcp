@@ -131,3 +131,19 @@ Panel-review release - positioning and the things three kinds of users asked for
   unfalsifiable claim that adjacent tools could contest. The pitch is now the
   testable one: zero keys, and the Metaplex Core transfer history mainstream
   indexers return empty.
+
+## 1.6.0 - 2026-09-01
+
+- **`get_asset_trust`** - decodes the Metaplex Core plugin registry straight
+  from account bytes and turns it into custody facts: permanent transfer,
+  burn and freeze delegates (who can act on the asset without the holder),
+  frozen state, whether royalties are enforced by a program rule set or merely
+  advisory, mutable vs immutable metadata, on-chain edition numbers. Layout
+  verified against the mpl-core program source. Expected on packs (they are
+  consumed on open); a red flag on a card meant to be kept.
+- Glossary learns pack mechanics: sealed packs as separate assets, burn-on-open
+  vs return-to-treasury, gacha, and the pack-context reading of permanent
+  delegates. The 2026 Solana card market is gacha-shaped and models get the
+  open mechanics wrong constantly.
+- Offline suite decodes a captured real Core account (test/fixtures) so the
+  byte layout is pinned by a test, not by memory.

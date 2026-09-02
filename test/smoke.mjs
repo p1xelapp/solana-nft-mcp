@@ -57,7 +57,7 @@ try {
   const names = tools.map((t) => t.name).sort();
   const expected = [
     "get_asset", "get_asset_provenance", "get_collection_stats", "get_floor_prices",
-    "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_holdings",
+    "get_asset_trust", "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_holdings",
     "identify", "search_collections", "verify_claim",
   ];
   if (JSON.stringify(names) === JSON.stringify(expected)) report("PASS", "listTools", `${names.length} tools`);

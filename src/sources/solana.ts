@@ -176,6 +176,17 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
 }
 
 /** Fetch + decode one Core account. Distinguishes "missing" from "not Core". */
+/** Raw base64 account data for a Core-owned account, or null when it does not exist. */
+export async function getCoreAccountRaw(address: string): Promise<string | null> {
+  const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>("getAccountInfo", [
+    address,
+    { encoding: "base64" },
+  ]);
+  if (!info?.value) return null;
+  if (info.value.owner !== CORE_PROGRAM) throw new Error(`account ${address} is owned by ${info.value.owner}, not Metaplex Core`);
+  return info.value.data[0];
+}
+
 export async function getCoreAccount(address: string): Promise<CoreAsset | CoreCollection | null> {
   const { data } = await cached(`core:${address}`, 60_000, async () => {
     const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>(
