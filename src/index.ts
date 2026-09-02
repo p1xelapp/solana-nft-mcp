@@ -26,6 +26,7 @@ import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
 import { identify } from "./identify.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
+import { decodeCoreTrust } from "./lib/coreplugins.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -164,6 +165,39 @@ registerTool(
     },
   },
   guard(async (args) => ok(await verifyClaim(args))),
+);
+
+registerTool(
+  "get_asset_trust",
+  {
+    title: "What owning this actually means",
+    description:
+      "Decode the Metaplex Core plugins on an asset and translate them into custody facts: can the " +
+      "issuer move or burn it without the holder's signature (permanent delegates - normal on packs, a " +
+      "red flag on keepers), is it frozen, are royalties enforced by a program rule set or merely " +
+      "advisory, is the metadata mutable, is the serial an on-chain edition or just printed text. " +
+      "Marketplaces show the picture and the price; this shows the rules attached to the account. Use " +
+      "before a purchase, when a listing 'cannot transfer', or when someone asks whether a pack burns " +
+      "on open. Read-only, decoded from raw bytes, no indexer.",
+    annotations: READ_ONLY,
+    inputSchema: { mint: addressSchema.describe("Metaplex Core asset address") },
+  },
+  guard(async ({ mint }) => {
+    const raw = await sol.getCoreAccountRaw(mint);
+    if (!raw) throw new Error(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
+    const acct = await sol.getCoreAccount(mint);
+    if (!acct || acct.kind !== "asset") throw new Error(`${mint} is not a Core asset (it is a ${acct?.kind ?? "non-Core account"})`);
+    const trust = decodeCoreTrust(raw);
+    return ok({
+      mint,
+      name: acct.name,
+      owner: acct.owner,
+      collection: acct.collection,
+      ...trust,
+      readThis:
+        "Warnings are facts about who else can act on this asset. A permanent delegate on a PACK is expected (it is consumed on open); the same plugin on a card you intend to keep means it is not unconditionally yours.",
+    });
+  }),
 );
 
 registerTool(

@@ -72,6 +72,33 @@ export const GLOSSARY: GlossaryEntry[] = [
       "Opening a Candy Digital pack RETURNS the pack to the treasury; it is not burned. Treating 'held by treasury' as 'destroyed' - or as 'still sealed' - both produce wrong pack counts.",
   },
   {
+    term: "pack (sealed)",
+    meaning:
+      "An NFT that represents unopened contents. On Solana it is usually its own Metaplex Core asset in a packs collection, distinct from the cards it will produce.",
+    pitfall:
+      "A pack and its cards are different assets with different histories. Provenance on a card starts at the pack OPEN, not at the pack purchase; provenance on the pack ends when it is opened.",
+  },
+  {
+    term: "pack open: burn vs return",
+    meaning:
+      "Opening a pack consumes it and mints or transfers the contents to the opener. Many projects BURN the pack (its account is closed, ~0.0009 SOL stub remains); Candy Digital RETURNS the pack to a treasury wallet instead.",
+    pitfall:
+      "'The pack is gone from the wallet' has two different meanings. Burned = destroyed; returned = held by treasury and still counts as an existing asset. Counting treasury-held packs as sealed, or returned packs as burned, both produce wrong supply numbers.",
+  },
+  {
+    term: "gacha",
+    meaning:
+      "Pay-to-pull randomised packs, often backed by vaulted physical cards (Collector Crypt, Jupiter Gacha, PokeHub). The dominant tokenized-card mechanic on Solana in 2026.",
+    pitfall:
+      "Pull odds and card values are set by the operator, not the chain. The chain can prove what you received; it cannot prove the odds were fair. Say which.",
+  },
+  {
+    term: "permanent delegate (pack context)",
+    meaning: "Packs commonly carry a permanent burn or transfer delegate so the opening program can consume them without a second signature.",
+    pitfall:
+      "Expected on a pack. On a finished card it means the issuer retains the power to move or destroy your asset - get_asset_trust surfaces which case you are looking at.",
+  },
+  {
     term: "pack rip / pull",
     meaning: "Opening a sealed pack and revealing the cards inside.",
     pitfall: "A pull feed is an event stream. Miss a stretch of events and the totals are quietly short - reconcile against the issuer's counts.",

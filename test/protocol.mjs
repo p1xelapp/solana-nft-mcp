@@ -6,13 +6,17 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
+import { Buffer } from "node:buffer";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const client = new Client({ name: "protocol-test", version: "1.0.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"] }));
 
 const { tools } = await client.listTools();
-assert.strictEqual(tools.length, 11, `expected 11 tools, got ${tools.length}`);
-for (const n of ["identify", "get_integration_recipe", "verify_claim"]) {
+assert.strictEqual(tools.length, 12, `expected 12 tools, got ${tools.length}`);
+for (const n of ["identify", "get_integration_recipe", "verify_claim", "get_asset_trust"]) {
   assert.ok(tools.some((t) => t.name === n), `${n} tool missing`);
 }
 for (const t of tools) {
@@ -104,6 +108,17 @@ assert.strictEqual(vr.verdict, "unverifiable");
 assert.ok(typeof vr.receipt === "string" && !/[\r\n]/.test(vr.receipt), "receipt must be one line");
 assert.ok(/UNVERIFIABLE/.test(vr.receipt) && /collector-mcp/.test(vr.receipt), "receipt must carry verdict + source");
 
+// -- Core plugin decoding (real account bytes captured 2026-09-01, offline) --
+const { decodeCoreTrust } = await import("../dist/lib/coreplugins.js");
+const fixture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "core-asset.b64"), "utf8").trim();
+const trust = decodeCoreTrust(fixture);
+assert.ok(Array.isArray(trust.plugins), "plugins array expected");
+assert.ok(!trust.decodeNote, "the real fixture must decode fully: " + trust.decodeNote);
+assert.ok(trust.warnings.length + trust.assurances.length > 0, "trust must say something");
+for (const p of trust.plugins) assert.ok(!/unknown plugin type/.test(p.type), "unknown plugin in fixture: " + p.type);
+// A non-asset must be refused, not misread.
+assert.throws(() => decodeCoreTrust(Buffer.from([5, 0, 0]).toString("base64")), /not an AssetV1/);
+
 // -- build recipes (pure data, no network) -------------------------------
 const recipe = JSON.parse(
   (await client.callTool({ name: "get_integration_recipe", arguments: { goal: "sales-bot" } })).content[0].text,
@@ -156,6 +171,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (11 tools, 2 resources, prompt, validation, reconciliation, recipes, injection defence, structuredContent)",
+  "protocol test: all assertions passed (12 tools, 2 resources, prompt, validation, reconciliation, recipes, injection defence, structuredContent)",
 );
 await client.close();
