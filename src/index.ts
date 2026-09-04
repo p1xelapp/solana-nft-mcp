@@ -571,14 +571,14 @@ registerTool(
       if (reg?.coreCollection) {
         const acct = await sol.getCoreAccount(reg.coreCollection).catch(() => null);
         if (acct?.kind === "collection" && acct.currentSize > 0) {
-          supplyShare.push({ collection: c.collection, count: c.count, totalSupply: acct.currentSize, pct: Math.round((c.count / acct.currentSize) * 1000) / 10, supplySource: "solana-rpc (Core collection currentSize)" });
+          supplyShare.push({ collection: c.collection, count: c.count, totalSupply: acct.currentSize, pct: Math.round((c.count / acct.currentSize) * 100_000) / 1000, supplySource: "solana-rpc (Core collection currentSize)" });
           continue;
         }
       }
       const slug = reg?.openseaSlug;
       if (slug && os.openSeaEnabled()) {
         const d = await os.collectionDetail(slug).catch(() => null);
-        if (d?.totalSupply) supplyShare.push({ collection: c.collection, count: c.count, totalSupply: d.totalSupply, pct: Math.round((c.count / d.totalSupply) * 1000) / 10, supplySource: "opensea (total_supply)" });
+        if (d?.totalSupply) supplyShare.push({ collection: c.collection, count: c.count, totalSupply: d.totalSupply, pct: Math.round((c.count / d.totalSupply) * 100_000) / 1000, supplySource: "opensea (total_supply)" });
       }
     }
 
