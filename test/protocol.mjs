@@ -15,8 +15,8 @@ const client = new Client({ name: "protocol-test", version: "1.0.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"] }));
 
 const { tools } = await client.listTools();
-assert.strictEqual(tools.length, 12, `expected 12 tools, got ${tools.length}`);
-for (const n of ["identify", "get_integration_recipe", "verify_claim", "get_asset_trust"]) {
+assert.strictEqual(tools.length, 14, `expected 14 tools, got ${tools.length}`);
+for (const n of ["identify", "get_integration_recipe", "verify_claim", "get_asset_trust", "get_wallet_profile", "get_wallet_activity"]) {
   assert.ok(tools.some((t) => t.name === n), `${n} tool missing`);
 }
 for (const t of tools) {
@@ -32,7 +32,7 @@ assert.ok(Array.isArray(entries) && entries.length >= 5, "registry should have >
 
 assert.ok(resources.some((r) => r.uri === "collector://glossary"), "glossary resource missing");
 const gloss = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
-assert.ok(gloss.glossary.length >= 12, "glossary should carry the domain vocabulary");
+assert.ok(gloss.glossary.length >= 20, "glossary should carry the domain vocabulary");
 assert.ok(gloss.presentationRules.length >= 5, "presentation rules missing");
 // The entries exist to prevent specific wrong answers, so most must name one.
 assert.ok(
@@ -42,6 +42,7 @@ assert.ok(
 
 const { prompts } = await client.listPrompts();
 assert.ok(prompts.some((p) => p.name === "collection_report"), "collection_report prompt missing");
+assert.ok(prompts.some((p) => p.name === "wallet_report"), "wallet_report prompt missing");
 
 // Schema rejection must not require network.
 const bad = await client.callTool({ name: "get_asset", arguments: { mint: "nope" } }).catch((e) => e);
@@ -119,6 +120,63 @@ for (const p of trust.plugins) assert.ok(!/unknown plugin type/.test(p.type), "u
 // A non-asset must be refused, not misread.
 assert.throws(() => decodeCoreTrust(Buffer.from([5, 0, 0]).toString("base64")), /not an AssetV1/);
 
+// -- wallet intelligence (real feeds captured 2026-09-04, offline) --------
+const { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling } = await import("../dist/wallet.js");
+const fx = (n) => JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", n), "utf8"));
+
+const act = fx("me-wallet-activities.json");
+const a = summarizeActivity(act.wallet, act.events, false);
+assert.strictEqual(a.window.events, 42);
+assert.strictEqual(a.byType.buyNow, 32, "buyNow count must match the feed");
+assert.ok(a.buys.count + a.sells.count <= a.byType.buyNow, "attributed trades cannot exceed buyNow events");
+assert.ok(a.buys.count > 0, "the fixture wallet bought things");
+assert.ok(a.buys.totalSol > 0 && Number.isFinite(a.buys.totalSol));
+assert.ok(Object.keys(a.venues).includes("magiceden_v2") && Object.keys(a.venues).includes("mmm"), "venue split must separate order book from AMM pools");
+assert.ok(["flipper", "holder", "mixed", "seller", "lister", "quiet", "unknown"].includes(a.behaviour.label));
+// 2 buys vs 30 sells in this fixture: that is a seller, and the reason must say so.
+assert.strictEqual(a.behaviour.label, "seller", a.behaviour.why);
+assert.ok(a.behaviour.why.length > 10, "behaviour label must carry its reason");
+assert.ok(a.firstBuyInWindow && a.firstBuyInWindow.time, "first buy in window must be identified");
+assert.ok(a.caveats.some((c) => /Magic Eden's view/.test(c)), "activity must say which feed it is");
+for (const f of a.flips) assert.ok(f.heldDays >= 0 && f.soldAt > f.boughtAt, "a flip is a buy followed by a sell");
+// Empty feed is 'quiet', never a crash or a confident label.
+const quiet = summarizeActivity(act.wallet, [], false);
+assert.strictEqual(quiet.behaviour.label, "quiet");
+assert.strictEqual(quiet.window.from, null);
+// Truncation must be announced.
+assert.ok(summarizeActivity(act.wallet, act.events, true).caveats.some((c) => /page limit/.test(c)));
+
+const held = fx("me-wallet-tokens.json");
+const h = summarizeHoldings(held.tokens);
+assert.strictEqual(h.totalItems, held.tokens.length);
+assert.ok(h.byCollection.length >= 5 && h.byCollection[0].count >= h.byCollection[1].count, "collections sorted by count");
+assert.strictEqual(h.byCollection.reduce((n, c) => n + c.count, 0), h.totalItems, "every item lands in exactly one group");
+assert.ok(Math.abs(h.byCollection.reduce((n, c) => n + c.shareOfWalletPct, 0) - 100) < 1.5, "shares sum to ~100");
+assert.strictEqual(typeof h.concentration.concentrated, "boolean");
+assert.deepStrictEqual(summarizeHoldings([]).byCollection, []);
+assert.strictEqual(summarizeHoldings([]).concentration.topCollection, null);
+
+const osfx = fx("os-wallet-events.json");
+const o = summarizeOpenSeaEvents(osfx.wallet, osfx.events, true);
+assert.strictEqual(o.events, osfx.events.length);
+assert.ok(o.transfersIn > 0, "fixture wallet received transfers");
+assert.ok(o.bought > 0, "fixture wallet bought on OpenSea");
+for (const r of o.receivedWithoutSale) assert.ok(r.from !== osfx.wallet && r.mint, "received items must come from someone else");
+assert.ok(/gift, an airdrop/.test(o.caveat), "transfer-in must not be called an airdrop");
+
+// Floor x count is a ceiling and says so; unpriced items are counted, not hidden.
+const fc = floorCeiling([
+  { collection: "a", count: 3, floorSol: 2, listedCount: 100 },
+  { collection: "b", count: 10, floorSol: 1, listedCount: 4 },
+  { collection: "c", count: 5, floorSol: null, listedCount: null },
+], 20);
+assert.strictEqual(fc.ceilingSol, 16);
+assert.strictEqual(fc.itemsPriced, 13);
+assert.strictEqual(fc.itemsUnpriced, 7);
+assert.ok(fc.readThis.some((t) => /not what it would realise/.test(t)), "ceiling must be labelled");
+assert.ok(fc.readThis.some((t) => /\bb\b.*move the floor/.test(t)), "thin-book warning must name the collection");
+assert.strictEqual(floorCeiling([], 0).ceilingSol, 0);
+
 // -- build recipes (pure data, no network) -------------------------------
 const recipe = JSON.parse(
   (await client.callTool({ name: "get_integration_recipe", arguments: { goal: "sales-bot" } })).content[0].text,
@@ -171,6 +229,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (12 tools, 2 resources, prompt, validation, reconciliation, recipes, injection defence, structuredContent)",
+  "protocol test: all assertions passed (14 tools, 2 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

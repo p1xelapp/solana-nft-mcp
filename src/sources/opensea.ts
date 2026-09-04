@@ -92,3 +92,98 @@ export async function recentSales(slug: string, limit: number) {
     source: "opensea",
   };
 }
+
+// ------------------------------------------------------- Solana on OpenSea
+// OpenSea opened Solana trading on 2026-08-31. Its collection index is the
+// only keyed source that maps a slug to the on-chain collection address,
+// total supply, and the royalty the project asks for - so with a key set,
+// name search and supply questions get a second, independent answer.
+
+export interface OsSolanaCollection {
+  collection: string; // slug
+  name?: string;
+  total_supply?: number;
+  created_date?: string;
+  contracts?: { address?: string; chain?: string }[];
+  fees?: { fee?: number; recipient?: string; required?: boolean }[];
+  opensea_url?: string;
+  twitter_username?: string;
+  project_url?: string;
+}
+
+/** Solana collections OpenSea indexes, ordered by 7-day volume. Cached for an hour; a few hundred entries. */
+export async function solanaCollections() {
+  const { data, stale, cachedAt } = await cached("os:solana-index", 3_600_000, async () => {
+    const out: OsSolanaCollection[] = [];
+    let next: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const q = `/collections?chain=solana&limit=100&order_by=seven_day_volume${next ? `&next=${encodeURIComponent(next)}` : ""}`;
+      const res = await os<{ collections?: OsSolanaCollection[]; next?: string }>(q);
+      out.push(...(res.collections ?? []));
+      if (!res.next || (res.collections ?? []).length < 100) break;
+      next = res.next;
+    }
+    return out;
+  });
+  return { collections: data, stale, cachedAt };
+}
+
+// OpenSea's own 1% marketplace fee is listed alongside creator fees; it goes
+// to a fixed EVM-looking address and is not a creator royalty.
+const OPENSEA_FEE_RECIPIENT = /^0x0000a26b/i;
+
+/** One collection's detail by slug: supply, on-chain address, royalty, links. */
+export async function collectionDetail(slug: string) {
+  const { data, stale, cachedAt } = await cached(`os:detail:${slug}`, 3_600_000, () =>
+    os<OsSolanaCollection>(`/collections/${encodeURIComponent(slug)}`),
+  );
+  if (!data?.collection) throw new Error(`OpenSea has no collection "${slug}"`);
+  const royalty = (data.fees ?? []).filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient));
+  return {
+    slug: data.collection,
+    name: data.name ? clean(data.name) : null,
+    totalSupply: data.total_supply ?? null,
+    onchainCollection: data.contracts?.find((c) => c.chain === "solana")?.address ?? null,
+    creatorRoyaltyPct: royalty.length ? royalty.reduce((s, f) => s + (f.fee ?? 0), 0) : 0,
+    listedOn: data.created_date ?? null,
+    url: data.opensea_url ?? null,
+    stale,
+    cachedAt,
+    source: "opensea",
+  };
+}
+
+export interface OsAccountEvent {
+  event_type?: string; // sale | transfer | order | ...
+  event_timestamp?: number;
+  transaction?: string;
+  transfer_type?: string;
+  from_address?: string;
+  to_address?: string;
+  buyer?: string;
+  seller?: string;
+  payment?: { quantity?: string; decimals?: number; symbol?: string };
+  nft?: { identifier?: string; name?: string; collection?: string };
+}
+
+/**
+ * Sales AND plain transfers for a wallet on Solana. The transfer events are
+ * the piece Magic Eden's wallet feed lacks - they are how "was this
+ * airdropped or bought?" gets an evidence-based answer.
+ */
+export async function accountEvents(wallet: string, pages: number) {
+  const { data, stale, cachedAt } = await cached(`os:aev:${wallet}:${pages}`, 60_000, async () => {
+    const out: OsAccountEvent[] = [];
+    let next: string | undefined;
+    for (let p = 0; p < pages; p++) {
+      const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
+        `/events/accounts/${wallet}?chain=solana&limit=50${next ? `&next=${encodeURIComponent(next)}` : ""}`,
+      );
+      out.push(...(res.asset_events ?? []));
+      if (!res.next || (res.asset_events ?? []).length < 50) break;
+      next = res.next;
+    }
+    return out;
+  });
+  return { events: data, truncated: data.length >= pages * 50, stale, cachedAt };
+}

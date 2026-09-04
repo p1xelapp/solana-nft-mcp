@@ -210,3 +210,83 @@ export async function walletTokens(wallet: string, limit: number) {
     source: "magiceden",
   };
 }
+
+// ------------------------------------------------------------ wallet views
+
+export interface MeWalletActivity {
+  signature?: string;
+  type?: string;
+  source?: string;
+  tokenMint?: string;
+  collection?: string;
+  collectionSymbol?: string;
+  blockTime?: number;
+  buyer?: string;
+  seller?: string;
+  price?: number; // SOL
+}
+
+/**
+ * Marketplace activity for a wallet as Magic Eden records it, newest first.
+ *
+ * Covers what happened on Magic Eden (listings, delists, bids, buys, AMM pool
+ * updates). It does NOT see plain wallet-to-wallet transfers, airdrops, or
+ * trades on other venues - callers must say so rather than present this as
+ * the wallet's whole life. Up to `pages` * 100 events.
+ */
+export async function walletActivities(wallet: string, pages: number) {
+  const { data, stale, cachedAt } = await cached(`me:wact:${wallet}:${pages}`, 60_000, async () => {
+    const all: MeWalletActivity[] = [];
+    for (let p = 0; p < pages; p++) {
+      const batch = await me<MeWalletActivity[]>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`);
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      all.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return all;
+  });
+  return { events: data, truncated: data.length >= pages * 100, stale, cachedAt };
+}
+
+export interface MeWalletToken {
+  mintAddress?: string;
+  name?: string;
+  collection?: string;
+  collectionName?: string;
+  image?: string;
+  listStatus?: string;
+  isCompressed?: boolean;
+  sellerFeeBasisPoints?: number;
+  updateAuthority?: string;
+  supply?: number;
+}
+
+/**
+ * Every collectible Magic Eden indexes for a wallet, paged 500 at a time up
+ * to `max`. Escrow/program accounts are refused by ME (see walletTokens).
+ */
+export async function walletTokensAll(wallet: string, max: number) {
+  const { data, stale, cachedAt } = await cached(`me:wall:${wallet}:${max}`, 120_000, async () => {
+    const all: MeWalletToken[] = [];
+    for (let offset = 0; offset < max; offset += 500) {
+      let batch: MeWalletToken[];
+      try {
+        batch = await me<MeWalletToken[]>(
+          `/wallets/${wallet}/tokens?offset=${offset}&limit=${Math.min(500, max - offset)}&listedOnly=false`,
+        );
+      } catch (e) {
+        if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
+          throw new Error(
+            `Magic Eden will not list holdings for ${wallet} - it is a marketplace escrow or program account, not a user wallet.`,
+          );
+        }
+        throw e;
+      }
+      if (!Array.isArray(batch) || batch.length === 0) break;
+      all.push(...batch);
+      if (batch.length < 500) break;
+    }
+    return all;
+  });
+  return { tokens: data, capped: data.length >= max, stale, cachedAt };
+}

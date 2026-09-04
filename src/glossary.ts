@@ -72,6 +72,37 @@ export const GLOSSARY: GlossaryEntry[] = [
       "Opening a Candy Digital pack RETURNS the pack to the treasury; it is not burned. Treating 'held by treasury' as 'destroyed' - or as 'still sealed' - both produce wrong pack counts.",
   },
   {
+    term: "floor ceiling (portfolio value)",
+    meaning:
+      "Floor price times items held, summed per collection. The most a wallet could list everything for and still be the cheapest seller on that venue at that moment.",
+    pitfall:
+      "It is not what the wallet is worth. Selling into a floor moves it, illiquid floors have no buyers behind them, and unindexed items count as zero. Present it as a ceiling with the assumptions; use recent sales for what buyers actually pay.",
+  },
+  {
+    term: "venue split",
+    meaning: "Where a wallet's marketplace activity happened: Magic Eden order book (magiceden_v2), Magic Eden AMM pools (mmm), Tensor, OpenSea.",
+    pitfall:
+      "Each marketplace feed only sees itself. A Magic Eden feed showing 100% Magic Eden proves nothing about Tensor or OpenSea; say which feeds were read before calling a wallet 'ME-only'. OpenSea has been observed labelling Magic Eden fills as its own.",
+  },
+  {
+    term: "flip / hold time",
+    meaning: "An item bought and later sold by the same wallet; hold time is the gap between the two. Realised P&L is sale minus purchase, before fees and royalties.",
+    pitfall:
+      "Items bought before the observed window look like 'sells without buys' and items still held have no P&L yet. Unrealised gains at floor are a ceiling, not a gain.",
+  },
+  {
+    term: "transfer-in (airdrop, gift, self-transfer)",
+    meaning: "An item that arrived by a plain transfer, not a marketplace sale. The chain records the movement; it does not record the reason.",
+    pitfall:
+      "Airdrop, gift, a move between the same person's wallets, and a purchase settled outside the feed all look identical. Say 'received without a recorded sale', not 'airdropped', unless the sender is a known project wallet.",
+  },
+  {
+    term: "wallet age",
+    meaning: "Time since the wallet's first transaction on chain, from its signature list.",
+    pitfall:
+      "Busy wallets have more signatures than a bounded walk reads; the result is then 'at least this old'. A fresh wallet holding a valuable item is a signal worth naming, not proof of anything.",
+  },
+  {
     term: "pack (sealed)",
     meaning:
       "An NFT that represents unopened contents. On Solana it is usually its own Metaplex Core asset in a packs collection, distinct from the cards it will produce.",

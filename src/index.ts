@@ -27,6 +27,7 @@ import { identify } from "./identify.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
 import { decodeCoreTrust } from "./lib/coreplugins.js";
+import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, type FloorQuoteForValue } from "./wallet.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -245,18 +246,54 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: { query: z.string().trim().max(200).describe("Free-text name search") },
   },
-  guard(({ query }) => {
+  guard(async ({ query }) => {
     const results = searchRegistry(query);
-    return Promise.resolve(
-      ok({
+    // With an OpenSea key the search also covers every Solana collection
+    // OpenSea indexes (a few hundred, by 7-day volume), each with its on-chain
+    // collection address and total supply - identifiers the registry cannot
+    // hand-curate at that scale.
+    let opensea: unknown;
+    let openseaNote: string | undefined;
+    if (os.openSeaEnabled()) {
+      const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const q = norm(query);
+      const words = q.split(" ").filter(Boolean);
+      try {
+        const { collections, stale } = await os.solanaCollections();
+        const hits = collections
+          .filter((c) => {
+            const hay = norm(`${c.name ?? ""} ${c.collection}`);
+            return words.length > 0 && words.every((w) => hay.includes(w));
+          })
+          .slice(0, 10)
+          .map((c) => ({
+            openseaSlug: c.collection,
+            name: c.name ?? null,
+            onchainCollection: c.contracts?.find((k) => k.chain === "solana")?.address ?? null,
+            url: c.opensea_url ?? null,
+          }));
+        opensea = {
+          hits,
+          indexed: collections.length,
+          stale,
+          next: hits.length ? "get_collection_stats with the openseaSlug adds OpenSea's total supply, creator royalty and floor." : undefined,
+        };
+      } catch (e) {
+        openseaNote = `OpenSea index unavailable: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else {
+      openseaNote = "Set OPENSEA_API_KEY to also search the few hundred Solana collections OpenSea indexes (slug, on-chain address, supply).";
+    }
+    return ok({
       query,
       results,
-        hint:
-          results.length === 0
-            ? "No registry match. If you know the Magic Eden symbol or a Core collection address, pass it directly to get_collection_stats."
-            : undefined,
-      }),
-    );
+      opensea,
+      openseaNote,
+      hint:
+        results.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length
+          ? "No match. identify() probes live sources by name; or pass a Magic Eden symbol / Core collection address directly to get_collection_stats."
+          : undefined,
+    });
   }),
 );
 
@@ -304,9 +341,19 @@ registerTool(
     }
     const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     if (slug && os.openSeaEnabled()) {
-      out.opensea = await os.collectionStats(slug).catch((e: unknown) => ({
-        error: e instanceof Error ? e.message : String(e),
-      }));
+      const [stats, detail] = await Promise.all([
+        os.collectionStats(slug).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
+        os.collectionDetail(slug).catch(() => null),
+      ]);
+      out.opensea = detail
+        ? {
+            ...stats,
+            totalSupply: detail.totalSupply,
+            creatorRoyaltyPct: detail.creatorRoyaltyPct,
+            onchainCollection: detail.onchainCollection,
+            royaltyNote: "creatorRoyaltyPct is what the project asks OpenSea to collect; whether the chain enforces it is a per-asset question (get_asset_trust).",
+          }
+        : stats;
     } else if (slug) {
       out.openseaNote = "OpenSea slug known but OPENSEA_API_KEY not set - cross-marketplace view skipped (server stays zero-config by default).";
     }
@@ -436,6 +483,14 @@ registerTool(
             }
           : undefined,
       market: meToken ?? undefined,
+      facts: meToken
+        ? {
+            compressed: Boolean((meToken as { isCompressed?: boolean }).isCompressed),
+            creatorRoyaltyBps: (meToken as { sellerFeeBasisPoints?: number }).sellerFeeBasisPoints ?? null,
+            royaltyNote:
+              "sellerFeeBasisPoints is what the metadata ASKS for. Whether it is enforced depends on the standard and the venue: use get_asset_trust on Core assets to see if a Royalties plugin enforces it.",
+          }
+        : undefined,
       sources: [core ? "solana-rpc" : null, meToken ? "magiceden" : null].filter(Boolean),
     });
   }),
@@ -472,6 +527,125 @@ registerTool(
     },
   },
   guard(async ({ wallet, limit }) => ok(await me.walletTokens(wallet, limit))),
+);
+
+registerTool(
+  "get_wallet_profile",
+  {
+    title: "Wallet profile",
+    description:
+      "What a wallet holds and what that means: items grouped by collection with counts and share of " +
+      "the wallet, which collection dominates, how many are listed or compressed, the creator royalty " +
+      "each collection asks for, share of total supply where a supply is known, a floor-times-count " +
+      "CEILING (never called a value) for the largest holdings, and the wallet's age and transaction " +
+      "count from the chain. Answers 'what do they collect', 'how much of X do they own', 'how big a " +
+      "holder are they', 'is this a fresh wallet', 'what is it worth at floor' - with each number " +
+      "labelled for what it is. Read-only; needs no key.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      wallet: addressSchema.describe("Wallet address"),
+      maxItems: z.number().int().min(50).max(3000).default(1500).describe("Cap on items fetched (500 per request)"),
+      priceTop: z.number().int().min(0).max(15).default(6).describe("How many of the largest collections to price at floor (one paced request each)"),
+      includeAge: z.boolean().default(true).describe("Read the wallet's first/last transaction from the chain (up to 3 RPC calls)"),
+    },
+  },
+  guard(async ({ wallet, maxItems, priceTop, includeAge }) => {
+    const held = await me.walletTokensAll(wallet, maxItems);
+    const holdings = summarizeHoldings(held.tokens);
+
+    // Price the biggest positions. Each is one paced Magic Eden call, so the
+    // count is capped and the caller can raise it deliberately.
+    const quotes: FloorQuoteForValue[] = [];
+    const supplyShare: { collection: string; count: number; totalSupply: number; pct: number; supplySource: string }[] = [];
+    const toPrice = holdings.byCollection.filter((c) => c.collection !== "(no collection)").slice(0, priceTop);
+    for (const c of toPrice) {
+      const stats = await me.collectionStats(c.collection).catch(() => null);
+      quotes.push({
+        collection: c.collection,
+        count: c.count,
+        floorSol: stats?.floorPriceSol ?? null,
+        listedCount: stats?.listedCount ?? null,
+      });
+      // Supply: registry Core collection (chain) first, then OpenSea's index when a key is set.
+      const reg = REGISTRY.find((e) => e.meSymbol === c.collection);
+      if (reg?.coreCollection) {
+        const acct = await sol.getCoreAccount(reg.coreCollection).catch(() => null);
+        if (acct?.kind === "collection" && acct.currentSize > 0) {
+          supplyShare.push({ collection: c.collection, count: c.count, totalSupply: acct.currentSize, pct: Math.round((c.count / acct.currentSize) * 1000) / 10, supplySource: "solana-rpc (Core collection currentSize)" });
+          continue;
+        }
+      }
+      const slug = reg?.openseaSlug;
+      if (slug && os.openSeaEnabled()) {
+        const d = await os.collectionDetail(slug).catch(() => null);
+        if (d?.totalSupply) supplyShare.push({ collection: c.collection, count: c.count, totalSupply: d.totalSupply, pct: Math.round((c.count / d.totalSupply) * 1000) / 10, supplySource: "opensea (total_supply)" });
+      }
+    }
+
+    const age = includeAge ? await sol.walletAge(wallet, 3).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })) : undefined;
+
+    return ok({
+      wallet,
+      holdings: {
+        ...holdings,
+        byCollection: holdings.byCollection.slice(0, 40),
+        moreCollections: Math.max(0, holdings.byCollection.length - 40),
+        capped: held.capped,
+        stale: held.stale,
+        source: "magiceden (indexed collections only)",
+      },
+      supplyShare: supplyShare.length ? supplyShare : undefined,
+      supplyShareNote:
+        supplyShare.length === 0
+          ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (set OPENSEA_API_KEY). None of the priced collections had one."
+          : undefined,
+      floorCeiling: floorCeiling(quotes, holdings.totalItems),
+      account: age,
+      readThis: [
+        "Holdings are what Magic Eden indexes for this address. Unindexed collections and some compressed NFTs are invisible here; the chain has more.",
+        "If the address is a marketplace escrow the request is refused by the source and says so - that is not a bug, it is the item being listed.",
+        "Next: get_wallet_activity for buys, sells, flips and venue split; get_asset_trust on any single item before treating it as unconditionally theirs.",
+      ],
+    });
+  }),
+);
+
+registerTool(
+  "get_wallet_activity",
+  {
+    title: "Wallet activity & behaviour",
+    description:
+      "How a wallet trades: buys and sells with SOL totals, net flow, listings and bids, which venue " +
+      "(Magic Eden order book vs AMM pools; OpenSea with a key), the collections it trades most, every " +
+      "flip (bought then sold: hold time and P&L before fees), a behaviour label (flipper / holder / " +
+      "mixed / lister / quiet) with the reason, and the first purchase inside the window. With " +
+      "OPENSEA_API_KEY set, plain transfers are included so 'was this airdropped, gifted or bought?' " +
+      "gets an evidence-based answer. Every figure says which feed it came from and what that feed " +
+      "cannot see. Read-only; needs no key.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      wallet: addressSchema.describe("Wallet address"),
+      pages: z.number().int().min(1).max(5).default(3).describe("Magic Eden activity pages of 100 events, newest first"),
+      includeOpenSea: z.boolean().default(true).describe("Add OpenSea sales + transfers when OPENSEA_API_KEY is set"),
+    },
+  },
+  guard(async ({ wallet, pages, includeOpenSea }) => {
+    const feed = await me.walletActivities(wallet, pages);
+    const summary = summarizeActivity(wallet, feed.events, feed.truncated);
+    let opensea: unknown;
+    let openseaNote: string | undefined;
+    if (includeOpenSea && os.openSeaEnabled()) {
+      try {
+        const ev = await os.accountEvents(wallet, 2);
+        opensea = summarizeOpenSeaEvents(wallet, ev.events, ev.truncated);
+      } catch (e) {
+        openseaNote = `OpenSea account feed unavailable: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    } else if (includeOpenSea) {
+      openseaNote = "Set OPENSEA_API_KEY to add OpenSea sales and plain transfers (the only keyed feed that shows airdrops and gifts).";
+    }
+    return ok({ wallet, magiceden: { ...summary, stale: feed.stale }, opensea, openseaNote });
+  }),
 );
 
 registerTool(
@@ -557,6 +731,31 @@ server.registerPrompt(
             `4. If it is a Metaplex Core collection, pick one recently active asset and show its ` +
             `get_asset_provenance timeline as a story.\n` +
             `Close with 3 bullet takeaways for a collector. Label any stale data.`,
+        },
+      },
+    ],
+  }),
+);
+
+server.registerPrompt(
+  "wallet_report",
+  {
+    title: "Wallet report",
+    description: "Profile a Solana wallet as a collector: what they hold, how they trade, what it is worth at floor (as a ceiling), with every number labelled.",
+    argsSchema: { wallet: z.string().describe("Wallet address") },
+  },
+  ({ wallet }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `Profile the wallet ${wallet} using collector-mcp tools:\n` +
+            `1. get_wallet_profile - lead with what they collect (top 3 collections, share of wallet, share of supply if known), wallet age, and the floor CEILING (call it a ceiling, never a value).\n` +
+            `2. get_wallet_activity - buys vs sells, net SOL flow, the behaviour label and why, best and worst flip, venue split.\n` +
+            `3. If one collection dominates, get_collection_stats on it for context.\n` +
+            `Write it as a short profile a collector would read, then list what the feeds could NOT see (other venues, transfers, unindexed items). Label stale data.`,
         },
       },
     ],
