@@ -147,3 +147,36 @@ Panel-review release - positioning and the things three kinds of users asked for
   open mechanics wrong constantly.
 - Offline suite decodes a captured real Core account (test/fixtures) so the
   byte layout is pinned by a test, not by memory.
+
+## 1.7.0 - 2026-09-04
+
+- **`get_wallet_profile`** - what an address holds, read as a collector would:
+  items grouped by collection with share of wallet, which collection dominates,
+  listed and compressed counts, the royalty each collection asks for, share of
+  total supply where a supply is known (chain for registry collections, OpenSea
+  with a key), a floor-times-count CEILING for the largest positions with the
+  assumptions spelled out, and wallet age plus transaction count from the chain
+  (bounded walk, reported as "at least" when cut).
+- **`get_wallet_activity`** - how an address trades: buys and sells with SOL
+  totals, net flow, venue split (order book vs AMM pools), top collections,
+  every flip with hold time and P&L before fees, a behaviour label (flipper,
+  holder, mixed, seller, lister, quiet) with its reason, and the first purchase
+  in the window. With an OpenSea key, plain transfers are included so "airdropped
+  or bought?" gets an evidence-based answer that still refuses to say "airdrop"
+  when the chain only shows a transfer.
+- Solana on OpenSea (live since 2026-08-31): `search_collections` also searches
+  the few hundred Solana collections OpenSea indexes, returning slug and on-chain
+  collection address; `get_collection_stats` adds OpenSea total supply, creator
+  royalty and on-chain address next to the floor. Key required for these, as
+  before; the zero-key path is unchanged.
+- `get_asset` surfaces whether the item is compressed and the royalty it asks
+  for, with the note that asking is not enforcing.
+- New `wallet_report` prompt. Glossary learns floor ceilings, venue split,
+  flips, transfer-ins and wallet age - the vocabulary the two new tools need to
+  be read correctly.
+- Offline suite runs the wallet logic against three captured real feeds
+  (Magic Eden activity, Magic Eden holdings, OpenSea account events) so the
+  behaviour label, flip pairing and ceiling arithmetic are pinned by tests.
+- Docs: `docs/FAQ.md` (why this over a plain model or a marketplace's own MCP),
+  and `docs/HOW-PEOPLE-USE-IT.md` rewritten around fifteen personas from
+  first-week newbie to brand licensing lead.

@@ -57,8 +57,8 @@ try {
   const names = tools.map((t) => t.name).sort();
   const expected = [
     "get_asset", "get_asset_provenance", "get_asset_trust", "get_collection_stats", "get_floor_prices",
-    "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_holdings",
-    "identify", "search_collections", "verify_claim",
+    "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_activity", "get_wallet_holdings",
+    "get_wallet_profile", "identify", "search_collections", "verify_claim",
   ];
   if (JSON.stringify(names) === JSON.stringify(expected)) report("PASS", "listTools", `${names.length} tools`);
   else report("FAIL", "listTools", `got ${names.join(",")}`);
@@ -162,6 +162,27 @@ try {
     explained ? "provenance owner is a marketplace escrow; ME blocks it (explained cleanly)" : e.message);
 }
 
+// A known-active collector wallet (a Mad Lads buyer seen 2026-09-04). Public
+// address, public feed; the assertions are on shape and labelling, not on
+// what it holds today.
+const ACTIVE_WALLET = "7HHs3RRQE4omsPta6o3Y2tjRNUqYEBaZVfvGVTMtBhcU";
+try {
+  const r = parse(await client.callTool({ name: "get_wallet_profile", arguments: { wallet: ACTIVE_WALLET, priceTop: 2 } }));
+  const good = typeof r.holdings.totalItems === "number" && Array.isArray(r.holdings.byCollection)
+    && typeof r.floorCeiling.ceilingSol === "number" && r.floorCeiling.readThis.length >= 2
+    && r.account && (typeof r.account.transactions === "number" || r.account.error);
+  report(good ? "PASS" : "FAIL", "get_wallet_profile",
+    good ? `${r.holdings.totalItems} items / ${r.holdings.collections} collections, ceiling ${r.floorCeiling.ceilingSol} SOL, age ${r.account.ageDays ?? "?"}d (${r.account.transactionsExact ? "exact" : "bound"})` : JSON.stringify(r).slice(0, 200));
+} catch (e) { report("FAIL", "get_wallet_profile", e.message); }
+
+try {
+  const r = parse(await client.callTool({ name: "get_wallet_activity", arguments: { wallet: ACTIVE_WALLET, pages: 1, includeOpenSea: false } }));
+  const m = r.magiceden;
+  const good = typeof m.window.events === "number" && m.behaviour && m.behaviour.why && Array.isArray(m.flips) && Array.isArray(m.caveats);
+  report(good ? "PASS" : "FAIL", "get_wallet_activity",
+    good ? `${m.window.events} events, ${m.buys.count} buys / ${m.sells.count} sells, ${m.behaviour.label}` : JSON.stringify(r).slice(0, 200));
+} catch (e) { report("FAIL", "get_wallet_activity", e.message); }
+
 try {
   const res = await client.callTool({ name: "get_pack_pulls", arguments: { limit: 5 } });
   if (res.isError) {
@@ -190,8 +211,24 @@ if (!process.env.OPENSEA_API_KEY) {
     // not the status: a real collection has a floor and more than one owner.
     const good = os && typeof os.floor === "number" && os.floor > 0 && os.owners > 1;
     report(good ? "PASS" : "FAIL", "opensea stats (cross-marketplace)",
-      good ? `mad-lads floor=${os.floor} ${os.floorCurrency} owners=${os.owners}` : JSON.stringify(os ?? r).slice(0, 160));
+      good ? `mad-lads floor=${os.floor} ${os.floorCurrency} owners=${os.owners} supply=${os.totalSupply} royalty=${os.creatorRoyaltyPct}%` : JSON.stringify(os ?? r).slice(0, 160));
   } catch (e) { report("FAIL", "opensea stats (cross-marketplace)", e.message); }
+
+  try {
+    const r = parse(await client.callTool({ name: "get_wallet_activity", arguments: { wallet: "CbjEhEgq4ZBuGQm1jjatN9nyYZ4whjoWqdUbMUdkE2ce", pages: 1 } }));
+    const o = r.opensea;
+    const good = o && typeof o.transfersIn === "number" && typeof o.bought === "number" && /airdrop/.test(o.caveat);
+    report(good ? "PASS" : "FAIL", "opensea wallet events (transfers)",
+      good ? `${o.events} events: bought ${o.bought}, in ${o.transfersIn}, out ${o.transfersOut}, received-without-sale ${o.receivedWithoutSale.length}` : JSON.stringify(r.openseaNote ?? o).slice(0, 160));
+  } catch (e) { report("FAIL", "opensea wallet events (transfers)", e.message); }
+
+  try {
+    const r = parse(await client.callTool({ name: "search_collections", arguments: { query: "claynosaurz" } }));
+    const hit = r.opensea?.hits?.find((h) => h.openseaSlug === "claynosaurz");
+    const good = hit && typeof hit.onchainCollection === "string" && hit.onchainCollection.length >= 32;
+    report(good ? "PASS" : "FAIL", "opensea solana index (search)",
+      good ? `claynosaurz -> ${hit.onchainCollection.slice(0, 8)}.. (${r.opensea.indexed} indexed)` : JSON.stringify(r.opensea ?? r.openseaNote).slice(0, 160));
+  } catch (e) { report("FAIL", "opensea solana index (search)", e.message); }
 
   try {
     // Collector Crypt prices in USDC - proves currency is read, not assumed.

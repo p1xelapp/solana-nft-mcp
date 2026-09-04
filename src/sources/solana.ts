@@ -362,3 +362,52 @@ export async function findRecentCollectionAssets(collection: string, max = 3): P
   }
   return [...found].slice(0, max);
 }
+
+// ------------------------------------------------------------ wallet age
+
+/**
+ * How old a wallet is and roughly how busy, from its signature list.
+ *
+ * Signatures come newest-first, 1,000 per call. A bot wallet can produce
+ * 1,000 in a day, so we cap the walk at `maxPages` and report a bound
+ * ("older than", "at least N transactions") instead of a false precision.
+ */
+export async function walletAge(wallet: string, maxPages = 3) {
+  let before: string | undefined;
+  let count = 0;
+  let oldest: number | null = null;
+  let newest: number | null = null;
+  let complete = false;
+  for (let page = 0; page < maxPages; page++) {
+    const sigs = await rpc<{ signature: string; blockTime: number | null }[]>("getSignaturesForAddress", [
+      wallet,
+      before ? { limit: 1000, before } : { limit: 1000 },
+    ]);
+    if (!Array.isArray(sigs) || sigs.length === 0) {
+      complete = true;
+      break;
+    }
+    count += sigs.length;
+    if (newest === null && sigs[0]?.blockTime) newest = sigs[0].blockTime;
+    const last = sigs[sigs.length - 1]!;
+    if (last.blockTime) oldest = last.blockTime;
+    before = last.signature;
+    if (sigs.length < 1000) {
+      complete = true;
+      break;
+    }
+  }
+  const iso = (t: number | null) => (t ? new Date(t * 1000).toISOString() : null);
+  const days = oldest ? Math.floor((Date.now() / 1000 - oldest) / 86_400) : null;
+  return {
+    transactions: count,
+    transactionsExact: complete,
+    firstSeen: iso(oldest),
+    firstSeenIsBound: !complete,
+    lastSeen: iso(newest),
+    ageDays: days,
+    note: complete
+      ? "Every signature was counted."
+      : `Stopped after ${count} signatures (${maxPages} pages). The wallet is AT LEAST this old and this busy; the true first transaction is earlier.`,
+  };
+}

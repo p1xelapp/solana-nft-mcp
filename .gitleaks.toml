@@ -1,0 +1,11 @@
+# Gitleaks config. Default rules stay on; only the captured public marketplace
+# feeds under test/fixtures are allowlisted - they are full of base58 mint and
+# wallet addresses in fields named tokenMint / token_address, which the
+# generic-api-key rule reads as credentials. They are public chain data.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Offline test fixtures: captured public marketplace responses (addresses, not secrets)"
+paths = ['''test/fixtures/.*\.json$''']
