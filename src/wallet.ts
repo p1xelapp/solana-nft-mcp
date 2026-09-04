@@ -204,9 +204,9 @@ export function summarizeActivity(
   if (events.length === 0) {
     label = "quiet";
     why = "No Magic Eden activity on record for this wallet.";
-  } else if (buys.count === 0 && sells.count === 0 && lists > 0) {
+  } else if (lists >= 5 && buys.count + sells.count <= Math.max(2, Math.floor(lists / 10))) {
     label = "lister";
-    why = `${lists} listings and no completed buys or sells in the window - inventory being offered, not traded.`;
+    why = `${lists} listings against ${buys.count + sells.count} completed trades in the window - inventory being offered, not traded.`;
   } else if (sells.count >= 5 && sells.count >= buys.count * 3) {
     label = "seller";
     why = `${sells.count} sells against ${buys.count} buys in the window - distributing inventory that was minted, transferred in, or bought earlier.`;
