@@ -41,10 +41,13 @@ export interface MeStats {
   avgPrice24hr?: number;
 }
 
-export async function collectionStats(symbol: string) {
-  const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, () =>
-    me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`),
-  );
+export async function collectionStats(symbol: string, opts: { fresh?: boolean } = {}) {
+  const read = () => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`);
+  // `fresh` bypasses the cache entirely: a verification needs the venue's
+  // answer now, not a value that was correct up to a minute ago.
+  const { data, stale, cachedAt } = opts.fresh
+    ? { data: await read(), stale: false, cachedAt: new Date().toISOString() }
+    : await cached(`me:stats:${symbol}`, 60_000, read);
   if (!data || data.symbol === undefined) {
     throw new Error(`Magic Eden has no collection with symbol "${symbol}"`);
   }
@@ -166,7 +169,13 @@ interface MeToken {
 export async function token(mint: string): Promise<MeToken | null> {
   const { data } = await cached(`me:token:${mint}`, 300_000, async () => {
     try {
-      return await me<MeToken>(`/tokens/${mint}`);
+      const t = await me<MeToken>(`/tokens/${mint}`);
+      // HTTP 200 with no mint address is a shape change or an outage page,
+      // not "ME does not know it".
+      if (!t || typeof t !== "object" || typeof t.mintAddress !== "string") {
+        throw new Error("Magic Eden returned an unexpected token shape (outage or API change)");
+      }
+      return t;
     } catch (e) {
       // Only a documented not-found is "ME does not know it". Timeouts, rate
       // limits and outages must surface, or an outage reads as "no such token".

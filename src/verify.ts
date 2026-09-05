@@ -145,7 +145,9 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
       `contain a Core Transfer instruction. Anything beyond the original mint is a change of hands.`,
   };
 
-  const prov = await sol.getProvenance(mint).catch(() => null);
+  // Fresh walk, and decode every transaction (depth 25 is the tool's ceiling;
+  // anything beyond that shows up as skipped and blocks a "confirmed").
+  const prov = await sol.getProvenance(mint, 25, { fresh: true }).catch(() => null);
   if (!prov) {
     return {
       ...base,
@@ -161,7 +163,7 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     {
       source: `Solana transaction history for ${mint}`,
       method: "Core TransferV1 instructions decoded from each signature touching the asset.",
-      observed: `${transfers.length} transfer(s) across ${prov.totalSignatures} total signatures`,
+      observed: `${transfers.length} transfer(s) across ${prov.totalSignatures} total signatures (${prov.unreadableTransactions} unreadable, ${prov.skippedTransactions} not decoded)`,
     },
   ];
 
@@ -267,7 +269,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     reproduce: `GET https://api-mainnet.magiceden.dev/v2/collections/${symbol}/stats and divide floorPrice by 1e9 to get SOL. No key required.`,
   };
 
-  const stats = await me.collectionStats(symbol).catch(() => null);
+  const stats = await me.collectionStats(symbol, { fresh: true }).catch(() => null);
   if (!stats || stats.floorPriceSol === null) {
     return {
       ...base,

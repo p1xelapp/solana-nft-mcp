@@ -72,6 +72,8 @@ export interface DecodedPlugin {
 
 export interface DecodedAccount {
   kind: "asset" | "collection";
+  /** Assets only: the collection this asset belongs to, or null when it is standalone. */
+  collection: string | null;
   plugins: DecodedPlugin[];
   /** Assets only: the base account's update authority is None, so nobody can edit metadata. */
   updateAuthorityIsNone: boolean;
@@ -123,17 +125,21 @@ function authority(r: Reader): string {
 }
 
 /** Walk past the base account so the reader sits on the plugin header, if any. */
-function skipBase(r: Reader): { kind: "asset" | "collection"; updateAuthorityIsNone: boolean } {
+function skipBase(r: Reader): { kind: "asset" | "collection"; updateAuthorityIsNone: boolean; collection: string | null } {
   r.seek(0);
   const key = r.u8();
   if (key === KEY_ASSET) {
     r.pubkey(); // owner
     const ua = r.u8(); // UpdateAuthority: 0 None, 1 Address, 2 Collection
-    if (ua === 1 || ua === 2) r.pubkey();
+    let collection: string | null = null;
+    if (ua === 1 || ua === 2) {
+      const addr = r.pubkey();
+      if (ua === 2) collection = addr;
+    }
     r.str(); // name
     r.str(); // uri
     r.option(() => r.u64()); // seq
-    return { kind: "asset", updateAuthorityIsNone: ua === 0 };
+    return { kind: "asset", updateAuthorityIsNone: ua === 0, collection };
   }
   if (key === KEY_COLLECTION) {
     r.pubkey(); // update authority
@@ -141,7 +147,7 @@ function skipBase(r: Reader): { kind: "asset" | "collection"; updateAuthorityIsN
     r.str(); // uri
     r.u32(); // num_minted
     r.u32(); // current_size
-    return { kind: "collection", updateAuthorityIsNone: false };
+    return { kind: "collection", updateAuthorityIsNone: false, collection: null };
   }
   throw new Error("not an AssetV1 or CollectionV1 account");
 }
@@ -189,7 +195,7 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
   const buf = Buffer.from(b64, "base64");
   const r = new Reader(buf);
   const base = skipBase(r);
-  const out: DecodedAccount = { kind: base.kind, plugins: [], updateAuthorityIsNone: base.updateAuthorityIsNone, externalPlugins: 0 };
+  const out: DecodedAccount = { kind: base.kind, collection: base.collection, plugins: [], updateAuthorityIsNone: base.updateAuthorityIsNone, externalPlugins: 0 };
 
   if (r.remaining < 9 || r.peek() !== KEY_PLUGIN_HEADER) return out;
   r.u8();
@@ -207,6 +213,9 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
     if (r.remaining >= 4) {
       const ext = r.u32();
       if (ext <= 64) out.externalPlugins = ext;
+      else throw new Error(`implausible external plugin count ${ext}`);
+    } else {
+      throw new Error("registry ends before the external plugin count");
     }
 
     for (const rec of records) {
@@ -243,7 +252,8 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
     }
   }
   const out: CoreTrust = { plugins, warnings: [], assurances: [], frozen: false, ownerIsNotSoleController: false, incomplete: false };
-  if (asset.decodeNote) out.decodeNote = asset.decodeNote;
+  const notes = [asset.decodeNote, collection?.decodeNote ? `collection: ${collection.decodeNote}` : undefined].filter(Boolean);
+  if (notes.length) out.decodeNote = notes.join("; ");
 
   const has = (t: string) => plugins.find((p) => p.type === t);
   const where = (p: DecodedPlugin) => (p.inheritedFromCollection ? " (set on the collection, applies to every asset in it)" : "");
@@ -294,10 +304,15 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
     out.incomplete = true;
     out.warnings.push(`${ext} external plugin adapter(s) attached (oracles or lifecycle hooks) that this decoder does not read. They can veto or gate transfers, burns and updates, so the custody picture above is incomplete.`);
   }
-  if (asset.decodeNote || collection?.decodeNote) out.incomplete = true;
-  if (asset.kind === "asset" && !collection) {
-    // The caller did not supply the collection: say so rather than imply completeness.
+  if (asset.decodeNote || collection?.decodeNote) {
     out.incomplete = true;
+    out.warnings.push("Part of the plugin registry could not be read, so a plugin may be missing from this picture.");
+  }
+  if (asset.kind === "asset" && asset.collection && !collection) {
+    // The asset belongs to a collection the caller did not supply: its
+    // inherited rules are unknown, so say so rather than imply completeness.
+    out.incomplete = true;
+    out.warnings.push(`This asset belongs to collection ${asset.collection}, whose plugins were not read; rules set there also apply to this asset.`);
   }
 
   if (!out.incomplete && !out.ownerIsNotSoleController && plugins.length === 0) {

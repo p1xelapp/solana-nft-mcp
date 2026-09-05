@@ -43,6 +43,7 @@ export interface Identification {
     | "marketplace-collection"
     | "wallet-or-unknown-account"
     | "registry-entry"
+    | "ambiguous"
     | "unknown";
   summary: string;
   /** Identifiers other tools accept, so the agent can chain without guessing. */
@@ -257,6 +258,11 @@ export async function identify(query: string): Promise<Identification> {
     summary = `"${entry.name}" is a curated registry entry, but no live source confirmed it just now. Treat the identifiers as a starting point, not as confirmation it is currently trading.`;
     confidence = "low";
     next.push("get_collection_stats");
+  } else if (fuzzy.length > 1) {
+    kind = "ambiguous";
+    summary = `"${q}" matches ${fuzzy.length} curated collections (${fuzzy.map((e) => e.id).join(", ")}). Ask which one, or pass one of those ids.`;
+    confidence = "low";
+    next.push("search_collections");
   } else if (looksLikeAddress(q)) {
     kind = "wallet-or-unknown-account";
     summary = `${q} is a valid Solana address but is not a Metaplex Core asset or collection. It is most likely a wallet, a legacy SPL mint, or another program's account.`;

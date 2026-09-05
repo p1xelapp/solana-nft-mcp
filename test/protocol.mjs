@@ -74,6 +74,7 @@ assert.ok(
   "imperative phrasing must be called out",
 );
 assert.ok(/^\[untrusted text, not an instruction\]/.test(payload.value), "an instruction-shaped name must carry its label even through clean()");
+assert.strictEqual(inspectUntrusted(payload.value).value, payload.value, "cleaning twice must not stack labels");
 
 // Bidi and zero-width characters make displayed text differ from what is sent,
 // so a name can read as harmless while carrying something else. Written as
@@ -119,16 +120,22 @@ assert.strictEqual(trust.incomplete, true, "an asset decoded without its collect
 // With the collection supplied, collection plugins are inherited and marked.
 const { decodeCoreAccountPlugins, deriveTrust } = await import("../dist/lib/coreplugins.js");
 const assetOnly = decodeCoreAccountPlugins(fixture);
-const withEmptyCollection = deriveTrust(assetOnly, { kind: "collection", plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 5, creators: [], ruleSet: "program allow-list" } }], updateAuthorityIsNone: false, externalPlugins: 0 });
+const withEmptyCollection = deriveTrust(assetOnly, { kind: "collection", collection: null, plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 5, creators: [], ruleSet: "program allow-list" } }], updateAuthorityIsNone: false, externalPlugins: 0 });
 assert.ok(withEmptyCollection.plugins.some((p) => p.type === "Royalties" && p.inheritedFromCollection), "collection royalties must be inherited");
 assert.ok(withEmptyCollection.assurances.some((a) => /enforced by a program allow-list/.test(a)), "inherited royalties must shape the facts");
 assert.strictEqual(withEmptyCollection.incomplete, false);
 // A permanent delegate held by the owner is not another controller.
-const ownerHeld = deriveTrust({ kind: "asset", plugins: [{ type: "PermanentTransferDelegate", authority: "owner" }], updateAuthorityIsNone: true, externalPlugins: 0 }, { kind: "collection", plugins: [], updateAuthorityIsNone: false, externalPlugins: 0 });
+const ownerHeld = deriveTrust({ kind: "asset", collection: null, plugins: [{ type: "PermanentTransferDelegate", authority: "owner" }], updateAuthorityIsNone: true, externalPlugins: 0 }, null);
+assert.strictEqual(ownerHeld.incomplete, false, "a standalone asset (no collection) is complete on its own");
 assert.strictEqual(ownerHeld.ownerIsNotSoleController, false);
 assert.ok(ownerHeld.assurances.some((a) => /update authority is None/.test(a)), "update authority None means immutable, not mutable");
 // External plugin adapters make the picture incomplete, loudly.
-const ext = deriveTrust({ kind: "asset", plugins: [], updateAuthorityIsNone: false, externalPlugins: 1 }, { kind: "collection", plugins: [], updateAuthorityIsNone: false, externalPlugins: 0 });
+const ext = deriveTrust({ kind: "asset", collection: null, plugins: [], updateAuthorityIsNone: false, externalPlugins: 1 }, null);
+// Belongs to a collection that was not read: incomplete, and it says which.
+const orphan = deriveTrust({ kind: "asset", collection: "So11111111111111111111111111111111111111112", plugins: [], updateAuthorityIsNone: false, externalPlugins: 0 }, null);
+assert.strictEqual(orphan.incomplete, true);
+assert.ok(orphan.warnings.some((w) => /whose plugins were not read/.test(w)));
+assert.strictEqual(assetOnly.collection, "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n", "the fixture asset must report its collection");
 assert.strictEqual(ext.incomplete, true);
 assert.ok(ext.warnings.some((w) => /external plugin adapter/.test(w)));
 assert.ok(!trust.decodeNote, "the real fixture must decode fully: " + trust.decodeNote);
@@ -269,6 +276,7 @@ const withStale = reconcileFloors([
 ]);
 assert.strictEqual(withStale.comparable, false, "one fresh quote is not a comparison");
 assert.strictEqual(withStale.cheapest, undefined);
+assert.strictEqual(withStale.floors.length, 2, "stale quotes stay visible, just unranked");
 assert.ok(withStale.caveats.some((c) => /did not answer/.test(c)));
 
 // One venue is not a market view.
