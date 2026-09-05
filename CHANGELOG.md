@@ -218,3 +218,13 @@ the important ones changed answers, not just code.
   byte-bounded; wallet profile defaults are lower.
 - base58 encodes an all-zero key as 32 ones; the startup banner says "0
   required API keys" and whether OpenSea is on.
+- Second pass on the wave: verification walks the chain fresh (no cached
+  signature list, no cached floor) and counts unreadable transactions as
+  holes, so `historyComplete` means every signature was listed and every
+  selected transaction was readable; trust reads name, owner, collection and
+  plugins from one snapshot and only calls a standalone asset complete;
+  cache commits happen once per coalesced fetch with oversized values
+  rejected before eviction; Retry-After accepts HTTP dates; `get_asset`
+  keeps chain data when the marketplace is down (and vice versa) and names
+  the source that failed; identify answers "ambiguous" with the candidate
+  ids; stale floors stay visible but unranked.
