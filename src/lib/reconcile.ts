@@ -61,6 +61,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   // "cheapest venue" during an outage is a confident wrong answer.
   const staleQuotes = allQuotes.filter((q) => q.stale);
   const quotes = allQuotes.filter((q) => !q.stale);
+  // Everything below ranks `quotes` (fresh only) but reports `allQuotes`.
   if (staleQuotes.length > 0) {
     caveats.push(
       `${staleQuotes.map((q) => q.source).join(", ")}: the venue did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
@@ -71,7 +72,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     return {
       comparable: false,
       verdict: "No marketplace returned a floor price for this collection.",
-      floors: [],
+      floors: allQuotes,
       caveats,
     };
   }
@@ -83,7 +84,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       verdict:
         `Only ${only.source} returned a floor (${only.value} ${only.currency}), so there is nothing to compare it ` +
         `against. This is one venue's view, not the market's.`,
-      floors: quotes,
+      floors: allQuotes,
       caveats,
     };
   }
@@ -97,7 +98,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       verdict:
         `These floors are quoted in different currencies (${rendered}) and are NOT directly comparable as ` +
         `printed. Do not call one cheaper than the other without converting them to a common denomination first.`,
-      floors: quotes,
+      floors: allQuotes,
       caveats: [
         ...caveats,
         "collector-mcp does not convert currencies on purpose - a stale price feed produces confident wrong answers, so the mismatch is reported instead of papered over.",

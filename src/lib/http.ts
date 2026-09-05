@@ -34,6 +34,26 @@ const sizeOf = (v: unknown): number => { try { return JSON.stringify(v).length; 
 // per entry this is <2MB; oldest entries evicted first (Map preserves order).
 const MAX_ENTRIES = 500;
 
+/** Store one value: remove the old entry first, refuse oversized values before evicting anything, then evict oldest until within budget. */
+function commit(key: string, data: unknown) {
+  const bytes = sizeOf(data);
+  const prev = store.get(key);
+  if (prev) {
+    approxBytes -= prev.bytes;
+    store.delete(key);
+  }
+  if (bytes > MAX_BYTES / 4) return; // uncacheable; leave the rest of the cache alone
+  while (store.size > 0 && (store.size >= MAX_ENTRIES || approxBytes + bytes > MAX_BYTES)) {
+    const oldest = store.keys().next().value;
+    if (oldest === undefined) break;
+    approxBytes -= store.get(oldest)?.bytes ?? 0;
+    store.delete(oldest);
+  }
+  store.set(key, { data, cachedAt: Date.now(), bytes });
+  approxBytes += bytes;
+  if (approxBytes < 0) approxBytes = 0;
+}
+
 /**
  * Get-or-fetch with TTL. On fetcher failure returns the stale entry (flagged)
  * instead of throwing, unless nothing was ever cached for this key.
@@ -48,26 +68,18 @@ export async function cached<T>(
     return { data: hit.data as T, stale: false, cachedAt: new Date(hit.cachedAt).toISOString() };
   }
   try {
+    // One shared promise does the fetch AND the single cache commit, so N
+    // concurrent waiters cause one upstream call and one eviction pass.
     let p = inflight.get(key) as Promise<T> | undefined;
     if (!p) {
-      p = fetcher();
+      p = fetcher().then((data) => {
+        commit(key, data);
+        return data;
+      });
       inflight.set(key, p);
       p.finally(() => inflight.delete(key)).catch(() => undefined);
     }
     const data = await p;
-    const bytes = sizeOf(data);
-    const prev = store.get(key);
-    if (prev) approxBytes -= prev.bytes;
-    while ((store.size >= MAX_ENTRIES || approxBytes + bytes > MAX_BYTES) && store.size > 0) {
-      const oldest = store.keys().next().value;
-      if (oldest === undefined) break;
-      approxBytes -= store.get(oldest)?.bytes ?? 0;
-      store.delete(oldest);
-    }
-    if (bytes <= MAX_BYTES / 4) {
-      store.set(key, { data, cachedAt: Date.now(), bytes });
-      approxBytes += bytes;
-    }
     return { data, stale: false, cachedAt: new Date().toISOString() };
   } catch (err) {
     if (hit) {
@@ -112,9 +124,12 @@ export async function fetchRetry(
       if (gate) await gate();
       const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
       if (res.status === 429) {
-        const ra = Number(res.headers.get("retry-after"));
         await res.body?.cancel().catch(() => undefined);
-        throw new RetryableError(`HTTP 429 (rate limited)`, true, Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 15_000) : 0);
+        const wait = retryAfterMs(res.headers.get("retry-after"));
+        // A server asking for more than 30s is telling us to go away, not to
+        // retry: stop rather than hammer it early.
+        if (wait > 30_000) throw new Error(`HTTP 429 (rate limited; server asked for a ${Math.round(wait / 1000)}s pause)`);
+        throw new RetryableError(`HTTP 429 (rate limited)`, true, wait);
       }
       if (res.status >= 500) {
         await res.body?.cancel().catch(() => undefined);
@@ -131,6 +146,15 @@ export async function fetchRetry(
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Retry-After is either delta-seconds or an HTTP-date; both are honoured. */
+function retryAfterMs(h: string | null): number {
+  if (!h) return 0;
+  const secs = Number(h);
+  if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  const at = Date.parse(h);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
 }
 
 class RetryableError extends Error {

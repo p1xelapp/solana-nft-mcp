@@ -255,8 +255,8 @@ interface ParsedTx {
  * `depth` caps how many transactions we decode (each is one RPC call, paced);
  * Core assets are cheap here - even a heavily traded card is ~5-15 signatures.
  */
-export async function getProvenance(mint: string, depth = 15) {
-  const account = await getCoreAccount(mint);
+export async function getProvenance(mint: string, depth = 15, opts: { fresh?: boolean } = {}) {
+  const account = await getCoreAccount(mint, { fresh: opts.fresh });
   if (!account || account.kind !== "asset") {
     throw new Error(
       account?.kind === "collection"
@@ -268,7 +268,7 @@ export async function getProvenance(mint: string, depth = 15) {
   // Walk the signature list to the end (paged, newest first) so the oldest
   // event is the real mint and totals are real totals. Capped at 5 pages of
   // 1,000; beyond that the result says the history is incomplete.
-  const { data: walk } = await cached(`sigs:${mint}`, 120_000, async () => {
+  const walkSignatures = async () => {
     const all: { signature: string; blockTime: number | null; err: unknown }[] = [];
     let before: string | undefined;
     let complete = false;
@@ -283,7 +283,10 @@ export async function getProvenance(mint: string, depth = 15) {
       before = batch[batch.length - 1]!.signature;
     }
     return { sigs: all, complete };
-  });
+  };
+  // A verification must walk the chain now; a cached walk from two minutes
+  // ago can miss the transfer that just happened.
+  const walk = opts.fresh ? await walkSignatures() : (await cached(`sigs:${mint}`, 120_000, walkSignatures)).data;
   const sigs = walk.sigs;
 
   const ok = sigs.filter((s) => !s.err);
@@ -297,6 +300,9 @@ export async function getProvenance(mint: string, depth = 15) {
   }
 
   const events: ProvenanceEvent[] = [];
+  // A signature the RPC could not return, or one with no metadata or logs, is
+  // a hole in the evidence and is counted as such - never silently skipped.
+  let unreadable = 0;
   for (const sig of selected) {
     const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
       rpc<ParsedTx | null>("getTransaction", [
@@ -304,7 +310,9 @@ export async function getProvenance(mint: string, depth = 15) {
         { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
       ]),
     );
-    if (!tx?.meta || tx.meta.err) continue;
+    if (!tx?.meta) { unreadable++; continue; }
+    if (tx.meta.err) continue; // failed transaction: nothing happened on chain
+    if (!tx.meta.logMessages) { unreadable++; continue; }
 
     const logs = tx.meta.logMessages ?? [];
     const isTransfer = logs.some((l) => l.includes("Instruction: Transfer"));
@@ -353,9 +361,11 @@ export async function getProvenance(mint: string, depth = 15) {
       "If the asset is listed on a marketplace, currentOwner may be an escrow account, not the seller's wallet.",
     events,
     skippedTransactions: skipped,
+    /** Signatures whose transaction could not be fetched or carried no logs to read. */
+    unreadableTransactions: unreadable,
     totalSignatures: ok.length,
-    /** False when the asset has more than 5,000 signatures and the oldest were not read. */
-    historyComplete: walk.complete,
+    /** True only when every signature was listed AND every selected transaction was readable. */
+    historyComplete: walk.complete && unreadable === 0,
     ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
   };
 }

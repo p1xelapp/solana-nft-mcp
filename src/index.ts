@@ -222,7 +222,9 @@ registerTool(
   guard(async ({ mint }) => {
     const raw = await sol.getCoreAccountRaw(mint);
     if (!raw) throw new Error(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
-    const acct = await sol.getCoreAccount(mint);
+    // Everything below comes from the ONE fresh snapshot in `raw`: name, owner,
+    // collection and plugins cannot disagree with each other.
+    const acct = sol.decodeCoreAccount(raw);
     if (!acct || acct.kind !== "asset") throw new Error(`${mint} is not a Core asset (it is a ${acct?.kind ?? "non-Core account"})`);
     const assetPlugins = decodeCoreAccountPlugins(raw);
     // Collection plugins apply to every member. Read them, or say we could not.
@@ -238,7 +240,6 @@ registerTool(
       }
     }
     const trust = deriveTrust(assetPlugins, collectionPlugins);
-    if (!acct.collection) trust.incomplete = false; // no collection to inherit from
     return ok({
       mint,
       name: acct.name,
@@ -529,11 +530,16 @@ registerTool(
     inputSchema: { mint: addressSchema.describe("Asset mint address") },
   },
   guard(async ({ mint }) => {
-    const [meToken, core] = await Promise.all([
-      me.token(mint),
-      sol.getCoreAccount(mint).catch(() => null),
-    ]);
+    // Each source can fail on its own; a marketplace outage must not hide
+    // authoritative chain data, and vice versa. Failures are reported, not swallowed.
+    const [meRes, coreRes] = await Promise.allSettled([me.token(mint), sol.getCoreAccount(mint)]);
+    const meToken = meRes.status === "fulfilled" ? meRes.value : null;
+    const core = coreRes.status === "fulfilled" ? coreRes.value : null;
+    const sourceErrors: Record<string, string> = {};
+    if (meRes.status === "rejected") sourceErrors.magiceden = meRes.reason instanceof Error ? meRes.reason.message : String(meRes.reason);
+    if (coreRes.status === "rejected") sourceErrors["solana-rpc"] = coreRes.reason instanceof Error ? coreRes.reason.message : String(coreRes.reason);
     if (!meToken && !core) {
+      if (Object.keys(sourceErrors).length) throw new Error(`could not read ${mint}: ${Object.entries(sourceErrors).map(([k, v]) => `${k}: ${v}`).join("; ")}`);
       throw new Error(`no data found for ${mint} on Magic Eden or as a Metaplex Core account.`);
     }
     return ok({
@@ -558,6 +564,7 @@ registerTool(
           }
         : undefined,
       sources: [core ? "solana-rpc" : null, meToken ? "magiceden" : null].filter(Boolean),
+      ...(Object.keys(sourceErrors).length ? { sourceErrors } : {}),
     });
   }),
 );
