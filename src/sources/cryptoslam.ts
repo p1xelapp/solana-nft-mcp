@@ -49,13 +49,14 @@ export async function recentMints(contract: string, limit: number) {
       return {
         tokenId: m.tokenId ?? null,
         time: m.timeStamp ?? null,
+        // Every attribute is issuer- or indexer-controlled text: neutralise all of it.
         card: clean(str(a["Name"])),
-        set: str(a["CardSet"]),
-        serial: str(a["Mint"]),
-        population: str(a["Population"]),
-        team: str(a["Team"]),
-        sport: str(a["SportName"]),
-        image: str(a["Image"]),
+        set: str(a["CardSet"]) ? clean(a["CardSet"]) : null,
+        serial: str(a["Mint"]) ? clean(a["Mint"]) : null,
+        population: str(a["Population"]) ? clean(a["Population"]) : null,
+        team: str(a["Team"]) ? clean(a["Team"]) : null,
+        sport: str(a["SportName"]) ? clean(a["SportName"]) : null,
+        image: /^https:\/\//.test(str(a["Image"]) ?? "") ? str(a["Image"]) : null,
         owner: m.owner?.address ?? null,
       };
     }),

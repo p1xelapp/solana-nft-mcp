@@ -30,7 +30,7 @@ export interface Probe {
   source: string;
   /** What this probe was testing for, in plain words. */
   looked_for: string;
-  result: "found" | "not_found" | "skipped" | "error";
+  result: "found" | "not_found" | "ambiguous" | "skipped" | "error";
   detail?: string;
 }
 
@@ -77,12 +77,19 @@ export async function identify(query: string): Promise<Identification> {
   // ---- 1. curated registry (free, no network) --------------------------
   const exact = REGISTRY.find((e) => e.id === q);
   const fuzzy = exact ? [exact] : searchRegistry(q);
-  const entry: RegistryEntry | undefined = exact ?? fuzzy[0];
+  // A fuzzy hit is only an identification when it is the only one. "candy"
+  // matches several Candy Digital drops and must come back as candidates,
+  // never as whichever entry sorted first.
+  const entry: RegistryEntry | undefined = exact ?? (fuzzy.length === 1 ? fuzzy[0] : undefined);
   checked.push({
     source: "registry",
     looked_for: "a hand-verified entry matching this id or name",
-    result: entry ? "found" : "not_found",
-    detail: entry ? `${entry.id} - ${entry.name}` : "no curated entry; falling through to live probes",
+    result: entry ? "found" : fuzzy.length > 1 ? "ambiguous" : "not_found",
+    detail: entry
+      ? `${entry.id} - ${entry.name}`
+      : fuzzy.length > 1
+        ? `${fuzzy.length} curated entries match: ${fuzzy.map((e) => e.id).join(", ")} - pass one of these ids to be specific`
+        : "no curated entry; falling through to live probes",
   });
 
   // A registry hit supplies identifiers but is not the final answer - the live
@@ -153,11 +160,14 @@ export async function identify(query: string): Promise<Identification> {
         detail: `floor ${stats.floorPriceSol ?? "n/a"} SOL, ${stats.listedCount ?? "?"} listed`,
       });
     } catch (e) {
+      // "No such symbol" is negative evidence; an outage, a rate limit or a
+      // timeout is not, and must not raise confidence in a negative answer.
+      const msg = e instanceof Error ? e.message : String(e);
       checked.push({
         source: "magiceden",
         looked_for: `a collection with symbol "${meSymbol}"`,
-        result: "not_found",
-        detail: e instanceof Error ? e.message : String(e),
+        result: /has no collection/i.test(msg) ? "not_found" : "error",
+        detail: msg,
       });
     }
   } else {
@@ -205,11 +215,13 @@ export async function identify(query: string): Promise<Identification> {
         });
       }
     } catch (e) {
+      // Only an explicit 404 is "no such slug"; anything else is the source failing.
+      const msg = e instanceof Error ? e.message : String(e);
       checked.push({
         source: "opensea",
         looked_for: `a collection with slug "${osSlug}"`,
-        result: "not_found",
-        detail: e instanceof Error ? e.message : String(e),
+        result: /HTTP 404/.test(msg) ? "not_found" : "error",
+        detail: msg,
       });
     }
   }

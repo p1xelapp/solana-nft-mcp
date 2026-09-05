@@ -18,9 +18,18 @@ export interface CacheHit<T> {
 interface CacheEntry {
   data: unknown;
   cachedAt: number;
+  bytes: number;
 }
 
 const store = new Map<string, CacheEntry>();
+// Identical keys requested while a fetch is in flight share that one fetch,
+// so ten parallel calls for the same wallet cost the upstream one request.
+const inflight = new Map<string, Promise<unknown>>();
+// Approximate byte budget. Wallet pages can be hundreds of KB each; the entry
+// count alone does not bound memory.
+let approxBytes = 0;
+const MAX_BYTES = 24 * 1024 * 1024;
+const sizeOf = (v: unknown): number => { try { return JSON.stringify(v).length; } catch { return 0; } };
 // Hard ceiling so a long-lived server session can't grow unbounded. At ~2KB
 // per entry this is <2MB; oldest entries evicted first (Map preserves order).
 const MAX_ENTRIES = 500;
@@ -39,12 +48,26 @@ export async function cached<T>(
     return { data: hit.data as T, stale: false, cachedAt: new Date(hit.cachedAt).toISOString() };
   }
   try {
-    const data = await fetcher();
-    if (store.size >= MAX_ENTRIES && !store.has(key)) {
-      const oldest = store.keys().next().value;
-      if (oldest !== undefined) store.delete(oldest);
+    let p = inflight.get(key) as Promise<T> | undefined;
+    if (!p) {
+      p = fetcher();
+      inflight.set(key, p);
+      p.finally(() => inflight.delete(key)).catch(() => undefined);
     }
-    store.set(key, { data, cachedAt: Date.now() });
+    const data = await p;
+    const bytes = sizeOf(data);
+    const prev = store.get(key);
+    if (prev) approxBytes -= prev.bytes;
+    while ((store.size >= MAX_ENTRIES || approxBytes + bytes > MAX_BYTES) && store.size > 0) {
+      const oldest = store.keys().next().value;
+      if (oldest === undefined) break;
+      approxBytes -= store.get(oldest)?.bytes ?? 0;
+      store.delete(oldest);
+    }
+    if (bytes <= MAX_BYTES / 4) {
+      store.set(key, { data, cachedAt: Date.now(), bytes });
+      approxBytes += bytes;
+    }
     return { data, stale: false, cachedAt: new Date().toISOString() };
   } catch (err) {
     if (hit) {
@@ -79,20 +102,31 @@ export function rateLimiter(minIntervalMs: number): () => Promise<void> {
 export async function fetchRetry(
   url: string,
   opts: RequestInit = {},
-  { retries = 2, timeoutMs = 15_000, backoffMs = 800 } = {},
+  { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: () => Promise<void> } = {},
 ): Promise<Response> {
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
     try {
+      // The source's rate gate runs before EVERY attempt, so a retry can never
+      // land closer to the previous request than the advertised pace.
+      if (gate) await gate();
       const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
-      if (res.status === 429) throw new RetryableError(`HTTP 429 (rate limited)`, true);
-      if (res.status >= 500) throw new RetryableError(`HTTP ${res.status}`, false);
+      if (res.status === 429) {
+        const ra = Number(res.headers.get("retry-after"));
+        await res.body?.cancel().catch(() => undefined);
+        throw new RetryableError(`HTTP 429 (rate limited)`, true, Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 15_000) : 0);
+      }
+      if (res.status >= 500) {
+        await res.body?.cancel().catch(() => undefined);
+        throw new RetryableError(`HTTP ${res.status}`, false, 0);
+      }
       return res;
     } catch (e) {
       lastErr = e;
       if (i < retries) {
         const slow = e instanceof RetryableError && e.slow;
-        await new Promise((r) => setTimeout(r, backoffMs * (i + 1) * (slow ? 3 : 1)));
+        const hinted = e instanceof RetryableError ? e.retryAfterMs : 0;
+        await new Promise((r) => setTimeout(r, Math.max(hinted, backoffMs * (i + 1) * (slow ? 3 : 1))));
       }
     }
   }
@@ -100,7 +134,7 @@ export async function fetchRetry(
 }
 
 class RetryableError extends Error {
-  constructor(msg: string, public slow: boolean) {
+  constructor(msg: string, public slow: boolean, public retryAfterMs: number) {
     super(msg);
   }
 }
@@ -141,7 +175,7 @@ export async function fetchJson<T>(
   source: string,
   url: string,
   opts: RequestInit = {},
-  retryOpts?: { retries?: number; timeoutMs?: number },
+  retryOpts?: { retries?: number; timeoutMs?: number; gate?: () => Promise<void> },
 ): Promise<T> {
   const res = await fetchRetry(url, opts, retryOpts);
   if (!res.ok) {

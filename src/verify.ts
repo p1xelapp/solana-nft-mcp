@@ -74,7 +74,7 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   // getCoreAccount throws for accounts that are not Core (a wallet, an SPL
   // mint). That is an unverifiable claim, not an error - catch it here so the
   // tool can say so instead of failing.
-  const acct = await sol.getCoreAccount(collectionAddress).catch(() => null);
+  const acct = await sol.getCoreAccount(collectionAddress, { fresh: true }).catch(() => null);
   if (!acct || acct.kind !== "collection") {
     return {
       ...base,
@@ -166,19 +166,30 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   ];
 
   const caveats = [
-    "A transfer is not necessarily a sale - listing an item moves it to a marketplace escrow, and that is a transfer too.",
+    "This checks whether the asset ever CHANGED HANDS on chain. A transfer is not necessarily a sale (listing moves an item to escrow), and a sale is always a transfer - so 'no transfers' rules out a sale, while 'transfers' does not prove one.",
   ];
   if (prov.skippedTransactions > 0) {
     caveats.push(
-      `${prov.skippedTransactions} older transaction(s) were beyond the fetch depth and were not examined.`,
+      `${prov.skippedTransactions} older transaction(s) were beyond the decode depth and were not examined.`,
     );
   }
 
   if (transfers.length === 0) {
+    // "Never" needs the whole history, readable. Anything skipped or unread
+    // makes this unverifiable, not confirmed.
+    if (!prov.historyComplete || prov.skippedTransactions > 0) {
+      return {
+        ...base,
+        verdict: "unverifiable",
+        explanation: `No transfer appears in the ${prov.events.length} transaction(s) read, but the history was not read in full, so "never" cannot be confirmed.`,
+        evidence,
+        caveats,
+      };
+    }
     return {
       ...base,
       verdict: "confirmed",
-      explanation: `Confirmed: no transfer instructions appear in this asset's on-chain history. It is still with its original recipient.`,
+      explanation: `Confirmed: no transfer instructions appear anywhere in this asset's on-chain history. It has never changed hands since mint.`,
       evidence,
       caveats,
     };
@@ -205,7 +216,7 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
       `For a Metaplex Core asset that field IS the owner - there is no separate token account to consult.`,
   };
 
-  const acct = await sol.getCoreAccount(mint).catch(() => null);
+  const acct = await sol.getCoreAccount(mint, { fresh: true }).catch(() => null);
   if (!acct || acct.kind !== "asset") {
     return {
       ...base,
@@ -267,6 +278,15 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     };
   }
 
+  if (stats.stale) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `Magic Eden did not answer just now; the only floor available is a cached value from ${stats.cachedAt}, which cannot confirm a live claim.`,
+      evidence: [],
+      caveats: ["Retry in a minute. A stale floor is presented as stale everywhere in this server, and never as confirmation."],
+    };
+  }
   const observed = stats.floorPriceSol;
   const evidence: Evidence[] = [
     {

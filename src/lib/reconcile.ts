@@ -25,6 +25,8 @@ export interface FloorQuote {
   value: number;
   /** Denomination as the venue reported it - never assumed. */
   currency: string;
+  /** True when the venue did not answer and this is a cached value from a failed refresh. */
+  stale?: boolean;
 }
 
 export interface Reconciliation {
@@ -50,11 +52,20 @@ const pct = (a: number, b: number) => Math.round(((a - b) / b) * 1000) / 10;
  * filter out errors and nulls rather than passing placeholders, so "one venue
  * answered" is distinguishable from "one venue exists".
  */
-export function reconcileFloors(quotes: FloorQuote[], extraCaveats: string[] = []): Reconciliation {
+export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] = []): Reconciliation {
   const caveats = [
     "A floor is the lowest current ASK, not a valuation and not a recent trade price. On a thin order book one listing sets it.",
     ...extraCaveats,
   ];
+  // A cached quote from a failed refresh is shown but never ranked: naming a
+  // "cheapest venue" during an outage is a confident wrong answer.
+  const staleQuotes = allQuotes.filter((q) => q.stale);
+  const quotes = allQuotes.filter((q) => !q.stale);
+  if (staleQuotes.length > 0) {
+    caveats.push(
+      `${staleQuotes.map((q) => q.source).join(", ")}: the venue did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
+    );
+  }
 
   if (quotes.length === 0) {
     return {

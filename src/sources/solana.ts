@@ -23,6 +23,9 @@ import { clean } from "../lib/untrusted.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+// SPL Noop, passed as Core's optional log wrapper. It trails the new owner in
+// TransferV1's account list and must never be mistaken for one.
+const LOG_WRAPPER = "noopb9bkMVfRPU8AsbpTUg8AQkHtKwMYZiFUjNRtMmV";
 
 /** Marketplace program ids -> label, used to annotate provenance events. */
 const MARKETPLACE_PROGRAMS: Record<string, string> = {
@@ -60,6 +63,9 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
         if (j.error.code === -32429) throw new Error(`Solana RPC ${j.error.code}: ${j.error.message}`);
         throw new NoRetryError(`Solana RPC ${j.error.code}: ${j.error.message}`);
       }
+      // A malformed envelope with neither result nor error must not read as
+      // "no account" or "no history" downstream.
+      if (!("result" in j)) throw new NoRetryError("Solana RPC returned an envelope with no result field");
       return j.result as T;
     } catch (e) {
       if (e instanceof NoRetryError) throw new Error(e.message);
@@ -93,12 +99,16 @@ export function base58Encode(bytes: Uint8Array): string {
       carry = Math.floor(carry / 58);
     }
   }
-  let out = "";
+  let zeros = 0;
   for (const byte of bytes) {
-    if (byte === 0) out += "1";
+    if (byte === 0) zeros++;
     else break;
   }
-  for (let i = digits.length - 1; i >= 0; i--) out += ALPHABET[digits[i]!];
+  // Drop the residual zero digit so an all-zero key encodes as exactly 32 ones.
+  let top = digits.length - 1;
+  while (top > 0 && digits[top] === 0) top--;
+  let out = "1".repeat(zeros);
+  if (!(top === 0 && digits[0] === 0)) for (let i = top; i >= 0; i--) out += ALPHABET[digits[i]!];
   return out;
 }
 
@@ -187,8 +197,11 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
   return info.value.data[0];
 }
 
-export async function getCoreAccount(address: string): Promise<CoreAsset | CoreCollection | null> {
-  const { data } = await cached(`core:${address}`, 60_000, async () => {
+export async function getCoreAccount(
+  address: string,
+  opts: { fresh?: boolean } = {},
+): Promise<CoreAsset | CoreCollection | null> {
+  const read = async () => {
     const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>(
       "getAccountInfo",
       [address, { encoding: "base64" }],
@@ -196,7 +209,10 @@ export async function getCoreAccount(address: string): Promise<CoreAsset | CoreC
     if (!info?.value) return { missing: true as const };
     if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner };
     return { decoded: decodeCoreAccount(info.value.data[0]) };
-  });
+  };
+  // `fresh` bypasses the stale-on-error cache: a verification must never
+  // confirm ownership or supply from a value kept alive by a failed refresh.
+  const { data } = opts.fresh ? { data: await read() } : await cached(`core:${address}`, 60_000, read);
   if ("missing" in data) throw new Error(`account ${address} does not exist on mainnet`);
   if ("notCore" in data)
     throw new Error(
@@ -249,12 +265,26 @@ export async function getProvenance(mint: string, depth = 15) {
     );
   }
 
-  const { data: sigs } = await cached(`sigs:${mint}`, 120_000, () =>
-    rpc<{ signature: string; blockTime: number | null; err: unknown }[]>("getSignaturesForAddress", [
-      mint,
-      { limit: 50 },
-    ]),
-  );
+  // Walk the signature list to the end (paged, newest first) so the oldest
+  // event is the real mint and totals are real totals. Capped at 5 pages of
+  // 1,000; beyond that the result says the history is incomplete.
+  const { data: walk } = await cached(`sigs:${mint}`, 120_000, async () => {
+    const all: { signature: string; blockTime: number | null; err: unknown }[] = [];
+    let before: string | undefined;
+    let complete = false;
+    for (let page = 0; page < 5; page++) {
+      const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>("getSignaturesForAddress", [
+        mint,
+        before ? { limit: 1000, before } : { limit: 1000 },
+      ]);
+      if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
+      all.push(...batch);
+      if (batch.length < 1000) { complete = true; break; }
+      before = batch[batch.length - 1]!.signature;
+    }
+    return { sigs: all, complete };
+  });
+  const sigs = walk.sigs;
 
   const ok = sigs.filter((s) => !s.err);
   // Newest-first from RPC. Always include the oldest (the mint) plus the most
@@ -296,7 +326,7 @@ export async function getProvenance(mint: string, depth = 15) {
       const coreIx = all.find(
         (i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint),
       );
-      const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM]);
+      const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
       const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a));
       const newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
       events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace });
@@ -324,6 +354,9 @@ export async function getProvenance(mint: string, depth = 15) {
     events,
     skippedTransactions: skipped,
     totalSignatures: ok.length,
+    /** False when the asset has more than 5,000 signatures and the oldest were not read. */
+    historyComplete: walk.complete,
+    ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
   };
 }
 

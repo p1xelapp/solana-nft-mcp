@@ -20,8 +20,13 @@ const HEADERS = {
 const gate = rateLimiter(600);
 
 async function me<T>(path: string): Promise<T> {
-  await gate();
-  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS });
+  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate });
+}
+
+/** A page must be an array; anything else is an outage or a shape change, never "no more results". */
+function page<T>(what: string, batch: unknown): T[] {
+  if (!Array.isArray(batch)) throw new Error(`Magic Eden returned an unexpected shape for ${what} (outage or API change)`);
+  return batch as T[];
 }
 
 const LAMPORTS = 1_000_000_000;
@@ -107,11 +112,12 @@ export async function recentSales(symbol: string, limit: number) {
   const { data, stale, cachedAt } = await cached(`me:sales:${symbol}:${limit}`, 30_000, async () => {
     const collected: MeActivity[] = [];
     let scanned = 0;
-    for (let page = 0; page < 5 && collected.length < limit; page++) {
-      const batch = await me<MeActivity[]>(
-        `/collections/${encodeURIComponent(symbol)}/activities?offset=${page * 100}&limit=100`,
+    for (let pageNo = 0; pageNo < 5 && collected.length < limit; pageNo++) {
+      const batch = page<MeActivity>(
+        "collection activities",
+        await me<unknown>(`/collections/${encodeURIComponent(symbol)}/activities?offset=${pageNo * 100}&limit=100`),
       );
-      if (!Array.isArray(batch) || batch.length === 0) break;
+      if (batch.length === 0) break;
       scanned += batch.length;
       collected.push(...batch.filter((a) => a.type === "buyNow" && typeof a.price === "number"));
       if (batch.length < 100) break;
@@ -161,8 +167,11 @@ export async function token(mint: string): Promise<MeToken | null> {
   const { data } = await cached(`me:token:${mint}`, 300_000, async () => {
     try {
       return await me<MeToken>(`/tokens/${mint}`);
-    } catch {
-      return null; // ME 404s tokens it has never indexed - not an error for us
+    } catch (e) {
+      // Only a documented not-found is "ME does not know it". Timeouts, rate
+      // limits and outages must surface, or an outage reads as "no such token".
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
     }
   });
   return data && data.mintAddress ? data : null;
@@ -238,8 +247,8 @@ export async function walletActivities(wallet: string, pages: number) {
   const { data, stale, cachedAt } = await cached(`me:wact:${wallet}:${pages}`, 60_000, async () => {
     const all: MeWalletActivity[] = [];
     for (let p = 0; p < pages; p++) {
-      const batch = await me<MeWalletActivity[]>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`);
-      if (!Array.isArray(batch) || batch.length === 0) break;
+      const batch = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`));
+      if (batch.length === 0) break;
       all.push(...batch);
       if (batch.length < 100) break;
     }
@@ -272,8 +281,9 @@ export async function walletTokensAll(wallet: string, max: number) {
     while (offset < max) {
       let batch: MeWalletToken[];
       try {
-        batch = await me<MeWalletToken[]>(
-          `/wallets/${wallet}/tokens?offset=${offset}&limit=${Math.min(500, max - offset)}&listedOnly=false`,
+        batch = page<MeWalletToken>(
+          "wallet tokens",
+          await me<unknown>(`/wallets/${wallet}/tokens?offset=${offset}&limit=${Math.min(500, max - offset)}&listedOnly=false`),
         );
       } catch (e) {
         if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
@@ -283,7 +293,7 @@ export async function walletTokensAll(wallet: string, max: number) {
         }
         throw e;
       }
-      if (!Array.isArray(batch) || batch.length === 0) break;
+      if (batch.length === 0) break;
       all.push(...batch);
       // A page under 100 is the end whether ME honoured limit=500 or silently
       // capped at 100; anything else means keep walking, so a cap can never
