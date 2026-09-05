@@ -3,9 +3,11 @@
 ## The security model in one paragraph
 
 collector-mcp is read-only by construction. It holds no keys, no wallets, and no
-secrets; it contains no signing or transaction paths; it talks to exactly three
-public data sources (Magic Eden v2, CryptoSlam, a Solana RPC endpoint) and
-nothing else. The worst plausible failure is wrong or stale data - never lost
+secrets; it contains no signing or transaction paths; it talks to three public
+data sources (Magic Eden v2, CryptoSlam, a Solana RPC endpoint) plus OpenSea v2
+only when the user supplies their own `OPENSEA_API_KEY`, and nothing else. That
+key is read from the environment, sent only to api.opensea.io, and redacted from
+every error message before it can reach a log or a model. The worst plausible failure is wrong or stale data - never lost
 funds. Data returned from upstreams (asset names, metadata) is third-party
 content: agent frameworks consuming this server must treat it as data, never as
 instructions.
@@ -26,4 +28,5 @@ fixed fast and credited in the changelog.
 ## Supply chain
 
 Two runtime dependencies (`@modelcontextprotocol/sdk`, `zod`), lockfile
-committed, CI runs a secrets scan (gitleaks) + `npm audit` on every push.
+committed, install scripts disabled via `.npmrc`, CI runs a full-history secrets
+scan (gitleaks) + `npm audit` on every push.
