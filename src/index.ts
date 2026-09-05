@@ -27,6 +27,7 @@ import { identify } from "./identify.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
 import { decodeCoreTrust } from "./lib/coreplugins.js";
+import { clean } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, type FloorQuoteForValue } from "./wallet.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
@@ -266,12 +267,18 @@ registerTool(
             return words.length > 0 && words.every((w) => hay.includes(w));
           })
           .slice(0, 10)
-          .map((c) => ({
-            openseaSlug: c.collection,
-            name: c.name ?? null,
-            onchainCollection: c.contracts?.find((k) => k.chain === "solana")?.address ?? null,
-            url: c.opensea_url ?? null,
-          }));
+          .map((c) => {
+            // OpenSea text is third-party text: clean names, keep only a
+            // structurally valid address, and only an opensea.io URL.
+            const addr = c.contracts?.find((k) => k.chain === "solana")?.address;
+            const url = c.opensea_url;
+            return {
+              openseaSlug: clean(c.collection),
+              name: c.name ? clean(c.name) : null,
+              onchainCollection: addr && sol.isBase58Address(addr) ? addr : null,
+              url: url && /^https:\/\/opensea\.io\//.test(url) ? url : null,
+            };
+          });
         opensea = {
           hits,
           indexed: collections.length,
@@ -545,7 +552,13 @@ registerTool(
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
       maxItems: z.number().int().min(50).max(3000).default(1500).describe("Cap on items fetched (500 per request)"),
-      priceTop: z.number().int().min(0).max(15).default(6).describe("How many of the largest collections to price at floor (one paced request each)"),
+      priceTop: z
+        .number()
+        .int()
+        .min(0)
+        .max(10)
+        .default(6)
+        .describe("How many of the largest collections to price at floor (one paced Magic Eden request each; registry collections add one supply read)"),
       includeAge: z.boolean().default(true).describe("Read the wallet's first/last transaction from the chain (up to 3 RPC calls)"),
     },
   },

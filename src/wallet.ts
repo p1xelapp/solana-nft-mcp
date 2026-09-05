@@ -51,7 +51,8 @@ export function summarizeHoldings(tokens: MeWalletToken[]): HoldingsSummary {
   const groups = new Map<string, MeWalletToken[]>();
   let unnamed = 0;
   for (const t of tokens) {
-    const key = t.collection ?? "(no collection)";
+    // Marketplace-assigned, but still marketplace-controlled text: clean it.
+    const key = t.collection ? clean(t.collection) : "(no collection)";
     if (!t.collection) unnamed++;
     const g = groups.get(key);
     if (g) g.push(t);
@@ -146,8 +147,11 @@ export function summarizeActivity(
   const buys = { count: 0, totalSol: 0, collections: {} as Record<string, number> };
   const sells = { count: 0, totalSol: 0, collections: {} as Record<string, number> };
   const perCollection: Record<string, number> = {};
-  const bought = new Map<string, MeWalletActivity>(); // mint -> buy event (oldest kept)
-  const sold = new Map<string, MeWalletActivity>(); // mint -> sell event (newest kept)
+  // Per mint, a FIFO of buys not yet matched to a later sell, so a wallet that
+  // buys, sells and re-buys the same item gets one flip per cycle.
+  const openBuys = new Map<string, MeWalletActivity[]>();
+  const flips: Flip[] = [];
+  let purchases = 0;
   let lists = 0;
   let delists = 0;
 
@@ -156,10 +160,11 @@ export function summarizeActivity(
   // Feed is newest-first; walk oldest-first so "bought then sold" reads in time order.
   const chrono = [...events].reverse();
   for (const e of chrono) {
-    const type = e.type ?? "unknown";
+    const type = e.type ? clean(e.type) : "unknown";
     bump(byType, type);
-    bump(venues, e.source ?? "unknown");
-    const col = e.collectionSymbol ?? e.collection ?? null;
+    bump(venues, e.source ? clean(e.source) : "unknown");
+    const rawCol = e.collectionSymbol ?? e.collection ?? null;
+    const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
     if (type === "list") lists++;
     if (type === "delist") delists++;
@@ -168,36 +173,39 @@ export function summarizeActivity(
         buys.count++;
         buys.totalSol += e.price;
         if (col) bump(buys.collections, col);
-        if (e.tokenMint && !bought.has(e.tokenMint)) bought.set(e.tokenMint, e);
+        if (e.tokenMint) {
+          purchases++;
+          const q = openBuys.get(e.tokenMint);
+          if (q) q.push(e);
+          else openBuys.set(e.tokenMint, [e]);
+        }
       } else if (e.seller === wallet) {
         sells.count++;
         sells.totalSol += e.price;
         if (col) bump(sells.collections, col);
-        if (e.tokenMint) sold.set(e.tokenMint, e);
+        const q = e.tokenMint ? openBuys.get(e.tokenMint) : undefined;
+        const buy = q?.shift();
+        if (buy && buy.blockTime && e.blockTime && e.blockTime > buy.blockTime && e.tokenMint) {
+          flips.push({
+            mint: e.tokenMint,
+            collection: col,
+            boughtAt: iso(buy.blockTime),
+            soldAt: iso(e.blockTime),
+            buySol: round(buy.price ?? 0),
+            sellSol: round(e.price),
+            pnlSol: round(e.price - (buy.price ?? 0)),
+            heldDays: round((e.blockTime - buy.blockTime) / 86_400, 1),
+          });
+        }
       }
     }
   }
 
-  const flips: Flip[] = [];
-  for (const [mint, buy] of bought) {
-    const sell = sold.get(mint);
-    if (!sell || !sell.blockTime || !buy.blockTime || sell.blockTime <= buy.blockTime) continue;
-    flips.push({
-      mint,
-      collection: buy.collectionSymbol ?? buy.collection ?? null,
-      boughtAt: iso(buy.blockTime),
-      soldAt: iso(sell.blockTime),
-      buySol: round(buy.price ?? 0),
-      sellSol: round(sell.price ?? 0),
-      pnlSol: round((sell.price ?? 0) - (buy.price ?? 0)),
-      heldDays: round((sell.blockTime - buy.blockTime) / 86_400, 1),
-    });
-  }
   flips.sort((a, b) => (b.soldAt ?? "").localeCompare(a.soldAt ?? ""));
 
   const holds = flips.map((f) => f.heldDays).filter((d): d is number => d !== null).sort((a, b) => a - b);
   const medianHold = holds.length ? holds[Math.floor(holds.length / 2)]! : null;
-  const boughtThenSoldPct = bought.size ? round((flips.length / bought.size) * 100, 1) : null;
+  const boughtThenSoldPct = purchases ? round((flips.length / purchases) * 100, 1) : null;
 
   let label: ActivitySummary["behaviour"]["label"] = "unknown";
   let why = "";
@@ -210,30 +218,31 @@ export function summarizeActivity(
   } else if (sells.count >= 5 && sells.count >= buys.count * 3) {
     label = "seller";
     why = `${sells.count} sells against ${buys.count} buys in the window - distributing inventory that was minted, transferred in, or bought earlier.`;
-  } else if (boughtThenSoldPct !== null && bought.size >= 3) {
+  } else if (boughtThenSoldPct !== null && purchases >= 3) {
     if (boughtThenSoldPct >= 50 && (medianHold ?? 0) < 14) {
       label = "flipper";
-      why = `${flips.length} of ${bought.size} purchases were resold inside the window, median hold ${medianHold} days.`;
+      why = `${flips.length} of ${purchases} purchases were resold inside the window, median hold ${medianHold} days.`;
     } else if (boughtThenSoldPct <= 15) {
       label = "holder";
-      why = `Only ${flips.length} of ${bought.size} purchases were resold inside the window.`;
+      why = `Only ${flips.length} of ${purchases} purchases were resold inside the window.`;
     } else {
       label = "mixed";
-      why = `${flips.length} of ${bought.size} purchases resold, median hold ${medianHold ?? "n/a"} days.`;
+      why = `${flips.length} of ${purchases} purchases resold, median hold ${medianHold ?? "n/a"} days.`;
     }
   } else if (buys.count + sells.count > 0) {
     label = "mixed";
     why = `${buys.count} buys and ${sells.count} sells in the window - too few purchases to call a pattern.`;
   }
 
-  const firstBuy = [...bought.values()].sort((a, b) => (a.blockTime ?? 0) - (b.blockTime ?? 0))[0];
+  const firstBuy = chrono.find((e) => e.type === "buyNow" && e.buyer === wallet && typeof e.price === "number");
+  const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
   const caveats = [
     "This is Magic Eden's view of the wallet: listings, bids, buys and sells that touched Magic Eden or its AMM pools. Trades on Tensor or OpenSea, plain transfers, mints and airdrops are not in this feed.",
     "Realised P&L here is sale price minus purchase price for items both bought and sold in the window, before marketplace fees and royalties. It is a lower bound on cost, not an accounting.",
   ];
   if (truncated) caveats.push("The feed was cut at the page limit; older activity exists. Raise `pages` to see more.");
-  if (sells.count > 0 && bought.size === 0) caveats.push("Sells without matching buys usually means the items were minted, transferred in, or bought before the window started.");
+  if (sells.count > 0 && purchases === 0) caveats.push("Sells without matching buys usually means the items were minted, transferred in, or bought before the window started.");
 
   return {
     window: { from: iso(chrono[0]?.blockTime), to: iso(events[0]?.blockTime), events: events.length, truncated },
@@ -252,7 +261,7 @@ export function summarizeActivity(
     firstBuyInWindow: firstBuy
       ? {
           mint: firstBuy.tokenMint ?? "",
-          collection: firstBuy.collectionSymbol ?? firstBuy.collection ?? null,
+          collection: firstBuyCol ? clean(firstBuyCol) : null,
           time: iso(firstBuy.blockTime),
           priceSol: round(firstBuy.price ?? 0),
         }
@@ -337,7 +346,9 @@ export interface FloorQuoteForValue {
  * "worth".
  */
 export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
-  const priced = quotes.filter((q) => typeof q.floorSol === "number" && q.floorSol > 0);
+  const priced = quotes.filter(
+    (q) => typeof q.floorSol === "number" && Number.isFinite(q.floorSol) && q.floorSol > 0 && Number.isFinite(q.count) && q.count > 0,
+  );
   const coveredItems = priced.reduce((s, q) => s + q.count, 0);
   const ceilingSol = round(priced.reduce((s, q) => s + (q.floorSol ?? 0) * q.count, 0));
   const thin = priced.filter((q) => (q.listedCount ?? 0) > 0 && q.count > (q.listedCount ?? 0) / 2);

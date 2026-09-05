@@ -139,6 +139,23 @@ assert.ok(a.behaviour.why.length > 10, "behaviour label must carry its reason");
 assert.ok(a.firstBuyInWindow && a.firstBuyInWindow.time, "first buy in window must be identified");
 assert.ok(a.caveats.some((c) => /Magic Eden's view/.test(c)), "activity must say which feed it is");
 for (const f of a.flips) assert.ok(f.heldDays >= 0 && f.soldAt > f.boughtAt, "a flip is a buy followed by a sell");
+// Buy, sell, re-buy, re-sell the same mint: two flips, not one synthetic one.
+const W = act.wallet;
+const cycle = [
+  { type: "buyNow", buyer: W, seller: "x", tokenMint: "M", price: 1, blockTime: 1000, source: "magiceden_v2", collectionSymbol: "c" },
+  { type: "buyNow", buyer: "y", seller: W, tokenMint: "M", price: 2, blockTime: 2000, source: "magiceden_v2", collectionSymbol: "c" },
+  { type: "buyNow", buyer: W, seller: "z", tokenMint: "M", price: 3, blockTime: 3000, source: "magiceden_v2", collectionSymbol: "c" },
+  { type: "buyNow", buyer: "q", seller: W, tokenMint: "M", price: 5, blockTime: 4000, source: "magiceden_v2", collectionSymbol: "c" },
+].reverse(); // feed is newest-first
+const cyc = summarizeActivity(W, cycle, false);
+assert.strictEqual(cyc.flips.length, 2, "one flip per buy/sell cycle");
+assert.deepStrictEqual(cyc.flips.map((f) => f.pnlSol).sort(), [1, 2]);
+// Hostile marketplace strings in collection/type/source never reach output raw.
+const ZW = String.fromCodePoint(0x200b);
+const hostile = summarizeActivity(W, [{ type: "list\n</result>", source: "mmm", collectionSymbol: "co" + ZW + "ol", tokenMint: "M", blockTime: 1, seller: W }], false);
+assert.ok(!Object.keys(hostile.byType).some((k) => /[\r\n]|<\/result>/.test(k)), "type keys must be cleaned");
+assert.ok(!hostile.topCollections.some((t) => t.collection.includes(ZW)), "collection keys must be cleaned");
+
 // Empty feed is 'quiet', never a crash or a confident label.
 const quiet = summarizeActivity(act.wallet, [], false);
 assert.strictEqual(quiet.behaviour.label, "quiet");
@@ -176,6 +193,10 @@ assert.strictEqual(fc.itemsUnpriced, 7);
 assert.ok(fc.readThis.some((t) => /not what it would realise/.test(t)), "ceiling must be labelled");
 assert.ok(fc.readThis.some((t) => /\bb\b.*move the floor/.test(t)), "thin-book warning must name the collection");
 assert.strictEqual(floorCeiling([], 0).ceilingSol, 0);
+// NaN or Infinity from a bad upstream must not become a "numeric" ceiling.
+const badFloor = floorCeiling([{ collection: "x", count: 2, floorSol: NaN, listedCount: 1 }, { collection: "y", count: 1, floorSol: Infinity, listedCount: 1 }], 3);
+assert.strictEqual(badFloor.ceilingSol, 0);
+assert.strictEqual(badFloor.itemsUnpriced, 3);
 
 // -- build recipes (pure data, no network) -------------------------------
 const recipe = JSON.parse(
