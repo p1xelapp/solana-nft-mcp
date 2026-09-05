@@ -40,7 +40,7 @@ jobs:
           curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
           echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
           tar xzf "$tarball" gitleaks
-          ./gitleaks detect --source=. --redact --exit-code=1 --verbose
+          ./gitleaks detect --source=. --config=.gitleaks.toml --redact --exit-code=1 --verbose
 
       # Runner's preinstalled Node (>=20) satisfies engines; no third-party setup action needed.
       - name: Install (locked)

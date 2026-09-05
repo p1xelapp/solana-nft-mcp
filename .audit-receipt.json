@@ -1,0 +1,86 @@
+{
+  "verdict": "PASS",
+  "stage": "production",
+  "at": "2026-09-05T19:06:23.994Z",
+  "sha": "fatal: cannot change to 'collector-mcp': No such file or directory",
+  "branch": "fatal: cannot change to 'collector-mcp': No such file or directory",
+  "kinds": [
+    "node"
+  ],
+  "blockers": [],
+  "warnings": [
+    "npmrc-hardening: .npmrc missing: ignore-scripts=true (install scripts run automatically); min-release-age (brand-new versions install instantly)",
+    "sast-semgrep: 3 WARNING - src\\lib\\http.ts:120 silent-truncation; src\\wallet.ts:169 float-arithmetic-on-money; src\\wallet.ts:174 float-arithmetic-on-money",
+    "tests: test script declared but 0 test files found - it would report green while asserting nothing"
+  ],
+  "skipped": [],
+  "coverage": "11/11 checks ran",
+  "results": [
+    {
+      "id": "gitignore",
+      "cat": "secrets",
+      "status": "pass",
+      "detail": "covers .env and node_modules"
+    },
+    {
+      "id": "secrets-committed",
+      "cat": "secrets",
+      "status": "pass",
+      "detail": "39 tracked file(s) scanned, plus every path ever committed"
+    },
+    {
+      "id": "secrets-worktree",
+      "cat": "secrets",
+      "status": "pass",
+      "detail": "0 uncommitted file(s) scanned"
+    },
+    {
+      "id": "deps-npm",
+      "cat": "dependencies",
+      "status": "pass",
+      "detail": "collector-mcp: critical 0, high 0, moderate 0, low 0"
+    },
+    {
+      "id": "lockfile-committed",
+      "cat": "supply-chain",
+      "status": "pass",
+      "detail": "1 lockfile(s) present and tracked"
+    },
+    {
+      "id": "npmrc-hardening",
+      "cat": "supply-chain",
+      "status": "warn",
+      "detail": ".npmrc missing: ignore-scripts=true (install scripts run automatically); min-release-age (brand-new versions install instantly)"
+    },
+    {
+      "id": "install-scripts",
+      "cat": "supply-chain",
+      "status": "pass",
+      "detail": "all deps come from the registry, no install hooks"
+    },
+    {
+      "id": "sast-semgrep",
+      "cat": "static-analysis",
+      "status": "warn",
+      "detail": "3 WARNING - src\\lib\\http.ts:120 silent-truncation; src\\wallet.ts:169 float-arithmetic-on-money; src\\wallet.ts:174 float-arithmetic-on-money"
+    },
+    {
+      "id": "typecheck",
+      "cat": "correctness",
+      "status": "pass",
+      "detail": "no type errors"
+    },
+    {
+      "id": "tests",
+      "cat": "correctness",
+      "status": "warn",
+      "detail": "test script declared but 0 test files found - it would report green while asserting nothing"
+    },
+    {
+      "id": "unpushed",
+      "cat": "operability",
+      "status": "pass",
+      "detail": "in sync with remote"
+    }
+  ]
+}
