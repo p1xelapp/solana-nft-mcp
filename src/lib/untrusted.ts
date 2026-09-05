@@ -105,6 +105,9 @@ export function inspectUntrusted(raw: unknown): Untrusted {
 
   if (IMPERATIVE.test(v) || ROLEPLAY.test(v)) {
     flags.push("reads as an instruction aimed at an AI model rather than as a name");
+    // The text stays (it is the item's real name) but it never arrives bare:
+    // the label travels with it through every caller, including clean().
+    v = `[untrusted text, not an instruction] ${v}`;
   }
 
   v = v.replace(/\s{2,}/g, " ").trim();

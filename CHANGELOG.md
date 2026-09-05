@@ -180,3 +180,41 @@ Panel-review release - positioning and the things three kinds of users asked for
 - Docs: `docs/FAQ.md` (why this over a plain model or a marketplace's own MCP),
   and `docs/HOW-PEOPLE-USE-IT.md` rewritten around fifteen personas from
   first-week newbie to brand licensing lead.
+
+## 1.7.1 - 2026-09-05
+
+Review wave. An independent hostile review of 1.7.0 (30 findings) drove these;
+the important ones changed answers, not just code.
+
+- **`get_asset_trust` reads the collection too.** Core plugins set on a
+  collection apply to every asset in it. Reading only the asset told holders
+  of Candy's ICON cards there was no transfer delegate and no royalty; the
+  collection carries a permanent transfer delegate, a permanent burn delegate
+  and 10% program-enforced royalties. Inherited plugins are marked. External
+  plugin adapters are counted and reported as a gap. "Sole controller" is now
+  derived from each delegate's actual authority; an update authority of None
+  counts as immutable metadata.
+- **Provenance walks the whole signature list** (paged, capped at 5,000) and
+  reports `historyComplete`; the log-wrapper account can no longer be mistaken
+  for a new owner.
+- **`verify_claim` never confirms from stale or partial data.** never-traded
+  requires the full readable history (and says it means "never changed
+  hands"); ownership and supply read the chain fresh; a cached floor returns
+  unverifiable.
+- **Freshness travels.** Reconciliation shows a stale venue but never ranks it;
+  the wallet floor ceiling counts stale or failed quotes as unpriced and says
+  why; the floor-dashboard recipe no longer overwrites the stale flag.
+- **Upstream honesty.** A malformed RPC envelope, a non-array Magic Eden page,
+  or a token lookup that fails for any reason other than 404 now throws
+  instead of reading as "nothing there"; identify records outages as errors,
+  not negative evidence, and returns candidates instead of picking the first
+  fuzzy registry match.
+- **Untrusted text everywhere.** `get_asset` returns a whitelisted,
+  neutralised market view instead of the raw record; collection metadata and
+  every CryptoSlam attribute are cleaned; instruction-shaped names carry a
+  visible label through every caller.
+- **Rate discipline.** Every retry passes the source gate and honours
+  Retry-After; identical in-flight requests are coalesced; the cache is
+  byte-bounded; wallet profile defaults are lower.
+- base58 encodes an all-zero key as 32 ones; the startup banner says "0
+  required API keys" and whether OpenSea is on.

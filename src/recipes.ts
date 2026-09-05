@@ -148,7 +148,7 @@ for (const s of fresh.reverse()) {          // oldest first, so order reads true
 const results = await Promise.allSettled(collections.map(getStats));
 const panels = results.map((r, i) =>
   r.status === "fulfilled"
-    ? { ...r.value, stale: false }
+    ? { ...r.value }                      // keeps the server's own stale flag + cachedAt
     : { collection: collections[i], ...lastGood(collections[i]), stale: true }
 );
 // Render stale panels with their age visible, never blank.`,
@@ -287,7 +287,7 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
       },
     ],
     costNote: "Free to read. The cost is storage if you retain full history - size it to the full set, not to today's count.",
-    skeleton: `const pulls = await getPackPulls(50);
+    skeleton: `const pulls = await getPackPulls(20);  // 20 is the tool's page cap; backfill covers the rest
 // Reconcile on boot: what the issuer says exists vs what we stored.
 const missing = await reconcileAgainstIssuer(storedCount);
 if (missing > 0) log.warn(\`backfilling \${missing} pulls missed while down\`);`,

@@ -23,14 +23,18 @@ const gate = rateLimiter(2000);
 async function os<T>(path: string): Promise<T> {
   const key = process.env.OPENSEA_API_KEY;
   if (!key) throw new Error("OpenSea source is not enabled (set OPENSEA_API_KEY to add cross-marketplace data)");
-  await gate();
-  return fetchJson<T>("OpenSea", `${BASE}${path}`, {
-    headers: {
-      "x-api-key": key,
-      Accept: "application/json",
-      "User-Agent": "collector-mcp/1.1 (+https://github.com/p1xelapp/collector-mcp)",
+  return fetchJson<T>(
+    "OpenSea",
+    `${BASE}${path}`,
+    {
+      headers: {
+        "x-api-key": key,
+        Accept: "application/json",
+        "User-Agent": "collector-mcp/1.1 (+https://github.com/p1xelapp/collector-mcp)",
+      },
     },
-  });
+    { gate },
+  );
 }
 
 interface OsStats {

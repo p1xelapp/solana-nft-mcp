@@ -73,6 +73,7 @@ assert.ok(
   payload.flags.some((f) => /instruction aimed at an AI/.test(f)),
   "imperative phrasing must be called out",
 );
+assert.ok(/^\[untrusted text, not an instruction\]/.test(payload.value), "an instruction-shaped name must carry its label even through clean()");
 
 // Bidi and zero-width characters make displayed text differ from what is sent,
 // so a name can read as harmless while carrying something else. Written as
@@ -114,11 +115,30 @@ const { decodeCoreTrust } = await import("../dist/lib/coreplugins.js");
 const fixture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "core-asset.b64"), "utf8").trim();
 const trust = decodeCoreTrust(fixture);
 assert.ok(Array.isArray(trust.plugins), "plugins array expected");
+assert.strictEqual(trust.incomplete, true, "an asset decoded without its collection must say the picture is incomplete");
+// With the collection supplied, collection plugins are inherited and marked.
+const { decodeCoreAccountPlugins, deriveTrust } = await import("../dist/lib/coreplugins.js");
+const assetOnly = decodeCoreAccountPlugins(fixture);
+const withEmptyCollection = deriveTrust(assetOnly, { kind: "collection", plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 5, creators: [], ruleSet: "program allow-list" } }], updateAuthorityIsNone: false, externalPlugins: 0 });
+assert.ok(withEmptyCollection.plugins.some((p) => p.type === "Royalties" && p.inheritedFromCollection), "collection royalties must be inherited");
+assert.ok(withEmptyCollection.assurances.some((a) => /enforced by a program allow-list/.test(a)), "inherited royalties must shape the facts");
+assert.strictEqual(withEmptyCollection.incomplete, false);
+// A permanent delegate held by the owner is not another controller.
+const ownerHeld = deriveTrust({ kind: "asset", plugins: [{ type: "PermanentTransferDelegate", authority: "owner" }], updateAuthorityIsNone: true, externalPlugins: 0 }, { kind: "collection", plugins: [], updateAuthorityIsNone: false, externalPlugins: 0 });
+assert.strictEqual(ownerHeld.ownerIsNotSoleController, false);
+assert.ok(ownerHeld.assurances.some((a) => /update authority is None/.test(a)), "update authority None means immutable, not mutable");
+// External plugin adapters make the picture incomplete, loudly.
+const ext = deriveTrust({ kind: "asset", plugins: [], updateAuthorityIsNone: false, externalPlugins: 1 }, { kind: "collection", plugins: [], updateAuthorityIsNone: false, externalPlugins: 0 });
+assert.strictEqual(ext.incomplete, true);
+assert.ok(ext.warnings.some((w) => /external plugin adapter/.test(w)));
 assert.ok(!trust.decodeNote, "the real fixture must decode fully: " + trust.decodeNote);
 assert.ok(trust.warnings.length + trust.assurances.length > 0, "trust must say something");
 for (const p of trust.plugins) assert.ok(!/unknown plugin type/.test(p.type), "unknown plugin in fixture: " + p.type);
 // A non-asset must be refused, not misread.
-assert.throws(() => decodeCoreTrust(Buffer.from([5, 0, 0]).toString("base64")), /not an AssetV1/);
+assert.throws(() => decodeCoreTrust(Buffer.from([7, 0, 0]).toString("base64")), /not an AssetV1 or CollectionV1/);
+// base58: an all-zero key is exactly 32 ones (the system program), not 33.
+const { base58Encode } = await import("../dist/sources/solana.js");
+assert.strictEqual(base58Encode(new Uint8Array(32)), "1".repeat(32));
 
 // -- wallet intelligence (real feeds captured 2026-09-04, offline) --------
 const { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling } = await import("../dist/wallet.js");
@@ -197,6 +217,10 @@ assert.strictEqual(floorCeiling([], 0).ceilingSol, 0);
 const badFloor = floorCeiling([{ collection: "x", count: 2, floorSol: NaN, listedCount: 1 }, { collection: "y", count: 1, floorSol: Infinity, listedCount: 1 }], 3);
 assert.strictEqual(badFloor.ceilingSol, 0);
 assert.strictEqual(badFloor.itemsUnpriced, 3);
+// A stale or failed floor does not price anything, and says why.
+const staleFloor = floorCeiling([{ collection: "z", count: 4, floorSol: 2, listedCount: 9, stale: true }], 4);
+assert.strictEqual(staleFloor.ceilingSol, 0);
+assert.ok(staleFloor.readThis.some((t) => /did not answer/.test(t)));
 
 // -- build recipes (pure data, no network) -------------------------------
 const recipe = JSON.parse(
@@ -237,6 +261,15 @@ const mixed = reconcileFloors([
 assert.strictEqual(mixed.comparable, false);
 assert.strictEqual(mixed.cheapest, undefined, "must not name a cheapest across currencies");
 assert.ok(/NOT directly comparable/.test(mixed.verdict), "verdict must refuse the comparison outright");
+
+// A stale quote is shown but never ranked.
+const withStale = reconcileFloors([
+  { source: "opensea", value: 9.65, currency: "SOL", stale: true },
+  { source: "magiceden", value: 9.09, currency: "SOL" },
+]);
+assert.strictEqual(withStale.comparable, false, "one fresh quote is not a comparison");
+assert.strictEqual(withStale.cheapest, undefined);
+assert.ok(withStale.caveats.some((c) => /did not answer/.test(c)));
 
 // One venue is not a market view.
 const single = reconcileFloors([{ source: "magiceden", value: 1, currency: "SOL" }]);

@@ -116,7 +116,6 @@ export interface ActivitySummary {
   buys: { count: number; totalSol: number; collections: Record<string, number> };
   sells: { count: number; totalSol: number; collections: Record<string, number> };
   netFlowSol: number;
-  activeListings: number;
   topCollections: { collection: string; events: number }[];
   flips: Flip[];
   behaviour: {
@@ -153,7 +152,6 @@ export function summarizeActivity(
   const flips: Flip[] = [];
   let purchases = 0;
   let lists = 0;
-  let delists = 0;
 
   const bump = (r: Record<string, number>, k: string) => (r[k] = (r[k] ?? 0) + 1);
 
@@ -167,7 +165,6 @@ export function summarizeActivity(
     const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
     if (type === "list") lists++;
-    if (type === "delist") delists++;
     if (type === "buyNow" && typeof e.price === "number") {
       if (e.buyer === wallet) {
         buys.count++;
@@ -251,7 +248,6 @@ export function summarizeActivity(
     buys: { ...buys, totalSol: round(buys.totalSol) },
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
-    activeListings: Math.max(0, lists - delists - sells.count),
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
@@ -336,6 +332,10 @@ export interface FloorQuoteForValue {
   count: number;
   floorSol: number | null;
   listedCount: number | null;
+  /** True when the floor is a cached value from a failed refresh. */
+  stale?: boolean;
+  /** Why no floor: the upstream error, when there was one. */
+  error?: string;
 }
 
 /**
@@ -346,9 +346,12 @@ export interface FloorQuoteForValue {
  * "worth".
  */
 export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
+  // A stale or failed quote cannot price anything "now": those items count as
+  // unpriced and the reason is spelled out below.
   const priced = quotes.filter(
-    (q) => typeof q.floorSol === "number" && Number.isFinite(q.floorSol) && q.floorSol > 0 && Number.isFinite(q.count) && q.count > 0,
+    (q) => !q.stale && !q.error && typeof q.floorSol === "number" && Number.isFinite(q.floorSol) && q.floorSol > 0 && Number.isFinite(q.count) && q.count > 0,
   );
+  const failed = quotes.filter((q) => q.stale || q.error);
   const coveredItems = priced.reduce((s, q) => s + q.count, 0);
   const ceilingSol = round(priced.reduce((s, q) => s + (q.floorSol ?? 0) * q.count, 0));
   const thin = priced.filter((q) => (q.listedCount ?? 0) > 0 && q.count > (q.listedCount ?? 0) / 2);
@@ -370,6 +373,9 @@ export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
         ? [
             `${thin.map((q) => q.collection).join(", ")}: the wallet holds more than half as many items as are listed on the whole venue - selling would move the floor, so the ceiling is generous.`,
           ]
+        : []),
+      ...(failed.length
+        ? [`${failed.map((q) => `${q.collection} (${q.stale ? "venue did not answer; last value not used" : q.error})`).join("; ")}: not priced.`]
         : []),
       "Recent sales, not floors, say what buyers pay. Use get_recent_sales on the collections that matter.",
     ],
