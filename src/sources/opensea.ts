@@ -138,13 +138,15 @@ export async function collectionDetail(slug: string) {
     os<OsSolanaCollection>(`/collections/${encodeURIComponent(slug)}`),
   );
   if (!data?.collection) throw new Error(`OpenSea has no collection "${slug}"`);
-  const royalty = (data.fees ?? []).filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient));
+  // fees absent = OpenSea did not say; only an explicit list with no creator
+  // entry means "no creator royalty". Do not turn silence into a zero.
+  const royalty = data.fees ? data.fees.filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient)) : null;
   return {
     slug: data.collection,
     name: data.name ? clean(data.name) : null,
     totalSupply: data.total_supply ?? null,
     onchainCollection: data.contracts?.find((c) => c.chain === "solana")?.address ?? null,
-    creatorRoyaltyPct: royalty.length ? royalty.reduce((s, f) => s + (f.fee ?? 0), 0) : 0,
+    creatorRoyaltyPct: royalty === null ? null : royalty.reduce((s, f) => s + (f.fee ?? 0), 0),
     listedOn: data.created_date ?? null,
     url: data.opensea_url ?? null,
     stale,

@@ -282,18 +282,15 @@ export function summarizeOpenSeaEvents(wallet: string, events: OsAccountEvent[],
   let tin = 0;
   let tout = 0;
   const collections: Record<string, number> = {};
-  const soldMints = new Set<string>();
-  const boughtMints = new Set<string>();
+  // A sale's own settlement shows up as a transfer in the same transaction.
+  // Match on the transaction, not the mint: an item bought in March and
+  // handed over by plain transfer in August is a real transfer-in.
+  const saleTxs = new Set<string>();
   for (const e of events) {
     if (e.event_type === "sale") {
-      if (e.buyer === wallet) {
-        bought++;
-        if (e.nft?.identifier) boughtMints.add(e.nft.identifier);
-      }
-      if (e.seller === wallet) {
-        sold++;
-        if (e.nft?.identifier) soldMints.add(e.nft.identifier);
-      }
+      if (e.buyer === wallet) bought++;
+      if (e.seller === wallet) sold++;
+      if (e.transaction) saleTxs.add(e.transaction);
     }
     if (e.nft?.collection) collections[e.nft.collection] = (collections[e.nft.collection] ?? 0) + 1;
   }
@@ -303,7 +300,8 @@ export function summarizeOpenSeaEvents(wallet: string, events: OsAccountEvent[],
     if (e.to_address === wallet) {
       tin++;
       const id = e.nft?.identifier ?? "";
-      if (id && !boughtMints.has(id) && !soldMints.has(id) && e.from_address && e.from_address !== wallet) {
+      const settlesASale = Boolean(e.transaction && saleTxs.has(e.transaction));
+      if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
         received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp) });
       }
     } else if (e.from_address === wallet) tout++;

@@ -268,7 +268,8 @@ export interface MeWalletToken {
 export async function walletTokensAll(wallet: string, max: number) {
   const { data, stale, cachedAt } = await cached(`me:wall:${wallet}:${max}`, 120_000, async () => {
     const all: MeWalletToken[] = [];
-    for (let offset = 0; offset < max; offset += 500) {
+    let offset = 0;
+    while (offset < max) {
       let batch: MeWalletToken[];
       try {
         batch = await me<MeWalletToken[]>(
@@ -284,7 +285,11 @@ export async function walletTokensAll(wallet: string, max: number) {
       }
       if (!Array.isArray(batch) || batch.length === 0) break;
       all.push(...batch);
-      if (batch.length < 500) break;
+      // A page under 100 is the end whether ME honoured limit=500 or silently
+      // capped at 100; anything else means keep walking, so a cap can never
+      // truncate a wallet while reporting capped:false.
+      if (batch.length < 100) break;
+      offset += batch.length;
     }
     return all;
   });
