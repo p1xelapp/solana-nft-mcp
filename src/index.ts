@@ -393,9 +393,14 @@ registerTool(
         };
       }
     }
+    const sourceErrors: Record<string, string> = {};
     if (r.meSymbol) {
-      out.market = await me.collectionStats(r.meSymbol);
-      const meta = await me.collectionMeta(r.meSymbol).catch(() => undefined);
+      try {
+        out.market = await me.collectionStats(r.meSymbol);
+      } catch (e) {
+        sourceErrors.magiceden = e instanceof Error ? e.message : String(e);
+      }
+      const meta = out.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
       if (meta) {
         const cleaned = cleanFields(
           { name: meta.name, description: meta.description, image: /^https:\/\//.test(meta.image ?? "") ? meta.image : undefined, twitter: meta.twitter, website: /^https:\/\//.test(meta.website ?? "") ? meta.website : undefined },
@@ -424,7 +429,9 @@ registerTool(
     }
     const osBlockAny = out.opensea;
     const osOk = osBlockAny !== null && typeof osBlockAny === "object" && !("error" in osBlockAny);
+    if (Object.keys(sourceErrors).length) out.sourceErrors = sourceErrors;
     if (!out.onchain && !out.market && !osOk) {
+      if (sourceErrors.magiceden && !/has no collection/.test(sourceErrors.magiceden)) throw new Error(`Magic Eden could not be read: ${sourceErrors.magiceden}`);
       throw new Error(
         `could not resolve "${collection}" - not a known registry id, and no market/on-chain source answered.`,
       );
@@ -514,8 +521,13 @@ registerTool(
           `on a specific card, or get_pack_pulls for Panini rips - or pass an openseaSlug with OPENSEA_API_KEY set.`,
       );
     }
-    const magiceden = await me.recentSales(r.meSymbol, limit);
-    return ok(openseaPart ? { ...magiceden, opensea: openseaPart } : magiceden);
+    try {
+      const magiceden = await me.recentSales(r.meSymbol, limit);
+      return ok(openseaPart ? { ...magiceden, opensea: openseaPart } : magiceden);
+    } catch (e) {
+      if (openseaPart) return ok({ requested: collection, sourceErrors: { magiceden: e instanceof Error ? e.message : String(e) }, opensea: openseaPart });
+      throw e;
+    }
   }),
 );
 
@@ -538,6 +550,9 @@ registerTool(
     const sourceErrors: Record<string, string> = {};
     if (meRes.status === "rejected") sourceErrors.magiceden = meRes.reason instanceof Error ? meRes.reason.message : String(meRes.reason);
     if (coreRes.status === "rejected") sourceErrors["solana-rpc"] = coreRes.reason instanceof Error ? coreRes.reason.message : String(coreRes.reason);
+    if (core?.kind === "collection") {
+      throw new Error(`${mint} is a Core COLLECTION account ("${core.name}"), not an asset. Use get_collection_stats for it.`);
+    }
     if (!meToken && !core) {
       if (Object.keys(sourceErrors).length) throw new Error(`could not read ${mint}: ${Object.entries(sourceErrors).map(([k, v]) => `${k}: ${v}`).join("; ")}`);
       throw new Error(`no data found for ${mint} on Magic Eden or as a Metaplex Core account.`);
@@ -554,7 +569,7 @@ registerTool(
               note: "Owner read directly from the Core account - authoritative, but may be a marketplace escrow if listed.",
             }
           : undefined,
-      market: meToken ? marketView(meToken as unknown as Record<string, unknown>) : undefined,
+      market: meToken ? { ...marketView(meToken as unknown as Record<string, unknown>), stale: meToken.stale, cachedAt: meToken.cachedAt } : undefined,
       facts: meToken
         ? {
             compressed: Boolean((meToken as { isCompressed?: boolean }).isCompressed),

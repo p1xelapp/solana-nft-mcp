@@ -105,11 +105,16 @@ assert.deepStrictEqual(
 // -- verify receipt shape (pure logic) -----------------------------------
 // The receipt gets pasted into arguments. It must be one line, carry the
 // verdict, and say where it came from - never a bare "true".
-const { verifyClaim } = await import("../dist/verify.js");
-const vr = await verifyClaim({ claim: "floor", subject: "definitely_not_real_xyz123", value: 1 });
-assert.strictEqual(vr.verdict, "unverifiable");
-assert.ok(typeof vr.receipt === "string" && !/[\r\n]/.test(vr.receipt), "receipt must be one line");
-assert.ok(/UNVERIFIABLE/.test(vr.receipt) && /collector-mcp/.test(vr.receipt), "receipt must carry verdict + source");
+// Built from a synthetic result so the offline suite stays offline.
+const { buildReceipt } = await import("../dist/verify.js");
+const r1 = buildReceipt({ claim: "floor is 1 SOL", subject: "definitely_not_real_xyz123", verdict: "unverifiable", explanation: "", evidence: [], caveats: [], reproduce: "" });
+assert.ok(!/[\r\n]/.test(r1), "receipt must be one line");
+assert.ok(/UNVERIFIABLE/.test(r1) && /collector-mcp/.test(r1), "receipt must carry verdict + source");
+assert.ok(!/chain shows/.test(r1), "no evidence, no attribution");
+const r2 = buildReceipt({ claim: "floor is 1 SOL", subject: "mad_lads", verdict: "confirmed", explanation: "", evidence: [{ source: "Magic Eden collection stats for mad_lads", method: "", observed: "1.01 SOL" }], caveats: [], reproduce: "" });
+assert.ok(/Magic Eden shows 1\.01 SOL/.test(r2) && !/checked on-chain/.test(r2), "a marketplace-only check must name the venue, not the chain: " + r2);
+const r3 = buildReceipt({ claim: "supply is 786", subject: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K", verdict: "confirmed", explanation: "", evidence: [{ source: "Solana account 8BvH (Core collection)", method: "", observed: "numMinted = 786" }], caveats: [], reproduce: "" });
+assert.ok(/chain shows numMinted = 786/.test(r3) && /checked on-chain/.test(r3));
 
 // -- Core plugin decoding (real account bytes captured 2026-09-01, offline) --
 const { decodeCoreTrust } = await import("../dist/lib/coreplugins.js");
@@ -138,6 +143,12 @@ assert.ok(orphan.warnings.some((w) => /whose plugins were not read/.test(w)));
 assert.strictEqual(assetOnly.collection, "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n", "the fixture asset must report its collection");
 assert.strictEqual(ext.incomplete, true);
 assert.ok(ext.warnings.some((w) => /external plugin adapter/.test(w)));
+// A plugin that is listed but unreadable is "present", never "absent".
+const unread = deriveTrust({ kind: "asset", collection: null, plugins: [{ type: "Royalties", authority: "update authority", unreadable: true }, { type: "PermanentFreezeDelegate", authority: "update authority", unreadable: true }], updateAuthorityIsNone: false, externalPlugins: 0, decodeNote: "plugin data unreadable for Royalties" }, null);
+assert.ok(!unread.assurances.some((a) => /No royalties plugin/.test(a)), "unreadable royalties must not become 'no royalties'");
+assert.ok(unread.warnings.some((w) => /Royalties plugin is present but/.test(w)));
+assert.ok(unread.warnings.some((w) => /frozen state could not be decoded/.test(w)));
+assert.strictEqual(unread.incomplete, true);
 assert.ok(!trust.decodeNote, "the real fixture must decode fully: " + trust.decodeNote);
 assert.ok(trust.warnings.length + trust.assurances.length > 0, "trust must say something");
 for (const p of trust.plugins) assert.ok(!/unknown plugin type/.test(p.type), "unknown plugin in fixture: " + p.type);
@@ -146,6 +157,7 @@ assert.throws(() => decodeCoreTrust(Buffer.from([7, 0, 0]).toString("base64")), 
 // base58: an all-zero key is exactly 32 ones (the system program), not 33.
 const { base58Encode } = await import("../dist/sources/solana.js");
 assert.strictEqual(base58Encode(new Uint8Array(32)), "1".repeat(32));
+assert.strictEqual(base58Encode(Uint8Array.from([0, 0, 255])), "115Q", "leading zeros then a non-zero tail");
 
 // -- wallet intelligence (real feeds captured 2026-09-04, offline) --------
 const { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling } = await import("../dist/wallet.js");

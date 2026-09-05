@@ -230,11 +230,39 @@ export interface ProvenanceEvent {
   event: "minted" | "transferred" | "burned" | "marketplace_activity" | "other";
   newOwner?: string;
   marketplace?: string;
+  /** Present when a field had to be inferred rather than decoded. */
+  note?: string;
 }
 
 interface ParsedInstruction {
   programId: string;
   accounts?: string[];
+  /** base58 instruction data for programs the RPC cannot parse (Core is one). */
+  data?: string;
+}
+
+// mpl-core instruction discriminators (first data byte), from the generated
+// client: CreateV1 0, TransferV1 14, BurnV1 12. TransferV1's account list is
+// fixed: asset, collection, payer, authority, new_owner, system_program,
+// log_wrapper - omitted optionals are filled with the program id, so
+// new_owner is always index 4.
+const IX_TRANSFER_V1 = 14;
+const TRANSFER_NEW_OWNER_INDEX = 4;
+
+/** First byte of a base58 instruction payload, or null when it is not decodable. */
+function discriminator(data: string | undefined): number | null {
+  if (!data) return null;
+  let n = 0n;
+  for (const ch of data) {
+    const d = ALPHABET.indexOf(ch);
+    if (d < 0) return null;
+    n = n * 58n + BigInt(d);
+  }
+  // Leading '1's are leading zero bytes; the first byte is then zero.
+  if (data.startsWith("1")) return 0;
+  const hex = n.toString(16);
+  const bytes = hex.length % 2 ? "0" + hex : hex;
+  return parseInt(bytes.slice(0, 2), 16);
 }
 
 interface ParsedTx {
@@ -330,14 +358,23 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
 
     if (isTransfer) {
-      // The Core instruction that includes this asset carries the new owner.
-      const coreIx = all.find(
-        (i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint),
-      );
-      const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
-      const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a));
-      const newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
-      events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace });
+      // Pick the TransferV1 instruction for THIS asset by its discriminator
+      // and read the fixed new_owner slot. Fall back to the account heuristic
+      // only when the RPC gave no instruction data, and say so.
+      const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
+      const transferIx = coreIxs.find((i) => discriminator(i.data) === IX_TRANSFER_V1);
+      let newOwner: string | undefined;
+      let ownerNote: string | undefined;
+      if (transferIx) {
+        newOwner = transferIx.accounts?.[TRANSFER_NEW_OWNER_INDEX];
+      } else {
+        const coreIx = coreIxs[0];
+        const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
+        const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a));
+        newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
+        ownerNote = "new owner inferred from the account list (no instruction data available); treat as probable";
+      }
+      events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace, ...(ownerNote ? { note: ownerNote } : {}) });
     } else if (isBurn) {
       events.push({ signature: sig.signature, time, event: "burned", marketplace });
     } else if (isCreate) {
@@ -364,8 +401,8 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     /** Signatures whose transaction could not be fetched or carried no logs to read. */
     unreadableTransactions: unreadable,
     totalSignatures: ok.length,
-    /** True only when every signature was listed AND every selected transaction was readable. */
-    historyComplete: walk.complete && unreadable === 0,
+    /** True only when every signature was listed, every transaction was decoded (none skipped for depth), and every one was readable. */
+    historyComplete: walk.complete && unreadable === 0 && skipped === 0,
     ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
   };
 }

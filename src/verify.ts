@@ -138,7 +138,7 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
 /** Verify that an asset has, or has not, changed hands since it was minted. */
 async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
-    claim: "never traded since mint",
+    claim: "never changed hands since mint",
     subject: mint,
     reproduce:
       `Call getSignaturesForAddress on ${mint}, fetch each transaction, and count the ones whose logs ` +
@@ -147,7 +147,22 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
 
   // Fresh walk, and decode every transaction (depth 25 is the tool's ceiling;
   // anything beyond that shows up as skipped and blocks a "confirmed").
-  const prov = await sol.getProvenance(mint, 25, { fresh: true }).catch(() => null);
+  let prov: Awaited<ReturnType<typeof sol.getProvenance>> | null = null;
+  let provError: string | undefined;
+  try {
+    prov = await sol.getProvenance(mint, 25, { fresh: true });
+  } catch (e) {
+    provError = e instanceof Error ? e.message : String(e);
+  }
+  if (!prov && provError && !/not a Core|does not decode|COLLECTION|not exist/i.test(provError)) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `The chain could not be read for ${mint} just now (${provError}), so its history cannot be checked.`,
+      evidence: [],
+      caveats: ["This is a source failure, not a statement about the asset. Retry shortly."],
+    };
+  }
   if (!prov) {
     return {
       ...base,
@@ -191,7 +206,7 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     return {
       ...base,
       verdict: "confirmed",
-      explanation: `Confirmed: no transfer instructions appear anywhere in this asset's on-chain history. It has never changed hands since mint.`,
+      explanation: `Confirmed: no transfer instructions appear anywhere in this asset's on-chain history. It has never changed hands since mint, so it cannot have been sold.`,
       evidence,
       caveats,
     };
@@ -201,8 +216,9 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     ...base,
     verdict: "contradicted",
     explanation:
-      `Contradicted: the asset has ${transfers.length} transfer(s) on chain. ` +
-      `Use get_asset_provenance for the dated trail of who held it.`,
+      `Contradicted: the asset has changed hands ${transfers.length} time(s) on chain` +
+      (transfers.some((t) => t.marketplace) ? ` (${transfers.filter((t) => t.marketplace).length} through a marketplace program - listings and sales both move it)` : "") +
+      `. Whether any of those was a sale needs marketplace sale records: get_recent_sales. Use get_asset_provenance for the dated trail.`,
     evidence,
     caveats,
   };
@@ -218,14 +234,24 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
       `For a Metaplex Core asset that field IS the owner - there is no separate token account to consult.`,
   };
 
-  const acct = await sol.getCoreAccount(mint, { fresh: true }).catch(() => null);
+  let acct: Awaited<ReturnType<typeof sol.getCoreAccount>> = null;
+  let readError: string | undefined;
+  try {
+    acct = await sol.getCoreAccount(mint, { fresh: true });
+  } catch (e) {
+    readError = e instanceof Error ? e.message : String(e);
+  }
   if (!acct || acct.kind !== "asset") {
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `${mint} does not decode as a Metaplex Core asset, so its owner field cannot be read here.`,
+      explanation: readError
+        ? `The chain could not be read for ${mint} just now (${readError}), so ownership cannot be checked.`
+        : `${mint} does not decode as a Metaplex Core asset, so its owner field cannot be read here.`,
       evidence: [],
-      caveats: ["Legacy SPL and compressed NFTs store ownership elsewhere and are not decoded by this server."],
+      caveats: readError
+        ? ["This is a source failure, not a statement about the asset. Retry shortly."]
+        : ["Legacy SPL and compressed NFTs store ownership elsewhere and are not decoded by this server."],
     };
   }
 
@@ -269,14 +295,25 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     reproduce: `GET https://api-mainnet.magiceden.dev/v2/collections/${symbol}/stats and divide floorPrice by 1e9 to get SOL. No key required.`,
   };
 
-  const stats = await me.collectionStats(symbol, { fresh: true }).catch(() => null);
+  let stats: Awaited<ReturnType<typeof me.collectionStats>> | null = null;
+  let statsError: string | undefined;
+  try {
+    stats = await me.collectionStats(symbol, { fresh: true });
+  } catch (e) {
+    statsError = e instanceof Error ? e.message : String(e);
+  }
   if (!stats || stats.floorPriceSol === null) {
+    const outage = statsError && !/has no collection/i.test(statsError);
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `No live floor was returned for "${symbol}", so the claim cannot be checked.`,
+      explanation: outage
+        ? `Magic Eden could not be read just now (${statsError}), so the claim cannot be checked.`
+        : `No live floor was returned for "${symbol}", so the claim cannot be checked.`,
       evidence: [],
-      caveats: ["A collection with no listings has no floor at all."],
+      caveats: outage
+        ? ["This is a source failure, not a statement about the collection. Retry shortly."]
+        : ["A collection with no listings has no floor at all; an unknown symbol has none either."],
     };
   }
 
@@ -329,15 +366,21 @@ export type ClaimType = "supply" | "never-traded" | "ownership" | "floor";
 const MARK: Record<Verdict, string> = { confirmed: "CONFIRMED", contradicted: "CONTRADICTED", unverifiable: "UNVERIFIABLE" };
 const short = (s: string) => (s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : s);
 
-function withReceipt(r: Omit<VerificationResult, "receipt">): VerificationResult {
+export function buildReceipt(r: Omit<VerificationResult, "receipt">, at = new Date()): string {
   const observed = r.evidence.map((e) => e.observed).join(", ");
-  return {
-    ...r,
-    receipt:
-      `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
-      (observed ? ` - chain shows ${observed}` : "") +
-      ` · checked on-chain via collector-mcp, reproducible with no key · github.com/p1xelapp/collector-mcp`,
-  };
+  const onChain = r.evidence.length > 0 && r.evidence.every((e) => /Solana|Core|account|transaction/i.test(e.source));
+  const venue = (src: string) => src.split(/ (collection|stats|account|for) /)[0] ?? src;
+  const srcLabel = r.evidence.length === 0 ? "" : onChain ? "chain shows" : `${[...new Set(r.evidence.map((e) => venue(e.source)))].join(" + ")} shows`;
+  const how = r.evidence.length === 0 ? "" : onChain ? " · checked on-chain via collector-mcp, reproducible with no key" : ` · marketplace read via collector-mcp at ${at.toISOString().slice(0, 16)}Z, reproducible with no key`;
+  return (
+    `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
+    (observed ? ` - ${srcLabel} ${observed}` : "") +
+    `${how} · github.com/p1xelapp/collector-mcp`
+  );
+}
+
+function withReceipt(r: Omit<VerificationResult, "receipt">): VerificationResult {
+  return { ...r, receipt: buildReceipt(r) };
 }
 
 export async function verifyClaim(args: {

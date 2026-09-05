@@ -228,3 +228,15 @@ the important ones changed answers, not just code.
   keeps chain data when the marketplace is down (and vice versa) and names
   the source that failed; identify answers "ambiguous" with the candidate
   ids; stale floors stay visible but unranked.
+- Third pass: provenance selects the TransferV1 instruction by its
+  discriminator and reads the fixed new-owner slot (the account-list guess
+  remains only as a labelled fallback); a plugin the registry lists but whose
+  data cannot be decoded is reported as present-but-unreadable, never as
+  absent (an unreadable Royalties or Freeze plugin now warns instead of
+  reassuring); on-chain attribute and edition strings are neutralised and
+  capped; `fresh` reads coalesce and commit; cache keys include the page
+  size; Retry-After over 30 s stops instead of retrying; every verify path
+  and identify distinguish a source failure from a negative answer; stats
+  and sales return the venue that answered when the other failed; receipts
+  name the venue and time for marketplace-only checks; the offline suite no
+  longer touches the network.
