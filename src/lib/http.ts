@@ -29,7 +29,9 @@ const inflight = new Map<string, Promise<unknown>>();
 // count alone does not bound memory.
 let approxBytes = 0;
 const MAX_BYTES = 24 * 1024 * 1024;
-const sizeOf = (v: unknown): number => { try { return JSON.stringify(v).length; } catch { return 0; } };
+// UTF-8 bytes of the serialised value; unmeasurable values are treated as
+// oversized so they are never cached.
+const sizeOf = (v: unknown): number => { try { return Buffer.byteLength(JSON.stringify(v), "utf8"); } catch { return Number.POSITIVE_INFINITY; } };
 // Hard ceiling so a long-lived server session can't grow unbounded. At ~2KB
 // per entry this is <2MB; oldest entries evicted first (Map preserves order).
 const MAX_ENTRIES = 500;
@@ -62,9 +64,13 @@ export async function cached<T>(
   key: string,
   ttlMs: number,
   fetcher: () => Promise<T>,
+  opts: { fresh?: boolean } = {},
 ): Promise<CacheHit<T>> {
   const hit = store.get(key);
-  if (hit && Date.now() - hit.cachedAt < ttlMs) {
+  // `fresh` skips the TTL hit and the stale fallback, but still coalesces
+  // with any in-flight fetch and still commits the answer for later callers,
+  // so a verification cannot be followed by an older cached value.
+  if (!opts.fresh && hit && Date.now() - hit.cachedAt < ttlMs) {
     return { data: hit.data as T, stale: false, cachedAt: new Date(hit.cachedAt).toISOString() };
   }
   try {
@@ -82,7 +88,7 @@ export async function cached<T>(
     const data = await p;
     return { data, stale: false, cachedAt: new Date().toISOString() };
   } catch (err) {
-    if (hit) {
+    if (hit && !opts.fresh) {
       return { data: hit.data as T, stale: true, cachedAt: new Date(hit.cachedAt).toISOString() };
     }
     throw err;
@@ -128,7 +134,7 @@ export async function fetchRetry(
         const wait = retryAfterMs(res.headers.get("retry-after"));
         // A server asking for more than 30s is telling us to go away, not to
         // retry: stop rather than hammer it early.
-        if (wait > 30_000) throw new Error(`HTTP 429 (rate limited; server asked for a ${Math.round(wait / 1000)}s pause)`);
+        if (wait > 30_000) throw new StopError(`HTTP 429 (rate limited; server asked for a ${Math.round(wait / 1000)}s pause)`);
         throw new RetryableError(`HTTP 429 (rate limited)`, true, wait);
       }
       if (res.status >= 500) {
@@ -137,6 +143,7 @@ export async function fetchRetry(
       }
       return res;
     } catch (e) {
+      if (e instanceof StopError) throw new Error(e.message);
       lastErr = e;
       if (i < retries) {
         const slow = e instanceof RetryableError && e.slow;
@@ -156,6 +163,9 @@ function retryAfterMs(h: string | null): number {
   const at = Date.parse(h);
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
 }
+
+/** Thrown to leave the retry loop immediately. */
+class StopError extends Error {}
 
 class RetryableError extends Error {
   constructor(msg: string, public slow: boolean, public retryAfterMs: number) {

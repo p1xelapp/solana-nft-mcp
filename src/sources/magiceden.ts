@@ -43,18 +43,23 @@ export interface MeStats {
 
 export async function collectionStats(symbol: string, opts: { fresh?: boolean } = {}) {
   const read = () => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`);
-  // `fresh` bypasses the cache entirely: a verification needs the venue's
-  // answer now, not a value that was correct up to a minute ago.
-  const { data, stale, cachedAt } = opts.fresh
-    ? { data: await read(), stale: false, cachedAt: new Date().toISOString() }
-    : await cached(`me:stats:${symbol}`, 60_000, read);
+  // `fresh` = the venue's answer now (coalesced and committed, never a stale
+  // fallback), for verifications.
+  const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, read, { fresh: opts.fresh });
   if (!data || data.symbol === undefined) {
     throw new Error(`Magic Eden has no collection with symbol "${symbol}"`);
   }
   // HTTP 200 != exists: ME echoes unknown symbols back as {symbol, listedCount: 0}.
   // A real-but-quiet collection still carries volumeAll; a phantom carries nothing.
   if (data.floorPrice === undefined && data.volumeAll === undefined) {
-    const meta = await collectionMeta(symbol).catch(() => null);
+    // Only an explicit 404 on the metadata means "no such collection"; an
+    // outage during this second read must not turn a quiet collection into a phantom.
+    let meta: MeCollectionMeta | null = null;
+    try {
+      meta = await collectionMeta(symbol);
+    } catch (e) {
+      if (!(e instanceof HttpError && e.status === 404)) throw e;
+    }
     if (!meta?.name) {
       throw new Error(
         `Magic Eden has no collection with symbol "${symbol}" (try search_collections, or pass a Core collection address)`,
@@ -165,9 +170,9 @@ interface MeToken {
   supply?: number;
 }
 
-/** Token metadata + marketplace view of one asset. Null when ME doesn't know it. */
-export async function token(mint: string): Promise<MeToken | null> {
-  const { data } = await cached(`me:token:${mint}`, 300_000, async () => {
+/** Token metadata + marketplace view of one asset. Null when ME doesn't know it. Carries cache freshness. */
+export async function token(mint: string): Promise<(MeToken & { stale: boolean; cachedAt: string }) | null> {
+  const { data, stale, cachedAt } = await cached(`me:token:${mint}`, 300_000, async () => {
     try {
       const t = await me<MeToken>(`/tokens/${mint}`);
       // HTTP 200 with no mint address is a shape change or an outage page,
@@ -183,14 +188,14 @@ export async function token(mint: string): Promise<MeToken | null> {
       throw e;
     }
   });
-  return data && data.mintAddress ? data : null;
+  return data && data.mintAddress ? { ...data, stale, cachedAt } : null;
 }
 
 /** Wallet holdings as Magic Eden sees them (indexed collections only). */
 export async function walletTokens(wallet: string, limit: number) {
   let hit;
   try {
-    hit = await cached(`me:wallet:${wallet}`, 120_000, () =>
+    hit = await cached(`me:wallet:${wallet}:${Math.min(limit, 100)}`, 120_000, () =>
       me<MeToken[]>(`/wallets/${wallet}/tokens?offset=0&limit=${Math.min(limit, 100)}&listedOnly=false`),
     );
   } catch (e) {

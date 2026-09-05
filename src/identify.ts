@@ -263,6 +263,10 @@ export async function identify(query: string): Promise<Identification> {
     summary = `"${q}" matches ${fuzzy.length} curated collections (${fuzzy.map((e) => e.id).join(", ")}). Ask which one, or pass one of those ids.`;
     confidence = "low";
     next.push("search_collections");
+  } else if (looksLikeAddress(q) && checked.some((c) => c.source === "solana-rpc" && c.result === "error")) {
+    kind = "unknown";
+    summary = `${q} is a valid Solana address, but the chain could not be read just now, so it could not be classified. Retry shortly.`;
+    confidence = "low";
   } else if (looksLikeAddress(q)) {
     kind = "wallet-or-unknown-account";
     summary = `${q} is a valid Solana address but is not a Metaplex Core asset or collection. It is most likely a wallet, a legacy SPL mint, or another program's account.`;

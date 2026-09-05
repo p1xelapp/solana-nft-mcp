@@ -32,6 +32,7 @@
  */
 
 import { base58Encode } from "../sources/solana.js";
+import { clean } from "./untrusted.js";
 
 const PLUGIN_NAMES = [
   "Royalties",
@@ -64,6 +65,8 @@ export interface DecodedPlugin {
   type: string;
   /** Who can act on this plugin: none, owner, update authority, or a specific address. */
   authority: string;
+  /** True when the registry lists the plugin but its data could not be decoded: present, not absent. */
+  unreadable?: boolean;
   /** Decoded fields for the plugin types that carry data an owner should know. */
   data?: Record<string, unknown>;
   /** Set when the plugin lives on the collection and applies to this asset by inheritance. */
@@ -171,16 +174,18 @@ function pluginData(type: number, r: Reader): Record<string, unknown> | undefine
       return { additionalDelegates: extra };
     }
     case 6: { // Attributes
-      const n = r.u32(); const list: Record<string, string> = {};
-      for (let i = 0; i < n && i < 128; i++) { const k = r.str(); list[k] = r.str(); }
-      return { attributes: list };
+      // Issuer-written key/value text: neutralised, capped, and kept as a
+      // list so a key like "__proto__" or "constructor" is just a string.
+      const n = r.u32(); const list: { key: string; value: string }[] = [];
+      for (let i = 0; i < n && i < 64; i++) { const k = r.str(); const v = r.str(); list.push({ key: clean(k).slice(0, 80), value: clean(v).slice(0, 200) }); }
+      return { attributes: list, ...(n > 64 ? { truncated: n - 64 } : {}) };
     }
     case 9: return { edition: r.u32() };
     case 10: { // MasterEdition
       const maxSupply = r.option(() => r.u32());
       const name = r.option(() => r.str());
       const uri = r.option(() => r.str());
-      return { maxSupply, name, uri };
+      return { maxSupply, name: name === null ? null : clean(name).slice(0, 120), uri: uri && /^https?:\/\//.test(uri) ? uri.slice(0, 300) : null };
     }
     default: return undefined;
   }
@@ -218,18 +223,23 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
       throw new Error("registry ends before the external plugin count");
     }
 
+    const failures: string[] = [];
     for (const rec of records) {
       const name = PLUGIN_NAMES[rec.type] ?? `unknown plugin type ${rec.type}`;
       let data: Record<string, unknown> | undefined;
+      let unreadable = false;
       try {
         r.seek(rec.offset);
-        r.u8(); // Plugin enum discriminator (same value as type)
+        const disc = r.u8(); // Plugin enum discriminator (same value as type)
+        if (disc !== rec.type) throw new Error(`discriminator ${disc} != registry type ${rec.type}`);
         data = pluginData(rec.type, r);
-      } catch {
-        data = undefined;
+      } catch (e) {
+        unreadable = true;
+        failures.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
       }
-      out.plugins.push({ type: name, authority: rec.auth, ...(data ? { data } : {}) });
+      out.plugins.push({ type: name, authority: rec.auth, ...(data ? { data } : {}), ...(unreadable ? { unreadable: true } : {}) });
     }
+    if (failures.length) out.decodeNote = `plugin data unreadable for ${failures.join("; ")}`;
   } catch (e) {
     out.decodeNote = `plugin registry only partially readable: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -268,6 +278,9 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
     out.warnings.push(`PERMANENT burn delegate held by ${pbd.authority}${where(pbd)}: that party can destroy this asset without the holder's signature. Expected on packs that are consumed on open; unusual on a collectible meant to be kept.`);
     out.ownerIsNotSoleController = true;
   }
+  for (const p of plugins) {
+    if (p.unreadable && /Freeze/.test(p.type)) out.warnings.push(`${p.type} is present but its frozen state could not be decoded: the asset may be frozen.`);
+  }
   const pfd = has("PermanentFreezeDelegate");
   if (pfd) {
     if (pfd.data?.frozen === true) { out.frozen = true; out.warnings.push(`FROZEN by a permanent freeze delegate (${pfd.authority})${where(pfd)}: it cannot be transferred or listed until that party thaws it.`); }
@@ -283,11 +296,12 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   if (heldByOther(bd)) { out.warnings.push(`Burn delegate approved to ${bd!.authority}: they can burn it. Expected for pack-opening flows, otherwise revoke it.`); out.ownerIsNotSoleController = true; }
 
   const roy = has("Royalties");
-  if (roy?.data) {
+  if (roy?.unreadable) out.warnings.push("A Royalties plugin is present but its data could not be decoded: assume a creator fee may apply and may be enforced.");
+  else if (roy?.data) {
     const rs = String(roy.data.ruleSet); const pct = String(roy.data.percent);
     if (rs === "none") out.assurances.push(`Royalties set at ${pct}%${where(roy)} with no program rule set - advisory; a marketplace can ignore them.`);
     else out.assurances.push(`Royalties ${pct}%${where(roy)} enforced by a ${rs}: transfers through non-approved programs are blocked, so the creator fee is not optional here.`);
-  } else out.assurances.push("No royalties plugin on the asset or its collection: nothing enforces a creator fee on resale.");
+  } else if (!roy) out.assurances.push("No royalties plugin on the asset or its collection: nothing enforces a creator fee on resale.");
 
   if (has("ImmutableMetadata")) out.assurances.push("Metadata is immutable: the name and URI cannot be changed by anyone, including the issuer.");
   else if (asset.updateAuthorityIsNone) out.assurances.push("The asset's update authority is None: nobody can change its name or URI.");

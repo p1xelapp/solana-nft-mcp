@@ -73,10 +73,11 @@ interface OsEvent {
 
 /** Recent sales by slug (event_type=sale is server-side filtered - unlike Magic Eden). */
 export async function recentSales(slug: string, limit: number) {
-  const { data, stale, cachedAt } = await cached(`os:sales:${slug}`, 30_000, () =>
+  const { data, stale, cachedAt } = await cached(`os:sales:${slug}:${Math.min(limit, 50)}`, 30_000, () =>
     os<{ asset_events?: OsEvent[] }>(`/events/collection/${encodeURIComponent(slug)}?event_type=sale&limit=${Math.min(limit, 50)}`),
   );
-  const events = data?.asset_events ?? [];
+  if (!Array.isArray(data?.asset_events)) throw new Error("OpenSea returned an unexpected events shape (outage or API change)");
+  const events = data.asset_events;
   return {
     slug,
     sales: events.slice(0, limit).map((e) => ({
@@ -123,8 +124,9 @@ export async function solanaCollections() {
     for (let page = 0; page < 5; page++) {
       const q = `/collections?chain=solana&limit=100&order_by=seven_day_volume${next ? `&next=${encodeURIComponent(next)}` : ""}`;
       const res = await os<{ collections?: OsSolanaCollection[]; next?: string }>(q);
-      out.push(...(res.collections ?? []));
-      if (!res.next || (res.collections ?? []).length < 100) break;
+      if (!Array.isArray(res.collections)) throw new Error("OpenSea returned an unexpected collections shape (outage or API change)");
+      out.push(...res.collections);
+      if (!res.next || res.collections.length < 100) break;
       next = res.next;
     }
     return out;
@@ -185,8 +187,9 @@ export async function accountEvents(wallet: string, pages: number) {
       const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
         `/events/accounts/${wallet}?chain=solana&limit=50${next ? `&next=${encodeURIComponent(next)}` : ""}`,
       );
-      out.push(...(res.asset_events ?? []));
-      if (!res.next || (res.asset_events ?? []).length < 50) break;
+      if (!Array.isArray(res.asset_events)) throw new Error("OpenSea returned an unexpected account events shape (outage or API change)");
+      out.push(...res.asset_events);
+      if (!res.next || res.asset_events.length < 50) break;
       next = res.next;
     }
     return out;
