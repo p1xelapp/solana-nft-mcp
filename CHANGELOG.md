@@ -55,7 +55,7 @@ Initial public release.
 
 - **Cross-source reconciliation.** `get_collection_stats` now returns a
   `reconciliation` block whenever two venues quote the same collection: which
-  is actually cheapest, the spread between them, and - crucially - whether the
+  is actually cheapest, the spread between them, and, most important, whether the
   two numbers can be compared at all. Collector Crypt is the case that forced
   it: Magic Eden quotes 0.053 SOL, OpenSea quotes 9 USDC. Printed side by side
   those read as a 170x gap; converted they roughly agree. The block refuses to
