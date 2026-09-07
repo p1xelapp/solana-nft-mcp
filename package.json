@@ -1,7 +1,12 @@
 {
   "name": "collector-mcp",
   "version": "1.7.1",
-  "description": "Zero-key MCP server for Solana digital collectibles. Floor prices, sales, wallet holdings, pack pulls, and on-chain Metaplex Core provenance for any AI agent - no API keys, no wallet, no config.",
+  "description": "Zero-key MCP server for Solana collectibles: wallet profiles and behaviour, Metaplex Core ownership history most NFT APIs return empty, who can freeze or burn an asset, cross-venue floors that refuse bad comparisons. Read-only, runs on your machine.",
+  "homepage": "https://p1xel.app/collector-mcp/",
+  "bugs": {
+    "url": "https://github.com/p1xelapp/collector-mcp/issues"
+  },
+  "author": "p1xel (https://p1xel.app)",
   "license": "MIT",
   "type": "module",
   "bin": {
