@@ -76,15 +76,42 @@ const ok = (data: unknown): ToolResult => {
   return { content: [{ type: "text", text }], structuredContent: structured };
 };
 
-/** Uniform error surface: the agent gets a plain, actionable message. */
+/**
+ * Uniform error surface, written for the person who will read it.
+ *
+ * Two lines: what happened in plain words with who it belongs to (a public
+ * data source pausing, a bad address, a genuinely unknown collection), then
+ * the technical detail for the agent. Upstream trouble is named as the
+ * upstream's and always comes with the one thing to do next; nothing here
+ * ever reads as a fault in the user's setup or in this server unless it is.
+ */
+function explain(err: unknown): { headline: string; next: string; kind: string } {
+  const msg = err instanceof Error ? err.message : String(err);
+  const rate = /429|rate.?limit|exceeded the requests|asked for a .*pause|after 4 attempts/i.test(msg);
+  const down = /HTTP 5\d\d|timed? ?out|ECONN|fetch failed|non-JSON|unexpected shape|outage|no result field/i.test(msg);
+  const venue = /Magic Eden/i.test(msg) ? "Magic Eden" : /OpenSea/i.test(msg) ? "OpenSea" : /CryptoSlam/i.test(msg) ? "CryptoSlam" : /Solana RPC|RPC/i.test(msg) ? "the public Solana RPC" : null;
+  if (venue && rate) return { kind: "upstream-rate-limit", headline: `${venue} is pausing requests for a moment (their limit, not a problem on your side).`, next: "Wait about a minute and ask again. Smaller requests (fewer pages, fewer collections priced) also help." };
+  if (venue && down) return { kind: "upstream-unavailable", headline: `${venue} did not answer just now (their service, not your setup).`, next: "Try again shortly. If it keeps happening, the other sources still work - ask for what they can answer." };
+  if (/has no collection|no data found|does not exist|not found|no account at/i.test(msg)) return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
+  if (/base58|must be|invalid|expected|enum/i.test(msg)) return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
+  if (/blocks this address|escrow or program account/i.test(msg)) return { kind: "escrow", headline: "That address is a marketplace escrow or program account, not a person's wallet, so holdings cannot be listed for it.", next: "If it came from a provenance trail, the item is listed for sale; the seller is the wallet that transferred it in." };
+  return { kind: "error", headline: "That request could not be completed.", next: "Try again, or try a narrower request." };
+}
+
 const guard =
   <A extends unknown[]>(fn: (...args: A) => Promise<ToolResult>) =>
   async (...args: A): Promise<ToolResult> => {
     try {
       return await fn(...args);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+      const detail = err instanceof Error ? err.message : String(err);
+      const e = explain(err);
+      return {
+        content: [{ type: "text", text: `${e.headline} ${e.next}
+(detail: ${detail})` }],
+        structuredContent: { error: e.kind, message: e.headline, next: e.next, detail },
+        isError: true,
+      };
     }
   };
 
