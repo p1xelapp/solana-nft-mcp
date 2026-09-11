@@ -16,3 +16,6 @@ dist/
 Thumbs.db
 !.env.example
 secrets.env
+
+# Private launch notes, not part of the published project
+LAUNCH-PLAYBOOK.html
