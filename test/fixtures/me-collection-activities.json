@@ -1,0 +1,662 @@
+[
+ {
+  "signature": "4zUK7qpsYSUwQk571HubpTkvVQDKbE8UEugbVsbhMWiiHvhdaPJg1peR1Psj7yBhEjgYZg7L6xeoHLfangxUsq1f",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "GEWE5SHwtgVH7CxTTmZHT9veyDyTyQ4mm18ZhXLyVxye",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446217117,
+  "blockTime": 1789148788,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.04,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "40000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "qLAo1D3UVBDwD5ZAHrvKnLyyCPktbVruSCi9MZR78SnB7R9CPXDSKUa4C2G3QLagxWtS31HssusaoVprzCP2Aae",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "5tBdLtfZLg7w1xm8b8vA6KMLtThwBJRsJ3YcYQmRJHKb",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446213660,
+  "blockTime": 1789147689,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.023559901,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "23559901000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "4HBEfFFcaREgf1VCcZ4YAZM7xDo7aY4NnXgN9Rwoi47Np8ec7jRdGcbUgYEtut7wBep2RNX3yjSyi7NLmQ4TCpZn",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "7cfZYVtLiu6a187GnnbRr32fxuLEFpx4j4pTAtVM4sa5",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446213488,
+  "blockTime": 1789147634,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.022,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "22000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3UpDJ93Nqt4ZdHuKroBr7uah43D7uKujeyFhvqErawYYreZ71dTP7e82weBUq3pLu7gsveQ2dKe6QXakYsFMZycs",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "EiHcCgWjSB3FvajSBTPSvNJzxyMyCE3C5jT5pakoS5Ce",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446213213,
+  "blockTime": 1789147547,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "2dYv13xRMNkiqXxzk9ZU3W9K1o1CdPF1iUnAvQcjG7v9",
+  "sellerReferral": "",
+  "price": 0.02,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "20000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5iKg4Q7sb7uCrX7JspiC8QRvdnN6UfC2xGRenEHbAq5PdubiCDDnhrqUekMPpmkosGNuxV6xFcvp2N4ygAyGds3v",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "HFVs8Ep6iouMFtgDMC2NiSNXFRLpJtBoTi8Rd4S3sutn",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446213111,
+  "blockTime": 1789147515,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.019344231,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "19344231000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5RuFWUgsbQLHkVyJfHvdUQetmxDfn2DENhMZgLSm76WuBGkuaEQoWXpSPqqgG5PrRuCmUmPDNAsdLtFkn2Wofaxz",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "CKiLBYArYRgJU37Gr5ydEuw36LHQ5Y8vaFX1ro9y4CQu",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446213088,
+  "blockTime": 1789147507,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.019344231,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "19344231000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "KMYL1LkMWAJXMgFDaTzyHJi2ohvj7PzSN5RsakriA7YDEbQwVzWPExzR9QD8hrkwRjb9GcYDEB5YDeZnZVgrqAb",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "BNQjucK3QdE7eyjvsUcMQs8mcMsJ3GMdK7YpT2xAxgVH",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446212871,
+  "blockTime": 1789147436,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "FbvJZQkDpuWP9ve5HogFnHbYK57W2iqzcxerCgTgUzm2",
+  "sellerReferral": "",
+  "price": 0.019,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "19000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5WxFT3ggUNTVZi3WwhYH2qeduzDZCPEiQfweJsXBKpfBPoHBj9EsbEUMwUCc8jMmXSNaRLyP5TpWXHPpoLbUeQLD",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "EL3ZwruaUn19kcgFzJb3MCGSDXAPHTKC9r7Tf7b8SLvr",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446212815,
+  "blockTime": 1789147418,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "BjrSaSPuoTFHMhx4Xx9gV6m6eA2GmktdnywCMUuJRT9o",
+  "sellerReferral": "",
+  "price": 0.019,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "19000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "4BDqeHPU4nuLwSGurZf5uo7WNGuaAQyuDoGiuPPENXDDJUjcYQag5zBY4yQanqnUaDCp5dVGrPNLcyoyVgNdGb4T",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "25WcyC3GX2XF88G8H8p1Vm9Qp5g2shFQPwrSyL57HsEA",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446212776,
+  "blockTime": 1789147404,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.01815548,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "18155480000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5rzrgQCdAqT2rqNyP93JDoxCXDLa6C1uVMZkAAKpYdYPx23QpMzLPWmJpGkRB2pkepbGSbayqB2hssNW6HSWbLYJ",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "EWvk89jyQzEQGySbQkfr9MKbdRDDSj3vrneHPkxnTci5",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446211460,
+  "blockTime": 1789146982,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.01354103,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "13541030000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3aM7pUV4efLuCkCxK9ya1GTE7cDFzSb9To9xvhbRjYp7hdMXzY6qKBVPgptJvgkUX8U334P66ijAsw2BY6X1jbmw",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "2VpPQqiZh6BoFRqTfAi12iUHxkBc3GQ2uzKFebBN2dwN",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446211355,
+  "blockTime": 1789146949,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "84G7Ebt5r9Gf4crhKYFybhZZcHYnecD9EmiWowEDwn8c",
+  "sellerReferral": "",
+  "price": 0.012577399,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "12577399000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "GQBeHFnwmyHTYLcGe4LUPuympjrEzkRZ2bkMH97axennNmf46ignZJeLqpwsH1oky8KUkihAcARtXoX2caenEEB",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "CTkviiuvvN1KTw8giKq2JdnapaMW4ziRmaMepGG3u3Cc",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446211315,
+  "blockTime": 1789146936,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.011,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "11000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "Qw5F4XALXKJdqSZeJhjp59ThtgYFVgfD11KEVFF7bfkKKhZeQsNTabTYQMKsAZPyrxKvEk3oCoQ555EmobmxSQy",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "GqGrw9Txt74R23PocSCQFWmHnqRJLnJvXnrkcPfrgeaB",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446211088,
+  "blockTime": 1789146864,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009674923,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9674923000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "FnwSxKVoLoSwk4C57eh528ib3KEqEQbcurBg4zNfvJ1x6K3qrQbch7GuL3LyoBnvtmcHPCyeAg3USYBYqaWpJQn",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "9JCMCx1VCXxU8hNviKz6a5jxEHKkHHPVDsABpcg8RH5y",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446211010,
+  "blockTime": 1789146840,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009673051,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9673051000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5JieT7npi1n4AmeCwfJnHrS4uEzoJAyLWF1TL22iKNiF7GnyMWZTKQkjb2KGGto7gnL6FkPuP1qahbFgCrzqJM1m",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "DPMGWx2By6ZEaJAnaXawP2rtzTuNK85CaH5vGC6FsBxn",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210957,
+  "blockTime": 1789146823,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009672115,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9672115000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3FEcw1TPVyeDRYnuHjNST349ymSRK1n562JUMkez1RyZuza7cKTu2bjniiQHVPsw8DSGupVfvvqdpyWzZWNYmMTe",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "4nxPTcNkyaMED635FTNHjmbfPnwhXeZEicpcoFSGzJzG",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210594,
+  "blockTime": 1789146708,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.00966744,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9667440000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "4RECzCEo2JfzzCDrtkd7ePYUsesQFCoz1jMHkVM39cSi3LERVD4rtTfQopSkKZCNb42ichyyWkViYx2PPP9yJ3YM",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "9N4ZXx53aXeSqP7grnkXuQdw18kdMTaxfrBTLjrq1S4W",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210498,
+  "blockTime": 1789146678,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009659969,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9659969000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "2h58AEfZoiQUHvHfwKDuC8QWZuWLgxvDN46m2He2K8bUBiUXMFx8AR2tEUCaPUcH5i1nemdF23z7YCzXY9iKuYwE",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "hXekNVAJaUWhQqeBbZfZYJ8bjUEiyXCFSjJsBmRy2yZ",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210463,
+  "blockTime": 1789146667,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009659969,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9659969000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3imbLxjjCrH2VDmVtC7xi8AuZF4w32t6ya3S4URoArguhZExYVcipcnsbfxjAnBqdVUSmC5mPpPJG2i1SPz3kr3",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "GBzs5Ajk74o5y5WQP7UZmwZDueA8wc7EeYW5tw7LNKCa",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210393,
+  "blockTime": 1789146644,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009658103,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9658103000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "a3y4TToKqm98ujA2eEQpirve4UFHPkVj3ZHLKZWn6D1pqzAjDRshbN4nQ4K6CnAtunnRtJY4V1iPW6X8PWGausn",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "HNHtNzaUg4NvwqFC2Yvfq1px8gEdQ1h27BoyVHV6gqYL",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210339,
+  "blockTime": 1789146628,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009658103,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9658103000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "4SuZe4Pnz9CC2wDJHkXG1JeNExE8wKecKKwsP49kdHQr9tpcY2kyY4fj6miyEhJTTJwhqVfUp7gncmXpyzpWTdsf",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "8GYoaLgf9RipavppX3bvAqdzyQSNsMnK4JwGd9oc5vGo",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210253,
+  "blockTime": 1789146600,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.00965717,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9657170000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3tiVdzFSztfAwStwPud1KUc8CEmMHCKWXydcSGGdGFDE8LPo5AXQeRe2fYVvUbPyoXLdLCQh1qBBoEz3ZsQ936Rp",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "F89nfDoeKuZdphNtnPKzggB5ApVAYF5ME6buQb5AtLxf",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210223,
+  "blockTime": 1789146591,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.00965717,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9657170000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "47MHHrGGaD1Tq2D919wFNiTZo5Aeb1MWe3RgzzhV2bsR595cFTUH8LsTs4bzXh3Nf8BfeuPiz9fNHZnLAj3m8So1",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "7A8N9VWpvsJixFqjM8KnDvG1b9stxbtYLfK42dZYaqoW",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210156,
+  "blockTime": 1789146569,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009645062,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9645062000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "57QjnN2qFRhjHbKTi5uDGoB1TxjfgWdVjm1i4xKaiNQ8ymzhsDUdVnsKcvPtQ4Nh9Y1ALYUcoTR1zhRZ3Snf1R51",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "CSCLgF3oBpn24vxEWS44Pqd1qy4zfPBY3w3vUFjaQCb6",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210129,
+  "blockTime": 1789146561,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009645062,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9645062000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5WvbNcgpMNQoh774Z89qHRzKDmuogWbos3PAGPnogekYn3y1xvwi8QMefmL1P36cRZW61F9NkybhujPB33ATs6to",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "3ESq6xgTdit1tzfykwRp1ctnd6nVVotgsTukVoU7cX7m",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446210092,
+  "blockTime": 1789146549,
+  "buyer": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009644132,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9644132000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "gp7Qznd4yZAnUXuA4Y1GvJVkhKRcnEjPb6GGtPPhjpQpkdxNr2ZoCSZi2g8H76iim9Zn5sY9UVJ9UW2eh8qdzLv",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "F6uKkyjbaed6scJYppC4eDKR7LLwir37vcJK1LgWVZXN",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446204146,
+  "blockTime": 1789144670,
+  "buyer": "BSDHcCACDiDZyAtEZJWw9t4yaMw41jz8ngu9KuPwktJp",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.07,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "70000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "5KkGD6AM42FM1eUuVWBypM3G2qdBwFL89qhQQ3qEnhM3WYqCrELAuXRxwE9iwXSXWXqAdespDc933ZAGTviFxwzo",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "EwkaGsDheiGKLa23F1ofkoKEk6bF43VwzaZpTsGhSbh5",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446191261,
+  "blockTime": 1789140567,
+  "buyer": "FoJE7b2TEShYwCaDzQwTq8WAwB8K4aN4m3H25r2BfMLA",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.045,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "45000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "3aRocnZtSJXooAszvsAnum6NAR95stFnKMe27nBZuYkaNjy5bPmRJ84aNNHyKSaXGW34SzQBk5kSfcmxLpN21bkR",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "BwKAu4kcdtWfWGodkNdzuhDnfefSLp8Y2BZAGggvEg2b",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446187578,
+  "blockTime": 1789139393,
+  "buyer": "FoJE7b2TEShYwCaDzQwTq8WAwB8K4aN4m3H25r2BfMLA",
+  "buyerReferral": "",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "",
+  "price": 0.044,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "44000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "2w6yoN8pnFiPXifc9BU8pWEKgHwpNuNRfnoP3WcmJPWkHYDWDPJZHxk3YemdJL2N7ktRKdAZV1eXj1pc9vKWysDx",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "9vbCFEPkuaHQoJPHyATpDPdRt4ccuoEKo6JbFmAkSbvi",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446186556,
+  "blockTime": 1789139067,
+  "buyer": "FoJE7b2TEShYwCaDzQwTq8WAwB8K4aN4m3H25r2BfMLA",
+  "buyerReferral": "",
+  "seller": "J648qNwtAwCFsQXPaK8sUbuLZe5UZhtMe5G7g32a4QAB",
+  "sellerReferral": "",
+  "price": 0.05,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "50000000000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ },
+ {
+  "signature": "4eVgaUjwipAQBCfda2du8NL1iymJ1Y897U6nRyQ5g98FnVVst6rU1QpyueWm7Y3YThLBqPus3jKSiYiEmH5HgT8k",
+  "type": "buyNow",
+  "source": "magiceden_v2",
+  "tokenMint": "BCvHMTKd3eNGW9jAisSPsxY6kh4kWKc1X5AFWohzH1FT",
+  "collection": "2026_mlb_base_series_icons_candy_digital",
+  "collectionSymbol": "2026_mlb_base_series_icons_candy_digital",
+  "slot": 446181142,
+  "blockTime": 1789137352,
+  "buyer": "J648qNwtAwCFsQXPaK8sUbuLZe5UZhtMe5G7g32a4QAB",
+  "buyerReferral": "",
+  "seller": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "sellerReferral": "",
+  "price": 0.009659969,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9659969000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  }
+ }
+]

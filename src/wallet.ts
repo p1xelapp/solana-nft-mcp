@@ -15,7 +15,16 @@ import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
 
-const round = (n: number, dp = 3) => Math.round(n * 10 ** dp) / 10 ** dp;
+/**
+ * Lamport resolution (1e-9 SOL) by default, not the 3 decimals a summary can
+ * afford to show. Card collections trade well under 0.01 SOL: at 3 decimals a
+ * buy at 0.009644132 and a sell at 0.0098 both became 0.01 and the flip
+ * reported a P&L of exactly zero - neither a win nor a loss. Nothing finer
+ * than a lamport exists on Solana, so 9 places are lossless for real amounts
+ * while still absorbing the float noise a long sum accumulates. Percentages
+ * and day counts pass their own smaller `dp`.
+ */
+const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
 const iso = (t?: number) => (t ? new Date(t * 1000).toISOString() : null);
 
 // ----------------------------------------------------------- holdings
@@ -118,6 +127,15 @@ export interface ActivitySummary {
   netFlowSol: number;
   topCollections: { collection: string; events: number }[];
   flips: Flip[];
+  realized: {
+    flips: number;
+    pnlSol: number;
+    wins: number;
+    losses: number;
+    best: Flip | null;
+    worst: Flip | null;
+    note: string;
+  };
   behaviour: {
     /** Of the items bought in the window, how many were sold again inside it. */
     boughtThenSoldPct: number | null;
@@ -149,7 +167,10 @@ export function summarizeActivity(
   // Per mint, a FIFO of buys not yet matched to a later sell, so a wallet that
   // buys, sells and re-buys the same item gets one flip per cycle.
   const openBuys = new Map<string, MeWalletActivity[]>();
-  const flips: Flip[] = [];
+  // Each flip is carried with its UNROUNDED delta: a win or a loss is decided
+  // on the real difference, never on a displayed number that rounding can pull
+  // to zero.
+  const rows: { flip: Flip; delta: number }[] = [];
   let purchases = 0;
   let lists = 0;
 
@@ -183,22 +204,27 @@ export function summarizeActivity(
         const q = e.tokenMint ? openBuys.get(e.tokenMint) : undefined;
         const buy = q?.shift();
         if (buy && buy.blockTime && e.blockTime && e.blockTime > buy.blockTime && e.tokenMint) {
-          flips.push({
-            mint: e.tokenMint,
-            collection: col,
-            boughtAt: iso(buy.blockTime),
-            soldAt: iso(e.blockTime),
-            buySol: round(buy.price ?? 0),
-            sellSol: round(e.price),
-            pnlSol: round(e.price - (buy.price ?? 0)),
-            heldDays: round((e.blockTime - buy.blockTime) / 86_400, 1),
+          const delta = e.price - (buy.price ?? 0);
+          rows.push({
+            delta,
+            flip: {
+              mint: e.tokenMint,
+              collection: col,
+              boughtAt: iso(buy.blockTime),
+              soldAt: iso(e.blockTime),
+              buySol: round(buy.price ?? 0),
+              sellSol: round(e.price),
+              pnlSol: round(delta),
+              heldDays: round((e.blockTime - buy.blockTime) / 86_400, 1),
+            },
           });
         }
       }
     }
   }
 
-  flips.sort((a, b) => (b.soldAt ?? "").localeCompare(a.soldAt ?? ""));
+  rows.sort((a, b) => (b.flip.soldAt ?? "").localeCompare(a.flip.soldAt ?? ""));
+  const flips: Flip[] = rows.map((r) => r.flip);
 
   const holds = flips.map((f) => f.heldDays).filter((d): d is number => d !== null).sort((a, b) => a - b);
   const medianHold = holds.length ? holds[Math.floor(holds.length / 2)]! : null;
@@ -253,6 +279,19 @@ export function summarizeActivity(
       .slice(0, 8)
       .map(([collection, n]) => ({ collection, events: n })),
     flips: flips.slice(0, 25),
+    // Totals run over every flip, not the 25 shown, so "how much has this
+    // wallet made" does not silently shrink with the display cap.
+    realized: {
+      flips: rows.length,
+      pnlSol: round(rows.reduce((s, r) => s + r.delta, 0)),
+      // Classified on the real difference. A 0.00016 SOL gain is a win on a
+      // card that cost 0.0096; rounding it away invents a break-even.
+      wins: rows.filter((r) => r.delta > 0).length,
+      losses: rows.filter((r) => r.delta < 0).length,
+      best: rows.length ? rows.reduce((a, b) => (b.delta > a.delta ? b : a)).flip : null,
+      worst: rows.length ? rows.reduce((a, b) => (b.delta < a.delta ? b : a)).flip : null,
+      note: "Sale minus purchase for items both bought and sold inside the window, before fees and royalties, Magic Eden feed only. Amounts are shown to lamport resolution (9 decimals); wins and losses are decided on the unrounded difference.",
+    },
     behaviour: { boughtThenSoldPct, medianHoldDays: medianHold, label, why },
     firstBuyInWindow: firstBuy
       ? {
@@ -322,6 +361,70 @@ export function summarizeOpenSeaEvents(wallet: string, events: OsAccountEvent[],
     collections,
     caveat:
       "OpenSea's account feed on Solana includes plain transfers, which Magic Eden's does not. A transfer-in with no sale can be a gift, an airdrop, a move between the owner's own wallets, or a purchase OpenSea did not see (e.g. a Magic Eden fill) - the chain records the movement, not the reason. OpenSea has also been observed labelling Magic Eden fills as its own sales.",
+  };
+}
+
+// ------------------------------------------------- two-reader comparison
+
+export interface ReaderCount {
+  /** What this reader is called in the answer. */
+  reader: string;
+  /** Rows actually read, or null when the reader did not answer at all. */
+  count: number | null;
+  /** True when the reader stopped at a page/walk limit, so the count is a lower bound. */
+  bounded: boolean;
+  /** What to raise to read further, named for the caller. */
+  raise?: string;
+  /** True when this count came from cache after a failed refresh: it describes an earlier moment. */
+  stale?: boolean;
+  /** When this reader actually answered, for the sentence that says so. */
+  readAt?: string;
+}
+
+export interface ReaderComparison {
+  /** True only when both readers answered AND neither stopped at a limit. */
+  comparable: boolean;
+  /** The sentence to show. Null when neither reader answered. */
+  note: string | null;
+}
+
+/**
+ * Compare what two independent readers listed for one wallet.
+ *
+ * The trap: a wallet holds 100 items, the caller asks for 50, and both readers
+ * return 50. "Both readers count the same number of items" is then a statement
+ * about the page size, not about the wallet - and it reads as corroboration of
+ * a total neither reader established. Counts are only compared when neither
+ * side was cut off; otherwise they are named as items READ, a lower bound.
+ *
+ * The same applies to freshness: two cached lists can carry the same count
+ * because neither reader answered, and that agreement is about the cache.
+ */
+export function compareReaderCounts(a: ReaderCount, b: ReaderCount): ReaderComparison {
+  const answered = [a, b].filter((r) => r.count !== null);
+  if (answered.length < 2) return { comparable: false, note: null };
+  const bounded = [a, b].filter((r) => r.bounded);
+  const describe = (r: ReaderCount) =>
+    `${r.reader} listed ${r.count} item(s)${r.bounded ? ` and stopped at its limit${r.raise ? ` (raise ${r.raise} to read more)` : ""}` : ""}`;
+  if (bounded.length > 0) {
+    return {
+      comparable: false,
+      note:
+        `${describe(a)}; ${describe(b)}. These are items READ, not totals: at least one reader stopped at a limit, ` +
+        `so each number is a lower bound and the two cannot be compared to each other.`,
+    };
+  }
+  if (a.count === b.count) {
+    return {
+      comparable: true,
+      note: `Both readers listed ${a.count} item(s) and neither stopped at a limit, so they agree on what they can see. Coverage still differs: ${a.reader} only carries what it indexes, and ${b.reader} has undocumented coverage of its own.`,
+    };
+  }
+  return {
+    comparable: true,
+    note:
+      `${describe(a)}; ${describe(b)}. Neither index is complete on its own: a marketplace skips what it does not trade, ` +
+      `the public asset index has undocumented coverage. Treat the larger count as the floor.`,
   };
 }
 

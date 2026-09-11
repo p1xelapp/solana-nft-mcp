@@ -12,12 +12,40 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const client = new Client({ name: "protocol-test", version: "1.0.0" });
-await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"] }));
+// The child gets an ALLOWLIST, not this process's environment. Forwarding all
+// of process.env handed the server an OPENSEA_API_KEY whenever the developer
+// had one set, so search_collections made a real request and the suite quietly
+// stopped being offline - and still passed, because the assertion could be
+// satisfied from the registry when that request failed.
+//
+// COLLECTOR_MCP_OFFLINE=1 is the other half: it keeps the name search from
+// starting its background directory walk AND makes any attempted network read
+// throw, so an accidental live call fails the run instead of passing.
+const offlineEnv = {};
+for (const k of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "COMSPEC"]) {
+  if (process.env[k]) offlineEnv[k] = process.env[k];
+}
+offlineEnv.COLLECTOR_MCP_OFFLINE = "1";
+for (const k of ["OPENSEA_API_KEY", "DAS_RPC_URL", "SOLANA_RPC_URL"]) {
+  assert.ok(!(k in offlineEnv), `${k} must never reach the offline server`);
+}
+await client.connect(
+  new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env: offlineEnv }),
+);
 
 const { tools } = await client.listTools();
-assert.strictEqual(tools.length, 14, `expected 14 tools, got ${tools.length}`);
-for (const n of ["identify", "get_integration_recipe", "verify_claim", "get_asset_trust", "get_wallet_profile", "get_wallet_activity"]) {
+assert.strictEqual(tools.length, 20, `expected 20 tools, got ${tools.length}`);
+for (const n of [
+  "identify", "get_integration_recipe", "verify_claim", "get_asset_trust", "get_wallet_profile", "get_wallet_activity",
+  "get_collection_sales", "find_listings", "get_top_traders", "get_trending", "explain_mechanics", "get_source_status",
+]) {
   assert.ok(tools.some((t) => t.name === n), `${n} tool missing`);
+}
+// Descriptions carry the plain-words asks a person would type, because the
+// model picks a tool from them; a description that only names the endpoint
+// leaves "how many sales this week" unanswered.
+for (const [n, phrase] of [["get_collection_sales", "how many sales"], ["find_listings", "cheapest"], ["explain_mechanics", "escrow"], ["get_source_status", "down"]]) {
+  assert.ok(tools.find((t) => t.name === n).description.toLowerCase().includes(phrase), `${n} description should mention "${phrase}"`);
 }
 for (const t of tools) {
   assert.ok(t.description && t.description.length > 40, `${t.name} needs a real description`);
@@ -31,6 +59,19 @@ const entries = JSON.parse(reg.contents[0].text);
 assert.ok(Array.isArray(entries) && entries.length >= 5, "registry should have >=5 entries");
 
 assert.ok(resources.some((r) => r.uri === "collector://glossary"), "glossary resource missing");
+assert.ok(resources.some((r) => r.uri === "collector://sources"), "sources resource missing");
+assert.ok(resources.some((r) => r.uri === "collector://mechanics"), "mechanics resource missing");
+{
+  const sources = JSON.parse((await client.readResource({ uri: "collector://sources" })).contents[0].text);
+  assert.ok(Array.isArray(sources) && sources.length >= 15, "source catalog should list every source, wired or planned");
+  for (const s of sources) {
+    assert.ok([1, 2, 3, 4].includes(s.tier) && s.answers.length && s.cannotSee.length && s.officialDocs, `${s.id} needs tier, answers, cannotSee, docs`);
+  }
+  assert.ok(sources.some((s) => s.id === "das-public" && s.wired), "the public asset index should be wired");
+  const mech = JSON.parse((await client.readResource({ uri: "collector://mechanics" })).contents[0].text);
+  assert.ok(mech.length >= 40 && mech.every((m) => m.pitfall && /^https:\/\//.test(m.source)), "mechanics entries need a pitfall and a source URL");
+  assert.ok(mech.every((m) => m.verified || m.unverifiedReason), "an unverified mechanics entry must say why");
+}
 const gloss = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
 assert.ok(gloss.glossary.length >= 20, "glossary should carry the domain vocabulary");
 assert.ok(gloss.presentationRules.length >= 5, "presentation rules missing");
@@ -303,6 +344,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (14 tools, 2 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (20 tools, 4 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

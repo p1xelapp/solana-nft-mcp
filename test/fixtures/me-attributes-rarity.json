@@ -1,0 +1,583 @@
+{
+ "results": {
+  "symbol": "claynosaurz",
+  "availableAttributes": [
+   {
+    "attribute": {
+     "trait_type": "Layer Count",
+     "value": "2"
+    },
+    "count": 66,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 3291,
+     "2": 66
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Background",
+     "value": "Sky"
+    },
+    "count": 39,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1673,
+     "2": 39
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    "count": 95,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 4957,
+     "2": 95
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Mood",
+     "value": "Sad"
+    },
+    "count": 22,
+    "floor": 9450000000,
+    "countByListingType": {
+     "1": 1286,
+     "2": 22
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Idle"
+    },
+    "count": 40,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 1927,
+     "2": 40
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Class",
+     "value": "Tracker"
+    },
+    "count": 3,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 688,
+     "2": 3
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Color",
+     "value": "Amethyst"
+    },
+    "count": 16,
+    "floor": 9470000000,
+    "countByListingType": {
+     "1": 889,
+     "2": 16
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Details",
+     "value": "On"
+    },
+    "count": 88,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 5010,
+     "2": 88
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Trot"
+    },
+    "count": 34,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1977,
+     "2": 34
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    "count": 121,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 5995,
+     "2": 121
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Trice"
+    },
+    "count": 37,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 1865,
+     "2": 37
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Background",
+     "value": "Lavender"
+    },
+    "count": 25,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1647,
+     "2": 25
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    "count": 106,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 5097,
+     "2": 106
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    "count": 75,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 3755,
+     "2": 75
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Skin",
+     "value": "Savanna"
+    },
+    "count": 29,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1125,
+     "2": 29
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Rex"
+    },
+    "count": 34,
+    "floor": 9449000000,
+    "countByListingType": {
+     "1": 2102,
+     "2": 34
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Stego"
+    },
+    "count": 39,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 1662,
+     "2": 39
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Layer Count",
+     "value": "3"
+    },
+    "count": 37,
+    "floor": 10098000000,
+    "countByListingType": {
+     "1": 2416,
+     "2": 37
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Details",
+     "value": "Off"
+    },
+    "count": 104,
+    "floor": 8200000000,
+    "countByListingType": {
+     "1": 5002,
+     "2": 104
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Background",
+     "value": "Salmon"
+    },
+    "count": 32,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 1618,
+     "2": 32
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Color",
+     "value": "Tropic"
+    },
+    "count": 31,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1728,
+     "2": 31
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Mood",
+     "value": "Smug"
+    },
+    "count": 22,
+    "floor": 8200000000,
+    "countByListingType": {
+     "1": 1229,
+     "2": 22
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Skin",
+     "value": "Mirage"
+    },
+    "count": 52,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 2031,
+     "2": 52
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Skin",
+     "value": "Jurassic"
+    },
+    "count": 24,
+    "floor": 9450000000,
+    "countByListingType": {
+     "1": 1322,
+     "2": 24
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Mood",
+     "value": "Bored"
+    },
+    "count": 26,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 1234,
+     "2": 26
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Walk"
+    },
+    "count": 38,
+    "floor": 9470000000,
+    "countByListingType": {
+     "1": 1960,
+     "2": 38
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Color",
+     "value": "Desert"
+    },
+    "count": 45,
+    "floor": 9449000000,
+    "countByListingType": {
+     "1": 1866,
+     "2": 45
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Bronto"
+    },
+    "count": 29,
+    "floor": 9450000000,
+    "countByListingType": {
+     "1": 1372,
+     "2": 29
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Class",
+     "value": "Mystic"
+    },
+    "count": 10,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 852,
+     "2": 10
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Skin",
+     "value": "Oceania"
+    },
+    "count": 15,
+    "floor": 8200000000,
+    "countByListingType": {
+     "1": 799,
+     "2": 15
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Color",
+     "value": "Volcanic"
+    },
+    "count": 36,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 1962,
+     "2": 36
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Ankylo"
+    },
+    "count": 38,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1563,
+     "2": 38
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Background",
+     "value": "Mint"
+    },
+    "count": 31,
+    "floor": 8200000000,
+    "countByListingType": {
+     "1": 1703,
+     "2": 31
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Class",
+     "value": "Mender"
+    },
+    "count": 4,
+    "floor": 9450000000,
+    "countByListingType": {
+     "1": 682,
+     "2": 4
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Mood",
+     "value": "Sleepy"
+    },
+    "count": 28,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 1217,
+     "2": 28
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Mood",
+     "value": "Confident"
+    },
+    "count": 26,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 1323,
+     "2": 26
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    "count": 192,
+    "floor": 8199000000,
+    "countByListingType": {
+     "1": 10029,
+     "2": 192
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Back",
+     "value": "On"
+    },
+    "count": 97,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 5055,
+     "2": 97
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Color",
+     "value": "Aqua"
+    },
+    "count": 33,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 1710,
+     "2": 33
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Pattern",
+     "value": "On"
+    },
+    "count": 86,
+    "floor": 8200000000,
+    "countByListingType": {
+     "1": 4915,
+     "2": 86
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Belly",
+     "value": "On"
+    },
+    "count": 71,
+    "floor": 8250032039,
+    "countByListingType": {
+     "1": 4017,
+     "2": 71
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Gallop"
+    },
+    "count": 24,
+    "floor": 8218000000,
+    "countByListingType": {
+     "1": 1265,
+     "2": 24
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Glide"
+    },
+    "count": 1,
+    "floor": 254000000000,
+    "countByListingType": {
+     "1": 50,
+     "2": 1
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Motion",
+     "value": "Soar"
+    },
+    "count": 1,
+    "floor": 70000000000,
+    "countByListingType": {
+     "1": 45,
+     "2": 1
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Species",
+     "value": "Dactyl"
+    },
+    "count": 2,
+    "floor": 70000000000,
+    "countByListingType": {
+     "1": 218,
+     "2": 2
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Skin",
+     "value": "Apres"
+    },
+    "count": 5,
+    "floor": 55140000000,
+    "countByListingType": {
+     "1": 297,
+     "2": 5
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Layer Count",
+     "value": "0"
+    },
+    "count": 8,
+    "floor": 24000000000,
+    "countByListingType": {
+     "1": 197,
+     "2": 8
+    }
+   },
+   {
+    "attribute": {
+     "trait_type": "Class",
+     "value": "Warrior"
+    },
+    "count": 9,
+    "floor": 16000000000,
+    "countByListingType": {
+     "1": 957,
+     "2": 9
+    }
+   }
+  ]
+ }
+}

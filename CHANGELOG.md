@@ -240,3 +240,50 @@ the important ones changed answers, not just code.
   and sales return the venue that answered when the other failed; receipts
   name the venue and time for marketplace-only checks; the offline suite no
   longer touches the network.
+
+## 1.8.0 - 2026-09-11
+
+Market questions, plain names, a second reader for the chain, and a source
+catalog. 20 tools, 4 resources.
+
+- `get_collection_sales`: sales over a window from Magic Eden's activity feed
+  (count, volume, top and bottom sale, median, buyers and sellers, per-day
+  series, venue split), with how far back the feed was read. Unknown activity
+  types are rejected client-side because the venue silently ignores them and
+  returns the unfiltered feed. Duplicate fills in the venue's own feed are
+  deduplicated by signature. Prices are kept at lamport resolution; three
+  decimals lost a third of a sub-0.01 SOL card sale.
+- `find_listings`: cheapest-first listings with trait filters (AND across
+  filters), a name filter for serials, each ask compared to its trait floor.
+- `get_top_traders`, `get_trending` (with an explicit note when the venue
+  publishes an empty list), `explain_mechanics`, `get_source_status`.
+- Plain names resolve against the whole Magic Eden directory: a bundled
+  snapshot (`data/me-collections.json.gz`, 30,499 collections, `npm run
+  snapshot` refreshes it) answers instantly and the live directory is walked
+  in the background after the first miss. Results say which layers were
+  searched; "no match" is never claimed for a layer that was not read.
+- The public Solana RPC's asset index (DAS) is read without a key as a second,
+  independent view: `get_asset` reports whether the account bytes and the
+  index name the same owner; `get_wallet_holdings` returns both readers and
+  names the gap. A capability probe treats a withdrawn method as unavailable
+  and the tools carry on without it.
+- Chain reads rotate across three public RPC endpoints with a per-endpoint
+  cooldown; `SOLANA_RPC_URL` goes first when set.
+- `src/sources/catalog.ts` lists every source (wired or planned) with tier,
+  what it answers, what it cannot see, retention, fallback, docs and status
+  page; served as `collector://sources` and rendered to `docs/SOURCES.md`.
+- `src/mechanics.ts`: how each Metaplex Core plugin, Token Metadata delegate
+  and rule set, compressed NFTs, and each Solana venue handle custody,
+  freezing and royalties, every entry with its source and pitfall, documented
+  versus observed where they differ. `get_asset_trust` attaches the plain
+  consequences of the plugins it decoded.
+- `get_wallet_activity` adds realized totals over every flip (not just the 25
+  shown): P&L, wins, losses, best and worst.
+- Errors distinguish "that is a collection, not an item" and "not a Core
+  asset" from not-found, each with the tool to use instead.
+- Weekly live check (`.github/workflows/live-check.yml`, `npm run test:live`)
+  against the real endpoints; it only makes noise when a source breaks.
+- Panini's registry entry now says its cards are not on Solana.
+- Docs: SOURCES, QUESTIONS, BUILD-IDEAS, TRUST-AND-LIMITS, HOW-IT-WAS-BUILT;
+  FAQ covers tool names, plain names, privacy, speed, screenshots, outages,
+  history depth and wrong numbers.

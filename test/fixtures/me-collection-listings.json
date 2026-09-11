@@ -1,0 +1,1692 @@
+[
+ {
+  "pdaAddress": "2eaeJidf4Ypb7KChGrjPAC7YfZLoPDepuLwHA3ogpi3b",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "A8Vax2AVrnC4M8A3pTZmjn3QkYaBNdc3SdL4St4CftBK",
+  "tokenMint": "A8Vax2AVrnC4M8A3pTZmjn3QkYaBNdc3SdL4St4CftBK",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.006,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "6000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "A8Vax2AVrnC4M8A3pTZmjn3QkYaBNdc3SdL4St4CftBK",
+   "owner": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Ozzie Albies (94/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Ozzie Albies"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.267
+    },
+    {
+     "trait_type": "HR",
+     "value": 14
+    },
+    {
+     "trait_type": "RBI",
+     "value": 51
+    },
+    {
+     "trait_type": "OBP",
+     "value": "0.320"
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.439
+    },
+    {
+     "trait_type": "TB",
+     "value": 161
+    },
+    {
+     "trait_type": "R",
+     "value": 61
+    },
+    {
+     "trait_type": "SB",
+     "value": 1
+    },
+    {
+     "trait_type": "AB",
+     "value": 367
+    },
+    {
+     "trait_type": "H",
+     "value": 98
+    },
+    {
+     "trait_type": "2B",
+     "value": 21
+    },
+    {
+     "trait_type": "3B",
+     "value": 0
+    },
+    {
+     "trait_type": "BB",
+     "value": 29
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.759
+    },
+    {
+     "trait_type": "G",
+     "value": 95
+    },
+    {
+     "trait_type": "WAR",
+     "value": 1.6
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 6″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "165"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 6″ / 165"
+    },
+    {
+     "trait_type": "Age",
+     "value": 29
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Willemstad, Curaçao"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#1"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Second Base"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "2B"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Atlanta Braves"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "08/01/2017"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "94/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.006,
+   "listStatus": "listed",
+   "tokenAddress": "A8Vax2AVrnC4M8A3pTZmjn3QkYaBNdc3SdL4St4CftBK",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "6000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "2GQJmd9oU6ZwMz9PmRhaUSnorMVkkiEbRDygVvniBnxh",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "3ALnw5m7ZnKmfHRn56ojRnvBc2nfYeox73XzyNnDnGaf",
+  "tokenMint": "3ALnw5m7ZnKmfHRn56ojRnvBc2nfYeox73XzyNnDnGaf",
+  "seller": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "3ALnw5m7ZnKmfHRn56ojRnvBc2nfYeox73XzyNnDnGaf",
+   "owner": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Corbin Carroll (224/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Corbin Carroll"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.252
+    },
+    {
+     "trait_type": "HR",
+     "value": 13
+    },
+    {
+     "trait_type": "RBI",
+     "value": 45
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.347
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.478
+    },
+    {
+     "trait_type": "TB",
+     "value": 165
+    },
+    {
+     "trait_type": "R",
+     "value": 54
+    },
+    {
+     "trait_type": "SB",
+     "value": 10
+    },
+    {
+     "trait_type": "AB",
+     "value": 345
+    },
+    {
+     "trait_type": "H",
+     "value": 87
+    },
+    {
+     "trait_type": "2B",
+     "value": 19
+    },
+    {
+     "trait_type": "3B",
+     "value": 10
+    },
+    {
+     "trait_type": "BB",
+     "value": 47
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.825
+    },
+    {
+     "trait_type": "G",
+     "value": 90
+    },
+    {
+     "trait_type": "WAR",
+     "value": "3.0"
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 9″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "165"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 9″ / 165"
+    },
+    {
+     "trait_type": "Age",
+     "value": 25
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Seattle, WA"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#7"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Left Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "LF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Arizona Diamondbacks"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "08/29/2022"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "224/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "3ALnw5m7ZnKmfHRn56ojRnvBc2nfYeox73XzyNnDnGaf",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "6T8cLy9e1wWSRBV2omtCJbcRZ6vtcmSDtyswCjGkVWbk",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "518S4tgH9ebKkwqTT8HqohzmNrUQ7CmL7EfYYQ82CRHG",
+  "tokenMint": "518S4tgH9ebKkwqTT8HqohzmNrUQ7CmL7EfYYQ82CRHG",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "518S4tgH9ebKkwqTT8HqohzmNrUQ7CmL7EfYYQ82CRHG",
+   "owner": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Bo Bichette (118/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Bo Bichette"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.255
+    },
+    {
+     "trait_type": "HR",
+     "value": 10
+    },
+    {
+     "trait_type": "RBI",
+     "value": 51
+    },
+    {
+     "trait_type": "OBP",
+     "value": "0.300"
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.376
+    },
+    {
+     "trait_type": "TB",
+     "value": 143
+    },
+    {
+     "trait_type": "R",
+     "value": 48
+    },
+    {
+     "trait_type": "SB",
+     "value": 1
+    },
+    {
+     "trait_type": "AB",
+     "value": 380
+    },
+    {
+     "trait_type": "H",
+     "value": 97
+    },
+    {
+     "trait_type": "2B",
+     "value": 14
+    },
+    {
+     "trait_type": "3B",
+     "value": 1
+    },
+    {
+     "trait_type": "BB",
+     "value": 25
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.676
+    },
+    {
+     "trait_type": "G",
+     "value": 92
+    },
+    {
+     "trait_type": "WAR",
+     "value": 0.9
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 10″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "190"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 10″ / 190"
+    },
+    {
+     "trait_type": "Age",
+     "value": 28
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Orlando, FL"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#19"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Shortstop"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "SS"
+    },
+    {
+     "trait_type": "Team",
+     "value": "New York Mets"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "07/29/2019"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "118/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "518S4tgH9ebKkwqTT8HqohzmNrUQ7CmL7EfYYQ82CRHG",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "617Yh8Wv98ACTQiAguWGcmGeMiNrv9uqjea3YjRpbgyM",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "6cXaMGEpcKWPued3BJL8SbmXy2KuvSVjxFjWm7UVPVTz",
+  "tokenMint": "6cXaMGEpcKWPued3BJL8SbmXy2KuvSVjxFjWm7UVPVTz",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "6cXaMGEpcKWPued3BJL8SbmXy2KuvSVjxFjWm7UVPVTz",
+   "owner": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Hunter Brown (179/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Hunter Brown"
+    },
+    {
+     "trait_type": "W-L",
+     "value": "1-0"
+    },
+    {
+     "trait_type": "ERA",
+     "value": 3.57
+    },
+    {
+     "trait_type": "K",
+     "value": 39
+    },
+    {
+     "trait_type": "WHIP",
+     "value": 1.39
+    },
+    {
+     "trait_type": "BB",
+     "value": 22
+    },
+    {
+     "trait_type": "IP",
+     "value": 35.1
+    },
+    {
+     "trait_type": "QS",
+     "value": 3
+    },
+    {
+     "trait_type": "K/9",
+     "value": 9.9
+    },
+    {
+     "trait_type": "RA",
+     "value": 16
+    },
+    {
+     "trait_type": "ER",
+     "value": 14
+    },
+    {
+     "trait_type": "H",
+     "value": 27
+    },
+    {
+     "trait_type": "W",
+     "value": 1
+    },
+    {
+     "trait_type": "L",
+     "value": 0
+    },
+    {
+     "trait_type": "G",
+     "value": 7
+    },
+    {
+     "trait_type": "H/9",
+     "value": 6.9
+    },
+    {
+     "trait_type": "WAR",
+     "value": 0.3
+    },
+    {
+     "trait_type": "Height",
+     "value": "6′ 1″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "220"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "6′ 1″ / 220"
+    },
+    {
+     "trait_type": "Age",
+     "value": 27
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Detroit, MI"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#58"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Starting Pitcher"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "SP"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Houston Astros"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "09/05/2022"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "179/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "6cXaMGEpcKWPued3BJL8SbmXy2KuvSVjxFjWm7UVPVTz",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "Xzi4vM36pg56apaWggCkL95zhatqDw8BoDXRFNUnmAw",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "8LWtZNbP6iVdbwcLuKoYScanL1m1KvnmhuYKbMNcC2z3",
+  "tokenMint": "8LWtZNbP6iVdbwcLuKoYScanL1m1KvnmhuYKbMNcC2z3",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "8LWtZNbP6iVdbwcLuKoYScanL1m1KvnmhuYKbMNcC2z3",
+   "owner": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Mickey Moniak (241/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Mickey Moniak"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.278
+    },
+    {
+     "trait_type": "HR",
+     "value": 15
+    },
+    {
+     "trait_type": "RBI",
+     "value": 38
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.326
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.574
+    },
+    {
+     "trait_type": "TB",
+     "value": 120
+    },
+    {
+     "trait_type": "R",
+     "value": 30
+    },
+    {
+     "trait_type": "SB",
+     "value": 1
+    },
+    {
+     "trait_type": "AB",
+     "value": 209
+    },
+    {
+     "trait_type": "H",
+     "value": 58
+    },
+    {
+     "trait_type": "2B",
+     "value": 11
+    },
+    {
+     "trait_type": "3B",
+     "value": 3
+    },
+    {
+     "trait_type": "BB",
+     "value": 13
+    },
+    {
+     "trait_type": "OPS",
+     "value": "0.900"
+    },
+    {
+     "trait_type": "G",
+     "value": 42
+    },
+    {
+     "trait_type": "WAR",
+     "value": 1.4
+    },
+    {
+     "trait_type": "Height",
+     "value": "6′ 0″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "209"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "6′ 0″ / 209"
+    },
+    {
+     "trait_type": "Age",
+     "value": 28
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Encinitas, CA"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#22"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Right Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "RF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Colorado Rockies"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "09/16/2020"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "241/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "8LWtZNbP6iVdbwcLuKoYScanL1m1KvnmhuYKbMNcC2z3",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "3WDdDMzfCYRVH5HfhgKuseLGENe65Am82LygBnxv5UkY",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "9F32wo7VAE93bY5YpuBCLzUqodx1R8xgfwHodaTL3VZN",
+  "tokenMint": "9F32wo7VAE93bY5YpuBCLzUqodx1R8xgfwHodaTL3VZN",
+  "seller": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "9F32wo7VAE93bY5YpuBCLzUqodx1R8xgfwHodaTL3VZN",
+   "owner": "EMqiL1TAxbNZmfACk5H5jWQoqKWjAaHjL7D8uyjdX3AN",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Jacob Wilson (142/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Jacob Wilson"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.281
+    },
+    {
+     "trait_type": "HR",
+     "value": 4
+    },
+    {
+     "trait_type": "RBI",
+     "value": 26
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.314
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.388
+    },
+    {
+     "trait_type": "TB",
+     "value": 87
+    },
+    {
+     "trait_type": "R",
+     "value": 24
+    },
+    {
+     "trait_type": "SB",
+     "value": 2
+    },
+    {
+     "trait_type": "AB",
+     "value": 224
+    },
+    {
+     "trait_type": "H",
+     "value": 63
+    },
+    {
+     "trait_type": "2B",
+     "value": 10
+    },
+    {
+     "trait_type": "3B",
+     "value": 1
+    },
+    {
+     "trait_type": "BB",
+     "value": 11
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.702
+    },
+    {
+     "trait_type": "G",
+     "value": 56
+    },
+    {
+     "trait_type": "WAR",
+     "value": 1.4
+    },
+    {
+     "trait_type": "Height",
+     "value": "6′ 1″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "190"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "6′ 1″ / 190"
+    },
+    {
+     "trait_type": "Age",
+     "value": 24
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Los Angeles, CA"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#5"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Shortstop"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "SS"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Athletics"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "07/19/2024"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "142/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "9F32wo7VAE93bY5YpuBCLzUqodx1R8xgfwHodaTL3VZN",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "EruovxhzYXyQYiFFZBzBABpeyN52bfhWns55EbRTf1jW",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "AwWCp78DGoheBuVwZ1Agp6R7csD9Udeeag9yR7xtrGf7",
+  "tokenMint": "AwWCp78DGoheBuVwZ1Agp6R7csD9Udeeag9yR7xtrGf7",
+  "seller": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "AwWCp78DGoheBuVwZ1Agp6R7csD9Udeeag9yR7xtrGf7",
+   "owner": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Corbin Carroll (172/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Corbin Carroll"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.252
+    },
+    {
+     "trait_type": "HR",
+     "value": 13
+    },
+    {
+     "trait_type": "RBI",
+     "value": 45
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.347
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.478
+    },
+    {
+     "trait_type": "TB",
+     "value": 165
+    },
+    {
+     "trait_type": "R",
+     "value": 54
+    },
+    {
+     "trait_type": "SB",
+     "value": 10
+    },
+    {
+     "trait_type": "AB",
+     "value": 345
+    },
+    {
+     "trait_type": "H",
+     "value": 87
+    },
+    {
+     "trait_type": "2B",
+     "value": 19
+    },
+    {
+     "trait_type": "3B",
+     "value": 10
+    },
+    {
+     "trait_type": "BB",
+     "value": 47
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.825
+    },
+    {
+     "trait_type": "G",
+     "value": 90
+    },
+    {
+     "trait_type": "WAR",
+     "value": "3.0"
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 9″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "165"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 9″ / 165"
+    },
+    {
+     "trait_type": "Age",
+     "value": 25
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Seattle, WA"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#7"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Left Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "LF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Arizona Diamondbacks"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "08/29/2022"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "172/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "AwWCp78DGoheBuVwZ1Agp6R7csD9Udeeag9yR7xtrGf7",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "Fq1QmneqK2dPzqghkFnXX8JdkMHZzq6VWxxGhtEX74Mg",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "B7mL48CXLvjNzo1agX9stb74YJNCoYyybvJms8emfsT6",
+  "tokenMint": "B7mL48CXLvjNzo1agX9stb74YJNCoYyybvJms8emfsT6",
+  "seller": "5usFCFUDdCjp5AoMbe74svd3Qvo8fT57JZ38Be2KAfN9",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "B7mL48CXLvjNzo1agX9stb74YJNCoYyybvJms8emfsT6",
+   "owner": "5usFCFUDdCjp5AoMbe74svd3Qvo8fT57JZ38Be2KAfN9",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Jasson Domínguez (139/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Jasson Domínguez"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.235
+    },
+    {
+     "trait_type": "HR",
+     "value": 5
+    },
+    {
+     "trait_type": "RBI",
+     "value": 11
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.273
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.409
+    },
+    {
+     "trait_type": "TB",
+     "value": 54
+    },
+    {
+     "trait_type": "R",
+     "value": 13
+    },
+    {
+     "trait_type": "SB",
+     "value": 6
+    },
+    {
+     "trait_type": "AB",
+     "value": 132
+    },
+    {
+     "trait_type": "H",
+     "value": 31
+    },
+    {
+     "trait_type": "2B",
+     "value": 8
+    },
+    {
+     "trait_type": "3B",
+     "value": 0
+    },
+    {
+     "trait_type": "BB",
+     "value": 6
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.682
+    },
+    {
+     "trait_type": "G",
+     "value": 27
+    },
+    {
+     "trait_type": "WAR",
+     "value": 0.2
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 9″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "218"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 9″ / 218"
+    },
+    {
+     "trait_type": "Age",
+     "value": 23
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Esperanza, Dominican Republic"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#24"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Center Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "CF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "New York Yankees"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "09/01/2023"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "139/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "B7mL48CXLvjNzo1agX9stb74YJNCoYyybvJms8emfsT6",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "2woksLfTLwkJAe1DQ2pdnCpKhj7btQozi6m1xaP7wf5i",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "DeeYj3pK1yRARiaoKPvPu8ub9pSsXnmbFQySqqdzHxqY",
+  "tokenMint": "DeeYj3pK1yRARiaoKPvPu8ub9pSsXnmbFQySqqdzHxqY",
+  "seller": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "DeeYj3pK1yRARiaoKPvPu8ub9pSsXnmbFQySqqdzHxqY",
+   "owner": "2KP7cRHnwjLrq8zevAKTvwZMMtYKPHBKM6w1cqCURxdZ",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "Corbin Carroll (208/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "Corbin Carroll"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.252
+    },
+    {
+     "trait_type": "HR",
+     "value": 13
+    },
+    {
+     "trait_type": "RBI",
+     "value": 45
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.347
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.478
+    },
+    {
+     "trait_type": "TB",
+     "value": 165
+    },
+    {
+     "trait_type": "R",
+     "value": 54
+    },
+    {
+     "trait_type": "SB",
+     "value": 10
+    },
+    {
+     "trait_type": "AB",
+     "value": 345
+    },
+    {
+     "trait_type": "H",
+     "value": 87
+    },
+    {
+     "trait_type": "2B",
+     "value": 19
+    },
+    {
+     "trait_type": "3B",
+     "value": 10
+    },
+    {
+     "trait_type": "BB",
+     "value": 47
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.825
+    },
+    {
+     "trait_type": "G",
+     "value": 90
+    },
+    {
+     "trait_type": "WAR",
+     "value": "3.0"
+    },
+    {
+     "trait_type": "Height",
+     "value": "5′ 9″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "165"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "5′ 9″ / 165"
+    },
+    {
+     "trait_type": "Age",
+     "value": 25
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "Seattle, WA"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#7"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Left Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "LF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Arizona Diamondbacks"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "08/29/2022"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "208/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "DeeYj3pK1yRARiaoKPvPu8ub9pSsXnmbFQySqqdzHxqY",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "2kNL8PnzYmK9hMfXHLupeaLWVnvdxxVFfTgpi6RwGH7V",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "E4bPvYGQ8UB1dYxHJ7DZ5ec69N8JRrYPLXTAKRWRgtQJ",
+  "tokenMint": "E4bPvYGQ8UB1dYxHJ7DZ5ec69N8JRrYPLXTAKRWRgtQJ",
+  "seller": "8DtPDKwXEGq6tMzW1DoA7Pz1fwyvfaZGMx21VDbwyNmX",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 0.007,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "7000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {},
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "E4bPvYGQ8UB1dYxHJ7DZ5ec69N8JRrYPLXTAKRWRgtQJ",
+   "owner": "8DtPDKwXEGq6tMzW1DoA7Pz1fwyvfaZGMx21VDbwyNmX",
+   "supply": 1,
+   "collection": "2026_mlb_base_series_icons_candy_digital",
+   "collectionName": "2026 MLB Base Series ICONs - Candy Digital",
+   "name": "George Springer (100/250)",
+   "updateAuthority": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "attributes": [
+    {
+     "trait_type": "Player Name",
+     "value": "George Springer"
+    },
+    {
+     "trait_type": "AVG",
+     "value": 0.218
+    },
+    {
+     "trait_type": "HR",
+     "value": 9
+    },
+    {
+     "trait_type": "RBI",
+     "value": 22
+    },
+    {
+     "trait_type": "OBP",
+     "value": 0.303
+    },
+    {
+     "trait_type": "SLG",
+     "value": 0.374
+    },
+    {
+     "trait_type": "TB",
+     "value": 96
+    },
+    {
+     "trait_type": "R",
+     "value": 31
+    },
+    {
+     "trait_type": "SB",
+     "value": 6
+    },
+    {
+     "trait_type": "AB",
+     "value": 257
+    },
+    {
+     "trait_type": "H",
+     "value": 56
+    },
+    {
+     "trait_type": "2B",
+     "value": 11
+    },
+    {
+     "trait_type": "3B",
+     "value": 1
+    },
+    {
+     "trait_type": "BB",
+     "value": 29
+    },
+    {
+     "trait_type": "OPS",
+     "value": 0.677
+    },
+    {
+     "trait_type": "G",
+     "value": 66
+    },
+    {
+     "trait_type": "WAR",
+     "value": "-0.0"
+    },
+    {
+     "trait_type": "Height",
+     "value": "6′ 0″"
+    },
+    {
+     "trait_type": "Weight",
+     "value": "220"
+    },
+    {
+     "trait_type": "Height / Weight",
+     "value": "6′ 0″ / 220"
+    },
+    {
+     "trait_type": "Age",
+     "value": 36
+    },
+    {
+     "trait_type": "Hometown",
+     "value": "New Britain, CT"
+    },
+    {
+     "trait_type": "Player Number",
+     "value": "#4"
+    },
+    {
+     "trait_type": "Position",
+     "value": "Right Field"
+    },
+    {
+     "trait_type": "Position Abbr.",
+     "value": "RF"
+    },
+    {
+     "trait_type": "Team",
+     "value": "Toronto Blue Jays"
+    },
+    {
+     "trait_type": "Pro Debut",
+     "value": "04/16/2014"
+    },
+    {
+     "trait_type": "Item Type",
+     "value": "Collectible"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1783973739
+    },
+    {
+     "trait_type": "Rarity",
+     "value": "CORE"
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "100/250"
+    }
+   ],
+   "isCompressed": false,
+   "price": 0.007,
+   "listStatus": "listed",
+   "tokenAddress": "E4bPvYGQ8UB1dYxHJ7DZ5ec69N8JRrYPLXTAKRWRgtQJ",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "7000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ }
+]

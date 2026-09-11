@@ -30,15 +30,22 @@ interface CsMint {
  * Last N mints for a contract. For licensed card platforms each mint is a
  * card being pulled from a pack - a live rip feed.
  */
-export async function recentMints(contract: string, limit: number) {
+export async function recentMints(contract: string, limit: number, opts: { fresh?: boolean } = {}) {
   const n = Math.min(Math.max(limit, 1), 20);
-  const { data, stale, cachedAt } = await cached(`cs:mints:${contract}:${n}`, 60_000, () =>
-    fetchJson<CsMint[]>(
-      "CryptoSlam",
-      `${BASE}/mints/${encodeURIComponent(contract)}/${n}/last`,
-      { headers: HEADERS },
-      { retries: 3, timeoutMs: 20_000 },
-    ),
+  // `fresh` = contact CryptoSlam now. The status tool requires it: this feed
+  // is cached for a minute, and a cached page would report the flakiest
+  // source in the set as healthy without a single request leaving the machine.
+  const { data, stale, cachedAt } = await cached(
+    `cs:mints:${contract}:${n}`,
+    60_000,
+    () =>
+      fetchJson<CsMint[]>(
+        "CryptoSlam",
+        `${BASE}/mints/${encodeURIComponent(contract)}/${n}/last`,
+        { headers: HEADERS },
+        { retries: 3, timeoutMs: 20_000 },
+      ),
+    { fresh: opts.fresh },
   );
   if (!Array.isArray(data)) throw new Error("CryptoSlam returned an unexpected mints shape");
   const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);

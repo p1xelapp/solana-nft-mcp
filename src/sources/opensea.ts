@@ -42,9 +42,14 @@ interface OsStats {
 }
 
 /** Collection stats by OpenSea slug. Floor is in the listing currency (SOL for Solana collections). */
-export async function collectionStats(slug: string) {
-  const { data, stale, cachedAt } = await cached(`os:stats:${slug}`, 60_000, () =>
-    os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`),
+export async function collectionStats(slug: string, opts: { fresh?: boolean } = {}) {
+  // `fresh` = contact OpenSea now. A health check served from cache reports a
+  // venue answering while it is down, which is the one thing it must not do.
+  const { data, stale, cachedAt } = await cached(
+    `os:stats:${slug}`,
+    60_000,
+    () => os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`),
+    { fresh: opts.fresh },
   );
   const t = data?.total;
   if (!t) throw new Error(`OpenSea has no stats for slug "${slug}"`);

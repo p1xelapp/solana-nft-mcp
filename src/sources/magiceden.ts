@@ -117,13 +117,16 @@ interface MeActivity {
  * activity we scanned so thin results are explainable, never mysterious.
  */
 export async function recentSales(symbol: string, limit: number) {
-  const { data, stale, cachedAt } = await cached(`me:sales:${symbol}:${limit}`, 30_000, async () => {
+  const { data, stale, cachedAt } = await cached(`me:sales:v2:${symbol}:${limit}`, 30_000, async () => {
     const collected: MeActivity[] = [];
     let scanned = 0;
+    // type=buyNow makes the venue do the filtering: on a busy collection the
+    // unfiltered feed is thousands of listings per sale, and five pages of it
+    // found one sale for Mad Lads. The filtered feed reaches months back.
     for (let pageNo = 0; pageNo < 5 && collected.length < limit; pageNo++) {
       const batch = page<MeActivity>(
         "collection activities",
-        await me<unknown>(`/collections/${encodeURIComponent(symbol)}/activities?offset=${pageNo * 100}&limit=100`),
+        await me<unknown>(`/collections/${encodeURIComponent(symbol)}/activities?offset=${pageNo * 100}&limit=100&type=buyNow`),
       );
       if (batch.length === 0) break;
       scanned += batch.length;
@@ -318,4 +321,457 @@ export async function walletTokensAll(wallet: string, max: number) {
     return all;
   });
   return { tokens: data, capped: data.length >= max, stale, cachedAt };
+}
+
+// ------------------------------------------- collection market intelligence
+
+/**
+ * The activity types Magic Eden accepts on the collection feed.
+ *
+ * This list is not cosmetic. The `type` filter is NOT validated upstream: a
+ * value ME does not recognise is dropped and the UNFILTERED feed comes back
+ * with HTTP 200, so asking for "sale" or "sold" would quietly return listings,
+ * bids and pool updates, and every sales figure derived from them would be
+ * wrong while looking fine. Unknown types are refused here instead.
+ * (Verified 2026-09-11: `type=bogusType` answered 200 with list/bid rows.)
+ */
+export const ACTIVITY_TYPES = [
+  "buyNow",
+  "buy",
+  "list",
+  "delist",
+  "bid",
+  "cancelBid",
+  "auctionCreated",
+  "auctionUpdated",
+  "auctionCanceled",
+  "auctionSettled",
+  "auctionPlaceBid",
+  "poolUpdate",
+  "mint",
+  "transfer",
+] as const;
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
+
+/**
+ * One row of the collection activity feed.
+ *
+ * `price` is SOL and is the only price field worth reading. `priceInfo
+ * .solPrice.rawAmount` is scaled inconsistently between endpoints: on
+ * activities it carries 18 decimal places while the sibling `decimals` field
+ * says 9 (0.04 SOL arrives as "40000000000000000"), on listings it is genuine
+ * lamports. Dividing it by 1e9 as the field advertises overstates an activity
+ * price a billionfold, so we never touch it.
+ */
+export interface MeCollectionActivity {
+  signature?: string;
+  type?: string;
+  source?: string;
+  tokenMint?: string;
+  collection?: string;
+  collectionSymbol?: string;
+  slot?: number;
+  blockTime?: number;
+  buyer?: string;
+  seller?: string;
+  price?: number;
+  /** Not on the activity feed; carried so a caller that joined token metadata can pass a name through. */
+  name?: string;
+}
+
+/** ME's ceiling on the activity feed; limit=501 is a 400. */
+const ACTIVITY_PAGE = 500;
+
+export interface CollectionActivityRead {
+  events: MeCollectionActivity[];
+  /** True when full pages were still coming and we stopped on budget: older activity exists. */
+  truncated: boolean;
+  pagesRead: number;
+  oldestSeen: number | null;
+  newestSeen: number | null;
+  stale: boolean;
+  cachedAt: string;
+}
+
+/**
+ * Collection activity, newest first, paged until the caller's window is
+ * covered or the page budget runs out.
+ *
+ * Pages are cached individually: page 0 turns over constantly while page 6 is
+ * settled history, and one cache entry for the whole walk would throw the
+ * settled pages away every minute.
+ */
+export async function collectionActivities(
+  symbol: string,
+  opts: { types?: ActivityType[]; maxPages: number; sinceUnix?: number },
+): Promise<CollectionActivityRead> {
+  const types = opts.types ?? [];
+  for (const t of types) {
+    if (!(ACTIVITY_TYPES as readonly string[]).includes(t)) {
+      throw new Error(`"${String(t)}" is not a Magic Eden activity type. Use one of: ${ACTIVITY_TYPES.join(", ")}.`);
+    }
+  }
+  const budget = Math.max(1, Math.floor(opts.maxPages));
+  // Comma-delimited is the only accepted form; repeating `type=` is a 400.
+  const filter = types.length ? `&type=${types.map((t) => encodeURIComponent(t)).join(",")}` : "";
+  const events: MeCollectionActivity[] = [];
+  let pagesRead = 0;
+  let oldestSeen: number | null = null;
+  let newestSeen: number | null = null;
+  let truncated = false;
+  let stale = false;
+  let cachedAt = new Date().toISOString();
+
+  for (let p = 0; p < budget; p++) {
+    const offset = p * ACTIVITY_PAGE;
+    const hit = await cached(
+      `me:cact:${symbol}:${types.join(",")}:${offset}:${ACTIVITY_PAGE}`,
+      60_000,
+      () =>
+        me<unknown>(
+          `/collections/${encodeURIComponent(symbol)}/activities?offset=${offset}&limit=${ACTIVITY_PAGE}${filter}`,
+        ),
+    );
+    const batch = page<MeCollectionActivity>("collection activities", hit.data);
+    stale = stale || hit.stale;
+    // Pages are cached separately, so a walk mixes a page fetched now with one
+    // fetched 55 seconds ago. The answer is only as fresh as its stalest page;
+    // reporting the newest would overstate it.
+    if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
+    pagesRead++;
+    events.push(...batch);
+    for (const a of batch) {
+      if (typeof a.blockTime !== "number") continue;
+      if (oldestSeen === null || a.blockTime < oldestSeen) oldestSeen = a.blockTime;
+      if (newestSeen === null || a.blockTime > newestSeen) newestSeen = a.blockTime;
+    }
+    // A short page is the end of what ME will serve, not a budget cut.
+    if (batch.length < ACTIVITY_PAGE) {
+      truncated = false;
+      break;
+    }
+    // Newest-first: once a page reaches past the caller's window there is
+    // nothing older left to want.
+    if (opts.sinceUnix !== undefined && oldestSeen !== null && oldestSeen <= opts.sinceUnix) {
+      truncated = false;
+      break;
+    }
+    // Full page and still inside the window: history continues past our budget.
+    truncated = true;
+  }
+
+  return { events, truncated, pagesRead, oldestSeen, newestSeen, stale, cachedAt };
+}
+
+/**
+ * ME caps the listings endpoint at 100 per page even though the activity and
+ * collection endpoints take 500. Asking for more is a 400, not a silent cap.
+ */
+const LISTING_PAGE_MAX = 100;
+
+export type ListingSort = "listPrice" | "updatedAt";
+export type SortDirection = "asc" | "desc";
+
+/** One trait constraint. Several are combined with AND (see collectionListings). */
+export interface TraitFilter {
+  traitType: string;
+  value: string;
+}
+
+export interface MeListing {
+  pdaAddress?: string;
+  tokenMint?: string;
+  tokenAddress?: string;
+  seller?: string;
+  price?: number; // SOL
+  expiry?: number;
+  listingSource?: string;
+  rarity?: {
+    howrare?: { rank?: number };
+    moonrank?: { rank?: number; absolute_rarity?: number };
+  };
+  token?: {
+    name?: string;
+    collection?: string;
+    collectionName?: string;
+    attributes?: { trait_type?: string; value?: unknown }[];
+    sellerFeeBasisPoints?: number;
+  };
+}
+
+export interface CollectionListingsRead {
+  listings: MeListing[];
+  /** True when the page came back full: there are more listings past what was asked for. */
+  more: boolean;
+  requestedLimit: number;
+  appliedLimit: number;
+  /** Where in the collection's listing order this page started. */
+  offset: number;
+  stale: boolean;
+  cachedAt: string;
+}
+
+/**
+ * Live listings for a collection, cheapest first by default.
+ *
+ * Trait filtering: ME reads `attributes` as an array of groups, AND across
+ * groups and OR inside one. Verified 2026-09-11 - two groups asking for two
+ * values of the same trait returned zero rows (nothing is both), while one
+ * group holding a Species and a Class returned items matching either. Each
+ * filter gets its own group here, so several filters mean "all of these",
+ * which is what a collector asking for a trait combination means.
+ */
+export async function collectionListings(
+  symbol: string,
+  opts: { attributes?: TraitFilter[]; limit: number; offset?: number; sort?: ListingSort; direction?: SortDirection },
+): Promise<CollectionListingsRead> {
+  const requestedLimit = Math.max(1, Math.floor(opts.limit));
+  const appliedLimit = Math.min(requestedLimit, LISTING_PAGE_MAX);
+  // The endpoint caps a PAGE at 100, so reaching listing 101 means paging, not
+  // a bigger limit. `offset` is what lets a name search walk past the first page.
+  const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+  const sort: ListingSort = opts.sort ?? "listPrice";
+  const direction: SortDirection = opts.direction ?? "asc";
+  const filters = opts.attributes ?? [];
+  for (const f of filters) {
+    if (!f || typeof f.traitType !== "string" || typeof f.value !== "string" || !f.traitType || !f.value) {
+      throw new Error("Each trait filter needs a non-empty traitType and value.");
+    }
+  }
+  const attrParam = filters.length
+    ? `&attributes=${encodeURIComponent(JSON.stringify(filters.map((f) => [{ traitType: f.traitType, value: f.value }])))}`
+    : "";
+  // Canonical JSON of sorted PAIRS, never a joined string: a trait value
+  // containing the separators ("b|c=d") would otherwise build the same key as
+  // two separate filters, and the second caller would be served the first
+  // caller's listings.
+  const canonicalFilters = JSON.stringify(
+    filters
+      .map((f) => [f.traitType, f.value] as const)
+      .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])),
+  );
+  const key = `me:clist:${symbol}:${offset}:${appliedLimit}:${sort}:${direction}:${canonicalFilters}`;
+  const { data, stale, cachedAt } = await cached(key, 30_000, () =>
+    me<unknown>(
+      `/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${appliedLimit}&sort=${sort}&sort_direction=${direction}${attrParam}`,
+    ),
+  );
+  const listings = page<MeListing>("collection listings", data);
+  return { listings, more: listings.length >= appliedLimit, requestedLimit, appliedLimit, offset, stale, cachedAt };
+}
+
+export interface MeAvailableAttribute {
+  attribute?: { trait_type?: string; value?: unknown };
+  count?: number;
+  /** Lamports on this endpoint, unlike the `price` fields elsewhere on the same API. */
+  floor?: number;
+  countByListingType?: Record<string, number>;
+}
+
+export interface TraitFloor {
+  traitType: string;
+  value: string;
+  listedCount: number;
+  floorSol: number | null;
+}
+
+export interface CollectionAttributesRead {
+  symbol: string;
+  attributes: TraitFloor[];
+  stale: boolean;
+  cachedAt: string;
+}
+
+/**
+ * Every trait value ME currently has a listing for, with the cheapest ask
+ * carrying it.
+ *
+ * `floor` here is lamports while `price` on the sibling endpoints is SOL.
+ * Converting once, here, keeps that trap in one place.
+ */
+export async function collectionAttributes(symbol: string): Promise<CollectionAttributesRead> {
+  const { data, stale, cachedAt } = await cached(`me:cattr:${symbol}`, 300_000, () =>
+    me<{ results?: { symbol?: string; availableAttributes?: unknown } }>(
+      `/collections/${encodeURIComponent(symbol)}/attributes`,
+    ),
+  );
+  // This endpoint wraps its array; a missing wrapper is an outage, not "no traits".
+  if (!data || typeof data !== "object" || !data.results) {
+    throw new Error(`Magic Eden returned an unexpected shape for ${symbol} attributes (outage or API change)`);
+  }
+  const rows = page<MeAvailableAttribute>("collection attributes", data.results.availableAttributes ?? []);
+  return {
+    symbol: clean(data.results.symbol ?? symbol),
+    attributes: rows
+      .filter((r) => r.attribute && typeof r.attribute.trait_type === "string")
+      .map((r) => ({
+        traitType: clean(r.attribute?.trait_type),
+        value: clean(r.attribute?.value),
+        listedCount: typeof r.count === "number" ? r.count : 0,
+        floorSol: sol(r.floor),
+      })),
+    stale,
+    cachedAt,
+  };
+}
+
+export interface MeLeaderboardRow {
+  wallet?: string;
+  /** Lamports. */
+  totalVolume?: number;
+  lastTradeAt?: number;
+}
+
+export interface LeaderboardRead {
+  symbol: string;
+  traders: { wallet: string; volumeSol: number | null; lastTradeAt: string | null }[];
+  stale: boolean;
+  cachedAt: string;
+  caveat: string;
+}
+
+/** Biggest traders of a collection as Magic Eden counts them: its own fills only. */
+export async function collectionLeaderboard(symbol: string, limit: number): Promise<LeaderboardRead> {
+  const n = Math.max(1, Math.min(100, Math.floor(limit)));
+  const { data, stale, cachedAt } = await cached(`me:clead:${symbol}:${n}`, 300_000, () =>
+    me<unknown>(`/collections/${encodeURIComponent(symbol)}/leaderboard?limit=${n}`),
+  );
+  const rows = page<MeLeaderboardRow>("collection leaderboard", data);
+  return {
+    symbol,
+    traders: rows
+      .filter((r): r is MeLeaderboardRow & { wallet: string } => typeof r.wallet === "string")
+      .map((r) => ({
+        wallet: r.wallet,
+        volumeSol: sol(r.totalVolume),
+        lastTradeAt: typeof r.lastTradeAt === "number" ? new Date(r.lastTradeAt * 1000).toISOString() : null,
+      })),
+    stale,
+    cachedAt,
+    caveat:
+      "Volume counted by Magic Eden across its own order book and AMM pools. Trades on Tensor, OpenSea or peer-to-peer are not in it, so this ranks Magic Eden activity, not a collection's whole trading.",
+  };
+}
+
+export const POPULAR_TIME_RANGES = ["1h", "1d", "7d", "30d"] as const;
+export type PopularTimeRange = (typeof POPULAR_TIME_RANGES)[number];
+
+export interface PopularCollectionsRead {
+  timeRange: PopularTimeRange;
+  collections: Record<string, unknown>[];
+  /** Set when the endpoint answered but had nothing to say, so a caller never reads empty as "nothing is trading". */
+  note?: string;
+  stale: boolean;
+  cachedAt: string;
+}
+
+/**
+ * Magic Eden's own trending list.
+ *
+ * `limit` is not free-form: ME rejects anything but 50 or 100. As of
+ * 2026-09-11 every valid timeRange answers HTTP 200 with an empty array, so an
+ * empty result means the venue published nothing, not that the market is
+ * quiet. The note says so rather than letting a caller invent the second
+ * reading.
+ */
+export async function popularCollections(timeRange: PopularTimeRange): Promise<PopularCollectionsRead> {
+  if (!(POPULAR_TIME_RANGES as readonly string[]).includes(timeRange)) {
+    throw new Error(`Magic Eden accepts only ${POPULAR_TIME_RANGES.join(", ")} for a popularity window.`);
+  }
+  const { data, stale, cachedAt } = await cached(`me:pop:${timeRange}`, 300_000, () =>
+    me<unknown>(`/marketplace/popular_collections?timeRange=${timeRange}&limit=50`),
+  );
+  const rows = page<Record<string, unknown>>("popular collections", data);
+  return {
+    timeRange,
+    collections: rows,
+    note: rows.length
+      ? undefined
+      : "Magic Eden's trending endpoint answered but returned no collections. That is the venue publishing nothing for this window, not evidence that trading stopped - read a collection's own stats or activity feed instead.",
+    stale,
+    cachedAt,
+  };
+}
+
+export interface MeCollectionIndexEntry {
+  symbol?: string;
+  name?: string;
+  description?: string;
+  twitter?: string;
+  discord?: string;
+  website?: string;
+  categories?: string[];
+  isBadged?: boolean;
+  hasCNFTs?: boolean;
+  isOcp?: boolean;
+}
+
+export interface CollectionsIndexRead {
+  collections: MeCollectionIndexEntry[];
+  /** True when OUR page budget ran out first: this is a prefix, not the catalogue. */
+  partial: boolean;
+  /** True when Magic Eden refused to page further. Everything past its offset ceiling is unreachable here at any budget. */
+  atVenuePagingLimit: boolean;
+  pagesRead: number;
+  stale: boolean;
+  cachedAt: string;
+}
+
+/** ME's ceiling on the collection list; 501 is a 400. */
+const INDEX_PAGE = 500;
+/**
+ * Past offset 30,000 the collection list answers 400 - a hard paging ceiling,
+ * not the end of the data. ME blames it on "offset and limit must be a
+ * multiple of 20", which is untrue (30,500 is a multiple of 500 and still
+ * fails), so the message must not be relayed to a user as a request error on
+ * our side. Recognising it here turns an exception into a clean stop.
+ */
+const isPagingCeiling = (e: unknown): boolean =>
+  e instanceof HttpError && e.status === 400 && /multiple of/i.test(e.reason);
+
+/**
+ * Magic Eden's collection catalogue, for turning a name a person typed into
+ * the symbol the API needs.
+ *
+ * Sizing this matters more than it looks. The reachable catalogue is 30,500
+ * entries over 61 pages, and the big names sit deep in it - mad_lads at offset
+ * 17,500, claynosaurz at 20,000 (measured 2026-09-11). A caller that budgets a
+ * handful of pages will not find them and, without `partial`, would report
+ * "no such collection" about the best-known collection on the venue. Cached
+ * for a day because collections get added, not reshuffled, so the full 61-page
+ * walk is paid once.
+ */
+export async function collectionsIndex(maxPages: number): Promise<CollectionsIndexRead> {
+  const budget = Math.max(1, Math.floor(maxPages));
+  const { data, stale, cachedAt } = await cached(`me:cindex:${budget}`, 86_400_000, async () => {
+    const collections: MeCollectionIndexEntry[] = [];
+    let partial = false;
+    let atVenuePagingLimit = false;
+    let pagesRead = 0;
+    for (let p = 0; p < budget; p++) {
+      let batch: MeCollectionIndexEntry[];
+      try {
+        batch = page<MeCollectionIndexEntry>(
+          "collection index",
+          await me<unknown>(`/collections?offset=${p * INDEX_PAGE}&limit=${INDEX_PAGE}`),
+        );
+      } catch (e) {
+        if (isPagingCeiling(e) && collections.length > 0) {
+          atVenuePagingLimit = true;
+          partial = false;
+          break;
+        }
+        throw e;
+      }
+      pagesRead++;
+      collections.push(...batch);
+      if (batch.length < INDEX_PAGE) {
+        partial = false;
+        break;
+      }
+      partial = true;
+    }
+    return { collections, partial, atVenuePagingLimit, pagesRead };
+  });
+  return { ...data, stale, cachedAt };
 }

@@ -24,7 +24,9 @@
 import * as me from "./sources/magiceden.js";
 import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
+import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
+import { resolveName } from "./names.js";
 
 export interface Probe {
   source: string;
@@ -40,6 +42,7 @@ export interface Identification {
   kind:
     | "core-asset"
     | "core-collection"
+    | "indexed-asset"
     | "marketplace-collection"
     | "wallet-or-unknown-account"
     | "registry-entry"
@@ -131,11 +134,16 @@ export async function identify(query: string): Promise<Identification> {
         });
       }
     } catch (e) {
+      // "owned by another program" and "no such account" are ANSWERS from the
+      // chain, not failures to read it. Filing them as errors is what made a
+      // plain wallet come back as "the chain could not be read just now".
+      const msg = e instanceof Error ? e.message : String(e);
+      const answered = /not Metaplex Core|does not exist on mainnet/i.test(msg);
       checked.push({
         source: "solana-rpc",
         looked_for: "a Metaplex Core account at this address",
-        result: "error",
-        detail: e instanceof Error ? e.message : String(e),
+        result: answered ? "not_found" : "error",
+        detail: msg,
       });
     }
   } else {
@@ -147,8 +155,89 @@ export async function identify(query: string): Promise<Identification> {
     });
   }
 
+  // ---- 2b. the chain's asset index, for anything Core could not decode ---
+  // A compressed NFT or a legacy SPL mint has no Core account to read, so
+  // without this probe a perfectly identifiable mint came back as "the chain
+  // could not be read" - and the answer wrongly claimed the index needs a key.
+  let indexed: das.DasAsset | null = null;
+  let indexedStale = false;
+  let dasAvailable: boolean | null = null;
+  if (looksLikeAddress(q) && coreKind === null) {
+    let note = "";
+    try {
+      const cap = await das.capability();
+      dasAvailable = cap.available;
+      note = cap.note;
+      if (cap.available) {
+        const read = await das.getAsset(q);
+        indexed = read.asset;
+        indexedStale = read.stale;
+        checked.push({
+          source: "asset-index",
+          looked_for: "a record of this mint in the chain's asset index, across every standard",
+          result: indexed ? "found" : "not_found",
+          detail: indexed
+            ? `${indexed.standard} (${indexed.interface})${indexed.owner ? `, owner ${indexed.owner}` : ""}${indexedStale ? " - served from cache after a failed refresh, so treat the owner as last-known, not current" : ""}`
+            : "the index has no record of this address; it is not an asset it has picked up",
+        });
+      } else {
+        checked.push({
+          source: "asset-index",
+          looked_for: "a record of this mint in the chain's asset index",
+          result: "skipped",
+          detail: `the keyless asset index is not answering right now: ${cap.note}`,
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      checked.push({
+        source: "asset-index",
+        looked_for: "a record of this mint in the chain's asset index",
+        result: "error",
+        detail: msg,
+      });
+      if (dasAvailable === null) {
+        dasAvailable = false;
+        note = msg;
+      }
+    }
+    if (dasAvailable === false) {
+      notChecked.push(
+        `Legacy SPL NFTs and compressed NFTs (cNFTs) by address: the keyless asset index on the public RPC was not answering (${note}). It needs no key when it is up; a DAS provider of your own goes in DAS_RPC_URL.`,
+      );
+    }
+  }
+
+  // ---- 2b. the collection directory, for anything that is not an address --
+  //
+  // "Mad Lads" is a name, not a slug, so it never used to reach a marketplace
+  // probe at all: identify() said unknown for a collection search_collections
+  // could find by the same query. The directory resolver is the same one that
+  // tool uses, so the two agree.
+  let nameCandidates: string[] = [];
+  if (!entry && !looksLikeAddress(q)) {
+    const resolved = resolveName(q);
+    // A weak fuzzy hit ("matched 1 of 3 words") is a suggestion, not an
+    // identification; only a strong match is allowed to name a collection.
+    const strong = resolved.matches.filter((m) => m.score >= 70);
+    nameCandidates = strong.map((m) => m.symbol);
+    checked.push({
+      source: "collection-directory",
+      looked_for: `a Magic Eden collection named "${q}"`,
+      result: strong.length === 1 ? "found" : strong.length > 1 ? "ambiguous" : "not_found",
+      detail:
+        strong.length > 0
+          ? `${strong.map((m) => `${m.symbol} (${m.reason}, ${m.layer})`).join("; ")}. Searched: ${resolved.searched.join("; ")}.`
+          : `no strong name match. Searched: ${resolved.searched.join("; ")}.`,
+    });
+    for (const n of resolved.notSearched) notChecked.push(n);
+    if (!resolved.directoryComplete && resolved.directoryNote) notChecked.push(resolved.directoryNote);
+  }
+
   // ---- 3. Magic Eden ---------------------------------------------------
-  const meSymbol = entry?.meSymbol ?? (looksLikeSlug(q) ? q : undefined);
+  // A single strong directory hit is the symbol to probe; several are a
+  // question for the caller, never a pick.
+  const meSymbol = entry?.meSymbol ?? (nameCandidates.length === 1 ? nameCandidates[0] : undefined) ?? (looksLikeSlug(q) ? q : undefined);
   if (meSymbol) {
     try {
       const stats = await me.collectionStats(meSymbol);
@@ -228,8 +317,12 @@ export async function identify(query: string): Promise<Identification> {
   }
 
   // ---- 5. conclude ------------------------------------------------------
+  if (!looksLikeAddress(q)) {
+    notChecked.push(
+      "Legacy SPL NFTs and compressed NFTs (cNFTs) by NAME. The chain's asset index answers by mint address, not by name, so a name query cannot reach it - pass a mint address and it is probed.",
+    );
+  }
   notChecked.push(
-    "Legacy SPL NFTs and compressed NFTs (cNFTs). Enumerating those needs a DAS indexer, which needs a key - outside the zero-key default.",
     "Non-Solana chains. This server is Solana-only by design; an Ethereum or Base collection will not be found here even if it exists.",
   );
 
@@ -248,6 +341,57 @@ export async function identify(query: string): Promise<Identification> {
     summary = `"${coreName}" is a Metaplex Core collection on Solana. Supply figures come straight from the on-chain account.`;
     confidence = "high";
     next.push("get_collection_stats", "get_asset_provenance");
+    // A collection address cannot be fed to the per-item tools, and "pick a
+    // recent card" was the step the assistant kept failing at. Hand it a few
+    // recently touched members so provenance and trust can run at once.
+    const collectionAddress = identifiers.coreCollection;
+    if (collectionAddress) {
+      try {
+        // Bounded hard: this is a convenience inside an ordinary identify()
+        // call, and an unbounded walk of a busy collection used to hold one
+        // call open for minutes. Eight transactions, six seconds, then say so.
+        const sample = await sol.findRecentCollectionAssets(collectionAddress, 3, { maxTransactions: 8, deadlineMs: 6_000 });
+        if (sample.assets.length) {
+          identifiers.sampleAssets = sample.assets.join(",");
+          summary += ` Recently active members, for get_asset_provenance or get_asset_trust: ${sample.assets.join(", ")}.`;
+          checked.push({ source: "solana-rpc", looked_for: "recently active assets in the collection", result: "found", detail: `${sample.assets.length} sampled from ${sample.transactionsRead} recent collection transaction(s)` });
+        } else if (sample.timedOut) {
+          checked.push({
+            source: "solana-rpc",
+            looked_for: "recently active assets in the collection",
+            result: "error",
+            detail: `sampling timed out after ${sample.transactionsRead} transaction(s) - the collection's recent activity is all listings or the endpoint is slow. The collection itself was identified; ask again for members.`,
+          });
+        } else {
+          checked.push({ source: "solana-rpc", looked_for: "recently active assets in the collection", result: "not_found", detail: "no member assets appeared in the collection's recent transactions" });
+        }
+      } catch (e) {
+        checked.push({ source: "solana-rpc", looked_for: "recently active assets in the collection", result: "error", detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  } else if (indexed) {
+    kind = "indexed-asset";
+    identifiers.mint = q;
+    if (indexed.collection) identifiers.collection = indexed.collection;
+    const owner = indexedStale
+      ? `The index last recorded ${indexed.owner ?? "no owner"} as the holder, but that read came from cache after a failed refresh - it is last-known, not current.`
+      : indexed.owner
+        ? `The index names ${indexed.owner} as the current holder; the byte-level read that would settle it does not apply to this standard.`
+        : "The index reported no owner for it.";
+    summary =
+      `${indexed.name ? `"${indexed.name}"` : q} is a single ${indexed.standard} asset on Solana, read from the chain's asset index rather than from a Core account. ` +
+      owner +
+      (indexed.collection ? ` It is grouped under collection ${indexed.collection}${indexed.collectionVerified === true ? " (verified)" : indexed.collectionVerified === false ? " (unverified grouping)" : " (the index did not say whether the grouping is verified)"}.` : "");
+    confidence = indexedStale ? "low" : "medium";
+    next.push("get_asset", "explain_mechanics");
+  } else if (nameCandidates.length > 1) {
+    // Several collections answer to this name. Picking the top-scoring one
+    // would be a confident wrong answer, which is the expensive failure here.
+    kind = "ambiguous";
+    summary = `"${q}" matches ${nameCandidates.length} collections in the Magic Eden directory (${nameCandidates.join(", ")}). Ask which one, or pass one of those symbols.`;
+    confidence = "low";
+    identifiers.candidateSymbols = nameCandidates.join(",");
+    next.push("get_collection_stats", "search_collections");
   } else if (tradesOn.length > 0) {
     kind = "marketplace-collection";
     summary = `"${q}" is a collection listed on ${tradesOn.join(" and ")}. No Core collection account was resolved, so on-chain supply is unavailable but market data is.`;
@@ -269,8 +413,14 @@ export async function identify(query: string): Promise<Identification> {
     confidence = "low";
   } else if (looksLikeAddress(q)) {
     kind = "wallet-or-unknown-account";
-    summary = `${q} is a valid Solana address but is not a Metaplex Core asset or collection. It is most likely a wallet, a legacy SPL mint, or another program's account.`;
-    confidence = "medium";
+    summary =
+      `${q} is a valid Solana address but is not a Metaplex Core asset or collection` +
+      (dasAvailable === true
+        ? ", and the chain's asset index has no record of it as an asset either. It is most likely a wallet or another program's account."
+        : dasAvailable === false
+          ? ". The chain's asset index could not be reached, so a legacy SPL or compressed NFT cannot be ruled out - see notChecked."
+          : ". It is most likely a wallet, a legacy SPL mint, or another program's account.");
+    confidence = dasAvailable === true ? "medium" : "low";
     next.push("get_wallet_holdings");
   } else {
     summary = `Nothing matched "${q}" in the sources this server can see. That is not proof it does not exist - see notChecked for the gaps, and search_collections for close names.`;
@@ -288,8 +438,8 @@ export async function identify(query: string): Promise<Identification> {
     kind,
     summary,
     identifiers,
-    standard: coreKind ? "Metaplex Core" : undefined,
-    chain: coreKind || tradesOn.length > 0 ? "Solana" : undefined,
+    standard: coreKind ? "Metaplex Core" : (indexed?.standard ?? undefined),
+    chain: coreKind || indexed || tradesOn.length > 0 ? "Solana" : undefined,
     tradesOn,
     checked,
     notChecked,

@@ -1,0 +1,822 @@
+[
+ {
+  "pdaAddress": "6WK4WAATqMTXV7fywWcpzUJSB6JTYvP9gt3pW1zSNT4r",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "DiqjuXMkRTuUNqdqh1GPWi7dzmRbK1DcTacNZKyuJL2w",
+  "tokenMint": "CyBG8fsooJsbEFTCPNG1er4qbwnB6vQpGKHHpKmRRgzW",
+  "seller": "EVquz5tTB2wPZDPACSXb69ytsZY26VWZ12kg4Vq1uert",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 8.199,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "8199000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 9802
+   },
+   "moonrank": {
+    "rank": 9929,
+    "absolute_rarity": 9929,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "CyBG8fsooJsbEFTCPNG1er4qbwnB6vQpGKHHpKmRRgzW",
+   "owner": "EVquz5tTB2wPZDPACSXb69ytsZY26VWZ12kg4Vq1uert",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #3081",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Class",
+     "value": "Tracker"
+    },
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Trice"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Mirage"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Volcanic"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Idle"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Bored"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Salmon"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Details",
+     "value": "On"
+    }
+   ],
+   "price": 8.199,
+   "listStatus": "listed",
+   "tokenAddress": "DiqjuXMkRTuUNqdqh1GPWi7dzmRbK1DcTacNZKyuJL2w",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "8199000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "7ut5beCwbxXGS5k8GAMYrUGGmF2o42EbPfbzjHKnEjT8",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "692i8LMdqg8NHUD5KEmV8Ft3mnpdbbbSCAEk9J3JV9Mx",
+  "tokenMint": "8HKNhA2gtr4jVsLi5DqBKEv1AD5TKoTvZr5a336FqGg7",
+  "seller": "12Nwf8b3ngxHdY838aLpmNugf8CJQ11EFXPwL9afAnZD",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 8.2,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "8200000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 6180
+   },
+   "moonrank": {
+    "rank": 7849,
+    "absolute_rarity": 7849,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "8HKNhA2gtr4jVsLi5DqBKEv1AD5TKoTvZr5a336FqGg7",
+   "owner": "12Nwf8b3ngxHdY838aLpmNugf8CJQ11EFXPwL9afAnZD",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #4810",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Trice"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Oceania"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Volcanic"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Idle"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Smug"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Mint"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "On"
+    },
+    {
+     "trait_type": "Details",
+     "value": "Off"
+    }
+   ],
+   "price": 8.2,
+   "listStatus": "listed",
+   "tokenAddress": "692i8LMdqg8NHUD5KEmV8Ft3mnpdbbbSCAEk9J3JV9Mx",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "8200000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "6P2trzVergu3fC5zQ2kJX2TfMVtZWRWJ18pnkX9WRa8o",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "AjThTkiaSA4jMbCJ3GwuEahNmA56L16mYQWJgbYBVvyT",
+  "tokenMint": "FzWCHWm2Lpzbm6hijnuTJcxJWxd9bzvuCDASrC4ZguJq",
+  "seller": "9YCN4wyyKc3oGFCpkCmqwmnhs6R79reHtWRNFBbgQMTj",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 8.218,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "8218000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 3865
+   },
+   "moonrank": {
+    "rank": 1357,
+    "absolute_rarity": 1357,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "FzWCHWm2Lpzbm6hijnuTJcxJWxd9bzvuCDASrC4ZguJq",
+   "owner": "9YCN4wyyKc3oGFCpkCmqwmnhs6R79reHtWRNFBbgQMTj",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #1632",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Stego"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Oceania"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Aqua"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Gallop"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Confident"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Mint"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    {
+     "trait_type": "Back",
+     "value": "On"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Details",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Class",
+     "value": "Mystic"
+    }
+   ],
+   "price": 8.218,
+   "listStatus": "listed",
+   "tokenAddress": "AjThTkiaSA4jMbCJ3GwuEahNmA56L16mYQWJgbYBVvyT",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "8218000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "DU5e3Y3YKevyoX9417JSfvbPg3ELdAxfiGoeRZnH9pGD",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "HWhBrgCM7TeAhyoPxj6PKeJpsXRPH56PT1qvgtFq6Rke",
+  "tokenMint": "BmNQSF9ao2TzqTtnbERcQxnqHk7hzVJLszHa674gErSa",
+  "seller": "F7hMQABkKs9ou86KEpJiyjp535td56HRBRWayFzgAiVS",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 9,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9000000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 7624
+   },
+   "moonrank": {
+    "rank": 8202,
+    "absolute_rarity": 8202,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "BmNQSF9ao2TzqTtnbERcQxnqHk7hzVJLszHa674gErSa",
+   "owner": "F7hMQABkKs9ou86KEpJiyjp535td56HRBRWayFzgAiVS",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #2553",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Ankylo"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Savanna"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Tropic"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Idle"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Confident"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Sky"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "On"
+    },
+    {
+     "trait_type": "Details",
+     "value": "Off"
+    }
+   ],
+   "price": 9,
+   "listStatus": "listed",
+   "tokenAddress": "HWhBrgCM7TeAhyoPxj6PKeJpsXRPH56PT1qvgtFq6Rke",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "9000000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "A6fuzSwYCBCgC7Bkvh9kSLr3uxYMnQSr6fXXa96nmw8s",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "AgjM923y6iMysR7jZcXy3GVFAEsnUtt6WJk3STVE4sb4",
+  "tokenMint": "H7NGUcwFhkA2N3av6ssiafGeLkfWny7MjxwT1jf6y5dH",
+  "seller": "7zcRWrKMimPowkEnvqw7q3RznLSGieKFCoM4wNmxyUg4",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 9.449,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9449000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 7842
+   },
+   "moonrank": {
+    "rank": 7447,
+    "absolute_rarity": 7447,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "H7NGUcwFhkA2N3av6ssiafGeLkfWny7MjxwT1jf6y5dH",
+   "owner": "7zcRWrKMimPowkEnvqw7q3RznLSGieKFCoM4wNmxyUg4",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #1390",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Rex"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Savanna"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Desert"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Trot"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Sleepy"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Lavender"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "2"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "On"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Details",
+     "value": "On"
+    }
+   ],
+   "price": 9.449,
+   "listStatus": "listed",
+   "tokenAddress": "AgjM923y6iMysR7jZcXy3GVFAEsnUtt6WJk3STVE4sb4",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "9449000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "5aPqkpxdbY7dTm4eMjEEivBqvSapC6CCRh8g6aXT8m6y",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "6YSfuJL9qeYefv1bjFqfYjxofxysNruNWCqQtQ48ZviR",
+  "tokenMint": "2Z6uzenqPJH87VPziXawqaWiZ9f3fpuGF8jE3P6cvdEf",
+  "seller": "EVquz5tTB2wPZDPACSXb69ytsZY26VWZ12kg4Vq1uert",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 9.45,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9450000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 4468
+   },
+   "moonrank": {
+    "rank": 4278,
+    "absolute_rarity": 4278,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "2Z6uzenqPJH87VPziXawqaWiZ9f3fpuGF8jE3P6cvdEf",
+   "owner": "EVquz5tTB2wPZDPACSXb69ytsZY26VWZ12kg4Vq1uert",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #264",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Class",
+     "value": "Mender"
+    },
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Bronto"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Jurassic"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Aqua"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Gallop"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Sad"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Lavender"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "2"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "On"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Details",
+     "value": "On"
+    }
+   ],
+   "price": 9.45,
+   "listStatus": "listed",
+   "tokenAddress": "6YSfuJL9qeYefv1bjFqfYjxofxysNruNWCqQtQ48ZviR",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "9450000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "6JiJBuAvW6pr7KPGct94tJZdpcoeeiQQnCWnBbb2Jv67",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "B62cDEyhWrbMM2K228Z8HXPAVQ7HhgQExwu5C6yTnQ95",
+  "tokenMint": "AMG8VsBQnnH35i4yw4ALX9Xvti6LLM626c2EKSoEQZyc",
+  "seller": "EqS7TAWdQoFeBG5AV4hvxoAXjCjKN7MZXavdoNbdjmh7",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 9.47,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "9470000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 7004
+   },
+   "moonrank": {
+    "rank": 8442,
+    "absolute_rarity": 8442,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "AMG8VsBQnnH35i4yw4ALX9Xvti6LLM626c2EKSoEQZyc",
+   "owner": "EqS7TAWdQoFeBG5AV4hvxoAXjCjKN7MZXavdoNbdjmh7",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #4518",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Trice"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Mirage"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Amethyst"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Walk"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Bored"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Salmon"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "1"
+    },
+    {
+     "trait_type": "Back",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Details",
+     "value": "On"
+    }
+   ],
+   "price": 9.47,
+   "listStatus": "listed",
+   "tokenAddress": "B62cDEyhWrbMM2K228Z8HXPAVQ7HhgQExwu5C6yTnQ95",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "9470000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ },
+ {
+  "pdaAddress": "HPiCwSmZdRTKS63iXXtQHnodFkJgxSmYXNGx5JNbh3gF",
+  "auctionHouse": "E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe",
+  "tokenAddress": "D59V2gNEKW2UQaN7LGSbxWZiogp3BGJaTgnFNZVwX6xz",
+  "tokenMint": "8U9tzUz7gtPvM7dZYfbVTGpAZFDYkdcMtHXZqNztKETZ",
+  "seller": "EPaxEY44kh5aVeWdkAdbVkkJzgfjbRQqJqDGsFXqiftN",
+  "sellerReferral": "autMW8SgBkVYeBgqYiTuJZnkvDZMVU2MHJh9Jh7CSQ2",
+  "tokenSize": 1,
+  "price": 10.098,
+  "priceInfo": {
+   "solPrice": {
+    "rawAmount": "10098000000",
+    "address": "So11111111111111111111111111111111111111112",
+    "decimals": 9
+   }
+  },
+  "rarity": {
+   "howrare": {
+    "rank": 6894
+   },
+   "moonrank": {
+    "rank": 6732,
+    "absolute_rarity": 6732,
+    "crawl": {}
+   }
+  },
+  "extra": {},
+  "expiry": -1,
+  "token": {
+   "mintAddress": "8U9tzUz7gtPvM7dZYfbVTGpAZFDYkdcMtHXZqNztKETZ",
+   "owner": "EPaxEY44kh5aVeWdkAdbVkkJzgfjbRQqJqDGsFXqiftN",
+   "supply": 1,
+   "collection": "claynosaurz",
+   "collectionName": "Claynosaurz",
+   "name": "Claynosaurz #3128",
+   "updateAuthority": "B7B2g3WbdZMDV3YcDGRGhEt5KyWqDJZFwRR8zpWVEkUF",
+   "primarySaleHappened": true,
+   "sellerFeeBasisPoints": 500,
+   "attributes": [
+    {
+     "trait_type": "Edition",
+     "value": "First"
+    },
+    {
+     "trait_type": "Species",
+     "value": "Trice"
+    },
+    {
+     "trait_type": "Skin",
+     "value": "Savanna"
+    },
+    {
+     "trait_type": "Color",
+     "value": "Tropic"
+    },
+    {
+     "trait_type": "Motion",
+     "value": "Idle"
+    },
+    {
+     "trait_type": "Mood",
+     "value": "Sleepy"
+    },
+    {
+     "trait_type": "Background",
+     "value": "Salmon"
+    },
+    {
+     "trait_type": "Layer Count",
+     "value": "3"
+    },
+    {
+     "trait_type": "Back",
+     "value": "On"
+    },
+    {
+     "trait_type": "Belly",
+     "value": "Off"
+    },
+    {
+     "trait_type": "Pattern",
+     "value": "On"
+    },
+    {
+     "trait_type": "Details",
+     "value": "On"
+    }
+   ],
+   "price": 10.098,
+   "listStatus": "listed",
+   "tokenAddress": "D59V2gNEKW2UQaN7LGSbxWZiogp3BGJaTgnFNZVwX6xz",
+   "priceInfo": {
+    "solPrice": {
+     "rawAmount": "10098000000",
+     "address": "So11111111111111111111111111111111111111112",
+     "decimals": 9
+    }
+   }
+  },
+  "listingSource": "M2"
+ }
+]

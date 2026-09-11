@@ -1,0 +1,244 @@
+[
+ {
+  "symbol": "nomadz_suitcases",
+  "name": "NOMADZ Suitcases",
+  "description": "The on-chain collection every NOMADZ Suitcase NFT belongs to",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "green_things_core_test",
+  "name": "Green Things Core Compatibility Test",
+  "description": "A fully minted three-asset Metaplex Core compatibility test collection. This temporary collection tests wallet visibilit",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "art"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "claysonas",
+  "name": "Claysonas",
+  "description": "1 of 1 clay characters created by NO LEGS, each with their own lives, goals, and favorite foods",
+  "twitter": "https://www.twitter.com/boywithnolegs",
+  "discord": "",
+  "website": "https://www.nolegs.art/",
+  "categories": [
+   "pfps",
+   "art"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "migration_to_candy_digital",
+  "name": "Migration to Candy Digital",
+  "description": "Migration to Candy Digital is an achievement-style collectible recognizing DC community members who took part in the Dec",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "candy_spark_cards",
+  "name": "Candy Spark Cards",
+  "description": "Candy Spark Cards are utility collectibles connected to Candy's MLB challenge ecosystem. Earned through the Candy Sparks",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "2024_mlb_team_ball",
+  "name": "2024 MLB Team Ball",
+  "description": "The 2024 MLB Team Ball collection celebrates club fandom through collectible baseball designs for all 30 Major League te",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "gold_series_auction_1_candy_digital",
+  "name": "2026 MLB Gold Series ICONS - Candy Digital",
+  "description": "Candy ICONs 2026 Gold Series - Auction Lot #1 - Power\nFeaturing: Shohei Ohtani, Juan Soto, Freddie Freeman, Kyle Schwarb",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": true,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "2026_mlb_base_icons_dutch_test_candy_digital",
+  "name": "2026 MLB Base ICONs Dutch Test - Candy Digital",
+  "description": "Base Series is Candy's first MLB drop of 2026 and features 100 of the top active players in Major League Baseball.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "2023_candy_celebratory_collection",
+  "name": "2023 Candy Celebratory Collection",
+  "description": "The 2023 Candy Celebratory Collection brings together community-focused moments, player shoutouts, Pride Month artwork, ",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "os2_test_core_collection",
+  "name": "OS2 Test — Core Collection",
+  "description": "Test Metaplex Core collection for OS2 buy/sell testing.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "2026_mlb_base_icons_prototype_2_candy_digital",
+  "name": "2026 MLB Base Icons - Prototype 2 - Candy Digital",
+  "description": "Base Series is Candy's first MLB drop of 2026 and features 100 of the top active players in Major League Baseball.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "clayno_watch_collect_portrait",
+  "name": "Clayno Watch & Collect Portrait",
+  "description": "Exclusive Claynosaurz Watch and Collect Portrait for Solflare.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "2026_mlb_base_series_icons_candy_digital",
+  "name": "2026 MLB Base Series ICONs - Candy Digital",
+  "description": "Base Series is Candy's first MLB drop of 2026 and features 100 of the top active players in Major League Baseball.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "claynosaurz_micro_episode_2_portrait",
+  "name": "Claynosaurz Micro Episode 2 Portrait",
+  "description": "Claynosaurz Micro Episode 2 \"Wing It\" - a soulbound Solflare wallet portrait.",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "pioneer-edition",
+  "name": "Claynosaurz S1 Promo Packs: Pioneer Edition",
+  "description": "Watch & Collect Season 1 Promo Packs by Claynosaurz. Every pack contains collectible cards and a random allocation of $H",
+  "twitter": "",
+  "discord": "",
+  "website": "https://watch.claynosaurz.com",
+  "categories": [
+   "games",
+   "virtual_worlds"
+  ],
+  "isBadged": true,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ },
+ {
+  "symbol": "mad_magazine_19522017_1",
+  "name": "MAD Magazine (1952-2017) #1",
+  "description": "MAD Magazine (1952-2017) #1 presents the debut issue of the influential humor and satire magazine. The issue spoofs mult",
+  "twitter": "",
+  "discord": "",
+  "website": "",
+  "categories": [
+   "pfps"
+  ],
+  "isBadged": false,
+  "hasCNFTs": false,
+  "isOcp": false,
+  "splTokens": []
+ }
+]

@@ -1,0 +1,52 @@
+[
+ {
+  "wallet": "888p4VSyDq2jNQszU8daRjg1tDsLBHjK21iXKsd4At6k",
+  "totalVolume": 181710748751,
+  "lastTradeAt": 1789147689
+ },
+ {
+  "wallet": "BSDHcCACDiDZyAtEZJWw9t4yaMw41jz8ngu9KuPwktJp",
+  "totalVolume": 100655545627,
+  "lastTradeAt": 1789144670
+ },
+ {
+  "wallet": "FoJE7b2TEShYwCaDzQwTq8WAwB8K4aN4m3H25r2BfMLA",
+  "totalVolume": 69717246515,
+  "lastTradeAt": 1789140567
+ },
+ {
+  "wallet": "AGzqZEJXbYeJze7aba6xTvQRHCt5ENmLhjbXejnzSpcQ",
+  "totalVolume": 67616708988,
+  "lastTradeAt": 1785854388
+ },
+ {
+  "wallet": "F6JUS3iGnAZee15MpFVDafv5GHopqKBhogncjrxhkTE7",
+  "totalVolume": 50751429359,
+  "lastTradeAt": 1788568690
+ },
+ {
+  "wallet": "2srdg8i14ZCnmMVUZ4wVUJGkuiwSLnNTGaL1REFGtiZ3",
+  "totalVolume": 49877938541,
+  "lastTradeAt": 1789148788
+ },
+ {
+  "wallet": "84G7Ebt5r9Gf4crhKYFybhZZcHYnecD9EmiWowEDwn8c",
+  "totalVolume": 47734875628,
+  "lastTradeAt": 1789146949
+ },
+ {
+  "wallet": "DjBty75pbyMj8JV1wrhUR5f3U4nbSf1ury64267E1nGH",
+  "totalVolume": 44654738972,
+  "lastTradeAt": 1787080006
+ },
+ {
+  "wallet": "32zBCG4mZrUXHiJJD4uM5kdoxirwiQrwVZ21SpppoFeU",
+  "totalVolume": 39922637128,
+  "lastTradeAt": 1788400118
+ },
+ {
+  "wallet": "Ctfx52ErYnX3UsBLyJRhSfhpNb9WMMU3kwr6mpw3aYwo",
+  "totalVolume": 35467137396,
+  "lastTradeAt": 1786041903
+ }
+]

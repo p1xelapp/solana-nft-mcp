@@ -18,8 +18,9 @@
  * Digital auction: 36/36 packs traced to their winners, 0 untraced.
  */
 
-import { cached, rateLimiter } from "../lib/http.js";
+import { cached, originGate } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
+import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -34,51 +35,227 @@ const MARKETPLACE_PROGRAMS: Record<string, string> = {
   TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor cNFT",
 };
 
-// Public mainnet endpoint works from residential IPs (where stdio MCP servers
-// run). Overridable for users with their own endpoint - still optional.
-const RPC_URL = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+// Be polite to the free endpoints: one request per 350ms per HOST, and retry
+// 429/5xx with a real backoff - the public RPC rate-limits bursts hard. The
+// gate is keyed by origin and shared with the DAS reads in das.ts, because a
+// per-IP budget belongs to the host, not to whichever module is calling it.
+const RPC_MIN_INTERVAL_MS = 350;
+const gateFor = (url: string) => originGate(url, RPC_MIN_INTERVAL_MS);
 
-// Be polite to the free endpoint: one request per 350ms, serialized, and
-// retry 429/5xx with a real backoff - the public RPC rate-limits bursts hard.
-const gate = rateLimiter(350);
+interface RpcEndpoint {
+  id: string;
+  url: string;
+}
+
+/**
+ * The endpoints tried for one call, in order. A user's own endpoint goes
+ * first; the verified public list is the safety net behind it, so setting
+ * SOLANA_RPC_URL adds a preference rather than removing the fallbacks.
+ */
+function endpoints(): RpcEndpoint[] {
+  const custom = process.env.SOLANA_RPC_URL?.trim();
+  return custom ? [{ id: "your SOLANA_RPC_URL", url: custom }, ...PUBLIC_RPC_ENDPOINTS] : [...PUBLIC_RPC_ENDPOINTS];
+}
+
+/**
+ * Host only, never the URL. A private endpoint carries its key in the query
+ * string, and this label ends up in tool output, logs and model context.
+ */
+function label(ep: RpcEndpoint): string {
+  try {
+    return `${ep.id} (${new URL(ep.url).host})`;
+  } catch {
+    return ep.id;
+  }
+}
+
+/** Filled in by `rpc()` so a caller can report which endpoint actually answered. */
+export interface RpcTrace {
+  /** Human-safe label of the endpoint that answered LAST. Kept for callers that report a single name. */
+  endpoint?: string;
+  /**
+   * Every endpoint that served part of this answer, in first-use order.
+   *
+   * One provenance read is an account read, a signature walk and N
+   * transaction fetches, and the loop rotates freely between them. Reporting
+   * only the last one attributes the whole history to an endpoint that may
+   * have served one transaction of it.
+   */
+  endpoints?: string[];
+  /** Endpoints that failed before one answered, with the reason each gave. */
+  rotations?: string[];
+}
+
+// JSON-RPC error codes that describe the PROVIDER (busy, plan, key), not the
+// chain. Every endpoint would answer a chain error identically, so only these
+// are worth moving on for.
+const PROVIDER_ERROR_CODES = new Set([-32429, -32029, -32052, -32005, 401, 402, 403, 429]);
+
+const ATTEMPTS_PER_ENDPOINT = 2;
+
+// An endpoint that just exhausted its attempts is skipped for a minute.
+// Without this, a misconfigured SOLANA_RPC_URL costs every single call two
+// attempts and a backoff - measured at 18s for one provenance read against a
+// dead host, versus 4s once the memo is in place. Short and self-healing: a
+// briefly flaky endpoint is back in rotation a minute later, and the memo is
+// ignored entirely when it would leave nothing to try.
+const COOLDOWN_MS = 60_000;
+const cooldown = new Map<string, number>();
 
 let rpcId = 0;
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
-    await gate();
-    try {
-      const res = await fetch(RPC_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (res.status === 429 || res.status >= 500) throw new Error(`Solana RPC HTTP ${res.status}`);
-      if (!res.ok) throw new NoRetryError(`Solana RPC HTTP ${res.status}`);
-      const j = (await res.json()) as { result?: T; error?: { code: number; message: string } };
-      if (j.error) {
-        // -32429 = provider rate limit; retryable. Other JSON-RPC errors are not.
-        if (j.error.code === -32429) throw new Error(`Solana RPC ${j.error.code}: ${j.error.message}`);
-        throw new NoRetryError(`Solana RPC ${j.error.code}: ${j.error.message}`);
+
+/**
+ * One JSON-RPC call, with endpoint fallback.
+ *
+ * Anything that says "this endpoint is not answering" - transport failure,
+ * 429, 5xx, any other non-200, a non-JSON body, a provider error code, or an
+ * envelope carrying neither `result` nor `error` - retries here and then moves
+ * to the next endpoint. A real chain error (bad parameter, unsupported method)
+ * is thrown straight out: rotating would only collect the same answer three
+ * more times and cost the user ten seconds.
+ */
+async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Promise<T> {
+  const all = endpoints();
+  const now = Date.now();
+  const isCooling = (ep: RpcEndpoint) => (cooldown.get(ep.id) ?? 0) >= now;
+  // Cooling endpoints are demoted, never removed. Skipping them entirely lets
+  // one fresh endpoint fail and produce "every endpoint was tried" while two
+  // recovered ones were never asked - a self-inflicted outage.
+  const list = [...all.filter((ep) => !isCooling(ep)), ...all.filter(isCooling)];
+  const problems: string[] = [];
+  for (const ep of list) {
+    const wasCooling = isCooling(ep);
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < ATTEMPTS_PER_ENDPOINT; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+      await gateFor(ep.url)();
+      try {
+        const res = await fetch(ep.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+          signal: AbortSignal.timeout(12_000),
+        });
+        if (!res.ok) {
+          await res.body?.cancel().catch(() => undefined);
+          throw new EndpointError(`HTTP ${res.status}`);
+        }
+        let j: { result?: T; error?: { code: number; message: string } };
+        try {
+          j = (await res.json()) as { result?: T; error?: { code: number; message: string } };
+        } catch {
+          throw new EndpointError("returned a non-JSON body");
+        }
+        if (j.error) {
+          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(`${j.error.code}: ${j.error.message}`);
+          throw new ChainError(`Solana RPC ${j.error.code}: ${j.error.message}`);
+        }
+        // A malformed envelope with neither result nor error must not read as
+        // "no account" or "no history" downstream.
+        if (!("result" in j)) throw new EndpointError("returned an envelope with no result field");
+        cooldown.delete(ep.id);
+        if (trace) {
+          const name = label(ep);
+          trace.endpoint = name;
+          trace.endpoints ??= [];
+          if (!trace.endpoints.includes(name)) trace.endpoints.push(name);
+          if (problems.length > 0) trace.rotations = [...problems];
+        }
+        return j.result as T;
+      } catch (e) {
+        if (e instanceof ChainError) throw new Error(e.message);
+        lastErr = e;
       }
-      // A malformed envelope with neither result nor error must not read as
-      // "no account" or "no history" downstream.
-      if (!("result" in j)) throw new NoRetryError("Solana RPC returned an envelope with no result field");
-      return j.result as T;
-    } catch (e) {
-      if (e instanceof NoRetryError) throw new Error(e.message);
-      lastErr = e;
     }
+    cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    problems.push(
+      `${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+    );
   }
   throw new Error(
-    `${lastErr instanceof Error ? lastErr.message : String(lastErr)} (after 4 attempts - the free public RPC is ` +
-      `rate-limited; set SOLANA_RPC_URL to any endpoint you prefer, still no key required by this server)`,
+    `public Solana RPC is not answering right now. Every endpoint was tried and none returned a result ` +
+      `(${problems.join("; ")}). That is the free public RPC being busy, not a problem with what you asked. ` +
+      `Set SOLANA_RPC_URL to any endpoint you prefer - this server still needs no key of its own.`,
   );
 }
 
-class NoRetryError extends Error {}
+/** This endpoint is not answering: retry it, then move to the next one. */
+class EndpointError extends Error {}
+
+/** The chain answered, and the answer was an error. Every endpoint would say the same. */
+class ChainError extends Error {}
+
+export interface RpcEndpointHealth {
+  /** Human-safe label: id plus host, never a URL that could carry a key. */
+  endpoint: string;
+  ok: boolean;
+  latencyMs: number | null;
+  slot: number | null;
+  note: string;
+}
+
+/**
+ * Per-endpoint health for the status tool: getHealth and getSlot in one
+ * batched request each, so the whole check is one round trip per endpoint.
+ *
+ * Deliberately does NOT use the fallback loop above - the point is to report
+ * on each endpoint individually, and a loop that rotates away from a sick one
+ * would hide exactly what is being asked about. Never throws.
+ */
+export async function rpcHealth(timeoutMs = 6_000): Promise<RpcEndpointHealth[]> {
+  const out: RpcEndpointHealth[] = [];
+  for (const ep of endpoints()) {
+    const started = Date.now();
+    try {
+      await gateFor(ep.url)();
+      const res = await fetch(ep.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([
+          { jsonrpc: "2.0", id: 1, method: "getHealth" },
+          { jsonrpc: "2.0", id: 2, method: "getSlot" },
+        ]),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const latencyMs = Date.now() - started;
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => undefined);
+        out.push({ endpoint: label(ep), ok: false, latencyMs, slot: null, note: `refused with HTTP ${res.status}` });
+        continue;
+      }
+      const body = (await res.json()) as unknown;
+      // A batch answer is an array. Anything else is a shape change or a proxy
+      // page, not "unhealthy" - say which, rather than guessing.
+      if (!Array.isArray(body)) {
+        out.push({ endpoint: label(ep), ok: false, latencyMs, slot: null, note: "answered, but not with a JSON-RPC batch (shape change or proxy page)" });
+        continue;
+      }
+      const rows = body as { id?: number; result?: unknown; error?: { message?: string } }[];
+      const health = rows.find((r) => r.id === 1);
+      const slotRow = rows.find((r) => r.id === 2);
+      const slot = typeof slotRow?.result === "number" ? slotRow.result : null;
+      const healthy = health?.result === "ok";
+      out.push({
+        endpoint: label(ep),
+        ok: healthy && slot !== null,
+        latencyMs,
+        slot,
+        note: healthy && slot !== null
+          ? `healthy at slot ${slot}`
+          : (health?.error?.message ?? "answered but did not report itself healthy"),
+      });
+    } catch (e) {
+      out.push({
+        endpoint: label(ep),
+        ok: false,
+        latencyMs: Date.now() - started,
+        slot: null,
+        note: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------- base58
 
@@ -197,14 +374,35 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
   return info.value.data[0];
 }
 
-export async function getCoreAccount(
+export interface CoreAccountRead {
+  account: CoreAsset | CoreCollection | null;
+  /**
+   * True when the RPC refused and this is a previously cached account kept
+   * alive by the stale-on-error rule. A stale owner is not current ownership
+   * and must never be presented as settled.
+   */
+  stale: boolean;
+  /** When the account was actually read from an endpoint, not when it was served. */
+  cachedAt: string;
+}
+
+/**
+ * One Core account plus the freshness of the read that produced it.
+ *
+ * Ownership is the claim this server is most often asked to settle, so the
+ * caller has to be able to tell "read from the chain just now" from "the RPC
+ * failed and this is a minute-old copy". `getCoreAccount` keeps the simple
+ * shape for callers that only need the decoded account.
+ */
+export async function getCoreAccountWithMeta(
   address: string,
-  opts: { fresh?: boolean } = {},
-): Promise<CoreAsset | CoreCollection | null> {
+  opts: { fresh?: boolean; trace?: RpcTrace } = {},
+): Promise<CoreAccountRead> {
   const read = async () => {
     const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>(
       "getAccountInfo",
       [address, { encoding: "base64" }],
+      opts.trace,
     );
     if (!info?.value) return { missing: true as const };
     if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner };
@@ -212,14 +410,24 @@ export async function getCoreAccount(
   };
   // `fresh` bypasses the stale-on-error cache: a verification must never
   // confirm ownership or supply from a value kept alive by a failed refresh.
-  const { data } = opts.fresh ? { data: await read() } : await cached(`core:${address}`, 60_000, read);
+  const hit = opts.fresh
+    ? { data: await read(), stale: false, cachedAt: new Date().toISOString() }
+    : await cached(`core:${address}`, 60_000, read);
+  const { data } = hit;
   if ("missing" in data) throw new Error(`account ${address} does not exist on mainnet`);
   if ("notCore" in data)
     throw new Error(
       `account ${address} is owned by ${data.owner}, not Metaplex Core. ` +
         `v1 decodes Metaplex Core assets only (SPL/compressed NFTs: use get_asset, which reads Magic Eden instead).`,
     );
-  return data.decoded;
+  return { account: data.decoded, stale: hit.stale, cachedAt: hit.cachedAt };
+}
+
+export async function getCoreAccount(
+  address: string,
+  opts: { fresh?: boolean; trace?: RpcTrace } = {},
+): Promise<CoreAsset | CoreCollection | null> {
+  return (await getCoreAccountWithMeta(address, opts)).account;
 }
 
 // ---------------------------------------------------------- provenance
@@ -284,7 +492,11 @@ interface ParsedTx {
  * Core assets are cheap here - even a heavily traded card is ~5-15 signatures.
  */
 export async function getProvenance(mint: string, depth = 15, opts: { fresh?: boolean } = {}) {
-  const account = await getCoreAccount(mint, { fresh: opts.fresh });
+  // Which endpoint actually served this history is part of the evidence: a
+  // reader checking the result by hand needs to know whose node they are
+  // disagreeing with.
+  const trace: RpcTrace = {};
+  const account = await getCoreAccount(mint, { fresh: opts.fresh, trace });
   if (!account || account.kind !== "asset") {
     throw new Error(
       account?.kind === "collection"
@@ -301,10 +513,11 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     let before: string | undefined;
     let complete = false;
     for (let page = 0; page < 5; page++) {
-      const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>("getSignaturesForAddress", [
-        mint,
-        before ? { limit: 1000, before } : { limit: 1000 },
-      ]);
+      const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
+        "getSignaturesForAddress",
+        [mint, before ? { limit: 1000, before } : { limit: 1000 }],
+        trace,
+      );
       if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
       all.push(...batch);
       if (batch.length < 1000) { complete = true; break; }
@@ -333,10 +546,11 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
   let unreadable = 0;
   for (const sig of selected) {
     const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
-      rpc<ParsedTx | null>("getTransaction", [
-        sig.signature,
-        { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
-      ]),
+      rpc<ParsedTx | null>(
+        "getTransaction",
+        [sig.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+        trace,
+      ),
     );
     if (!tx?.meta) { unreadable++; continue; }
     if (tx.meta.err) continue; // failed transaction: nothing happened on chain
@@ -401,6 +615,11 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     /** Signatures whose transaction could not be fetched or carried no logs to read. */
     unreadableTransactions: unreadable,
     totalSignatures: ok.length,
+    /** The last Solana endpoint to serve part of this read (host only - a private URL's key is never echoed). */
+    rpcEndpointUsed: trace.endpoint ?? "cache (no endpoint was contacted for this read)",
+    /** Every endpoint that served part of it: the account, the signature pages and the transactions can come from different ones. */
+    rpcEndpointsUsed: trace.endpoints ?? [],
+    ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     /** True only when every signature was listed, every transaction was decoded (none skipped for depth), and every one was readable. */
     historyComplete: walk.complete && unreadable === 0 && skipped === 0,
     ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
@@ -411,17 +630,36 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
  * Find recent asset mints touched by transactions on a Core COLLECTION
  * address. Used to discover concrete asset addresses from a collection
  * keylessly (no DAS API needed) - handy for demos and spot checks.
+ *
+ * Bounded twice, because this runs inside ordinary calls: transactions are
+ * fetched one at a time behind the shared RPC gate, so a listing-heavy or slow
+ * collection could otherwise keep one identify() running for minutes. Running
+ * out of time is reported rather than hidden - "no members found" and "we ran
+ * out of time looking" are different answers.
  */
-export async function findRecentCollectionAssets(collection: string, max = 3): Promise<string[]> {
-  // 25 sigs: listings (e.g. Magic Eden CoreSell) carry no Core instruction,
-  // so a listing-heavy stretch needs headroom before we hit a real transfer.
+export async function findRecentCollectionAssets(
+  collection: string,
+  max = 3,
+  opts: { maxTransactions?: number; deadlineMs?: number } = {},
+): Promise<{ assets: string[]; transactionsRead: number; timedOut: boolean }> {
+  const maxTransactions = opts.maxTransactions ?? 8;
+  const deadline = Date.now() + (opts.deadlineMs ?? 6_000);
+  // Listings (e.g. Magic Eden CoreSell) carry no Core instruction, so a
+  // listing-heavy stretch needs headroom before we hit a real transfer.
   const sigs = await rpc<{ signature: string; err: unknown }[]>("getSignaturesForAddress", [
     collection,
     { limit: 25 },
   ]);
   const found = new Set<string>();
+  let transactionsRead = 0;
+  let ranOut = false;
   for (const s of sigs.filter((x) => !x.err)) {
     if (found.size >= max) break;
+    if (transactionsRead >= maxTransactions || Date.now() > deadline) {
+      ranOut = true;
+      break;
+    }
+    transactionsRead++;
     const tx = await rpc<ParsedTx | null>("getTransaction", [
       s.signature,
       { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
@@ -440,7 +678,7 @@ export async function findRecentCollectionAssets(collection: string, max = 3): P
       if (candidate && candidate !== collection) found.add(candidate);
     }
   }
-  return [...found].slice(0, max);
+  return { assets: [...found].slice(0, max), transactionsRead, timedOut: ranOut };
 }
 
 // ------------------------------------------------------------ wallet age
@@ -453,16 +691,18 @@ export async function findRecentCollectionAssets(collection: string, max = 3): P
  * ("older than", "at least N transactions") instead of a false precision.
  */
 export async function walletAge(wallet: string, maxPages = 3) {
+  const trace: RpcTrace = {};
   let before: string | undefined;
   let count = 0;
   let oldest: number | null = null;
   let newest: number | null = null;
   let complete = false;
   for (let page = 0; page < maxPages; page++) {
-    const sigs = await rpc<{ signature: string; blockTime: number | null }[]>("getSignaturesForAddress", [
-      wallet,
-      before ? { limit: 1000, before } : { limit: 1000 },
-    ]);
+    const sigs = await rpc<{ signature: string; blockTime: number | null }[]>(
+      "getSignaturesForAddress",
+      [wallet, before ? { limit: 1000, before } : { limit: 1000 }],
+      trace,
+    );
     if (!Array.isArray(sigs) || sigs.length === 0) {
       complete = true;
       break;
@@ -486,6 +726,9 @@ export async function walletAge(wallet: string, maxPages = 3) {
     firstSeenIsBound: !complete,
     lastSeen: iso(newest),
     ageDays: days,
+    rpcEndpointUsed: trace.endpoint ?? "no endpoint was contacted for this read",
+    rpcEndpointsUsed: trace.endpoints ?? [],
+    ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     note: complete
       ? "Every signature was counted."
       : `Stopped after ${count} signatures (${maxPages} pages). The wallet is AT LEAST this old and this busy; the true first transaction is earlier.`,

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="collector-mcp" width="96" />
+<img src="assets/logo.png" alt="collector-mcp" width="96" />
 
 # collector-mcp
 
@@ -72,8 +72,23 @@ enforced by the program or just written down. Whether the art can still be edite
 they can even be compared. Whether the floor is one listing or a book. What buyers paid this
 week. Which Solana collections OpenSea indexes and each one's on-chain address.
 
+**The market.** How many sold this week, total volume, the top sale, median and average, who
+is buying, a per-day series your assistant can chart. The cheapest listing with a trait, a
+specific serial, what a trait's floor is. The biggest wallets in a collection. What Magic
+Eden calls hot right now, with a note when the venue publishes nothing.
+
+**The rules.** Why an item moved to a wallet you do not know (escrow), whether a project can
+take it back (permanent delegates), why it cannot be listed (freeze), who gets paid on a sale
+and where royalties are enforced, what a wash trade looks like. Per standard and per venue,
+each answer citing the documentation or program source it came from.
+
 **A build.** Sales bot, floor dashboard, wallet tracker, pack watcher: endpoints, rate limits,
 running cost, and the ways each one fails silently, learned on live trackers.
+
+You never type a tool name. Say it the way you would say it to a person; the assistant reads
+the tool descriptions and picks. You do not need an address either: a collection name, a
+player, a card number or a trait is enough to find the thing in the Magic Eden directory
+(30,000 collections bundled, refreshed live in the background) and carry the identifiers on.
 
 ## The tools
 
@@ -87,12 +102,22 @@ running cost, and the ways each one fails silently, learned on live trackers.
 | "What is this?" | `identify` | what it is, where it trades, what to call next. Works on collections launched this morning |
 | "Floor?" | `get_collection_stats` | chain supply, Magic Eden and OpenSea floors, reconciliation that refuses to rank SOL against USDC, OpenSea supply and royalty with a key |
 | "Build me a…" | `get_integration_recipe` | endpoints, pace, cost, skeleton, silent failure modes |
+| "How many sold this week?" | `get_collection_sales` | count, volume, top sale, median, buyers and sellers, per-day series for a chart, venue split, how far back the feed was read |
+| "Cheapest Rex? Find #1390?" | `find_listings` | listings cheapest first, trait filters (AND), name filter, each ask against its trait floor, rarity when the venue has it |
+| "Who are the whales?" | `get_top_traders` | biggest wallets by Magic Eden volume, all time |
+| "What is hot?" | `get_trending` | Magic Eden's own trending list, with a note when the venue publishes nothing |
+| "Can they burn my card?" | `explain_mechanics` | escrow, freeze, delegates, royalties, wash trades, migrations, per standard and venue, each entry with its source |
+| "Is Magic Eden down?" | `get_source_status` | every source pinged live, tiers, fallbacks, what each cannot see, which need a key |
 
-Plus `search_collections`, `get_floor_prices`, `get_recent_sales`, `get_asset`,
-`get_wallet_holdings`, `get_pack_pulls`. Two prompts (`collection_report`, `wallet_report`)
-and a `collector://glossary` the assistant reads first, so it knows a floor is an ask, a
-listed item's on-chain owner is the escrow, an opened Candy pack is returned not burned, and
-a transfer-in is not automatically an airdrop.
+Plus `search_collections` (names resolve against the whole Magic Eden directory),
+`get_floor_prices`, `get_recent_sales`, `get_asset` (three readers: the venue, our own decode
+of the account bytes, and the chain's asset index, with owner agreement reported),
+`get_wallet_holdings` (two readers, gap named), `get_pack_pulls`. Two prompts
+(`collection_report`, `wallet_report`) and four resources the assistant can read first:
+`collector://glossary` (a floor is an ask, a listed item's on-chain owner is the escrow, an
+opened Candy pack is returned not burned), `collector://sources` (every source, its tier and
+fallback), `collector://mechanics` (how standards and venues handle assets) and
+`collector://registry`.
 
 Tool names are frozen. Agents reference them in prompts; a rename breaks integrations
 without an error.
@@ -135,9 +160,21 @@ structure stripped before a model sees it, and it is tested offline in CI.
 
 ## Zero keys, on purpose
 
-Every default source is public and keyless: Magic Eden v2, CryptoSlam, plain Solana RPC.
-Requests are paced per source and cached; last-good data is served labelled `stale: true`
-rather than erroring mid-conversation. Being polite is what keeps keyless working.
+Every default source is public and keyless: Magic Eden v2, CryptoSlam, plain Solana RPC, and
+the asset index the public RPC answers without a key. Requests are paced per source and
+cached; last-good data is served labelled `stale: true` rather than erroring
+mid-conversation. Being polite is what keeps keyless working.
+
+No single path to a fact. Chain reads rotate across three public RPC endpoints (yours first
+if you set one). Ownership is read two ways, from the account bytes and from the chain's
+asset index, and the answer says whether they agree. Every source sits in a catalog with a
+tier, a fallback, and what it cannot see ([docs/SOURCES.md](docs/SOURCES.md)); a weekly
+live check runs against the real endpoints so a venue changing shape shows up as a failed
+check, not as a wrong answer.
+
+Nothing is collected. No account, no telemetry, no log leaves your machine. The only thing
+that goes anywhere is the public address or name you asked about, sent to the public source
+that can answer it.
 
 There is no signing code in this repo. It cannot transact because the ability was never
 written. Every tool declares `readOnlyHint` in the protocol. Wallet questions take a public
@@ -162,16 +199,35 @@ expiry. Without a key, nothing changes and nothing asks.
 - **Solana only.** Keyless indexed NFT data on other chains died with Reservoir and
   SimpleHash. I'd rather say that than pretend.
 - **No valuations.** Ceilings, sales and gaps. Not advice.
+- **No serial search across every Solana project.** "Every #69 ever sold" needs a full chain
+  index nobody offers keyless. Within a collection, `find_listings` finds a serial.
+- **Sales history goes as far as the venue keeps it.** Magic Eden's feed reaches months back
+  on quiet collections and days on busy ones; the result says how far it got. Ownership
+  history for Core assets comes from the chain itself, back to the mint.
 - **Public RPC throttles bursts.** Fine for conversation. Bring your own endpoint for heavy use.
+- **A tool, not an oracle.** It reads sources and names them. When two disagree it shows both.
+  How that sounds in practice: [docs/TRUST-AND-LIMITS.md](docs/TRUST-AND-LIMITS.md).
 
 ## Check it yourself
 
 ```bash
-node test/protocol.mjs   # offline: every tool, resource, prompt, validation, wallet logic on captured feeds, the injection defence
-npm test                 # live: every tool against real endpoints, a real provenance trace, a real wallet, hostile inputs
+npm test                 # offline, no network at all: every tool, resource, prompt, validation, wallet and market logic on captured feeds, the injection defence, the asset-index behaviour, the mechanics base
+npm run test:live        # live: floors, a real provenance trace down to a decoded owner, the source status of every family, a name lookup (the weekly check runs this)
+npm run test:smoke       # live: every tool against real endpoints, a real wallet, hostile inputs
 ```
 
-CI runs the offline suite plus a full-history secrets scan on every push.
+CI runs the offline suite plus a full-history secrets scan on every push. A scheduled
+workflow runs the live check weekly and only makes noise when a source breaks.
+
+## Read more
+
+- [How it was built, and why](docs/HOW-IT-WAS-BUILT.md)
+- [Questions people ask, and which ones it can answer](docs/QUESTIONS.md)
+- [Things people build with it](docs/BUILD-IDEAS.md)
+- [How people use it, by persona](docs/HOW-PEOPLE-USE-IT.md)
+- [Every data source, tiered](docs/SOURCES.md)
+- [Trust language and limits](docs/TRUST-AND-LIMITS.md)
+- [FAQ](docs/FAQ.md)
 
 ## Who made this
 

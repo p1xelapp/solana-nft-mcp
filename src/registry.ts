@@ -48,7 +48,9 @@ export const REGISTRY: RegistryEntry[] = [
     platform: "Panini (official league licenses)",
     cryptoslamContract: "panini-america",
     keywords: ["panini", "nba", "nfl", "soccer", "nascar", "sports cards", "blockchain cards"],
-    notes: "Live pack-pull feed via get_pack_pulls. Card art served from Panini's public CDN.",
+    notes:
+      "NOT on Solana: Panini's blockchain cards live on Panini's own chain with an Ethereum bridge (OpenSea is the bridged venue). " +
+      "Included because pack pulls are a collector question; the feed comes from CryptoSlam, and none of the Solana tools (floors, provenance, trust) apply to it.",
   },
   {
     id: "mad_lads",

@@ -55,13 +55,17 @@ console.log("connected to collector-mcp over stdio\n");
 try {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  const expected = [
+  // The tools this smoke run actually exercises below. A hardcoded list of
+  // EVERY tool goes stale the day one is added - test/protocol.mjs owns the
+  // exact count; this only asks that nothing it drives has disappeared.
+  const required = [
     "get_asset", "get_asset_provenance", "get_asset_trust", "get_collection_stats", "get_floor_prices",
     "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_activity", "get_wallet_holdings",
     "get_wallet_profile", "identify", "search_collections", "verify_claim",
   ];
-  if (JSON.stringify(names) === JSON.stringify(expected)) report("PASS", "listTools", `${names.length} tools`);
-  else report("FAIL", "listTools", `got ${names.join(",")}`);
+  const missing = required.filter((t) => !names.includes(t));
+  if (missing.length === 0) report("PASS", "listTools", `${names.length} tools, all ${required.length} this run drives are present`);
+  else report("FAIL", "listTools", `missing ${missing.join(", ")}`);
 } catch (e) { report("FAIL", "listTools", e.message); }
 
 try {
@@ -123,9 +127,10 @@ try {
 let goldAsset = null, provOwner = null;
 try {
   console.log("   (discovering a live Candy MLB ICON asset from collection txs...)");
-  const assets = await findRecentCollectionAssets(ICON, 2);
-  if (assets.length === 0) throw new Error("no recent collection activity found to discover an asset");
-  goldAsset = assets[0];
+  const sample = await findRecentCollectionAssets(ICON, 2);
+  if (sample.assets.length === 0)
+    throw new Error(sample.timedOut ? "sampling timed out before a member asset appeared" : "no recent collection activity found to discover an asset");
+  goldAsset = sample.assets[0];
   const r = parse(await client.callTool({ name: "get_asset_provenance", arguments: { mint: goldAsset } }));
   const good = r.currentOwner && Array.isArray(r.events) && r.events.length > 0;
   provOwner = r.currentOwner ?? null;
@@ -150,8 +155,16 @@ try {
   const wallet = provOwner;
   if (!wallet) throw new Error("skipped (no wallet from provenance step)");
   const r = parse(await client.callTool({ name: "get_wallet_holdings", arguments: { wallet, limit: 20 } }));
-  const good = typeof r.count === "number";
-  report(good ? "PASS" : "FAIL", "get_wallet_holdings", `wallet ${wallet.slice(0, 6)}.. holds ${r.count} (capped=${r.capped})`);
+  // Two readers now, each reporting its own count: the marketplace index and
+  // the chain's asset index. Either one answering is a working read.
+  const meCount = r.magicEden?.count;
+  const idxCount = r.chainIndex?.count;
+  const good = typeof meCount === "number" || typeof idxCount === "number";
+  report(
+    good ? "PASS" : "FAIL",
+    "get_wallet_holdings",
+    `wallet ${wallet.slice(0, 6)}.. - Magic Eden ${meCount ?? "no answer"} (capped=${r.magicEden?.capped}), asset index ${idxCount ?? "no answer"}; comparable=${r.countsComparable}`,
+  );
 } catch (e) {
   // A wallet taken from provenance is often a marketplace escrow (the item is
   // listed), and Magic Eden blocks its own escrow from the wallet endpoint.

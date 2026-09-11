@@ -1,5 +1,55 @@
 # FAQ
 
+**Do I have to type tool names like `verify_claim`?**
+No. Ask the way you would ask a person: "is it true this card never traded", "what is
+this wallet worth", "find me the cheapest Rex". Your assistant reads the tool
+descriptions and picks the right one, chains several when it needs to, and shows you
+the result. The names exist for people writing scripts; a collector never sees them.
+
+**I do not have an address. I only know the name of the project or the player.**
+Say the name. The server searches the whole Magic Eden collection index and the OpenSea
+Solana index by name, tells you what matched, and carries the identifiers forward
+itself. For a single item, the collection name plus the card number or the trait
+("Rex", "#1390", "Aaron Judge") is enough to find it in that collection's listings.
+If a name matches several collections you get the list and a question, not a guess.
+
+**Does it collect anything about me?**
+No. It runs on your machine, talks to public data sources, and keeps nothing. No
+account, no sign-in, no telemetry, no log sent anywhere. The only thing that leaves your
+computer is the public address or name you asked about, sent to the public source that
+can answer it. There is nothing to opt out of because nothing is collected.
+
+**Why does it make answers faster and cheaper?**
+Without it your assistant has to guess, search the web, open marketplace pages, read
+raw transactions and reconcile them, and it often gets that wrong. With it, one call
+returns the number, its source, its time and its gaps as typed data. Fewer round trips,
+fewer tokens spent on scraping and second-guessing, and less of your time spent
+checking. The server does the confirming so the conversation does not have to.
+
+**Can I paste a screenshot?**
+The tools take text: an address, a marketplace link, a symbol or a plain name. Your
+assistant may be able to read the picture and pull those out for you, but the server
+itself never sees the image. If the screenshot shows a name and a number, type those.
+
+**What happens when Magic Eden or OpenSea goes down, or stops existing?**
+The tool keeps answering from the sources that are up and says which one is missing.
+Chain reads (supply, ownership, history, custody rules) do not depend on any
+marketplace. Every source sits in a catalog with a tier, a fallback and a weekly live
+check, so a venue going quiet shows up as a failed check, not as a wrong answer. See
+docs/SOURCES.md for the full list and how a source gets added or retired.
+
+**How far back does it look?**
+As far as the source keeps. Ownership history for Metaplex Core assets is walked from
+the chain itself, back to the mint. Marketplace feeds page back as far as the venue
+serves; when a window is cut short the result says `truncated: true` and how far it got.
+It never fills a gap with a guess.
+
+**What if a number is wrong?**
+Then a source was wrong, late, or unreachable, and the answer will have said which
+source and when it was read. Chain reads are authoritative. Marketplace reads are that
+marketplace's index. The tool reports those conditions instead of smoothing them over.
+See docs/TRUST-AND-LIMITS.md for what that sounds like in practice.
+
 **Why not just ask ChatGPT or Claude directly?**
 A plain model cannot read a chain or a marketplace. It answers from memory, which for
 NFTs means from months-old training data plus whatever tone the question had. It will

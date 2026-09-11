@@ -19,3 +19,6 @@ secrets.env
 
 # Private launch notes, not part of the published project
 LAUNCH-PLAYBOOK.html
+
+# raw source art (web variants live in assets/)
+IMAGES/

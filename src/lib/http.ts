@@ -96,21 +96,87 @@ export async function cached<T>(
 }
 
 /**
+ * A rate gate. Callable like a plain function; `raiseTo` lets a second module
+ * sharing the same gate tighten the pace without replacing the queue.
+ */
+export interface Gate {
+  (): Promise<void>;
+  /** Slow the gate down to at least this interval. Never speeds it up. */
+  raiseTo(minIntervalMs: number): void;
+}
+
+/**
  * Serialized rate limiter: at most one caller passes per `minIntervalMs`,
  * callers queue FIFO. Protects the free public endpoints we depend on -
  * being a polite client is what keeps a keyless server viable.
  */
-export function rateLimiter(minIntervalMs: number): () => Promise<void> {
+export function rateLimiter(minIntervalMs: number): Gate {
   let chain: Promise<void> = Promise.resolve();
-  let last = 0;
-  return function gate() {
+  let last = Number.NEGATIVE_INFINITY;
+  let interval = minIntervalMs;
+  // Monotonic, never wall-clock. A clock that jumps - an NTP correction, a
+  // suspended laptop, a test stubbing Date.now - would otherwise park every
+  // caller behind a deadline in the moved clock's future.
+  const gate = function gate() {
     chain = chain.then(async () => {
-      const wait = last + minIntervalMs - Date.now();
+      const wait = last + interval - performance.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      last = Date.now();
+      last = performance.now();
     });
     return chain;
+  } as Gate;
+  gate.raiseTo = (ms: number) => {
+    if (Number.isFinite(ms) && ms > interval) interval = ms;
   };
+  return gate;
+}
+
+const originGates = new Map<string, Gate>();
+
+/**
+ * One gate per upstream ORIGIN, shared by every module that reads it.
+ *
+ * A per-IP budget belongs to a host, not to a module. The plain RPC reads and
+ * the DAS reads both hit api.mainnet-beta.solana.com; with a limiter each they
+ * could release two requests at the same instant and spend a budget neither
+ * one could see. Sharing one gate per origin makes the pace real, and the
+ * strictest interval any caller asks for wins.
+ */
+export function originGate(url: string, minIntervalMs: number): Gate {
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    origin = url;
+  }
+  const existing = originGates.get(origin);
+  if (existing) {
+    existing.raiseTo(minIntervalMs);
+    return existing;
+  }
+  const gate = rateLimiter(minIntervalMs);
+  originGates.set(origin, gate);
+  return gate;
+}
+
+/**
+ * Offline mode is a hard stop, not a hint.
+ *
+ * The offline test suite used to rely on "nothing here should call out";
+ * whether it really stayed offline depended on which environment variables
+ * happened to be set. A call attempted with COLLECTOR_MCP_OFFLINE=1 now fails
+ * loudly and names the host, so an accidental live read fails the run instead
+ * of quietly passing against real data.
+ */
+export function assertOnline(url: string): void {
+  if (process.env.COLLECTOR_MCP_OFFLINE !== "1") return;
+  let host = url;
+  try {
+    host = new URL(url).host;
+  } catch {
+    /* not a parseable URL - report it as given */
+  }
+  throw new Error(`offline mode (COLLECTOR_MCP_OFFLINE=1): refused to contact ${host}`);
 }
 
 /**
@@ -122,6 +188,7 @@ export async function fetchRetry(
   opts: RequestInit = {},
   { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: () => Promise<void> } = {},
 ): Promise<Response> {
+  assertOnline(url);
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
     try {
