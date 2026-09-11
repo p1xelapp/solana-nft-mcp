@@ -287,3 +287,15 @@ catalog. 20 tools, 4 resources.
 - Docs: SOURCES, QUESTIONS, BUILD-IDEAS, TRUST-AND-LIMITS, HOW-IT-WAS-BUILT;
   FAQ covers tool names, plain names, privacy, speed, screenshots, outages,
   history depth and wrong numbers.
+
+## 1.8.1 - 2026-09-11
+
+- `get_collection_sales` names every sale in the window through one batched
+  read of the chain's asset index (`getAssetBatch`, keyless), adds a per-name
+  breakdown (which player, character or issue sold most) and a `nameContains`
+  filter. "How many Ohtani cards sold this week" is one call.
+- `find_listings` gains `lowestSerials`: reads up to 1,000 listings, parses
+  the serial from each name and returns the lowest editions with their asks
+  against the floor, saying how much of the book it saw.
+- Status probes carry an 8 s per-source deadline; the weekly live check
+  reports a CryptoSlam outage as theirs and does not fail on it.

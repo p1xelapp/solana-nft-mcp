@@ -404,3 +404,39 @@ export async function getAssetsByOwner(owner: string, max = 2000): Promise<DasOw
   }
   return { items: items.slice(0, max), pagesRead: page, truncated, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
 }
+
+/**
+ * Names and standards for many mints in one call.
+ *
+ * A sales feed carries mints, not names, so "how many Ohtani cards sold" and
+ * "which player sold the most" were unanswerable without one venue call per
+ * sale. getAssetBatch answers a thousand ids at once, so the breakdown costs
+ * one or two requests instead of hundreds. Missing ids come back as null in
+ * the batch and are simply absent from the map; the caller reports the count.
+ */
+export async function getAssetNames(ids: string[]): Promise<{ names: Map<string, { name: string | null; standard: DasAsset["standard"] }>; stale: boolean; unresolved: number }> {
+  const names = new Map<string, { name: string | null; standard: DasAsset["standard"] }>();
+  const unique = [...new Set(ids.filter(isBase58Address))].slice(0, 5000);
+  if (unique.length === 0) return { names, stale: false, unresolved: 0 };
+  const cap = await capability();
+  if (cap.state === "withdrawn") throw new Error(`${SOURCE} is unavailable right now (${cap.note}).`);
+  let stale = false;
+  for (let i = 0; i < unique.length; i += 1000) {
+    const chunk = unique.slice(i, i + 1000);
+    // Keyed by the chunk's content so the same sales window hits the cache.
+    const key = `das:batch:${chunk.length}:${chunk[0]}:${chunk[chunk.length - 1]}`;
+    const read = await cached<{ rows: (RawAsset | null)[]; endpoint: string }>(key, 10 * 60_000, async () => {
+      const { result, endpoint } = await call<(RawAsset | null)[]>("getAssetBatch", { ids: chunk });
+      if (!Array.isArray(result)) throw new Error(`${SOURCE} returned an unexpected shape for getAssetBatch (outage or API change)`);
+      return { rows: result, endpoint };
+    });
+    stale = stale || read.stale;
+    read.data.rows.forEach((raw, idx) => {
+      const id = chunk[idx];
+      if (!id || !raw || typeof raw !== "object" || raw.id !== id) return;
+      const iface = typeof raw.interface === "string" ? raw.interface : "unknown";
+      names.set(id, { name: str(raw.content?.metadata?.name), standard: standardOf(iface, raw.compression?.compressed === true) });
+    });
+  }
+  return { names, stale, unresolved: unique.length - names.size };
+}

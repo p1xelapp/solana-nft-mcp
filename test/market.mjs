@@ -487,3 +487,26 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
 }
 
 console.log("market.mjs OK");
+
+// ------------------------------------------------------------ names + serials
+{
+  const { parseSerial, baseName, breakdownByName } = await import("../dist/market.js");
+  assert.deepStrictEqual(parseSerial("Shohei Ohtani (12/250)"), { serial: 12, of: 250 });
+  assert.deepStrictEqual(parseSerial("Claynosaurz #9"), { serial: 9, of: null });
+  assert.deepStrictEqual(parseSerial("12/250"), { serial: 12, of: 250 });
+  assert.strictEqual(parseSerial("Mad Lad"), null);
+  assert.strictEqual(parseSerial(null), null);
+  assert.strictEqual(baseName("Shohei Ohtani (12/250)"), "Shohei Ohtani");
+  assert.strictEqual(baseName("Claynosaurz #9"), "Claynosaurz");
+  assert.strictEqual(baseName("#12"), null);
+  const names = new Map([["m1", { name: "Shohei Ohtani (1/250)" }], ["m2", { name: "Shohei Ohtani (7/250)" }], ["m3", { name: "Aaron Judge (3/250)" }]]);
+  const ev = [
+    { type: "buyNow", tokenMint: "m1", price: 0.5 }, { type: "buyNow", tokenMint: "m2", price: "bad" }, { type: "buyNow", tokenMint: "m3", price: 0.1 },
+    { type: "buyNow", tokenMint: "m9", price: 1 }, { type: "list", tokenMint: "m1", price: 9 },
+  ];
+  const b = breakdownByName(ev, names);
+  assert.strictEqual(b.rows[0].name, "Shohei Ohtani"); assert.strictEqual(b.rows[0].sales, 2); assert.strictEqual(b.rows[0].volumeSol, 0.5);
+  assert.strictEqual(b.unnamedSales, 1, "a sale with no resolved name is counted, not dropped");
+  assert.strictEqual(b.distinctNames, 2);
+  console.log("names + serials OK");
+}

@@ -24,11 +24,11 @@ limitation dressed up reads as a bug being hidden.
 
 > This asset has more history than the read went back through: 40 events shown, 12 older ones
 > skipped, and the skipped ones include the mint. Everything shown is real and dated. If the
-> origin is what matters, say so and I will walk further back from the oldest signature.
+> origin is what matters, say so and it will walk further back from the oldest signature.
 
 ### 4. Two sources disagree
 
-> The two venues do not agree and I am not going to pick one for you. Magic Eden reports supply
+> The two venues do not agree, and this tool will not pick one for you. Magic Eden reports supply
 > 4,996, OpenSea's index reports 5,000. The chain's collection account says 4,996, which is the
 > authoritative one, so the OpenSea figure is likely a stale index entry. Both are above with
 > their timestamps.
@@ -36,28 +36,28 @@ limitation dressed up reads as a bug being hidden.
 ### 5. A claim cannot be verified
 
 > Unverifiable, not false. The claim is that this sold for 400 SOL in March. Magic Eden's activity
-> feed only goes back through the window I can read, and March is outside it, so I have no record
-> either way. If you have the transaction signature I can read that transaction directly.
+> feed only goes back through the window that can be read, and March is outside it, so there is no record
+> either way. With the transaction signature, that transaction can be read directly.
 
 ### 6. A collection is unknown to every source
 
 > Nothing has heard of this one. It is not in the curated registry, Magic Eden returns no
 > collection for the symbol, and there is no Metaplex Core collection account at that address.
 > That means it is unindexed, misspelled, or on another chain. Paste a mint address from one of
-> the items and I can identify it from the chain instead of from a name.
+> the items and it can be identified from the chain instead of from a name.
 
 ### 7. The standard is not Metaplex Core
 
 > This is a legacy SPL NFT, not a Metaplex Core asset. Marketplace data works normally: holdings,
 > listings, sales, floor. Decoded ownership history and the custody decode do not, because those
-> read the Core account layout directly and this asset does not have one. I would rather name the
-> gap than hand you an empty list that looks like "never traded".
+> read the Core account layout directly and this asset does not have one. Better to name the
+> gap than to hand back an empty list that looks like "never traded".
 
 ### 8. A number is stale
 
 > That floor is cached, read 6 minutes ago, and marked stale because the refresh failed. It is
 > accurate as of then and probably still close, but do not fire an alert or price a listing off
-> it. Say the word and I will retry for a live read.
+> it. Say the word and it will retry for a live read.
 
 ### 9. A request needs a key that is not configured
 

@@ -32,7 +32,7 @@ import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeil
 import * as das from "./sources/das.js";
 import { SOURCES, explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
-import { summarizeSales, bestDeals, dedupeEvents } from "./market.js";
+import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial } from "./market.js";
 import { resolveName } from "./names.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
 
@@ -1057,28 +1057,67 @@ registerTool(
   {
     title: "Sales over a period",
     description:
-      "Sales for a collection over the last N days, as Magic Eden recorded them: how many sold, total volume, " +
+      "Sales for a collection over the last N days, as Magic Eden recorded them, with every sale named by the chain's " +
+      "asset index so it can be filtered and grouped by player, character or issue: how many sold, total volume, " +
       "highest and lowest sale, median and average, unique buyers and sellers, the biggest buyers, a per-day " +
-      "series for charts, and the split between the order book and Magic Eden's AMM pools. Answers 'how many " +
-      "sales this week', 'what was the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
+      "series for charts, a per-name breakdown, and the split between the order book and Magic Eden's AMM pools. " +
+      "Answers 'how many sales this week', 'how many Ohtani cards sold', 'which player sold the most', 'what was " +
+      "the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
       "The result says how far back the feed was read and whether older sales exist beyond the page budget; " +
       "it never fills a gap with an estimate. Magic Eden's feed only: Tensor and OpenSea fills are not here.",
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
       days: z.number().int().min(1).max(90).default(7).describe("Window ending now"),
+      nameContains: z.string().trim().max(80).optional().describe("Keep only sales whose item name contains this text, e.g. 'Ohtani' or 'Batman'; names come from the chain's asset index"),
       maxPages: z.number().int().min(1).max(20).default(6).describe("Pages of 500 events to read; busy collections need more to cover long windows"),
     },
   },
-  guard(async ({ symbol, days, maxPages }) => {
+  guard(async ({ symbol, days, maxPages, nameContains }) => {
     const nowUnix = Math.floor(Date.now() / 1000);
     const sinceUnix = nowUnix - days * 86_400;
     const read = await me.collectionActivities(symbol, { types: ["buyNow"], maxPages, sinceUnix });
-    const summary = summarizeSales(read.events, { windowStartUnix: sinceUnix, windowEndUnix: nowUnix, truncated: read.truncated });
+    // The venue's feed carries mints, not names. One batch read of the chain's
+    // asset index names every sale in the window, which is what makes "how
+    // many Ohtani cards sold" and "which player sold the most" one call.
+    const windowEvents = read.events.filter((e) => typeof e.blockTime === "number" && e.blockTime >= sinceUnix && e.blockTime <= nowUnix);
+    let names: Awaited<ReturnType<typeof das.getAssetNames>> | null = null;
+    let namesError: string | undefined;
+    try {
+      names = await das.getAssetNames(windowEvents.map((e) => e.tokenMint ?? "").filter(Boolean));
+    } catch (e) {
+      namesError = e instanceof Error ? e.message : String(e);
+    }
+    const needle = nameContains ? clean(nameContains).toLowerCase() : null;
+    const events = needle
+      ? windowEvents.filter((e) => (e.tokenMint && names?.names.get(e.tokenMint)?.name?.toLowerCase().includes(needle)) === true)
+      : read.events;
+    const summary = summarizeSales(events, { windowStartUnix: sinceUnix, windowEndUnix: nowUnix, truncated: read.truncated });
+    const byName = names ? breakdownByName(windowEvents, names.names) : null;
     return ok({
       symbol,
-      requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString() },
+      requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString(), nameContains: nameContains ?? null },
       ...summary,
+      ...(needle
+        ? {
+            nameFilter: {
+              matched: events.length,
+              of: windowEvents.length,
+              note: names
+                ? `Sales whose item name contains "${needle}", by the chain's asset index; ${names.unresolved} sale(s) had no name in the index and could not be matched.`
+                : `Name filter could not run: ${namesError ?? "asset index unavailable"}. Figures above are for the whole collection.`,
+            },
+          }
+        : {}),
+      byName: byName
+        ? {
+            rows: byName.rows,
+            distinctNames: byName.distinctNames,
+            unnamedSales: byName.unnamedSales,
+            stale: names?.stale ?? false,
+            note: "Sales in the window grouped by item name without its serial (player, character, issue). Source: Magic Eden fills named by the chain's asset index.",
+          }
+        : { error: namesError ?? "asset index unavailable", note: "Per-name breakdown skipped; collection-wide figures are unaffected." },
       feed: { source: "Magic Eden v2 collection activity (buyNow)", pagesRead: read.pagesRead, stale: read.stale, cachedAt: read.cachedAt },
       next: "get_floor_prices for the current ask; find_listings for what is buyable now; get_top_traders for the biggest wallets over all time.",
     });
@@ -1090,8 +1129,9 @@ registerTool(
   {
     title: "Find listings and deals",
     description:
-      "What is for sale in a collection right now, cheapest first, with optional trait filters and a name " +
-      "filter, compared against the floor for each trait. Answers 'cheapest Rex', 'find #1390', 'is there a " +
+      "What is for sale in a collection right now, cheapest first, with optional trait filters, a name filter, " +
+      "and a lowest-serials mode that reads the whole book and sorts by edition number. Answers 'cheapest Rex', " +
+      "'find #1390', 'is a #1 or #100 for sale', 'lowest serial I can buy and what it costs versus floor', 'is there a " +
       "deal on a Judge card', 'what is listed under 1 SOL', 'which traits are cheap right now'. Several trait " +
       "filters mean all of them. Rarity ranks appear when the venue publishes them (Core collections usually " +
       "carry none). Prices are asks on Magic Eden, not what buyers pay; get_collection_sales shows that.",
@@ -1101,9 +1141,69 @@ registerTool(
       traits: z.array(traitSchema).max(6).optional().describe("Trait filters, combined with AND"),
       nameContains: z.string().trim().max(80).optional().describe("Keep only listings whose name contains this text, e.g. '#1390' or 'Judge'"),
       limit: z.number().int().min(1).max(100).default(20),
+      lowestSerials: z.boolean().default(false).describe("Hunt low edition numbers: read up to 1,000 listings, parse the serial from each name (#9, 12/250) and return the lowest serials with their asks against the floor"),
     },
   },
-  guard(async ({ symbol, traits, nameContains, limit }) => {
+  guard(async ({ symbol, traits, nameContains, limit, lowestSerials }) => {
+    if (lowestSerials) {
+      // Low serials are scattered across the price-ordered book, so the hunt
+      // reads the book in pages and sorts by the number printed in the name.
+      // Ten pages is the budget; the answer says how much of the book it saw.
+      const PAGE = 100;
+      const BUDGET = 10;
+      const seen: me.MeListing[] = [];
+      let pagesRead = 0;
+      let complete = false;
+      let stale = false;
+      let cachedAt = "";
+      for (let p = 0; p < BUDGET; p++) {
+        const read = await me.collectionListings(symbol, { attributes: traits, limit: PAGE, offset: p * PAGE, sort: "listPrice", direction: "asc" });
+        pagesRead++;
+        stale = stale || read.stale;
+        cachedAt = read.cachedAt;
+        seen.push(...read.listings);
+        if (!read.more) {
+          complete = true;
+          break;
+        }
+      }
+      const floorRes = await me.collectionStats(symbol).then((v) => ({ ok: true as const, v }), (e: unknown) => ({ ok: false as const, e }));
+      const floor = floorRes.ok ? floorRes.v.floorPriceSol : null;
+      const parsed = seen
+        .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
+        .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
+        .sort((a, b) => a.s.serial - b.s.serial || (a.l.price ?? Infinity) - (b.l.price ?? Infinity));
+      const rows = parsed.slice(0, limit).map(({ l, s }) => {
+        const price = typeof l.price === "number" && Number.isFinite(l.price) ? l.price : null;
+        return {
+          serial: s.serial,
+          editionSize: s.of,
+          name: clean(l.token?.name ?? ""),
+          tokenMint: l.tokenMint && sol.isBase58Address(l.tokenMint) ? l.tokenMint : null,
+          priceSol: price,
+          vsFloor: price !== null && floor ? { floorSol: floor, multiple: Math.round((price / floor) * 100) / 100 } : null,
+        };
+      });
+      return ok({
+        symbol,
+        mode: "lowest-serials",
+        filters: { traits: traits ?? [] },
+        lowestSerials: rows,
+        coverage: {
+          listingsRead: seen.length,
+          withSerialInName: parsed.length,
+          pagesRead,
+          complete,
+          note: complete
+            ? "Every current Magic Eden listing was read."
+            : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
+        },
+        floor: floorRes.ok ? { floorSol: floor, listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt } : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
+        readThis: "Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number are not in this list. get_collection_sales with nameContains shows what similar items actually sold for.",
+        stale,
+        cachedAt,
+      });
+    }
     const needle = nameContains ? clean(nameContains).toLowerCase() : null;
     const attrsPromise = me.collectionAttributes(symbol).then(
       (v) => ({ ok: true as const, value: v }),

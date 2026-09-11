@@ -2,9 +2,9 @@
 
 ### The problem came from a job, not a whiteboard
 
-The author runs CandyScan, a tracker used by Candy Digital MLB collectors, backed by a
+P1xel built and runs CandyScan, a tracker used by Candy Digital MLB collectors, backed by a
 704,000-row asset database that gets reconciled against chain state and marketplace feeds every
-day. Alongside it sits a fleet of sales bots watching VeVe, Candy Digital, Panini, sports card
+day. Alongside it the team runs a fleet of sales bots watching VeVe, Candy Digital, Panini, sports card
 and TCG drops from an always-on machine, and SolGrails, a Solana marketplace with real money
 moving through it. None of that is background colour. It is where the three failures in this
 server's design came from.
@@ -59,13 +59,7 @@ empty history is reported as unsupported or unread, never as untraded.
 
 ### What was tested
 
-An offline suite runs every tool, resource and prompt against captured feeds, including the wallet
-logic and the prompt-injection defence, so a name minted to look like a message boundary aimed at
-a model is proven defanged without any network access. A live suite runs every tool against real
-endpoints, with a real provenance trace, a real wallet, and hostile inputs. CI runs the offline
-suite plus a full-history secrets scan on every push. The hardest piece, extracting the new owner
-from a Core transfer whose account layout varies between two shapes, was verified against a live
-36-pack auction: all 36 packs traced to their winners, none untraced.
+Every tool, resource and prompt is exercised offline against captured feeds, including the wallet logic and the prompt-injection defence, and again live against the real endpoints with a real provenance trace, a real wallet and hostile inputs. The design was put through repeated hostile review rounds, and CI runs the offline suite plus a full-history secrets scan on every push. A weekly live check re-reads the real sources, and the hardest piece - extracting the new owner from a Core transfer whose account layout varies between two shapes - was verified against a live 36-pack auction, where all 36 packs traced to their winners with none left untraced.
 
 ### Why that is worth trusting
 
