@@ -17,6 +17,14 @@ updates:
     # urgent enough to be an early adopter. Security advisories ignore this.
     cooldown:
       default-days: 7
+    # Major versions are breaking by definition and arrive as a bot PR that
+    # cannot pass CI on its own - TypeScript 7 against a linter that does not
+    # support it yet, zod 4 against code written for zod 3. Those are upgrades
+    # to sit down and do, not notifications to wake up to. Security advisories
+    # ignore this filter entirely, which is the whole point.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       # One PR for everything that only matters at build time.
       build-tooling:
