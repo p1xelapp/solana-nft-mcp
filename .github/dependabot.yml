@@ -1,0 +1,28 @@
+# Dependency updates, batched so they arrive as one weekly pull request instead
+# of one per package. Security advisories still open their own PR immediately -
+# that behaviour is not configurable here, and it should not be: a real
+# vulnerability is worth an interruption, a version bump is not.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Boise
+    open-pull-requests-limit: 3
+    # A version published in the last week is not proposed yet. Compromised
+    # releases are usually caught and pulled within days, and nothing here is
+    # urgent enough to be an early adopter. Security advisories ignore this.
+    cooldown:
+      default-days: 7
+    groups:
+      # One PR for everything that only matters at build time.
+      build-tooling:
+        dependency-type: development
+      # One PR for the two packages that actually ship.
+      runtime:
+        dependency-type: production
+    commit-message:
+      prefix: "deps"
