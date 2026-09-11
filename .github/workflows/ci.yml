@@ -4,7 +4,11 @@
 # rule applied to ourselves.
 name: ci
 on:
+  # Pushes to main, and any pull request. Deliberately NOT every push to every
+  # branch: a bot's update branch would otherwise run this twice and send two
+  # failure emails for one problem.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
