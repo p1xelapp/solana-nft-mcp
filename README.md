@@ -4,7 +4,7 @@
 
 # collector-mcp
 
-**Ask your assistant who has owned a card since it was minted, what a collection really sold for this week, and whether a project can still freeze or burn the thing in your wallet.** collector-mcp answers from the Solana chain and live marketplace feeds, read-only, with no API key and no account.
+**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, where the deals are, and much more. Read-only, no API keys, nothing collected, runs on your machine.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
