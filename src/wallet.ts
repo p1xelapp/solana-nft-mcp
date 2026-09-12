@@ -535,6 +535,17 @@ export interface HoldingsCoverage {
   raise?: string;
 }
 
+/**
+ * Is a holdings count from the chain's asset index a TOTAL?
+ *
+ * Only when the walk finished and every row the index served could be
+ * identified. The trap this closes: a row carrying no id became a holding with
+ * an empty mint, counted, and published with `countIsATotal: true` - a wrong
+ * count carried with full confidence during an index outage. Dropped rows mean
+ * the wallet holds things this count cannot name, so the figure is a floor.
+ */
+export const chainCountIsATotal = (truncated: boolean, rowsRejected: number): boolean => !truncated && rowsRejected === 0;
+
 export function floorCeiling(
   quotes: FloorQuoteForValue[],
   totalItems: number,
@@ -581,6 +592,14 @@ export function floorCeiling(
     ceilingSol: mixedTime || capped ? null : ceilingSol,
     /** The arithmetic itself - withheld entirely when the two sides describe different moments. */
     figureSol: mixedTime ? null : ceilingSol,
+    /**
+     * The unit, stated rather than implied. Every figure here is SOL and this
+     * server has no price feed, so a client that reads a bare number and
+     * offers the user a dollar value is promising a conversion nothing here
+     * can perform.
+     */
+    currency: "SOL" as const,
+    fiatNote: "No fiat conversion is performed.",
     /** Why no figure is given, when none is. */
     unavailableReason: mixedTime
       ? `Magic Eden did not answer for this wallet's holdings, so the only counts available were read at ${coverage.cachedAt ?? "an unrecorded earlier time"} while the floors were read at ${floorsReadAt}. Multiplying those together would produce a figure that was never true at either moment, so no figure is given. Ask again in a minute.`
@@ -620,6 +639,7 @@ export function floorCeiling(
       ...(failed.length
         ? [`${failed.map((q) => `${q.collection} (${q.stale ? "venue did not answer; last value not used" : q.error})`).join("; ")}: not priced.`]
         : []),
+      "Every figure here is in SOL. No fiat conversion is performed: this server reads no price feed, so there is no dollar figure to give and none can be produced on a following turn.",
       "Recent sales, not floors, say what buyers pay. Use get_recent_sales on the collections that matter.",
     ],
   };

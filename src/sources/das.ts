@@ -18,7 +18,7 @@
 
 import { createHash } from "node:crypto";
 
-import { assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
+import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
@@ -52,8 +52,8 @@ interface RpcError {
 
 /**
  * One signal firing on either the request timeout or the caller's own
- * deadline. `AbortSignal.any` landed in Node 20.3 and this package supports
- * 18.17, so the two are combined by hand.
+ * deadline. `AbortSignal.any` landed in Node 20.3 and the engine floor is
+ * 20.0, so the two are combined by hand.
  */
 function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -286,6 +286,26 @@ const MAX_PLUGIN_KEY = 48;
  */
 const MAX_BATCH_IDS = 5000;
 
+/**
+ * Longest a whole multi-page read may take before the endpoint is abandoned.
+ *
+ * The trap this closes: a `DAS_RPC_URL` that accepts the connection and never
+ * answers. Each request had its own 20 s timeout, so a page walk against a
+ * black hole ran 41 s - past the bar a client waits - and, because the walk
+ * simply ended, `sourceErrors` came back empty and the caller could not tell
+ * that the endpoint they configured never said a word. One deadline covers the
+ * whole read now, and running out of it is an error that NAMES the endpoint.
+ */
+const READ_DEADLINE_MS = 25_000;
+
+/** The endpoints this read would have used, for an error that has to name them. */
+const endpointNames = (): string => endpoints().map((e) => e.id).join(", ");
+
+const deadlinePassed = (what: string): Error =>
+  new Error(
+    `${SOURCE} did not finish ${what} within ${READ_DEADLINE_MS / 1000} s (${endpointNames()}), so the read was abandoned. That is the endpoint not answering, not a problem with what you asked; the other sources still work.`,
+  );
+
 function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
   if (compressed) return "compressed";
   if (iface === "MplCoreAsset") return "metaplex-core";
@@ -397,6 +417,12 @@ export interface DasOwnerPage {
   /** DAS "total" is the number of items on the page, not the wallet's count. */
   pagesRead: number;
   truncated: boolean;
+  /**
+   * Rows the index served that carried no usable id, dropped rather than
+   * counted. Any value above zero means the returned count is a floor over
+   * what could be identified, never the wallet's total.
+   */
+  rowsRejected: number;
   readFrom: string;
   /** True when any page came from cache after a failed refresh: the holdings may have moved since. */
   stale: boolean;
@@ -408,49 +434,76 @@ export interface DasOwnerPage {
  * Everything the index knows the wallet holds, across standards. Pages are
  * 1000 wide; the walk stops at `max` items or the first short page.
  */
-export async function getAssetsByOwner(owner: string, max = 2000): Promise<DasOwnerPage> {
-  const cap = await capability();
+export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal?: AbortSignal } = {}): Promise<DasOwnerPage> {
+  // One deadline for the WHOLE walk, not per request: see READ_DEADLINE_MS.
+  const deadline = combineSignals(READ_DEADLINE_MS, opts.signal);
+  const cap = await capability({ signal: deadline });
   refuseIfWithdrawn(cap);
   const limit = 1000;
   const items: DasAsset[] = [];
   let page = 1;
   let truncated = false;
+  let rowsRejected = 0;
   let readFrom = cap.endpoint ?? PUBLIC_DAS;
   let stale = false;
   let cachedAt = new Date().toISOString();
   for (;;) {
-    const hit = await cached<{ items: RawAsset[]; endpoint: string }>(`das:owner:${owner}:${page}:${limit}`, 60_000, async () => {
-      const { result, endpoint } = await call<{ items?: unknown }>("getAssetsByOwner", {
-        ownerAddress: owner,
-        page,
-        limit,
-        displayOptions: { showFungible: false },
-      });
-      // Every ROW is validated, not just the container: one `null` item, or a
-      // row whose `grouping` is an object instead of an array, used to crash
-      // normalise() mid-answer and return nothing at all.
-      const rows = objectRows<RawAsset>(SOURCE, "getAssetsByOwner items", result.items);
-      if (rows.length > limit) {
-        throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
-      }
-      return { items: rows, endpoint };
-    });
+    if (deadline.aborted) throw deadlinePassed(`listing what ${owner} holds`);
+    let hit;
+    try {
+      hit = await cached<{ items: RawAsset[]; rejected: number; endpoint: string }>(`das:owner:${owner}:${page}:${limit}`, 60_000, async (producer) => {
+        const { result, endpoint } = await call<{ items?: unknown }>(
+          "getAssetsByOwner",
+          {
+            ownerAddress: owner,
+            page,
+            limit,
+            displayOptions: { showFungible: false },
+          },
+          combineSignals(READ_DEADLINE_MS, producer),
+        );
+        // Every ROW is validated, not just the container: one `null` item, or a
+        // row whose `grouping` is an object instead of an array, used to crash
+        // normalise() mid-answer and return nothing at all.
+        const rows = objectRows<RawAsset>(SOURCE, "getAssetsByOwner items", result.items);
+        if (rows.length > limit) {
+          throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
+        }
+        // An id is what makes a row an ASSET. A row without one used to become
+        // a holding with `mint: ""`, counted in a total the caller was told was
+        // authoritative - a wrong holdings count carried with full confidence,
+        // which is the exact class of silent-wrong-answer this server exists to
+        // avoid. The single-asset path has always refused the same shape.
+        const usable = rows.filter((r) => typeof r.id === "string" && isBase58Address(r.id));
+        if (rows.length > 0 && usable.length === 0) {
+          throw new Error(`${SOURCE} returned ${rows.length} row(s) for getAssetsByOwner and not one carried a usable id (outage or API change) - the page was refused rather than counted`);
+        }
+        return { items: usable, rejected: rows.length - usable.length, endpoint };
+      }, { signal: deadline });
+    } catch (e) {
+      if (e instanceof AbortedError || deadline.aborted) throw deadlinePassed(`listing what ${owner} holds`);
+      throw e;
+    }
     const data = hit.data;
     readFrom = data.endpoint;
     stale = stale || hit.stale;
+    rowsRejected += data.rejected;
     // Pages are cached separately, so a walk can mix a page read now with one
     // read a minute ago. Stamping every row with "now" is what turned a stale
     // owner list into a current-looking one; the oldest page sets the age.
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
     for (const raw of data.items) items.push(normalise(raw, data.endpoint, hit.cachedAt));
-    if (data.items.length < limit) break;
+    // A short page is short of the PAGE SIZE the endpoint was asked for, so
+    // dropped rows are added back before deciding whether the walk is over -
+    // otherwise a page of 1,000 rows with one bad row reads as the last page.
+    if (data.items.length + data.rejected < limit) break;
     if (items.length >= max) {
       truncated = true;
       break;
     }
     page++;
   }
-  return { items: items.slice(0, max), pagesRead: page, truncated, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
+  return { items: items.slice(0, max), pagesRead: page, truncated, rowsRejected, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
 }
 
 /**
@@ -464,7 +517,10 @@ export async function getAssetsByOwner(owner: string, max = 2000): Promise<DasOw
  */
 export async function getAssetNames(
   ids: string[],
+  opts: { signal?: AbortSignal } = {},
 ): Promise<{ names: Map<string, { name: string | null; standard: DasAsset["standard"] }>; stale: boolean; unresolved: number; omitted: number }> {
+  // One deadline for every chunk together: see READ_DEADLINE_MS.
+  const deadline = combineSignals(READ_DEADLINE_MS, opts.signal);
   const names = new Map<string, { name: string | null; standard: DasAsset["standard"] }>();
   const all = [...new Set(ids.filter(isBase58Address))];
   const unique = all.slice(0, MAX_BATCH_IDS);
@@ -473,7 +529,7 @@ export async function getAssetNames(
   // they are named separately and counted as unresolved too.
   const omitted = all.length - unique.length;
   if (unique.length === 0) return { names, stale: false, unresolved: omitted, omitted };
-  const cap = await capability();
+  const cap = await capability({ signal: deadline });
   if (cap.state === "withdrawn") throw new DasUnsupported(`${SOURCE} is unavailable right now (${cap.note}).`);
   let stale = false;
   for (let i = 0; i < unique.length; i += 1000) {
@@ -483,21 +539,28 @@ export async function getAssetNames(
     // X's position, the identity check dropped it, and X was reported
     // unresolved for ten minutes although the index knows it perfectly well.
     const key = `das:batch:${createHash("sha256").update(chunk.join(",")).digest("hex")}`;
-    const read = await cached<{ rows: (RawAsset | null)[]; endpoint: string }>(key, 10 * 60_000, async () => {
-      const { result, endpoint } = await call<(RawAsset | null)[]>("getAssetBatch", { ids: chunk });
-      if (!Array.isArray(result)) throw new Error(`${SOURCE} returned an unexpected shape for getAssetBatch (outage or API change)`);
-      if (result.length > chunk.length) {
-        throw new Error(`${SOURCE} returned ${result.length} rows for a batch of ${chunk.length} ids - the endpoint is not honouring the request, so the page was refused rather than processed`);
-      }
-      // A missing id is a legitimate null here, so rows are checked one by one
-      // rather than with the all-objects guard.
-      for (const row of result) {
-        if (row !== null && (typeof row !== "object" || Array.isArray(row))) {
-          throw new Error(`${SOURCE} returned a malformed row in getAssetBatch (a row is ${Array.isArray(row) ? "an array" : typeof row}, not an object or null) - an outage or an API change`);
+    if (deadline.aborted) throw deadlinePassed("naming these mints");
+    let read;
+    try {
+      read = await cached<{ rows: (RawAsset | null)[]; endpoint: string }>(key, 10 * 60_000, async (producer) => {
+        const { result, endpoint } = await call<(RawAsset | null)[]>("getAssetBatch", { ids: chunk }, combineSignals(READ_DEADLINE_MS, producer));
+        if (!Array.isArray(result)) throw new Error(`${SOURCE} returned an unexpected shape for getAssetBatch (outage or API change)`);
+        if (result.length > chunk.length) {
+          throw new Error(`${SOURCE} returned ${result.length} rows for a batch of ${chunk.length} ids - the endpoint is not honouring the request, so the page was refused rather than processed`);
         }
-      }
-      return { rows: result, endpoint };
-    });
+        // A missing id is a legitimate null here, so rows are checked one by one
+        // rather than with the all-objects guard.
+        for (const row of result) {
+          if (row !== null && (typeof row !== "object" || Array.isArray(row))) {
+            throw new Error(`${SOURCE} returned a malformed row in getAssetBatch (a row is ${Array.isArray(row) ? "an array" : typeof row}, not an object or null) - an outage or an API change`);
+          }
+        }
+        return { rows: result, endpoint };
+      }, { signal: deadline });
+    } catch (e) {
+      if (e instanceof AbortedError || deadline.aborted) throw deadlinePassed("naming these mints");
+      throw e;
+    }
     stale = stale || read.stale;
     read.data.rows.forEach((raw, idx) => {
       const id = chunk[idx];

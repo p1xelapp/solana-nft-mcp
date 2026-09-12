@@ -19,6 +19,16 @@ secrets.env
 
 # Private launch notes, not part of the published project
 LAUNCH-PLAYBOOK.html
+HANDOFF.md
+CHECKLIST.md
+GOAL.md
+LAUNCH-NOTES.md
+.audit-receipt.json
+docs/LAUNCH-KIT.md
+docs/DEMO-SCRIPT.md
 
 # raw source art (web variants live in assets/)
 IMAGES/
+
+# release-day scratch (placeholder package, local only)
+.release/

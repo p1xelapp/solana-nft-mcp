@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18.17"
+    "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
@@ -30,7 +30,7 @@
     "pack-check": "node scripts/pack-check.mjs",
     "prepublishOnly": "node scripts/pack-check.mjs",
     "start": "node dist/index.js",
-    "test": "npm run build && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs",
+    "test": "npm run build && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/release-checks.mjs",
     "test:smoke": "npm run build && node test/smoke.mjs",
     "test:live": "npm run build && node test/live.mjs",
     "docs:sources": "npm run build && node scripts/sources-md.mjs",

@@ -49,6 +49,12 @@ npm run build && node scripts/pack-check.mjs && npm publish --ignore-scripts=fal
 fails unless `dist/index.js` and `data/me-collections.json.gz` are both in it.
 It runs in CI too, so a missing build is caught before release day.
 
+The ship-gate receipt (`.audit-receipt.json`) is produced by the audit tool on
+release day and is bound to the commit it was run against, so it is not
+tracked in this repository - a receipt in git is either stale or a claim about
+a commit it did not check. Run the audit from the repository root so the SHA it
+records is this repository's.
+
 Before releasing, also refresh the bundled directory snapshot with
 `npm run snapshot` - it refuses to overwrite a good snapshot with a partial
 read, so a failed run leaves the existing data alone.

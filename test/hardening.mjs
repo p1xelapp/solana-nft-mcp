@@ -7,12 +7,17 @@
  * restore it afterwards.
  */
 import assert from "node:assert";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseSerial, dedupeEvents, summarizeSales, applyNameFilter, fallbackIdentity } from "../dist/market.js";
 import { objectRows, assertPageSize } from "../dist/lib/shapes.js";
 import { fetchJson } from "../dist/lib/http.js";
 import { verifyClaim } from "../dist/verify.js";
 import * as das from "../dist/sources/das.js";
 import * as me from "../dist/sources/magiceden.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 let passed = 0;
 const ok = (what) => {
@@ -290,4 +295,38 @@ const jsonResponse = (body, headers = {}) =>
   ok("b13 an over-served listings page is refused at the source boundary");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13)`);
+// ------------------------------------------------------------------ b14
+// Three raw NUL bytes used as join separators made git classify the largest
+// source file as BINARY: `git show --stat` printed "Bin 30018 -> 38819 bytes"
+// and --numstat printed "- -", so every change to it was undiffable in git, on
+// GitHub and in review. The escape `\u0000` is the same byte at runtime and
+// leaves the file as text.
+{
+  const roots = [join(here, "..", "src"), join(here, "..", "test"), join(here, "..", "scripts")];
+  const offenders = [];
+  let scanned = 0;
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.(ts|mjs|js|json)$/.test(entry.name)) continue;
+      scanned++;
+      const bytes = readFileSync(full);
+      const nuls = bytes.filter((b) => b === 0).length;
+      if (nuls > 0) offenders.push(`${full} (${nuls} raw NUL byte${nuls === 1 ? "" : "s"})`);
+    }
+  };
+  for (const r of roots) walk(r);
+  assert.ok(scanned > 20, `the scan must actually have read the tree, saw ${scanned} files`);
+  assert.deepStrictEqual(
+    offenders,
+    [],
+    `a raw NUL byte makes git treat the file as binary and undiffable - write the escape \\u0000 inside the string literal instead:\n  ${offenders.join("\n  ")}`,
+  );
+  ok(`b14 no source file carries a raw NUL byte (${scanned} files scanned)`);
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14)`);

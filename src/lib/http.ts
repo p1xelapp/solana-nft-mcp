@@ -478,7 +478,7 @@ export class AbortedError extends Error {
  * deadline.
  *
  * `AbortSignal.any` would do this in one line but landed in Node 20.3, and
- * this package supports 18.17 - so the two are combined by hand.
+ * the engine floor is 20.0 - so the two are combined by hand.
  */
 function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);

@@ -17,10 +17,51 @@
  *   npm run build && node scripts/pack-check.mjs && npm publish --ignore-scripts=false
  */
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/**
+ * How to run npm without handing a string to a shell.
+ *
+ * `shell: true` on win32 made every npm call here emit DEP0190 ("passing args
+ * to a child process with shell option true can lead to security
+ * vulnerabilities") on every publish check, and it means the arguments are
+ * parsed by cmd.exe rather than passed through. The fix is to run npm's own
+ * JavaScript entry point with this process's node binary, which needs no shell
+ * on any platform. `npm.cmd` is the last resort: a .cmd file cannot be spawned
+ * without a shell at all on current Node, so if it is all we have the check
+ * says so rather than pretending.
+ */
+function resolveNpm() {
+  try {
+    return { file: process.execPath, lead: [createRequire(import.meta.url).resolve("npm/bin/npm-cli.js")] };
+  } catch {
+    // npm is not a resolvable dependency of this project - normal.
+  }
+  // The npm that ships with this very node binary, next to it on disk.
+  for (const guess of [
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+    path.join(path.dirname(process.execPath), "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ]) {
+    if (existsSync(guess)) return { file: process.execPath, lead: [guess] };
+  }
+  if (process.platform !== "win32") return { file: "npm", lead: [] };
+  const found = execFileSync("where", ["npm"], { encoding: "utf8", shell: false })
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const cmd = found.find((p) => p.toLowerCase().endsWith(".cmd")) ?? found[0];
+  if (!cmd) throw new Error("npm could not be located: neither npm-cli.js nor npm.cmd was found");
+  return { file: cmd, lead: [] };
+}
+
+const NPM = resolveNpm();
+
+/** Every npm call in this file goes through here: one place, no shell, ever. */
+const npmSync = (args, opts = {}) => execFileSync(NPM.file, [...NPM.lead, ...args], { ...opts, shell: false });
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
@@ -40,11 +81,10 @@ console.log(`pack-check: ${pkg.name}@${pkg.version}`);
 let out;
 try {
   // --json gives the file list npm would actually publish, without publishing.
-  out = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+  out = npmSync(["pack", "--dry-run", "--json"], {
     cwd: root,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
-    shell: process.platform === "win32",
   });
 } catch (e) {
   console.error(`❌ npm pack --dry-run failed: ${e.stderr || e.message}`);
@@ -105,12 +145,12 @@ let startupDetail = "";
 let tarball;
 try {
   // Pack for real this time - the dry run above produced no file.
-  const packed = execFileSync("npm", ["pack", "--json"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" });
+  const packed = npmSync(["pack", "--json"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   tarball = path.join(root, String(JSON.parse(packed.slice(packed.indexOf("[")))[0].filename));
-  execFileSync("npm", ["init", "-y"], { cwd: tmp, stdio: "ignore", shell: process.platform === "win32" });
+  npmSync(["init", "-y"], { cwd: tmp, stdio: "ignore" });
   // --ignore-scripts: installing a package here must never run its lifecycle
   // scripts. This check is about what the packed FILES do on their own.
-  execFileSync("npm", ["install", "--no-audit", "--no-fund", "--ignore-scripts", tarball], { cwd: tmp, stdio: "ignore", shell: process.platform === "win32" });
+  npmSync(["install", "--no-audit", "--no-fund", "--ignore-scripts", tarball], { cwd: tmp, stdio: "ignore" });
   const installedBin = path.join(tmp, "node_modules", pkg.name, pkg.bin?.["collector-mcp"] ?? "dist/index.js");
   startupDetail = await new Promise((resolve) => {
     const child = spawn(process.execPath, [installedBin], {

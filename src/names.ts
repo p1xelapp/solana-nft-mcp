@@ -119,6 +119,149 @@ export interface NameResolution {
   hint?: string;
 }
 
+// ------------------------------------------------------- close spellings
+
+/**
+ * Shortest run of single-character edits (insert, delete, substitute, or a
+ * transposition of two neighbours) that turns `a` into `b`, giving up as soon
+ * as every alternative is past `max`.
+ *
+ * Damerau rather than plain Levenshtein because the misspellings people
+ * actually type are transpositions: "clanyosaurz" is one swap from the real
+ * collection and two substitutions under Levenshtein. Bounded on purpose - the
+ * only useful answer here is "within 2 edits or not", and the bound is what
+ * keeps a directory of 30,000 entries cheap to scan.
+ */
+function boundedDamerau(a: string, b: string, max: number): number {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  // Two rolling rows plus the one before them; the row two back is what makes
+  // a transposition a single edit rather than two.
+  let prev2: number[] = [];
+  let prev: number[] = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row: number[] = new Array<number>(b.length + 1).fill(0);
+    row[0] = i;
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min((row[j - 1] ?? 0) + 1, (prev[j] ?? 0) + 1, (prev[j - 1] ?? 0) + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, (prev2[j - 2] ?? 0) + cost);
+      row[j] = v;
+      if (v < best) best = v;
+    }
+    // Every path through this row is already past the bound, and rows only
+    // grow: no continuation can come back under it.
+    if (best > max) return max + 1;
+    prev2 = prev;
+    prev = row;
+  }
+  return prev[b.length] ?? max + 1;
+}
+
+const normaliseName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const tokensOf = (s: string) => normaliseName(s).split(" ").filter(Boolean);
+
+/** Queries shorter than this are not corrected: at four characters, two edits reach half the directory. */
+const MIN_FUZZY_QUERY = 5;
+const MAX_EDITS = 2;
+/** Score ceiling for a corrected spelling. Below every layer that matched what was actually typed. */
+const fuzzyScore = (distance: number): number => (distance === 1 ? 55 : 45);
+
+export interface CloseSpelling {
+  symbol: string;
+  name: string | null;
+  badged: boolean | null;
+  score: number;
+  reason: string;
+  distance: number;
+  layer: "snapshot" | "live";
+}
+
+/**
+ * "Did you mean" for a query that matched nothing.
+ *
+ * The failure this closes: "claynosaurs" is one letter off a collection that
+ * IS in the bundled directory, and the answer was `kind: "unknown"` with an
+ * empty result list - a typo presented as an absence. Only runs after the
+ * exact and substring layers have missed, only on queries long enough for two
+ * edits to still mean something, and every hit is labelled and scored below
+ * anything that matched what the person actually typed, so a correction can
+ * never be mistaken for a match.
+ */
+export function closeSpellings(
+  index: { symbol: string; name: string; isBadged?: boolean; layer?: "snapshot" | "live" }[],
+  query: string,
+  limit = 5,
+): CloseSpelling[] {
+  const q = normaliseName(query);
+  if (q.length < MIN_FUZZY_QUERY) return [];
+  const qTokens = tokensOf(q);
+  const ranked: { whole: boolean; nameLength: number; hit: CloseSpelling }[] = [];
+  for (const c of index) {
+    if (!c || typeof c.symbol !== "string" || !c.symbol) continue;
+    const nSymbol = normaliseName(c.symbol);
+    const nName = normaliseName(c.name ?? "");
+    // Whole-string first: "claynosaurs" against "claynosaurz".
+    let distance = Math.min(
+      boundedDamerau(q, nSymbol, MAX_EDITS),
+      nName ? boundedDamerau(q, nName, MAX_EDITS) : MAX_EDITS + 1,
+    );
+    // Whether the WHOLE identifier was a near miss, or only a word inside it.
+    // "claynosaurs" is one edit from the symbol `claynosaurz` and also one edit
+    // from a word inside "Claynosaurz: The Call of Saga"; the first is what the
+    // person meant, so the two cannot be ranked as equals.
+    let whole = distance <= MAX_EDITS;
+    if (distance > MAX_EDITS) {
+      // Token by token: "mad ladz" against the tokens of "mad_lads". Every
+      // query token has to find a partner, or this is a different collection
+      // rather than a misspelling of this one.
+      const candidateTokens = [...new Set([...tokensOf(nSymbol), ...tokensOf(nName)])];
+      if (candidateTokens.length === 0) continue;
+      let total = 0;
+      let matchedAll = true;
+      for (const t of qTokens) {
+        let best = MAX_EDITS + 1;
+        for (const ct of candidateTokens) {
+          const d = boundedDamerau(t, ct, MAX_EDITS);
+          if (d < best) best = d;
+          if (best === 0) break;
+        }
+        if (best > MAX_EDITS) {
+          matchedAll = false;
+          break;
+        }
+        total += best;
+      }
+      // Total 0 means every token matched exactly, which is not a spelling
+      // correction - the layers above own that case.
+      if (!matchedAll || total === 0 || total > MAX_EDITS) continue;
+      distance = total;
+      whole = false;
+    }
+    if (distance < 1 || distance > MAX_EDITS) continue;
+    ranked.push({ whole, nameLength: nName.length || nSymbol.length, hit: {
+      symbol: c.symbol,
+      name: c.name || null,
+      badged: typeof c.isBadged === "boolean" ? c.isBadged : null,
+      score: fuzzyScore(distance),
+      reason: "close spelling",
+      distance,
+      layer: c.layer ?? "snapshot",
+    } });
+  }
+  return ranked
+    .sort(
+      (a, b) =>
+        a.hit.distance - b.hit.distance ||
+        Number(b.whole) - Number(a.whole) ||
+        a.nameLength - b.nameLength ||
+        a.hit.symbol.length - b.hit.symbol.length,
+    )
+    .slice(0, limit)
+    .map((r) => r.hit);
+}
+
 const toMatches = (hits: NameMatch[], layer: "snapshot" | "live") =>
   hits.map((h) => ({ symbol: h.symbol, name: h.name || null, badged: h.isBadged, score: h.score, reason: h.why, layer }));
 
@@ -137,6 +280,9 @@ export function resolveName(query: string, limit = 8): NameResolution {
   }
   searched.push("curated registry");
 
+  // The same entries the layers above scored, kept for the spelling fallback
+  // with the layer they came from so a correction cites its own source.
+  let fuzzyIndex: { symbol: string; name: string; isBadged?: boolean; layer?: "snapshot" | "live" }[] = [];
   const snap = loadSnapshot();
   // A snapshot taken at the venue's paging ceiling is not the catalogue, even
   // when the file says complete: both flags have to agree.
@@ -150,6 +296,7 @@ export function resolveName(query: string, limit = 8): NameResolution {
       .filter((c) => c && isCollectionSymbol(c.s))
       .map((c) => ({ symbol: c.s, name: clean(c.n ?? "").slice(0, 120), isBadged: c.b === 1 }));
     out.push(...toMatches(findByName(index, q).slice(0, limit), "snapshot"));
+    fuzzyIndex = index.map((c) => ({ ...c, layer: "snapshot" as const }));
     searched.push(
       `Magic Eden directory snapshot (${snap.count.toLocaleString("en-US")} collections, taken ${snap.takenAt.slice(0, 10)}${snapshotComplete ? "" : ", short of the full catalogue"})`,
     );
@@ -162,6 +309,7 @@ export function resolveName(query: string, limit = 8): NameResolution {
   if (liveReady) {
     liveCompleteLayer = layerComplete(liveReady.partial, liveReady.atVenuePagingLimit);
     out.push(...toMatches(findByName(liveReady.collections, q).slice(0, limit), "live"));
+    fuzzyIndex = fuzzyIndex.concat(liveReady.collections.map((c) => ({ symbol: c.symbol, name: c.name ?? "", isBadged: c.isBadged, layer: "live" as const })));
     searched.push(
       `Magic Eden live directory (${liveReady.collections.length.toLocaleString("en-US")} collections, read ${liveReady.cachedAt.slice(0, 16)}Z` +
         (liveCompleteLayer ? "" : ", short of the full catalogue") +
@@ -189,6 +337,12 @@ export function resolveName(query: string, limit = 8): NameResolution {
   }
   const matches = [...bySymbol.values()].sort((a, b) => b.score - a.score).slice(0, limit);
 
+  // Only after every layer above has missed: a typo is not an absence.
+  const didYouMean = matches.length === 0 ? closeSpellings(fuzzyIndex, q) : [];
+  for (const s of didYouMean) {
+    matches.push({ symbol: s.symbol, name: s.name, badged: s.badged, score: s.score, reason: s.reason, layer: s.layer });
+  }
+
   return {
     query: q,
     matches,
@@ -197,8 +351,9 @@ export function resolveName(query: string, limit = 8): NameResolution {
     snapshotComplete,
     directoryComplete,
     directoryNote,
-    hint:
-      matches.length === 0
+    hint: didYouMean.length
+      ? `Nothing in the layers searched is spelled "${q}". The ${didYouMean.length} entr${didYouMean.length === 1 ? "y" : "ies"} returned are the closest SPELLINGS (reason "close spelling", within ${MAX_EDITS} edits) - suggestions to confirm, not a match for what was typed. Check the name before calling another tool with the symbol.`
+      : matches.length === 0
         ? "No collection by that name in the layers searched. It may be new, listed only on another venue, or spelled differently; a mint address from one of its items lets identify() find it from the chain instead." +
           (directoryComplete ? "" : " The layers searched are also short of Magic Eden's full catalogue - see directoryNote.")
         : undefined,

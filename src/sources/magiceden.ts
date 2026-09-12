@@ -46,6 +46,99 @@ export interface MeStats {
   avgPrice24hr?: number;
 }
 
+/**
+ * What a caller is told when Magic Eden does not list the symbol at all.
+ *
+ * One constant because five tools say it and a reader must be able to match
+ * the sentence across them.
+ */
+export const SYMBOL_UNKNOWN_MESSAGE =
+  "Magic Eden has no collection with this symbol; search_collections resolves a name to a symbol";
+
+export interface SymbolKnowledge {
+  known: boolean;
+  /** Exactly which reads this verdict rests on, in the venue's own terms. */
+  checked: string;
+}
+
+/**
+ * Does Magic Eden list this symbol at all?
+ *
+ * HTTP 200 is not existence: the venue echoes an unknown symbol back as
+ * `{symbol, listedCount: 0}`, so a made-up collection came back through four
+ * market tools as real and quiet - zero sales, zero listings, no traders, with
+ * a note calling it "a quiet or listing-heavy market, not an error". The
+ * project's own integration recipe warns about this trap; the guard was
+ * missing.
+ *
+ * Three reads can establish PRESENCE - the stats echo carrying a floor or a
+ * lifetime volume, the collection metadata carrying a name, or one page of the
+ * unfiltered activity feed carrying any event at all (a collection that
+ * launched an hour ago trades before it has stats). An ABSENCE needs the two
+ * reads that are actually dependable to both come back readable and empty: the
+ * stats echo and the activity feed. Either of those failing for any reason
+ * other than a 404 propagates, because an outage must never become "no such
+ * collection".
+ *
+ * The metadata endpoint is deliberately NOT allowed to veto: Magic Eden
+ * rate-limits `/collections/{symbol}` far harder than the rest of v2 and
+ * answers 429 for perfectly real collections for minutes at a time. Letting
+ * that read fail the whole check would mean every market tool erroring during
+ * a rate limit; letting it grant absence would mean trusting a read that did
+ * not happen. So it can only ever say yes, and `checked` says whether it
+ * answered.
+ *
+ * Cached for ten minutes: a symbol that exists does not stop existing, and the
+ * stats read is the same one the caller is about to make anyway.
+ */
+export async function symbolKnowledge(symbol: string, opts: { signal?: AbortSignal } = {}): Promise<SymbolKnowledge> {
+  const { data } = await cached<SymbolKnowledge>(
+    `me:symbol-known:${symbol}`,
+    10 * 60_000,
+    async (producer) => {
+      const enc = encodeURIComponent(symbol);
+      let stats: MeStats | null = null;
+      try {
+        stats = await me<MeStats>(`/collections/${enc}/stats`, producer);
+      } catch (e) {
+        if (!(e instanceof HttpError && e.status === 404)) throw e;
+      }
+      if (stats && (stats.floorPrice !== undefined || stats.volumeAll !== undefined)) {
+        return { known: true, checked: "Magic Eden's collection stats carry a floor or a lifetime volume for this symbol" };
+      }
+      let metaRead = "its collection metadata returned no name";
+      try {
+        const meta = await collectionMeta(symbol);
+        if (meta?.name) return { known: true, checked: "Magic Eden's collection metadata carries a name for this symbol" };
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 404) metaRead = "its collection metadata answered 404";
+        else metaRead = `its collection metadata could not be read (${e instanceof Error ? e.message.slice(0, 120) : String(e)}), so that layer proves nothing either way`;
+      }
+      const acts = page<MeActivity>(
+        "collection activities",
+        await me<unknown>(`/collections/${enc}/activities?offset=0&limit=1`, producer),
+      );
+      if (acts.length > 0) return { known: true, checked: "Magic Eden's activity feed carries at least one event for this symbol" };
+      return {
+        known: false,
+        checked: `Magic Eden's collection stats returned an empty echo, its activity feed returned no events at all, and ${metaRead}`,
+      };
+    },
+    { signal: opts.signal },
+  );
+  return data;
+}
+
+/** The boolean, for callers that only branch on it. */
+export async function symbolIsKnown(symbol: string, opts: { signal?: AbortSignal } = {}): Promise<boolean> {
+  return (await symbolKnowledge(symbol, opts)).known;
+}
+
+/** The same check, as a refusal. Throws the typed not-found the wording layer reads. */
+export async function assertSymbolKnown(symbol: string, opts: { signal?: AbortSignal } = {}): Promise<void> {
+  if (!(await symbolIsKnown(symbol, opts))) throw new NotFoundError(SYMBOL_UNKNOWN_MESSAGE);
+}
+
 export async function collectionStats(symbol: string, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
   // The FETCH runs on the cache's producer signal, not the caller's: this one
   // read is shared by every caller asking for the same symbol, and a status
@@ -60,20 +153,10 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
   }
   // HTTP 200 != exists: ME echoes unknown symbols back as {symbol, listedCount: 0}.
   // A real-but-quiet collection still carries volumeAll; a phantom carries nothing.
+  // One helper owns the phantom check, so the five market tools that now run it
+  // before reading a feed cannot drift from what this function decides.
   if (data.floorPrice === undefined && data.volumeAll === undefined) {
-    // Only an explicit 404 on the metadata means "no such collection"; an
-    // outage during this second read must not turn a quiet collection into a phantom.
-    let meta: MeCollectionMeta | null = null;
-    try {
-      meta = await collectionMeta(symbol);
-    } catch (e) {
-      if (!(e instanceof HttpError && e.status === 404)) throw e;
-    }
-    if (!meta?.name) {
-      throw new NotFoundError(
-        `Magic Eden has no collection with symbol "${symbol}" (try search_collections, or pass a Core collection address)`,
-      );
-    }
+    await assertSymbolKnown(symbol, { signal: opts.signal });
   }
   return {
     symbol: data.symbol,
@@ -161,9 +244,15 @@ export async function recentSales(symbol: string, limit: number) {
     symbol,
     sales,
     activitiesScanned: data.scanned,
+    // "A quiet or listing-heavy market" is a claim about a real collection, so
+    // it may only be made about a feed that actually carried events. A symbol
+    // the venue does not list scans nothing, and that sentence made a made-up
+    // collection read as a real, quiet one.
     note:
       sales.length < limit
-        ? `only ${sales.length} sales in the last ${data.scanned} activity events - a quiet or listing-heavy market, not an error`
+        ? data.scanned > 0
+          ? `only ${sales.length} sales in the last ${data.scanned} activity events - a quiet or listing-heavy market, not an error`
+          : `Magic Eden's activity feed returned no events at all for "${symbol}" - that is the feed being empty, which is not the same as the market being quiet. Confirm the symbol with search_collections.`
         : undefined,
     stale,
     cachedAt,

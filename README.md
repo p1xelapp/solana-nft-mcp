@@ -30,7 +30,7 @@ source could not see.
 
 ## Install
 
-Requires Node 20 or newer (the package engine floor is 18.17). Build once:
+Requires Node 20 or newer. Build once:
 
 ```bash
 git clone https://github.com/p1xelapp/collector-mcp.git

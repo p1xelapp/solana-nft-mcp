@@ -32,9 +32,25 @@ const LOG_WRAPPER = "noopb9bkMVfRPU8AsbpTUg8AQkHtKwMYZiFUjNRtMmV";
 /** Marketplace program ids -> label, used to annotate provenance events. */
 const MARKETPLACE_PROGRAMS: Record<string, string> = {
   M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden",
+  mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden (pools)",
   TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor",
   TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor cNFT",
 };
+
+/**
+ * Magic Eden's own programs: the order book and the AMM pool program.
+ *
+ * An account these programs pass into the transaction that also ends up
+ * holding the asset is one of their escrow or pool accounts. Naming that
+ * explicitly matters because a transfer INTO an escrow looks exactly like a
+ * sale to a stranger otherwise - and because a marketplace label on a
+ * chain-decoded row was being read back as "Magic Eden reported this", which
+ * would attribute our own instruction decode to somebody else's feed.
+ */
+const MAGIC_EDEN_PROGRAMS = new Set([
+  "M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K",
+  "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc",
+]);
 
 // Be polite to the free endpoints: one request per 350ms per HOST, and retry
 // 429/5xx with a real backoff - the public RPC rate-limits bursts hard. The
@@ -260,7 +276,7 @@ class EndpointError extends Error {}
 /**
  * One signal firing on either the request timeout or the caller's own
  * deadline. `AbortSignal.any` landed in Node 20.3 and this package supports
- * 18.17, so the two are combined by hand.
+ * the engine floor is 20.0, so the two are combined by hand.
  */
 function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
@@ -552,7 +568,22 @@ export interface ProvenanceEvent {
   time: string | null;
   event: "minted" | "transferred" | "burned" | "marketplace_activity" | "other";
   newOwner?: string;
+  /**
+   * The marketplace PROGRAM this transaction touched, recognised by its
+   * program id in the instruction list. It is not a report from that venue: no
+   * venue API was called for this row.
+   */
   marketplace?: string;
+  /**
+   * Where this row came from. Always the chain: every event here is decoded
+   * from instruction accounts, so a marketplace label above must never be read
+   * as "the venue told us this".
+   */
+  readFrom: "the Solana chain";
+  /** Plain words for what happened, set where the bare event name would mislead. */
+  label?: string;
+  /** True when this transfer's counterparty is a Magic Eden escrow or pool account. */
+  magicEdenEscrow?: boolean;
   /** Present when a field had to be inferred rather than decoded. */
   note?: string;
 }
@@ -698,6 +729,8 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     }
 
     const events: ProvenanceEvent[] = [];
+    /** Transfers whose recipient is an account Magic Eden's own programs brought into the transaction. */
+    const recipientIsMeAccount = new Set<ProvenanceEvent>();
     // A signature the RPC could not return, or one carrying neither logs nor a
     // readable instruction list, is a hole in the evidence and is counted as
     // such - never silently skipped.
@@ -757,6 +790,16 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
         .map((i) => MARKETPLACE_PROGRAMS[i.programId])
         .find((m): m is string => Boolean(m));
 
+      // Accounts Magic Eden's own programs brought into this transaction. One
+      // of them receiving the asset is a listing moving into escrow, not a
+      // sale to a person - and it is a CHAIN observation either way.
+      const meAccounts = new Set<string>();
+      for (const i of all) {
+        if (MAGIC_EDEN_PROGRAMS.has(i.programId)) for (const a of i.accounts ?? []) meAccounts.add(a);
+      }
+      const isMeEscrow = (a: string | undefined): boolean =>
+        typeof a === "string" && meAccounts.has(a) && a !== mint && a !== account.collection && !MAGIC_EDEN_PROGRAMS.has(a);
+
       const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
 
       // A Core instruction on this asset that we could not decode at all, with
@@ -789,20 +832,58 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
           newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
           notes.push("new owner inferred from the account list (no instruction data available); treat as probable");
         }
-        events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace, ...(notes.length ? { note: notes.join("; ") } : {}) });
+        const row: ProvenanceEvent = {
+          signature: sig.signature,
+          time,
+          event: "transferred",
+          newOwner,
+          marketplace,
+          readFrom: "the Solana chain",
+          ...(notes.length ? { note: notes.join("; ") } : {}),
+        };
+        // The recipient is one of Magic Eden's own accounts. Whether that makes
+        // this a move INTO escrow is decided below, in order: in a fill the
+        // buyer is passed to the same program, so this fact alone would label a
+        // person's wallet an escrow.
+        if (isMeEscrow(newOwner)) recipientIsMeAccount.add(row);
+        events.push(row);
       } else if (burnIx || (logSaysBurn && coreIxs.length > 0)) {
-        events.push({ signature: sig.signature, time, event: "burned", marketplace });
+        events.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
       } else if (createIx || (logSaysCreate && coreIxs.length > 0)) {
-        events.push({ signature: sig.signature, time, event: "minted", marketplace });
+        events.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
       } else if (marketplace) {
         // Listing/delisting/escrow motion on a marketplace - no ownership change.
-        events.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace });
+        events.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace, readFrom: "the Solana chain" });
       } else {
-        events.push({ signature: sig.signature, time, event: "other", marketplace });
+        events.push({ signature: sig.signature, time, event: "other", marketplace, readFrom: "the Solana chain" });
       }
     }
 
     events.reverse(); // oldest first - reads as a story
+
+    // Escrow custody has a direction, and it can only be read in order.
+    //
+    // The instruction list names the recipient, never the sender. So a move
+    // INTO escrow is a transfer whose recipient is one of Magic Eden's own
+    // accounts while the item was held by a wallet; the transfer that follows
+    // it is the item coming back OUT - a withdrawal or a fill - and its
+    // recipient is a person, even though the same program passed that person's
+    // wallet into the transaction. Labelling on the account list alone marked
+    // the buyer of a filled listing as an escrow, which is a false claim about
+    // somebody's wallet.
+    let heldInEscrow = false;
+    for (const e of events) {
+      if (e.event !== "transferred") continue;
+      if (heldInEscrow) {
+        e.magicEdenEscrow = true;
+        e.label = "transfer from a Magic Eden escrow (chain read)";
+        heldInEscrow = false;
+      } else if (recipientIsMeAccount.has(e)) {
+        e.magicEdenEscrow = true;
+        e.label = "transfer to a Magic Eden escrow (chain read)";
+        heldInEscrow = true;
+      }
+    }
     return { account, events, skipped, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
   };
 
@@ -823,6 +904,9 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     currentOwnerNote:
       "If the asset is listed on a marketplace, currentOwner may be an escrow account, not the seller's wallet.",
     events,
+    /** What the rows above are, so a marketplace label on one cannot be read as a venue's report. */
+    eventsReadFrom:
+      "Every event is decoded from Solana transaction instructions by this server. A `marketplace` on a row is the program id seen in that transaction, not a statement from that venue - no marketplace API was called. Rows labelled as a Magic Eden escrow are chain observations of the venue's own escrow or pool account taking or releasing custody.",
     skippedTransactions: skipped,
     /** Signatures whose transaction could not be fetched, or which carried neither logs nor a decodable Core instruction. */
     unreadableTransactions: unreadable,

@@ -28,7 +28,7 @@ import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
 import { decodeCoreAccountPlugins, deriveTrust } from "./lib/coreplugins.js";
 import { clean, cleanFields, inspectUntrusted } from "./lib/untrusted.js";
-import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, type FloorQuoteForValue } from "./wallet.js";
+import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
 import { SOURCES, explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
@@ -184,10 +184,25 @@ const guard =
     }
   };
 
+// A refinement enforces the address at runtime but does NOT survive into the
+// emitted JSON Schema, which is the only thing a client validates against - so
+// an agent that pre-validates would happily send a megabyte "address". The
+// length bounds are declared, so the published schema carries them too.
 const addressSchema = z
   .string()
   .trim()
+  .min(32)
+  .max(44)
   .refine(sol.isBase58Address, "must be a base58 Solana address (32-44 chars)");
+
+/**
+ * One sentence, on every tool that returns prices or market figures.
+ *
+ * Nothing in the protocol surface said it, so "should I buy" got a
+ * recommendation: the README's "not financial advice" line is invisible to a
+ * model reading tool output.
+ */
+const NOT_ADVICE = "Figures, sources and gaps; not financial advice.";
 
 const symbolSchema = z
   .string()
@@ -275,6 +290,28 @@ function trendingView(c: Record<string, unknown>) {
   };
 }
 
+/**
+ * The symbol guard every market tool runs before it reads a feed.
+ *
+ * Magic Eden answers an unknown symbol with HTTP 200 and an empty echo, so a
+ * made-up collection came back through four tools as real and quiet - zero
+ * sales, no listings, no traders. A caller cannot tell that from a genuinely
+ * quiet collection, which is the one thing this server must never do. Returns
+ * a finished result when the venue does not list the symbol, otherwise null
+ * and the tool carries on.
+ */
+async function refuseUnknownSymbol(symbol: string): Promise<ToolResult | null> {
+  const verdict = await me.symbolKnowledge(symbol);
+  if (verdict.known) return null;
+  return ok({
+    symbol,
+    symbolKnown: false,
+    message: me.SYMBOL_UNKNOWN_MESSAGE,
+    checked: verdict.checked,
+    next: "search_collections resolves a plain name to a Magic Eden symbol; identify() works out what any other identifier is.",
+  });
+}
+
 /** Resolve a user-supplied id: registry id -> entry, else raw symbol/address. */
 function resolve(idOrSymbolOrAddress: string) {
   const entry = REGISTRY.find((e) => e.id === idOrSymbolOrAddress);
@@ -337,6 +374,9 @@ registerTool(
         .number()
         .finite()
         .positive()
+        // Declared, for the same reason as the address bounds above: an
+        // unbounded number in the published schema invites 1e308.
+        .max(1e12)
         .optional()
         .describe("The claimed number - required for supply (count) and floor (SOL)"),
       wallet: addressSchema.optional().describe("The wallet said to own it - required for ownership claims"),
@@ -645,6 +685,7 @@ registerTool(
       );
     }
     if (quotes.length > 0) out.reconciliation = reconcileFloors(quotes, extra);
+    out.readThis = NOT_ADVICE;
     return ok(out);
   }),
 );
@@ -667,8 +708,13 @@ registerTool(
     for (const s of symbols) {
       // Sequential on purpose: one shared rate gate protects the keyless API.
       try {
+        // Per row: one unknown symbol must not cost the other nine their answer.
+        if (!(await me.symbolIsKnown(s))) {
+          floors.push({ symbol: s, symbolKnown: false, message: me.SYMBOL_UNKNOWN_MESSAGE });
+          continue;
+        }
         const st = await me.collectionStats(s);
-        floors.push({ symbol: s, floorSol: st.floorPriceSol, listed: st.listedCount, stale: st.stale, readAt: st.cachedAt });
+        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, listed: st.listedCount, stale: st.stale, readAt: st.cachedAt });
       } catch (e) {
         floors.push({ symbol: s, error: e instanceof Error ? e.message : String(e) });
       }
@@ -676,7 +722,7 @@ registerTool(
     return ok({
       floors,
       source: "magiceden",
-      readThis: "A floor is the lowest current ask on Magic Eden, not what buyers pay; readAt is when the venue was read. get_recent_sales or get_collection_sales show paid prices.",
+      readThis: `A floor is the lowest current ask on Magic Eden, not what buyers pay; readAt is when the venue was read. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
     });
   }),
 );
@@ -716,8 +762,10 @@ registerTool(
       );
     }
     try {
+      const unknown = await refuseUnknownSymbol(r.meSymbol);
+      if (unknown) return unknown;
       const magiceden = await me.recentSales(r.meSymbol, limit);
-      return ok(openseaPart ? { ...magiceden, opensea: openseaPart } : magiceden);
+      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: openseaPart } : { ...magiceden, symbolKnown: true });
     } catch (e) {
       if (openseaPart) return ok({ requested: collection, sourceErrors: { magiceden: e instanceof Error ? e.message : String(e) }, opensea: openseaPart });
       throw e;
@@ -907,7 +955,11 @@ registerTool(
       chainIndex: index
         ? {
             count: idxCount,
-            countIsATotal: !index.truncated,
+            // A count is only a total when the walk finished AND every row the
+            // index served could be identified. Dropped rows mean the wallet
+            // holds things this count cannot name, so the figure is a floor.
+            countIsATotal: chainCountIsATotal(index.truncated, index.rowsRejected),
+            rowsRejected: index.rowsRejected,
             byStandard,
             truncated: index.truncated,
             stale: index.stale,
@@ -915,6 +967,11 @@ registerTool(
             readFrom: index.readFrom,
             ...(index.stale
               ? { staleNote: "The asset index did not answer, so this list is the one it last returned at readAt - holdings may have changed since." }
+              : {}),
+            ...(index.rowsRejected > 0
+              ? {
+                  rejectedNote: `${index.rowsRejected} row(s) the asset index served carried no usable id and were dropped rather than counted, so count is a floor, not a total (outage or API change at the index).`,
+                }
               : {}),
             items: index.items.slice(0, limit).map((a) => ({
               mint: a.id,
@@ -932,7 +989,14 @@ registerTool(
       countsComparable: comparison.comparable,
       sourceErrors: {
         ...(meRes.status === "rejected" ? { magiceden: meRes.reason instanceof Error ? meRes.reason.message : String(meRes.reason) } : {}),
-        ...(dasRes.status === "rejected" ? { "asset-index": dasRes.reason instanceof Error ? dasRes.reason.message : String(dasRes.reason) } : {}),
+        // An abandoned endpoint and dropped rows both belong here: an empty
+        // sourceErrors next to a confident count is how a caller was left
+        // unable to tell that the index they configured never answered.
+        ...(dasRes.status === "rejected"
+          ? { "asset-index": dasRes.reason instanceof Error ? dasRes.reason.message : String(dasRes.reason) }
+          : index && index.rowsRejected > 0
+            ? { "asset-index": `${index.rowsRejected} row(s) had no usable id and were dropped; the count is a floor, not a total` }
+            : {}),
       },
       next: "get_wallet_profile groups and prices the holdings; get_wallet_activity reads how the wallet trades.",
     });
@@ -1049,6 +1113,7 @@ registerTool(
           : []),
         "If the address is a marketplace escrow the request is refused by the source and says so - that is not a bug, it is the item being listed.",
         "Next: get_wallet_activity for buys, sells, flips and venue split; get_asset_trust on any single item before treating it as unconditionally theirs.",
+        NOT_ADVICE,
       ],
     });
   }),
@@ -1189,6 +1254,10 @@ registerTool(
     },
   },
   guard(async ({ symbol, days, maxPages, nameContains }) => {
+    // Before the feed: an unknown symbol reads an empty feed and reports
+    // "0 sales", which is a fact about a collection that does not exist.
+    const unknown = await refuseUnknownSymbol(symbol);
+    if (unknown) return unknown;
     const nowUnix = Math.floor(Date.now() / 1000);
     const sinceUnix = nowUnix - days * 86_400;
     const read = await me.collectionActivities(symbol, { types: ["buyNow"], maxPages, sinceUnix });
@@ -1225,6 +1294,8 @@ registerTool(
     const byName = names ? breakdownByName(windowEvents, names.names) : null;
     return ok({
       symbol,
+      symbolKnown: true,
+      readThis: NOT_ADVICE,
       requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString(), nameContains: nameContains ?? null },
       ...summary,
       /** What the figures above are actually about. */
@@ -1301,6 +1372,10 @@ registerTool(
     },
   },
   guard(async ({ symbol, traits, nameContains, limit, lowestSerials }) => {
+    // Before the book: an unknown symbol returns an empty page, which reads as
+    // "nothing is for sale" rather than "no such collection".
+    const unknown = await refuseUnknownSymbol(symbol);
+    if (unknown) return unknown;
     if (lowestSerials) {
       // Low serials are scattered across the price-ordered book, so the hunt
       // reads the book in pages and sorts by the number printed in the name.
@@ -1355,6 +1430,7 @@ registerTool(
       });
       return ok({
         symbol,
+        symbolKnown: true,
         mode: "lowest-serials",
         filters: { traits: traits ?? [] },
         lowestSerials: rows,
@@ -1375,7 +1451,7 @@ registerTool(
         floor: floorRes.ok
           ? { floorSol: floor, listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
           : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
-        readThis: "Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number are not in this list. get_collection_sales with nameContains shows what similar items actually sold for.",
+        readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
         stale,
         cachedAt,
       });
@@ -1449,8 +1525,12 @@ registerTool(
     });
     return ok({
       symbol,
+      symbolKnown: true,
       filters: { traits: traits ?? [], nameContains: nameContains ?? null },
       ...deals,
+      // After the spread on purpose: bestDeals carries its own readThis list
+      // and the not-advice line has to survive alongside it.
+      readThis: [...(Array.isArray(deals.readThis) ? deals.readThis : [deals.readThis]), NOT_ADVICE],
       more: listings.more,
       venueReportedEnd: listings.venueReportedEnd,
       appliedLimit: listings.appliedLimit,
@@ -1492,7 +1572,13 @@ registerTool(
       limit: z.number().int().finite().min(1).max(50).default(10),
     },
   },
-  guard(async ({ symbol, limit }) => ok(await me.collectionLeaderboard(symbol, limit))),
+  guard(async ({ symbol, limit }) => {
+    // Before the leaderboard: an unknown symbol returns an empty trader list,
+    // which reads as "nobody trades this" rather than "no such collection".
+    const unknown = await refuseUnknownSymbol(symbol);
+    if (unknown) return unknown;
+    return ok({ ...(await me.collectionLeaderboard(symbol, limit)), symbolKnown: true });
+  }),
 );
 
 registerTool(
