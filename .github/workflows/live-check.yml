@@ -74,7 +74,8 @@ jobs:
 
       - name: Report the verdict
         if: always() && steps.live.outcome != 'skipped'
-        run: echo "::notice::${{ steps.live.outputs.verdict || 'RESULT: FAILED (the live check did not print a verdict)' }}"
+        run: |
+          echo "::notice::${{ steps.live.outputs.verdict || 'RESULT - FAILED (the live check did not print a verdict)' }}"
 
       # A skipped step's outcome is the literal string 'skipped', not ''. With
       # the old `== ''` test this explanation never ran, and a red run caused by
