@@ -13,6 +13,7 @@
 import { cached, fetchJson, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
+import { NotFoundError } from "../lib/errors.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
@@ -49,8 +50,11 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   const { data, stale, cachedAt } = await cached(
     `os:stats:${slug}`,
     60_000,
-    () => os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`, opts.signal),
-    { fresh: opts.fresh },
+    // The shared fetch runs on the producer's signal; the caller's signal ends
+    // this caller's wait only, so one probe's deadline cannot cancel another
+    // caller's read of the same slug.
+    (producer) => os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`, producer),
+    { fresh: opts.fresh, signal: opts.signal },
   );
   const t = data?.total;
   // An empty `total` object is a shape change, not a collection with no stats:
@@ -159,7 +163,7 @@ export async function collectionDetail(slug: string) {
   const { data, stale, cachedAt } = await cached(`os:detail:${slug}`, 3_600_000, () =>
     os<OsSolanaCollection>(`/collections/${encodeURIComponent(slug)}`),
   );
-  if (!data?.collection) throw new Error(`OpenSea has no collection "${slug}"`);
+  if (!data?.collection) throw new NotFoundError(`OpenSea has no collection "${slug}"`);
   // fees absent = OpenSea did not say; only an explicit list with no creator
   // entry means "no creator royalty". Do not turn silence into a zero.
   const royalty = data.fees ? data.fees.filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient)) : null;

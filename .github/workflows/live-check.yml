@@ -33,11 +33,21 @@ jobs:
       # email, a different meaning. Keeping them as distinct steps means the
       # failing step name says which happened, and a setup failure is visibly
       # not a source break.
+      # `id` + an output on each setup step so the explanation below can name
+      # WHICH part of the runner failed. `steps.<id>.outcome` is only ever
+      # 'success', 'failure', 'cancelled' or 'skipped' - never an empty string -
+      # so the old `== ''` test never matched and the explanation never ran.
       - name: Setup - install (locked)
-        run: npm ci
+        id: install
+        run: |
+          npm ci
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup - build
-        run: npm run build
+        id: build
+        run: |
+          npm run build
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       # No secrets, no env: this proves the keyless path a new user gets.
       # OpenSea is deliberately not exercised here - it needs a key, and a
@@ -47,11 +57,38 @@ jobs:
       # THIS is the step whose failure means a source broke. If the run is red
       # and this step was skipped or never started, the sources were never
       # asked.
+      # The check exits 0 for a CryptoSlam-only outage, so a green tick alone
+      # does not mean every source answered. Its last line is a verdict -
+      # RESULT: PASSED | DEGRADED (source) | FAILED (...) - and that line is
+      # echoed into the run summary so the state is readable without opening
+      # the log.
       - name: Live source check (a failure HERE means a source broke)
         id: live
-        run: node test/live.mjs
-
-      - name: Explain a setup failure
-        if: failure() && steps.live.outcome == ''
         run: |
-          echo "::warning::This run failed BEFORE the live source check ran. No source was contacted, so this is not evidence that a venue broke - it is the runner, the npm registry, or the build."
+          set -o pipefail
+          node test/live.mjs | tee live-output.txt
+          verdict="$(grep '^RESULT: ' live-output.txt | tail -1)"
+          echo "verdict=${verdict:-RESULT: UNKNOWN (no verdict line printed)}" >> "$GITHUB_OUTPUT"
+          echo "### Live source check" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${verdict:-RESULT: UNKNOWN (no verdict line printed)}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the verdict
+        if: always() && steps.live.outcome != 'skipped'
+        run: echo "::notice::${{ steps.live.outputs.verdict || 'RESULT: FAILED (the live check did not print a verdict)' }}"
+
+      # A skipped step's outcome is the literal string 'skipped', not ''. With
+      # the old `== ''` test this explanation never ran, and a red run caused by
+      # the npm registry looked exactly like a broken venue.
+      - name: Explain a setup failure
+        if: failure() && steps.live.outcome == 'skipped'
+        run: |
+          if [ "${{ steps.install.outputs.ok }}" != "true" ]; then
+            where="installing dependencies (npm ci) - the npm registry or the lockfile"
+          elif [ "${{ steps.build.outputs.ok }}" != "true" ]; then
+            where="the TypeScript build - this repository's own code, not a venue"
+          else
+            where="the runner, before the live check could start"
+          fi
+          echo "::warning::This run failed BEFORE the live source check ran, at: ${where}. No source was contacted, so this is NOT evidence that a venue broke."
+          echo "### Not a source break" >> "$GITHUB_STEP_SUMMARY"
+          echo "This run failed at: ${where}. No source was contacted." >> "$GITHUB_STEP_SUMMARY"

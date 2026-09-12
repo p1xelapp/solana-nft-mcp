@@ -21,6 +21,7 @@
 import { cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
+import { NotFoundError, WrongKindError } from "../lib/errors.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -294,12 +295,19 @@ export interface RpcEndpointHealth {
  * on each endpoint individually, and a loop that rotates away from a sick one
  * would hide exactly what is being asked about. Never throws.
  */
-export async function rpcHealth(timeoutMs = 6_000): Promise<RpcEndpointHealth[]> {
+export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promise<RpcEndpointHealth[]> {
   const out: RpcEndpointHealth[] = [];
   for (const ep of endpoints()) {
     const started = Date.now();
+    // The caller's deadline governs this check too. Without it the status
+    // tool's shared budget could be spent entirely here, and every marketplace
+    // would then be reported as timed out without having been contacted once.
+    if (signal?.aborted) {
+      out.push({ endpoint: label(ep), ok: false, latencyMs: null, slot: null, note: "not checked: the status check's budget ran out before this endpoint was reached" });
+      continue;
+    }
     try {
-      await gateFor(ep.url)();
+      await gateFor(ep.url)(signal);
       const res = await fetch(ep.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -307,7 +315,7 @@ export async function rpcHealth(timeoutMs = 6_000): Promise<RpcEndpointHealth[]>
           { jsonrpc: "2.0", id: 1, method: "getHealth" },
           { jsonrpc: "2.0", id: 2, method: "getSlot" },
         ]),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: combineSignals(timeoutMs, signal),
       });
       const latencyMs = Date.now() - started;
       if (!res.ok) {
@@ -469,6 +477,13 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
 export interface CoreAccountRead {
   account: CoreAsset | CoreCollection | null;
   /**
+   * The slot the endpoint says this account read describes, when it reported
+   * one. It is the anchor for the rest of a walk: every later read in the same
+   * walk asks for a state at least this recent, so a node cannot serve the
+   * account from one slot and the history from an older one.
+   */
+  contextSlot: number | null;
+  /**
    * True when the RPC refused and this is a previously cached account kept
    * alive by the stale-on-error rule. A stale owner is not current ownership
    * and must never be presented as settled.
@@ -490,31 +505,37 @@ export async function getCoreAccountWithMeta(
   address: string,
   opts: { fresh?: boolean; trace?: RpcTrace; pin?: EndpointPin; signal?: AbortSignal } = {},
 ): Promise<CoreAccountRead> {
-  const read = async () => {
-    const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>(
+  const read = async (producer?: AbortSignal) => {
+    const info = await rpc<{ context?: { slot?: number }; value: { data: [string, string]; owner: string } | null }>(
       "getAccountInfo",
       [address, { encoding: "base64" }],
       opts.trace,
       opts.pin,
-      opts.signal,
+      // A `fresh` read is this caller's alone and carries the caller's signal.
+      // A cached read is SHARED, so the fetch runs on the cache's producer
+      // signal and only this caller's wait ends with its own deadline.
+      producer ?? opts.signal,
     );
-    if (!info?.value) return { missing: true as const };
-    if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner };
-    return { decoded: decodeCoreAccount(info.value.data[0]) };
+    // The slot travels WITH the decoded account, through the cache, because it
+    // describes that value and nothing else.
+    const slot = typeof info?.context?.slot === "number" && Number.isFinite(info.context.slot) ? info.context.slot : null;
+    if (!info?.value) return { missing: true as const, slot };
+    if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner, slot };
+    return { decoded: decodeCoreAccount(info.value.data[0]), slot };
   };
   // `fresh` bypasses the stale-on-error cache: a verification must never
   // confirm ownership or supply from a value kept alive by a failed refresh.
   const hit = opts.fresh
-    ? { data: await read(), stale: false, cachedAt: new Date().toISOString() }
-    : await cached(`core:${address}`, 60_000, read);
+    ? { data: await read(opts.signal), stale: false, cachedAt: new Date().toISOString() }
+    : await cached(`core:${address}`, 60_000, (producer) => read(producer), { signal: opts.signal });
   const { data } = hit;
-  if ("missing" in data) throw new Error(`account ${address} does not exist on mainnet`);
+  if ("missing" in data) throw new NotFoundError(`account ${address} does not exist on mainnet`);
   if ("notCore" in data)
-    throw new Error(
+    throw new WrongKindError(
       `account ${address} is owned by ${data.owner}, not Metaplex Core. ` +
         `v1 decodes Metaplex Core assets only (SPL/compressed NFTs: use get_asset, which reads Magic Eden instead).`,
     );
-  return { account: data.decoded, stale: hit.stale, cachedAt: hit.cachedAt };
+  return { account: data.decoded, contextSlot: data.slot, stale: hit.stale, cachedAt: hit.cachedAt };
 }
 
 export async function getCoreAccount(
@@ -594,9 +615,42 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
   // ONE endpoint for the account, the signature pages and the transactions.
   const trace: RpcTrace = {};
   const run = async (pin?: EndpointPin) => {
-    const account = await getCoreAccount(mint, { fresh: opts.fresh, trace, pin });
+    const accountRead = await getCoreAccountWithMeta(mint, { fresh: opts.fresh, trace, pin });
+    const account = accountRead.account;
+    // Pinning one endpoint stops the walk being stitched from two NODES. It
+    // does not stop one node serving the account from a recent slot and the
+    // signature list from an older one behind a load balancer, which reads as
+    // "this asset has no history" for an asset that was transferred a second
+    // ago. Every later read in this walk asks for a state at least as recent
+    // as the account read's own slot.
+    const anchorSlot = accountRead.contextSlot;
+    /** Set when an endpoint refused the parameter: the pin is still the guarantee, and the result says which held. */
+    let slotFloorHonoured = anchorSlot !== null;
+    let slotNote: string | undefined;
+    const withAnchor = (config: Record<string, unknown>): Record<string, unknown> =>
+      anchorSlot !== null && slotFloorHonoured ? { ...config, minContextSlot: anchorSlot } : config;
+    /**
+     * Run a read with the slot floor, and fall back without it when the
+     * endpoint rejects the parameter rather than failing the whole walk. A
+     * rejected parameter is a weaker guarantee, not a broken read - the pinned
+     * endpoint still holds - so it is recorded and the walk continues.
+     */
+    const anchored = async <T>(attempt: (config: Record<string, unknown>) => Promise<T>, config: Record<string, unknown>): Promise<T> => {
+      try {
+        return await attempt(withAnchor(config));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // -32602 is "invalid params" and is what a node that does not take
+        // minContextSlot answers; the named parameter appears in the message
+        // of nodes that do take it but could not reach the slot.
+        if (anchorSlot === null || !slotFloorHonoured || !/-32602|invalid param|minContextSlot|Minimum context slot/i.test(msg)) throw e;
+        slotFloorHonoured = false;
+        slotNote = `This endpoint refused minContextSlot (${msg.slice(0, 120)}), so the reads after the account were not pinned to slot ${anchorSlot}. They all came from the one pinned endpoint, which is the fallback guarantee.`;
+        return attempt(config);
+      }
+    };
     if (!account || account.kind !== "asset") {
-      throw new Error(
+      throw new WrongKindError(
         account?.kind === "collection"
           ? `${mint} is a Core COLLECTION (${account.name}). Pass an asset mint, or use get_collection_stats for collections.`
           : `${mint} exists but does not decode as a Core asset (possibly burned).`,
@@ -611,11 +665,15 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       let before: string | undefined;
       let complete = false;
       for (let page = 0; page < 5; page++) {
-        const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
-          "getSignaturesForAddress",
-          [mint, before ? { limit: 1000, before } : { limit: 1000 }],
-          trace,
-          pin,
+        const batch = await anchored(
+          (config) =>
+            rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
+              "getSignaturesForAddress",
+              [mint, config],
+              trace,
+              pin,
+            ),
+          before ? { limit: 1000, before } : { limit: 1000 },
         );
         if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
         all.push(...batch);
@@ -653,11 +711,9 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       // whichever node served it; only the reads that actually go out are
       // pinned.
       const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
-        rpc<ParsedTx | null>(
-          "getTransaction",
-          [sig.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
-          trace,
-          pin,
+        anchored(
+          (config) => rpc<ParsedTx | null>("getTransaction", [sig.signature, config], trace, pin),
+          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
         ),
       );
       if (!tx?.meta) { unreadable++; continue; }
@@ -747,7 +803,7 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     }
 
     events.reverse(); // oldest first - reads as a story
-    return { account, events, skipped, unreadable, logsDisagreed, walk, okCount: ok.length };
+    return { account, events, skipped, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -756,7 +812,7 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
   const { value, endpointPinned } = opts.fresh
     ? await pinnedWalk(run)
     : { value: await run(), endpointPinned: "not pinned (this was not a verification read)" };
-  const { account, events, skipped, unreadable, logsDisagreed, walk, okCount } = value;
+  const { account, events, skipped, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote } = value;
 
   return {
     mint,
@@ -779,6 +835,11 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     rpcEndpointsUsed: trace.endpoints ?? [],
     /** For a verification walk, the ONE endpoint every read in it was pinned to. */
     endpointPinned,
+    /** The slot the account read described; every later read in this walk asked for a state at least this recent. */
+    contextSlot: anchorSlot,
+    /** True when the endpoint accepted that floor. False means the pin alone carried the consistency guarantee. */
+    slotFloorHonoured,
+    ...(slotNote ? { slotNote } : {}),
     ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     /** True only when every signature was listed, every transaction was decoded (none skipped for depth), and every one was readable. */
     historyComplete: walk.complete && unreadable === 0 && skipped === 0,

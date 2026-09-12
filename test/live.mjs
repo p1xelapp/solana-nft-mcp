@@ -44,6 +44,7 @@ const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
 // A live check that hangs is a live check that never emails anyone. Hard stop
 // inside the budget, with the same wording a real failure uses.
 const watchdog = setTimeout(() => {
+  console.log("RESULT: FAILED (timed out)");
   console.error(`\n❌ LIVE CHECK TIMED OUT after ${elapsed()} - a source stopped responding without closing the connection.`);
   process.exit(1);
 }, BUDGET_MS);
@@ -228,21 +229,30 @@ try {
 await client.close();
 clearTimeout(watchdog);
 
+// One machine-readable verdict line, always printed last. The workflow echoes
+// it into the run summary, because a green tick alone cannot tell PASSED from
+// "passed with a source missing" - and only one of those is healthy.
+const result = (word) => console.log(`RESULT: ${word}`);
+
 if (failures.length > 0) {
+  result(`FAILED (${failures.join(", ")})`);
   console.error(`\nLIVE CHECK FAILED in ${elapsed()}: ${failures.join(", ")}.`);
   console.error("One named source stopped answering or changed shape. Check its status page (docs/SOURCES.md lists them) before changing any code.");
   process.exit(1);
 }
 if (degraded.length > 0) {
   // Exit 0 on purpose - a CryptoSlam-only outage is not worth a weekly email -
-  // but the line says WHICH source is degraded and never claims the set is
-  // healthy.
+  // but the verdict is DEGRADED, never PASSED, and it names the source. The
+  // old line said "PASSED WITH A DEGRADED SOURCE", which every skim read as a
+  // pass.
+  result(`DEGRADED (${degraded.map((d) => String(d).split(" ")[0].toLowerCase().replace(/[^a-z]/g, "")).join(", ")})`);
   console.log(
-    `\nLIVE CHECK PASSED WITH A DEGRADED SOURCE in ${elapsed()}: ${degraded.join("; ")}. ` +
+    `\nLIVE CHECK DEGRADED in ${elapsed()}: ${degraded.join("; ")}. ` +
       `Every Solana source family answered, including the undocumented asset index; the source(s) named above did NOT, ` +
       `and the tools that depend on them (get_pack_pulls) are affected. Not failing the run: this source is documented flaky and feeds one non-Solana tool.`,
   );
   process.exit(0);
 }
+result("PASSED");
 console.log(`\nLIVE CHECK PASSED in ${elapsed()} - every source family answered, including the undocumented asset index.`);
 process.exit(0);

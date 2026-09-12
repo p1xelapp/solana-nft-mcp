@@ -38,14 +38,16 @@ export async function recentMints(contract: string, limit: number, opts: { fresh
   const { data, stale, cachedAt } = await cached(
     `cs:mints:${contract}:${n}`,
     60_000,
-    () =>
+    // The shared fetch runs on the producer's signal; the caller's own signal
+    // ends this caller's wait without cancelling a read others joined.
+    (producer) =>
       fetchJson<CsMint[]>(
         "CryptoSlam",
         `${BASE}/mints/${encodeURIComponent(contract)}/${n}/last`,
         { headers: HEADERS },
-        { retries: 3, timeoutMs: 20_000, signal: opts.signal },
+        { retries: 3, timeoutMs: 20_000, signal: producer },
       ),
-    { fresh: opts.fresh },
+    { fresh: opts.fresh, signal: opts.signal },
   );
   if (!Array.isArray(data)) throw new Error("CryptoSlam returned an unexpected mints shape");
   const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);

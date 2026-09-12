@@ -293,10 +293,19 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   // ...but it is not therefore unbounded: the fallback identity collapses rows
   // that agree on everything that would have to coincide for them to be the
   // same fill, and reports how many rows needed it.
-  const anonRows = [{ type: "buyNow", tokenMint: "M" }, { type: "buyNow", tokenMint: "M" }];
+  // The fallback identity needs the whole identifying core - item, type,
+  // price and block time - or two different fills that happen to share a
+  // couple of fields collapse into one.
+  const anonRows = [
+    { type: "buyNow", tokenMint: "M", price: 1, blockTime: 1_700_000_000 },
+    { type: "buyNow", tokenMint: "M", price: 1, blockTime: 1_700_000_000 },
+  ];
   const anonDeduped = dedupeEvents(anonRows);
-  assert.strictEqual(anonDeduped.events.length, 1, "identical unsigned rows are one fill, not two");
+  assert.strictEqual(anonDeduped.events.length, 1, "identical complete unsigned rows are one fill, not two");
   assert.strictEqual(anonDeduped.identityFallbacks, 2, "and both rows are reported as relying on the weaker identity");
+  const sparse = dedupeEvents([{ type: "buyNow", tokenMint: "M" }, { type: "buyNow", tokenMint: "M" }]);
+  assert.strictEqual(sparse.events.length, 2, "an incomplete unsigned row is kept, never merged on a partial match");
+  assert.strictEqual(sparse.identityUnavailable, 2, "and the rows that could not be identified at all are counted");
   assert.strictEqual(dedupeEvents([{}, {}]).events.length, 2, "a row with NOTHING to identify it is still kept");
   assert.strictEqual(dedupeEvents(null).events.length, 0, "a missing feed must not throw");
 }

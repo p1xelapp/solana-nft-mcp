@@ -1216,6 +1216,13 @@ export interface TrustMechanics {
   entries: MechanicsEntry[];
   /** Plugin types that were decoded but have no entry here, named rather than dropped. */
   unexplained: string[];
+  /**
+   * Plugin entries past the inspection cap, or past the reporting cap for
+   * unrecognised names. They were never looked at, so calling them
+   * unrecognised would invent a finding: a perfectly ordinary Royalties plugin
+   * sitting in position 65 used to produce a warning about an unknown plugin.
+   */
+  notInspected: number;
   /** Every source URL behind the sentences above. */
   sources: string[];
 }
@@ -1311,16 +1318,23 @@ export function mechanicsForTrust(pluginTypes: string[], venue?: string): TrustM
   }
 
   const unexplained = [...unexplainedSet];
+  // Two different things, and conflating them was a false alarm. `unexplained`
+  // is a name we LOOKED AT and do not know. `notInspected` was never examined:
+  // it fell past the inspection cap or past the reporting cap. Only the first
+  // is evidence about the asset.
+  const notInspected = unexplainedTruncated + pluginsDropped;
   const consequences = entries.map((e) => `${e.title}: ${e.plain}`);
-  if (unexplained.length || unexplainedTruncated || pluginsDropped) {
-    const extra = unexplainedTruncated + pluginsDropped;
+  if (unexplained.length) {
     consequences.push(
-      `Plugin(s) present that this knowledge base does not explain: ${unexplained.join(", ") || "none by name"}` +
-        (extra ? `, and ${extra} further unrecognised plugin name(s) not listed here - an account carrying this many is itself unusual` : "") +
-        `. Treat the custody picture as incomplete rather than clean.`,
+      `Plugin(s) present that this knowledge base does not explain: ${unexplained.join(", ")}. Treat the custody picture as incomplete rather than clean.`,
     );
   }
-  return { consequences, entries, unexplained, sources: [...new Set(entries.map((e) => e.source))] };
+  if (notInspected) {
+    consequences.push(
+      `${notInspected} further plugin entr${notInspected === 1 ? "y was" : "ies were"} NOT inspected: this asset carries more plugin entries than the ${MAX_PLUGINS_CONSIDERED}-entry cap this read examines. They are not unrecognised - nothing was read from them - and an account carrying this many entries is itself unusual. The custody picture is incomplete.`,
+    );
+  }
+  return { consequences, entries, unexplained, notInspected, sources: [...new Set(entries.map((e) => e.source))] };
 }
 
 /** Entries whose claim could not be confirmed from a primary source, with the reason. */

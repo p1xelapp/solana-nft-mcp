@@ -224,6 +224,14 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
       method: "Every read in this walk - the account, the signature pages and each transaction - came from this one endpoint, so the answer describes a state that node actually held rather than a snapshot stitched from two.",
       observed: `endpointPinned = ${prov.endpointPinned}`,
     },
+    {
+      source: `Solana RPC endpoint ${prov.endpointPinned}`,
+      method:
+        prov.slotFloorHonoured
+          ? "The account read's own context slot was used as a minContextSlot floor on the signature pages and every transaction, so no read in this walk could come from a slot older than the account it describes."
+          : "The endpoint would not take a minContextSlot floor, so the single pinned endpoint is what keeps this walk internally consistent.",
+      observed: `contextSlot = ${prov.contextSlot ?? "not reported by the endpoint"}, slotFloorHonoured = ${prov.slotFloorHonoured}`,
+    },
   ];
 
   const caveats = [

@@ -22,6 +22,7 @@ import { assertOnline, cached, originGate, readBoundedJson, OversizedBodyError }
 import { clean } from "../lib/untrusted.js";
 import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
+import { DasUnsupported } from "../lib/errors.js";
 
 const PUBLIC_DAS = "https://api.mainnet-beta.solana.com";
 const SOURCE = "the public Solana RPC asset index (DAS)";
@@ -48,8 +49,6 @@ interface RpcError {
   code?: number;
   message?: string;
 }
-
-class DasUnsupported extends Error {}
 
 /**
  * One signal firing on either the request timeout or the caller's own
@@ -202,7 +201,7 @@ export async function capability(opts: { fresh?: boolean; signal?: AbortSignal }
  * endpoint is back: the read is attempted and speaks for itself.
  */
 function refuseIfWithdrawn(cap: DasCapability): void {
-  if (cap.state === "withdrawn") throw new Error(`${SOURCE} is unavailable right now (${cap.note}).`);
+  if (cap.state === "withdrawn") throw new DasUnsupported(`${SOURCE} is unavailable right now (${cap.note}).`);
 }
 
 // --------------------------------------------------------------- shapes
@@ -369,9 +368,12 @@ export interface DasAssetRead {
  */
 export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}): Promise<DasAssetRead> {
   refuseIfWithdrawn(await capability({ signal: opts.signal }));
-  const { data, stale, cachedAt } = await cached<{ raw: RawAsset; endpoint: string } | null>(`das:asset:${id}`, 60_000, async () => {
+  const { data, stale, cachedAt } = await cached<{ raw: RawAsset; endpoint: string } | null>(`das:asset:${id}`, 60_000, async (producer) => {
     try {
-      const { result, endpoint } = await call<RawAsset | null>("getAsset", { id }, opts.signal);
+      // Producer signal: this read is shared, so it outlives any one caller's
+      // deadline. The caller's own signal is passed to cached() below and ends
+      // only its wait.
+      const { result, endpoint } = await call<RawAsset | null>("getAsset", { id }, producer);
       if (!result || typeof result !== "object") return null;
       // An answer carrying a different id is not this asset. Caching it under
       // the requested id would show one asset's owner beneath another's mint.
@@ -386,7 +388,7 @@ export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}):
       if (e instanceof Error && /not found|does not exist|Asset Not Found/i.test(e.message)) return null;
       throw e;
     }
-  });
+  }, { signal: opts.signal });
   return { asset: data ? normalise(data.raw, data.endpoint, cachedAt) : null, stale, cachedAt };
 }
 
@@ -472,7 +474,7 @@ export async function getAssetNames(
   const omitted = all.length - unique.length;
   if (unique.length === 0) return { names, stale: false, unresolved: omitted, omitted };
   const cap = await capability();
-  if (cap.state === "withdrawn") throw new Error(`${SOURCE} is unavailable right now (${cap.note}).`);
+  if (cap.state === "withdrawn") throw new DasUnsupported(`${SOURCE} is unavailable right now (${cap.note}).`);
   let stale = false;
   for (let i = 0; i < unique.length; i += 1000) {
     const chunk = unique.slice(i, i + 1000);

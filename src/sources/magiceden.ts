@@ -10,6 +10,7 @@
 import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, isCollectionSymbol, objectRows } from "../lib/shapes.js";
+import { NotFoundError, EscrowError } from "../lib/errors.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -46,12 +47,16 @@ export interface MeStats {
 }
 
 export async function collectionStats(symbol: string, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
-  const read = () => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`, opts.signal);
+  // The FETCH runs on the cache's producer signal, not the caller's: this one
+  // read is shared by every caller asking for the same symbol, and a status
+  // probe's 12 s deadline must not cancel a floor request that joined it. The
+  // caller's own signal ends only the caller's WAIT.
+  const read = (producer: AbortSignal) => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`, producer);
   // `fresh` = the venue's answer now (coalesced and committed, never a stale
   // fallback), for verifications.
-  const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, read, { fresh: opts.fresh });
+  const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, read, { fresh: opts.fresh, signal: opts.signal });
   if (!data || data.symbol === undefined) {
-    throw new Error(`Magic Eden has no collection with symbol "${symbol}"`);
+    throw new NotFoundError(`Magic Eden has no collection with symbol "${symbol}"`);
   }
   // HTTP 200 != exists: ME echoes unknown symbols back as {symbol, listedCount: 0}.
   // A real-but-quiet collection still carries volumeAll; a phantom carries nothing.
@@ -65,7 +70,7 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
       if (!(e instanceof HttpError && e.status === 404)) throw e;
     }
     if (!meta?.name) {
-      throw new Error(
+      throw new NotFoundError(
         `Magic Eden has no collection with symbol "${symbol}" (try search_collections, or pass a Core collection address)`,
       );
     }
@@ -212,7 +217,7 @@ export async function walletTokens(wallet: string, limit: number) {
     // on-chain owner IS the marketplace escrow, not the seller. Say so,
     // because "HTTP 400" sends the agent hunting for a bug that isn't there.
     if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
-      throw new Error(
+      throw new EscrowError(
         `Magic Eden will not list holdings for ${wallet} - it blocks this address, ` +
           `which usually means it is a marketplace escrow or program account rather than ` +
           `a user wallet. If you got this address from get_asset_provenance, the item is ` +
@@ -310,7 +315,7 @@ export async function walletTokensAll(wallet: string, max: number) {
         );
       } catch (e) {
         if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
-          throw new Error(
+          throw new EscrowError(
             `Magic Eden will not list holdings for ${wallet} - it is a marketplace escrow or program account, not a user wallet.`,
           );
         }

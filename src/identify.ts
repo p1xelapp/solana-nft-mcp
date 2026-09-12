@@ -28,6 +28,7 @@ import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
 import { resolveName } from "./names.js";
 import { HttpError } from "./lib/http.js";
+import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
 
 export interface Probe {
@@ -333,7 +334,9 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       // say "has no collection" is not: that text is attacker-influenced, and
       // letting it decide the verdict handed a hostile response the power to
       // make this server assert that a real collection does not exist.
-      const ourOwnPhantomCheck = e instanceof Error && !(e instanceof HttpError) && /has no collection with symbol/i.test(e.message);
+      // Our own absence check throws a typed NotFoundError; an upstream body
+      // that happens to contain the same words is not one.
+      const ourOwnPhantomCheck = e instanceof NotFoundError;
       checked.push({
         source: "magiceden",
         looked_for: `a collection with symbol "${meSymbol}"`,

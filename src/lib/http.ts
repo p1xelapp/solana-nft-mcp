@@ -27,8 +27,10 @@ const store = new Map<string, CacheEntry>();
 // Identical keys requested while a fetch is in flight share that one fetch,
 // so ten parallel calls for the same wallet cost the upstream one request.
 const inflight = new Map<string, Promise<unknown>>();
+/** How many distinct keys are in flight per origin, so one busy source cannot spend another's headroom. */
+const inflightPerOrigin = new Map<string, number>();
 /**
- * Ceiling on DISTINCT in-flight keys.
+ * Ceiling on DISTINCT in-flight keys, PER ORIGIN.
  *
  * Coalescing only bounds work when callers ask for the same thing. A caller
  * looping over made-up slugs produces a new key every time, and every one of
@@ -36,8 +38,18 @@ const inflight = new Map<string, Promise<unknown>>();
  * memory and a queue whose tail waits minutes before its own timeout even
  * starts. Past this ceiling new distinct work is shed immediately, in the
  * upstream's own voice, rather than being queued into a backlog.
+ *
+ * The ceiling is per origin because the budget it protects is per origin: a
+ * global one let slow work against one source refuse a healthy source that had
+ * nothing queued at all. It matches MAX_GATE_QUEUE, which is the real limit -
+ * a 65th distinct key for one origin would be refused by that gate anyway.
  */
-const MAX_INFLIGHT_KEYS = 256;
+const MAX_INFLIGHT_PER_ORIGIN = 64;
+/** Emergency ceiling across every origin, so an unbounded set of sources cannot grow the map without limit. */
+const MAX_INFLIGHT_TOTAL = 512;
+
+/** Which budget a cache key spends. Keys are `source:what:params`, so the first segment IS the source. */
+const originOf = (key: string, given?: string): string => given ?? key.split(":")[0] ?? key;
 
 /** Shed load rather than queue it. Worded as the upstream being busy, because that is what the caller should do about it. */
 export class BusyError extends Error {
@@ -83,12 +95,20 @@ function commit(key: string, data: unknown) {
 /**
  * Get-or-fetch with TTL. On fetcher failure returns the stale entry (flagged)
  * instead of throwing, unless nothing was ever cached for this key.
+ *
+ * Two separate lifetimes, and conflating them was a real bug. The PRODUCER -
+ * the one fetch every waiter shares - runs on a controller of its own and is
+ * never cancelled by any individual caller: a status probe with a 12 s deadline
+ * used to abort the shared stats fetch that an ordinary floor request had
+ * joined, so an unrelated caller lost an answer it was still waiting for. Each
+ * WAITER instead races the shared promise against its own signal, so a caller's
+ * deadline ends that caller's wait and nobody else's.
  */
 export async function cached<T>(
   key: string,
   ttlMs: number,
-  fetcher: () => Promise<T>,
-  opts: { fresh?: boolean } = {},
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  opts: { fresh?: boolean; signal?: AbortSignal; origin?: string } = {},
 ): Promise<CacheHit<T>> {
   const hit = store.get(key);
   // `fresh` skips the TTL hit and the stale fallback, but still coalesces
@@ -100,25 +120,39 @@ export async function cached<T>(
   try {
     // One shared promise does the fetch AND the single cache commit, so N
     // concurrent waiters cause one upstream call and one eviction pass.
+    const origin = originOf(key, opts.origin);
     let p = inflight.get(key) as Promise<T> | undefined;
     if (!p) {
       // A new distinct key is new work. Past the ceiling it is shed, not
       // queued: a stale answer for this key is better than an unbounded
       // backlog, so an existing cached value is still served below.
-      if (inflight.size >= MAX_INFLIGHT_KEYS) {
+      const forOrigin = inflightPerOrigin.get(origin) ?? 0;
+      if (forOrigin >= MAX_INFLIGHT_PER_ORIGIN || inflight.size >= MAX_INFLIGHT_TOTAL) {
         if (hit && !opts.fresh) return { data: hit.data as T, stale: true, cachedAt: new Date(hit.cachedAt).toISOString() };
-        throw new BusyError("this server's upstream queue");
+        throw new BusyError(forOrigin >= MAX_INFLIGHT_PER_ORIGIN ? `this server's queue for ${origin}` : "this server's upstream queue");
       }
-      p = fetcher().then((data) => {
+      // The producer's own controller. Nothing in it is tied to whoever asked
+      // first, so one caller giving up cannot cancel a fetch others joined.
+      const producer = new AbortController();
+      p = fetcher(producer.signal).then((data) => {
         commit(key, data);
         return data;
       });
       inflight.set(key, p);
-      p.finally(() => inflight.delete(key)).catch(() => undefined);
+      inflightPerOrigin.set(origin, forOrigin + 1);
+      p.finally(() => {
+        inflight.delete(key);
+        const left = (inflightPerOrigin.get(origin) ?? 1) - 1;
+        if (left > 0) inflightPerOrigin.set(origin, left);
+        else inflightPerOrigin.delete(origin);
+      }).catch(() => undefined);
     }
-    const data = await p;
+    const data = await raceSignal(p, opts.signal, "the caller's deadline passed while waiting for a shared read of this data");
     return { data, stale: false, cachedAt: new Date().toISOString() };
   } catch (err) {
+    // An abort is the caller leaving, not the upstream failing: it must not be
+    // dressed up as a stale answer from a source that is perfectly healthy.
+    if (err instanceof AbortedError) throw err;
     if (hit && !opts.fresh) {
       return { data: hit.data as T, stale: true, cachedAt: new Date(hit.cachedAt).toISOString() };
     }
@@ -130,8 +164,40 @@ export async function cached<T>(
  * A rate gate. Callable like a plain function; `raiseTo` lets a second module
  * sharing the same gate tighten the pace without replacing the queue.
  */
+/**
+ * Wait for a promise, but only for as long as this caller is still waiting.
+ *
+ * The underlying work is NOT cancelled - it may be shared with other callers,
+ * or be a turn in a queue that still has to advance. What ends is this
+ * caller's wait, which is the whole meaning of a deadline.
+ */
+export function raceSignal<T>(p: Promise<T>, signal: AbortSignal | undefined, why: string): Promise<T> {
+  if (!signal) return p;
+  if (signal.aborted) {
+    // Nobody is left to read the outcome; swallow it so it cannot surface as
+    // an unhandled rejection.
+    p.catch(() => undefined);
+    return Promise.reject(new AbortedError(why));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new AbortedError(why));
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
 export interface Gate {
-  (): Promise<void>;
+  /** Wait for a turn. A caller's signal ends ITS wait; the queue itself still advances. */
+  (signal?: AbortSignal): Promise<void>;
   /** Slow the gate down to at least this interval. Never speeds it up. */
   raiseTo(minIntervalMs: number): void;
   /** How many callers are currently waiting their turn. */
@@ -161,9 +227,10 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
   // Monotonic, never wall-clock. A clock that jumps - an NTP correction, a
   // suspended laptop, a test stubbing Date.now - would otherwise park every
   // caller behind a deadline in the moved clock's future.
-  const gate = function gate() {
+  const gate = function gate(signal?: AbortSignal) {
     // Refuse BEFORE joining the chain. Joining and then throwing would still
     // have spent a turn, and the queue would keep growing.
+    if (signal?.aborted) return Promise.reject(new AbortedError(`the caller's deadline had already passed before it queued for a turn against ${label}'s rate limit`));
     if (waiting >= MAX_GATE_QUEUE) return Promise.reject(new BusyError(label));
     waiting++;
     chain = chain.then(async () => {
@@ -171,9 +238,13 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       last = performance.now();
     });
-    return chain.finally(() => {
+    const turn = chain.finally(() => {
       waiting--;
     });
+    // The queue still advances at its own pace - the turn is what keeps this
+    // source's budget honest. What the signal ends is THIS caller's wait, so a
+    // 25 s deadline is not silently extended by a 38 s queue tail.
+    return raceSignal(turn, signal, `the caller's deadline passed while waiting for a turn against ${label}'s rate limit`);
   } as Gate;
   gate.raiseTo = (ms: number) => {
     if (Number.isFinite(ms) && ms > interval) interval = ms;
@@ -312,7 +383,7 @@ export async function readBoundedJson<T>(res: Response, source: string): Promise
 export async function fetchRetry(
   url: string,
   opts: RequestInit = {},
-  { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate, signal }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: () => Promise<void>; signal?: AbortSignal } = {},
+  { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate, signal }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal } = {},
 ): Promise<Response> {
   assertOnline(url);
   if (signal?.aborted) throw new AbortedError("the caller's deadline had already passed before this request was sent");
@@ -322,7 +393,9 @@ export async function fetchRetry(
     try {
       // The source's rate gate runs before EVERY attempt, so a retry can never
       // land closer to the previous request than the advertised pace.
-      if (gate) await gate();
+      // The caller's signal goes INTO the gate: a deadline that only gets
+      // checked after the queue tail has been waited out is not a deadline.
+      if (gate) await gate(signal);
       // A caller that gave up while we were queued must not have its request
       // sent anyway: the point of an abort is that the work stops.
       if (signal?.aborted) throw new AbortedError("the caller's deadline passed while this request waited for a turn against the source's rate limit");
@@ -354,11 +427,30 @@ export async function fetchRetry(
       if (i < retries) {
         const slow = e instanceof RetryableError && e.slow;
         const hinted = e instanceof RetryableError ? e.retryAfterMs : 0;
-        await new Promise((r) => setTimeout(r, Math.max(hinted, backoffMs * (i + 1) * (slow ? 3 : 1))));
+        // The backoff is part of the caller's budget too: sleeping four
+        // seconds after the deadline has passed spends time nobody is waiting
+        // for, and then sends the retry anyway.
+        await sleep(Math.max(hinted, backoffMs * (i + 1) * (slow ? 3 : 1)), signal);
       }
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Sleep that ends early when the caller gives up, and throws so the retry loop stops rather than continuing. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new AbortedError("the caller's deadline passed before this retry's backoff finished"));
+    const t = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(t);
+      reject(new AbortedError("the caller's deadline passed while this retry was backing off"));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** Retry-After is either delta-seconds or an HTTP-date; both are honoured. */
@@ -445,7 +537,7 @@ export async function fetchJson<T>(
   source: string,
   url: string,
   opts: RequestInit = {},
-  retryOpts?: { retries?: number; timeoutMs?: number; gate?: () => Promise<void>; signal?: AbortSignal },
+  retryOpts?: { retries?: number; timeoutMs?: number; gate?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal },
 ): Promise<T> {
   const res = await fetchRetry(url, opts, retryOpts);
   if (!res.ok) {

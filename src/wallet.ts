@@ -27,6 +27,19 @@ import { clean } from "./lib/untrusted.js";
 const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
 const iso = (t?: number) => (t ? new Date(t * 1000).toISOString() : null);
 
+/**
+ * A price this module will do arithmetic on.
+ *
+ * `typeof e.price === "number"` was not enough. A newest-first feed carrying a
+ * buy at -1 and a sale at 1 reported 2 SOL of profit, and a single Infinity
+ * turned every total, every flip and the whole realised P&L into Infinity or
+ * NaN - a poisoned number presented with the same confidence as a real one.
+ * Only a finite amount above zero is money; everything else is counted as a
+ * malformed row and named, never summed.
+ */
+const usablePrice = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+
 // ----------------------------------------------------------- holdings
 
 export interface CollectionHolding {
@@ -125,6 +138,15 @@ export interface ActivitySummary {
   buys: { count: number; totalSol: number; collections: Record<string, number> };
   sells: { count: number; totalSol: number; collections: Record<string, number> };
   netFlowSol: number;
+  /** Money figures cover the trades this many SOL totals could actually be built from. */
+  pricing: {
+    /** Trade-shaped rows whose price was present but not a finite amount above zero. */
+    malformedPrices: number;
+    /** Trades whose repeated copies disagreed about the amount or a side. */
+    unsettled: number;
+    /** Buys and sells counted on their side but left out of every SOL total. */
+    unpricedTrades: number;
+  };
   topCollections: { collection: string; events: number }[];
   flips: Flip[];
   realized: {
@@ -173,6 +195,12 @@ export function summarizeActivity(
   const rows: { flip: Flip; delta: number }[] = [];
   let purchases = 0;
   let lists = 0;
+  /** Trade-shaped rows whose price field was present but not a finite amount above zero. */
+  let malformedPrices = 0;
+  /** Trades counted on their side but kept out of every SOL total, because no usable price survived. */
+  let unpricedTrades = 0;
+  /** Trades excluded from money because two copies of the row disagreed about the amount or a side. */
+  let unsettledTrades = 0;
 
   const bump = (r: Record<string, number>, k: string) => (r[k] = (r[k] ?? 0) + 1);
 
@@ -186,25 +214,40 @@ export function summarizeActivity(
     const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
     if (type === "list") lists++;
-    if (type === "buyNow" && typeof e.price === "number") {
-      if (e.buyer === wallet) {
+    if (type === "buyNow") {
+      const rawPrice = (e as { price?: unknown }).price;
+      const settled = (e as { unsettled?: boolean }).unsettled !== true;
+      const parsed = usablePrice(rawPrice);
+      if (parsed === null && rawPrice !== null && rawPrice !== undefined) malformedPrices++;
+      // A row whose two copies disagreed about the amount or a side is a trade
+      // that happened for an amount we cannot state, exactly like a missing
+      // price: the side is counted, the money is not.
+      if (!settled && parsed !== null) unsettledTrades++;
+      const price = settled ? parsed : null;
+      const side = e.buyer === wallet ? "buy" : e.seller === wallet ? "sell" : null;
+      if (side && price === null) unpricedTrades++;
+      if (side === "buy") {
         buys.count++;
-        buys.totalSol += e.price;
+        if (price !== null) buys.totalSol += price;
         if (col) bump(buys.collections, col);
-        if (e.tokenMint) {
+        if (e.tokenMint && price !== null) {
           purchases++;
           const q = openBuys.get(e.tokenMint);
           if (q) q.push(e);
           else openBuys.set(e.tokenMint, [e]);
         }
-      } else if (e.seller === wallet) {
+      } else if (side === "sell") {
         sells.count++;
-        sells.totalSol += e.price;
+        if (price !== null) sells.totalSol += price;
         if (col) bump(sells.collections, col);
-        const q = e.tokenMint ? openBuys.get(e.tokenMint) : undefined;
+        // A flip is arithmetic on two prices. One unusable price on either leg
+        // means no P&L can be stated for it, so the pair is not matched at all
+        // rather than matched against a zero.
+        const q = e.tokenMint && price !== null ? openBuys.get(e.tokenMint) : undefined;
         const buy = q?.shift();
-        if (buy && buy.blockTime && e.blockTime && e.blockTime > buy.blockTime && e.tokenMint) {
-          const delta = e.price - (buy.price ?? 0);
+        const buyPrice = usablePrice(buy?.price);
+        if (buy && buyPrice !== null && price !== null && buy.blockTime && e.blockTime && e.blockTime > buy.blockTime && e.tokenMint) {
+          const delta = price - buyPrice;
           rows.push({
             delta,
             flip: {
@@ -212,8 +255,8 @@ export function summarizeActivity(
               collection: col,
               boughtAt: iso(buy.blockTime),
               soldAt: iso(e.blockTime),
-              buySol: round(buy.price ?? 0),
-              sellSol: round(e.price),
+              buySol: round(buyPrice),
+              sellSol: round(price),
               pnlSol: round(delta),
               heldDays: round((e.blockTime - buy.blockTime) / 86_400, 1),
             },
@@ -257,13 +300,30 @@ export function summarizeActivity(
     why = `${buys.count} buys and ${sells.count} sells in the window - too few purchases to call a pattern.`;
   }
 
-  const firstBuy = chrono.find((e) => e.type === "buyNow" && e.buyer === wallet && typeof e.price === "number");
+  const firstBuy = chrono.find(
+    (e) => e.type === "buyNow" && e.buyer === wallet && usablePrice(e.price) !== null && (e as { unsettled?: boolean }).unsettled !== true,
+  );
   const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
   const caveats = [
     "This is Magic Eden's view of the wallet: listings, bids, buys and sells that touched Magic Eden or its AMM pools. Trades on Tensor or OpenSea, plain transfers, mints and airdrops are not in this feed.",
     "Realised P&L here is sale price minus purchase price for items both bought and sold in the window, before marketplace fees and royalties. It is a lower bound on cost, not an accounting.",
   ];
+  if (malformedPrices) {
+    caveats.push(
+      `${malformedPrices} trade-shaped row(s) carried a price that was not a finite amount above zero (negative, zero, or infinite). They are counted as trades on the side the wallet was on and excluded from every SOL total, flip and P&L figure rather than being summed.`,
+    );
+  }
+  if (unsettledTrades) {
+    caveats.push(
+      `${unsettledTrades} trade(s) came back twice with a different price or a different buyer/seller, so no amount can be shown to be the right one. They are counted as trades and left out of the SOL totals and P&L.`,
+    );
+  }
+  if (unpricedTrades) {
+    caveats.push(
+      `${unpricedTrades} of the buys and sells here carry no usable price: the counts include them, the SOL totals, net flow and realised P&L do not.`,
+    );
+  }
   if (truncated) caveats.push("The feed was cut at the page limit; older activity exists. Raise `pages` to see more.");
   if (sells.count > 0 && purchases === 0) caveats.push("Sells without matching buys usually means the items were minted, transferred in, or bought before the window started.");
 
@@ -274,6 +334,7 @@ export function summarizeActivity(
     buys: { ...buys, totalSol: round(buys.totalSol) },
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
+    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades },
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
@@ -474,7 +535,12 @@ export interface HoldingsCoverage {
   raise?: string;
 }
 
-export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number, coverage: HoldingsCoverage = { capped: false, stale: false }) {
+export function floorCeiling(
+  quotes: FloorQuoteForValue[],
+  totalItems: number,
+  coverage: HoldingsCoverage = { capped: false, stale: false },
+  floorsReadAt: string = new Date().toISOString(),
+) {
   // A stale or failed quote cannot price anything "now": those items count as
   // unpriced and the reason is spelled out below.
   // Stale holdings cannot be multiplied by a live floor.
@@ -498,27 +564,39 @@ export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number, c
   // price is unknowable rather than "total minus covered" - the total itself
   // was never established.
   const capped = coverage.capped === true;
+  // Stale holdings x live floors is a figure about no moment that ever
+  // existed: the counts are from one time, the prices from another, and
+  // "last-known" was a label on a number nothing was ever worth. There is no
+  // honest figure to publish, so none is - both read times and the reason are
+  // returned instead, and the caller is told what to do about it.
+  const mixedTime = holdingsStale;
   return {
-    /** What this figure is. A capped or stale read can never produce a present-tense ceiling. */
-    basis: holdingsStale
-      ? "last-known"
+    /** What this figure is. A stale read has no figure at all; a capped one is a lower bound. */
+    basis: mixedTime
+      ? "unavailable"
       : capped
         ? "lower-bound-over-observed-items"
         : "ceiling-at-query-time",
-    /** Present-tense only when the holdings were current and complete; otherwise the last-known or lower-bound figure. */
-    ceilingSol: holdingsStale || capped ? null : ceilingSol,
-    /** The arithmetic itself, always available, labelled by `basis` rather than presented as a claim about now. */
-    figureSol: ceilingSol,
+    /** Present-tense only when the holdings were current and complete; otherwise the lower-bound figure or nothing. */
+    ceilingSol: mixedTime || capped ? null : ceilingSol,
+    /** The arithmetic itself - withheld entirely when the two sides describe different moments. */
+    figureSol: mixedTime ? null : ceilingSol,
+    /** Why no figure is given, when none is. */
+    unavailableReason: mixedTime
+      ? `Magic Eden did not answer for this wallet's holdings, so the only counts available were read at ${coverage.cachedAt ?? "an unrecorded earlier time"} while the floors were read at ${floorsReadAt}. Multiplying those together would produce a figure that was never true at either moment, so no figure is given. Ask again in a minute.`
+      : null,
     /** When the holdings behind this figure were actually read. */
     holdingsReadAt: coverage.cachedAt ?? null,
+    /** When the floors this would have been multiplied by were read. */
+    floorsReadAt,
     holdingsStale,
     holdingsCapped: capped,
     itemsPriced: coveredItems,
     // With a capped walk, "items we could not price" is unknown: the wallet's
     // real total was never read, so subtracting from the observed count would
     // report a number about a population nobody counted.
-    itemsUnpriced: capped ? null : Math.max(0, totalItems - coveredItems),
-    perCollection: priced.map((q) => ({
+    itemsUnpriced: capped || mixedTime ? null : Math.max(0, totalItems - coveredItems),
+    perCollection: mixedTime ? [] : priced.map((q) => ({
       collection: q.collection,
       count: q.count,
       floorSol: q.floorSol,
@@ -526,13 +604,13 @@ export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number, c
       listedOnVenue: q.listedCount,
     })),
     readThis: [
-      holdingsStale
-        ? `LAST-KNOWN, not current: Magic Eden did not answer for the holdings themselves, so this is floor x the counts it last returned${coverage.cachedAt ? ` at ${coverage.cachedAt}` : ""}. The wallet may hold none of these items now. Ask again in a minute for a figure about the present.`
+      mixedTime
+        ? `NO FIGURE: Magic Eden did not answer for the holdings themselves. The counts available were read at ${coverage.cachedAt ?? "an unrecorded earlier time"} and the floors at ${floorsReadAt}, and floor x a cached count is a number no moment ever held - the wallet may hold none of these items now. Ask again in a minute for a figure about the present.`
         : capped
           ? `A LOWER BOUND over the ${totalItems} items actually read: the holdings walk stopped at its cap${coverage.raise ? ` (raise ${coverage.raise} to read further)` : ""}, so items beyond it are absent from every figure here and the wallet's real total was never established.`
           : "This is floor x count on Magic Eden at query time: the most the wallet could list for and still be the cheapest, not what it would realise.",
-      capped
-        ? "How many items had no Magic Eden floor cannot be stated: that count needs a total this read did not establish."
+      capped || mixedTime
+        ? "How many items had no Magic Eden floor cannot be stated: that count needs a current holdings total this read did not establish."
         : `${Math.max(0, totalItems - coveredItems)} items had no Magic Eden floor (unindexed, no listings, or the collection was outside the priced set) and count as zero here.`,
       ...(thin.length
         ? [

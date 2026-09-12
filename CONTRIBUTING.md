@@ -23,7 +23,9 @@ priority; blue-chip Solana collections are welcome when they help demos.
   zero-config is the product.
 - Read-only forever. No signing, no transactions, no wallet code.
 - `npm test` is the OFFLINE suite (build + protocol, market, DAS, mechanics,
-  http and serial tests) and is what CI runs. `npm run test:smoke` is the live
+  hardening and wave-8 regression tests) and is what CI runs. The regression
+  files hold one block per closed defect, named by the wrong answer it
+  prevents; add to them rather than editing what a block asserts. `npm run test:smoke` is the live
   smoke test that makes real calls to the sources, and `npm run test:live` is
   the weekly keyless source check. All of them must pass before a release;
   `npm run lint` (eslint) and strict tsc are enforced in CI.

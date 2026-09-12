@@ -58,6 +58,18 @@ const short = (e: unknown): string => {
 /** One probe's whole budget, including every retry the source's own client makes. */
 const PROBE_DEADLINE_MS = 12_000;
 
+/**
+ * How long an aborted probe is given to actually stop.
+ *
+ * `Promise.race` cancels nothing and an abort only ASKS. Returning the moment
+ * the deadline fires left the losing request alive behind the response, where
+ * it went on holding its turn against the source's rate gate and delayed the
+ * next status call. The loser is awaited for this long so the common case -
+ * a fetch that unwinds in milliseconds - is genuinely finished before the
+ * report is built.
+ */
+const SETTLE_GRACE_MS = 2_000;
+
 /** Run one probe, and turn any outcome - including a throw - into a row. */
 async function probe(
   entry: SourceEntry,
@@ -74,6 +86,10 @@ async function probe(
     // and awaited rather than left running - `Promise.race` cancels nothing, so
     // every timed-out probe used to keep its request alive behind the response
     // and pile up behind the source's rate gate on the next call.
+    const work = run(signal).then(
+      (v) => v,
+      (e: unknown) => ({ ok: false, note: `${entry.name} did not answer: ${short(e)}` }),
+    );
     const settled = await new Promise<{ ok: boolean; note: string }>((resolve) => {
       let done = false;
       const finish = (v: { ok: boolean; note: string }) => {
@@ -81,14 +97,25 @@ async function probe(
         done = true;
         resolve(v);
       };
-      const onAbort = () =>
-        finish({ ok: false, note: `${entry.name} did not answer within the status check's ${PROBE_DEADLINE_MS / 1000} s budget (slow or down on their side)` });
+      const onAbort = () => {
+        // Abort is a signal to the operation, not proof that it stopped. The
+        // loser is GIVEN a moment to actually unwind - a request left running
+        // behind the response is the one that queues up behind the next status
+        // call's rate gate - and if it settles inside the grace its real answer
+        // is used instead of the timeout sentence.
+        const grace = setTimeout(
+          () => finish({ ok: false, note: `${entry.name} did not answer within the status check's ${PROBE_DEADLINE_MS / 1000} s budget, and did not stop within the ${SETTLE_GRACE_MS / 1000} s allowed for it to unwind (slow or down on their side)` }),
+          SETTLE_GRACE_MS,
+        );
+        grace.unref?.();
+        void work.then((v) => {
+          clearTimeout(grace);
+          finish(v);
+        });
+      };
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
-      void run(signal).then(
-        (v) => finish(v),
-        (e: unknown) => finish({ ok: false, note: `${entry.name} did not answer: ${short(e)}` }),
-      );
+      void work.then((v) => finish(v));
     });
     return { ...base(entry), ok: settled.ok, latencyMs: Date.now() - started, note: settled.note };
   } catch (e) {
@@ -112,10 +139,18 @@ function unchecked(entry: SourceEntry, note: string): SourceStatusRow {
 /**
  * Ping every wired source once and describe what came back.
  *
- * Sequential on purpose: each source has its own rate gate, and a status check
- * that fires every request at once is the burst those gates exist to prevent.
+ * Every probe is STARTED before any of them is awaited, under one shared
+ * budget. They are different hosts with their own rate gates, so this is not a
+ * burst against any one of them - and awaiting any probe before the others
+ * start turns the shared budget into a queue, which is how a slow chain
+ * endpoint used to get every marketplace reported as down untouched.
  */
-export async function sourceStatus(): Promise<SourceStatusReport> {
+export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}): Promise<SourceStatusReport> {
+  // The one injectable dependency, and it exists for a reason worth the seam:
+  // the defect this guards against is an ORDERING one - a slow chain endpoint
+  // spending the whole shared budget before a single venue is contacted - and
+  // ordering cannot be tested against a live endpoint that happens to be fast.
+  const readChainHealth = deps.rpcHealth ?? rpcHealth;
   const checkedAt = new Date().toISOString();
   const rows: SourceStatusRow[] = [];
   // One budget for every independent probe. They run concurrently - each
@@ -126,28 +161,15 @@ export async function sourceStatus(): Promise<SourceStatusReport> {
   deadline.unref?.();
 
   // --- chain endpoints: one batched getHealth + getSlot each -------------
-  let health: Awaited<ReturnType<typeof rpcHealth>> = [];
-  try {
-    health = await rpcHealth();
-  } catch (e) {
-    // rpcHealth is written not to throw; if it ever does, say so rather than
-    // letting one source take down the whole report.
-    health = [];
-    rows.push(unchecked(byId("rpc-mainnet-beta"), `The Solana endpoint check itself failed: ${short(e)}`));
-  }
-  for (const h of health) {
-    // rpcHealth labels endpoints "<id> (<host>)"; match the row back to its
-    // catalog entry by id prefix, and fall back to the canonical entry for a
-    // user's own endpoint, which has no public row of its own.
-    const id = h.endpoint.split(" (")[0] ?? "";
-    const entry = SOURCES.find((s) => s.id === id) ?? byId("rpc-custom");
-    rows.push({
-      ...base(entry),
-      ok: h.ok,
-      latencyMs: h.latencyMs,
-      note: h.ok ? `answered in ${h.latencyMs}ms, ${h.note}` : `${h.endpoint} did not answer: ${h.note}`,
-    });
-  }
+  //
+  // Started here but NOT awaited until every other probe has been started too.
+  // Awaiting it first made the shared budget sequential in the one place it
+  // must not be: slow Solana endpoints could eat all 12 s, and every
+  // marketplace was then reported as "did not answer" without a single request
+  // having been sent to it - a status tool inventing an outage.
+  const healthPromise: Promise<Awaited<ReturnType<typeof rpcHealth>> | { failed: unknown }> = readChainHealth(6_000, controller.signal).catch(
+    (e: unknown) => ({ failed: e }),
+  );
 
   // --- Magic Eden -------------------------------------------------------
   const mePromise = probe(
@@ -162,12 +184,22 @@ export async function sourceStatus(): Promise<SourceStatusReport> {
       if (stats.symbol !== ME_PROBE_SYMBOL) {
         return { ok: false, note: `answered a request for ${ME_PROBE_SYMBOL} with stats for "${clean(String(stats.symbol)).slice(0, 40)}" - a shape change, not a healthy venue` };
       }
-      if (stats.floorPriceSol !== null && !Number.isFinite(stats.floorPriceSol)) {
-        return { ok: false, note: `answered with a floor that is not a finite number - a shape change, not a healthy venue` };
+      // A stats block whose numbers are all null is not health either. The
+      // venue has answered 200 with every field nulled while it was broken,
+      // and "floor: none listed, listed: none" is indistinguishable from a
+      // collection nobody has listed - so at least ONE usable number has to
+      // come back for this to count as answering.
+      const floor = Number.isFinite(stats.floorPriceSol) ? (stats.floorPriceSol as number) : null;
+      const listed = Number.isFinite(stats.listedCount) ? (stats.listedCount as number) : null;
+      if (floor === null && listed === null) {
+        return {
+          ok: false,
+          note: `answered for ${ME_PROBE_SYMBOL} with neither a usable floor nor a usable listed count (both absent or not finite numbers) - a shape change, not a healthy venue`,
+        };
       }
       return {
         ok: true,
-        note: `answered with ${ME_PROBE_SYMBOL} floor ${stats.floorPriceSol ?? "none listed"} SOL`,
+        note: `answered with ${ME_PROBE_SYMBOL} floor ${floor ?? "none listed"} SOL, ${listed ?? "no"} listed`,
       };
     },
     controller.signal,
@@ -247,8 +279,29 @@ export async function sourceStatus(): Promise<SourceStatusReport> {
 
   // Every loser of the shared deadline is aborted AND awaited: a probe left
   // running behind the response is the one that queues up behind the next
-  // status call's rate gate.
-  for (const row of await Promise.all([mePromise, dasPromise, osPromise, csPromise])) rows.push(row);
+  // status call's rate gate. The chain endpoints are awaited here, alongside
+  // the marketplaces, because they were started alongside them.
+  const [health, ...probed] = await Promise.all([healthPromise, mePromise, dasPromise, osPromise, csPromise]);
+  if ("failed" in health) {
+    // rpcHealth is written not to throw; if it ever does, say so rather than
+    // letting one source take down the whole report.
+    rows.push(unchecked(byId("rpc-mainnet-beta"), `The Solana endpoint check itself failed: ${short(health.failed)}`));
+  } else {
+    for (const h of health) {
+      // rpcHealth labels endpoints "<id> (<host>)"; match the row back to its
+      // catalog entry by id prefix, and fall back to the canonical entry for a
+      // user's own endpoint, which has no public row of its own.
+      const id = h.endpoint.split(" (")[0] ?? "";
+      const entry = SOURCES.find((s) => s.id === id) ?? byId("rpc-custom");
+      rows.push({
+        ...base(entry),
+        ok: h.ok,
+        latencyMs: h.latencyMs,
+        note: h.ok ? `answered in ${h.latencyMs}ms, ${h.note}` : `${h.endpoint} did not answer: ${h.note}`,
+      });
+    }
+  }
+  for (const row of probed) rows.push(row);
   clearTimeout(deadline);
   controller.abort();
 

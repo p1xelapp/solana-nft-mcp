@@ -35,6 +35,8 @@ import { sourceStatus } from "./status.js";
 import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
 import { resolveName } from "./names.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
+import { NotFoundError, WrongKindError, TypedError } from "./lib/errors.js";
+import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -93,32 +95,69 @@ const ok = (data: unknown): ToolResult => {
  */
 function explain(err: unknown): { headline: string; next: string; kind: string } {
   const msg = err instanceof Error ? err.message : String(err);
-  const rate = /429|rate.?limit|exceeded the requests|asked for a .*pause|after 4 attempts/i.test(msg);
-  const down = /HTTP 5\d\d|timed? ?out|ECONN|fetch failed|non-JSON|unexpected shape|outage|no result field/i.test(msg);
-  const venue = /Magic Eden/i.test(msg) ? "Magic Eden" : /OpenSea/i.test(msg) ? "OpenSea" : /CryptoSlam/i.test(msg) ? "CryptoSlam" : /Solana RPC|RPC/i.test(msg) ? "the public Solana RPC" : null;
-  if (venue && rate) return { kind: "upstream-rate-limit", headline: `${venue} is pausing requests for a moment (their limit, not a problem on your side).`, next: "Wait about a minute and ask again. Smaller requests (fewer pages, fewer collections priced) also help." };
-  if (venue && down) return { kind: "upstream-unavailable", headline: `${venue} did not answer just now (their service, not your setup).`, next: "Try again shortly. If it keeps happening, the other sources still work - ask for what they can answer." };
-  // Every wording this server uses for "you passed a collection": get_asset's
-  // "is a Core COLLECTION account", provenance's "is a Core COLLECTION (name)",
-  // and get_asset_trust's "is not a Core asset (it is a collection)". The
-  // collection branch has to be tested BEFORE the not-an-asset one, or a
-  // collection falls through to advice that sends the caller back to a tool
-  // which refuses collections outright.
-  if (/Core COLLECTION|is a collection\)|it is a collection/i.test(msg))
-    return {
-      kind: "wrong-kind",
-      headline: "That address is a whole collection, not a single item.",
-      next: "get_collection_stats takes a Core collection ADDRESS directly. get_collection_sales and find_listings need that collection's Magic Eden symbol first - run identify or search_collections on the address to get one. get_asset and get_asset_trust want a single item's mint, and identify lists recently active members of the collection you can pass them.",
-    };
-  if (/is not a Core asset|not a Core account|not Metaplex Core/i.test(msg))
-    return {
-      kind: "wrong-kind",
-      headline: "That address is not a Metaplex Core item, so the byte-level decode does not apply to it.",
-      next: "get_asset still shows the marketplace and asset-index view for it; explain_mechanics describes what its standard supports.",
-    };
-  if (/has no collection|no data found|does not exist|not found|no account at/i.test(msg)) return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
-  if (/base58|must be|invalid|expected|enum/i.test(msg)) return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
-  if (/blocks this address|escrow or program account/i.test(msg)) return { kind: "escrow", headline: "That address is a marketplace escrow or program account, not a person's wallet, so holdings cannot be listed for it.", next: "If it came from a provenance trail, the item is listed for sale; the seller is the wallet that transferred it in." };
+  // Which venue this was is OUR label, taken from the source name this server
+  // passes to fetchJson, never from anything an upstream wrote.
+  const venue = (): string | null => {
+    if (err instanceof HttpError || err instanceof BusyError) {
+      const src = /^(Magic Eden|OpenSea|CryptoSlam)/.exec(msg)?.[1];
+      if (src) return src;
+    }
+    return /^Magic Eden |^OpenSea |^CryptoSlam /.test(msg)
+      ? (msg.split(" ")[0] === "Magic" ? "Magic Eden" : msg.split(" ")[0]!)
+      : /public Solana RPC|Solana endpoint|Solana read/i.test(msg)
+        ? "the public Solana RPC"
+        : null;
+  };
+
+  // --- typed kinds first. A failure says what it MEANS by its class, so no
+  // upstream-authored sentence can promote itself to "this does not exist".
+  if (err instanceof BusyError)
+    return { kind: "busy", headline: "This server already has more requests queued for that source than it will politely send.", next: "Wait a few seconds and ask again, or ask for fewer things at once." };
+  if (err instanceof AbortedError)
+    return { kind: "timeout", headline: "That request ran past its time budget and was abandoned rather than left running.", next: "Ask again, or narrow the request (fewer pages, fewer collections) so it fits the budget." };
+  if (err instanceof HttpError) {
+    const who = venue() ?? "the upstream source";
+    if (err.status === 429) return { kind: "upstream-rate-limit", headline: `${who} is pausing requests for a moment (their limit, not a problem on your side).`, next: "Wait about a minute and ask again. Smaller requests (fewer pages, fewer collections priced) also help." };
+    if (err.status >= 500) return { kind: "upstream-unavailable", headline: `${who} did not answer just now (their service, not your setup).`, next: "Try again shortly. If it keeps happening, the other sources still work - ask for what they can answer." };
+    if (err.status === 404) return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
+    return { kind: "upstream-refused", headline: `${who} refused that request (HTTP ${err.status}).`, next: "Check the identifier, or try again shortly - a refusal from a venue is theirs, not a fault in your setup." };
+  }
+  if (err instanceof TypedError) {
+    switch (err.kind) {
+      case "not-found":
+        return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
+      case "wrong-kind":
+        // A collection passed to an item tool is the common case, and the
+        // advice has to send the caller somewhere that actually takes one.
+        return /COLLECTION|collection\)/.test(msg)
+          ? {
+              kind: "wrong-kind",
+              headline: "That address is a whole collection, not a single item.",
+              next: "get_collection_stats takes a Core collection ADDRESS directly. get_collection_sales and find_listings need that collection's Magic Eden symbol first - run identify or search_collections on the address to get one. get_asset and get_asset_trust want a single item's mint, and identify lists recently active members of the collection you can pass them.",
+            }
+          : {
+              kind: "wrong-kind",
+              headline: "That address is not a Metaplex Core item, so the byte-level decode does not apply to it.",
+              next: "get_asset still shows the marketplace and asset-index view for it; explain_mechanics describes what its standard supports.",
+            };
+      case "escrow":
+        return { kind: "escrow", headline: "That address is a marketplace escrow or program account, not a person's wallet, so holdings cannot be listed for it.", next: "If it came from a provenance trail, the item is listed for sale; the seller is the wallet that transferred it in." };
+      case "unsupported":
+        return { kind: "source-unsupported", headline: "The keyless asset index on the public RPC is not serving that read right now.", next: "The chain and marketplace tools still answer. get_source_status says whether the index is down or withdrawn; DAS_RPC_URL points this server at an index of your own." };
+      case "bad-input":
+        return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
+    }
+  }
+  // Schema rejections are OUR validation, so they are classified by the type
+  // zod throws rather than by whatever words ended up in the message.
+  if (err instanceof z.ZodError)
+    return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
+  if (err instanceof OversizedBodyError) {
+    const who = venue() ?? "that source";
+    return { kind: "upstream-unavailable", headline: `${who} sent more data than this server will read, so the response was discarded.`, next: "Ask for a narrower slice (fewer pages, a smaller limit). If it persists, that source's shape has changed." };
+  }
+  // No type: a generic answer. Nothing here tries to divine a meaning from an
+  // error string, because the string can be somebody else's.
   return { kind: "error", headline: "That request could not be completed.", next: "Try again, or try a narrower request." };
 }
 
@@ -324,11 +363,11 @@ registerTool(
   },
   guard(async ({ mint }) => {
     const raw = await sol.getCoreAccountRaw(mint);
-    if (!raw) throw new Error(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
+    if (!raw) throw new NotFoundError(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
     // Everything below comes from the ONE fresh snapshot in `raw`: name, owner,
     // collection and plugins cannot disagree with each other.
     const acct = sol.decodeCoreAccount(raw);
-    if (!acct || acct.kind !== "asset") throw new Error(`${mint} is not a Core asset (it is a ${acct?.kind ?? "non-Core account"})`);
+    if (!acct || acct.kind !== "asset") throw new WrongKindError(`${mint} is not a Core asset (it is a ${acct?.kind ?? "non-Core account"})`);
     const assetPlugins = decodeCoreAccountPlugins(raw);
     // Collection plugins apply to every member. Read them, or say we could not.
     let collectionPlugins: ReturnType<typeof decodeCoreAccountPlugins> | null = null;
@@ -358,6 +397,9 @@ registerTool(
         consequences: living.consequences,
         pitfalls: living.entries.map((e) => ({ plugin: e.pluginType ?? e.id, pitfall: e.pitfall, verified: e.verified })),
         unexplained: living.unexplained,
+        // Named separately from `unexplained`: these entries were never read,
+        // so they are not evidence of an unrecognised plugin.
+        notInspected: living.notInspected,
         sources: living.sources,
       },
       checkByHand: explorerLinks(mint),
@@ -534,10 +576,15 @@ registerTool(
       }
     }
     const sourceErrors: Record<string, string> = {};
+    /** True only when Magic Eden established an ABSENCE; a failure to read is not one. */
+    let meAbsent = false;
     if (r.meSymbol) {
       try {
         out.market = await me.collectionStats(r.meSymbol);
       } catch (e) {
+        // Whether the venue said "no such symbol" or simply failed is decided
+        // by the error's TYPE, not by reading its sentence back later.
+        meAbsent = e instanceof NotFoundError;
         sourceErrors.magiceden = e instanceof Error ? e.message : String(e);
       }
       const meta = out.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
@@ -571,8 +618,8 @@ registerTool(
     const osOk = osBlockAny !== null && typeof osBlockAny === "object" && !("error" in osBlockAny);
     if (Object.keys(sourceErrors).length) out.sourceErrors = sourceErrors;
     if (!out.onchain && !out.market && !osOk) {
-      if (sourceErrors.magiceden && !/has no collection/.test(sourceErrors.magiceden)) throw new Error(`Magic Eden could not be read: ${sourceErrors.magiceden}`);
-      throw new Error(
+      if (sourceErrors.magiceden && !meAbsent) throw new Error(`Magic Eden could not be read: ${sourceErrors.magiceden}`);
+      throw new NotFoundError(
         `could not resolve "${collection}" - not a known registry id, and no market/on-chain source answered.`,
       );
     }
@@ -716,11 +763,11 @@ registerTool(
     if (coreRes.status === "rejected") sourceErrors["solana-rpc"] = coreRes.reason instanceof Error ? coreRes.reason.message : String(coreRes.reason);
     if (dasRes.status === "rejected") sourceErrors["asset-index"] = dasRes.reason instanceof Error ? dasRes.reason.message : String(dasRes.reason);
     if (core?.kind === "collection") {
-      throw new Error(`${mint} is a Core COLLECTION account ("${core.name}"), not an asset. Use get_collection_stats for it.`);
+      throw new WrongKindError(`${mint} is a Core COLLECTION account ("${core.name}"), not an asset. Use get_collection_stats for it.`);
     }
     if (!meToken && !core && !indexed) {
       if (Object.keys(sourceErrors).length) throw new Error(`could not read ${mint}: ${Object.entries(sourceErrors).map(([k, v]) => `${k}: ${v}`).join("; ")}`);
-      throw new Error(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`);
+      throw new NotFoundError(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`);
     }
     // Agreement is a claim about two CURRENT reads. When either side came from
     // cache after a failed refresh, the comparison is not evaluated at all and
@@ -1054,12 +1101,34 @@ registerTool(
         eventsRead: feed.events.length,
         duplicateEventsDropped: deduped.duplicates,
         conflictingDuplicates: deduped.conflictingDuplicates,
-        ...(deduped.duplicates
+        // Repeats that disagreed only about a name, a venue label or a block
+        // time. Their agreed price still counts: dropping a 2 SOL sale from
+        // volume because the item name was corrected is a wrong number.
+        metadataConflicts: deduped.metadataConflicts,
+        // Rows the venue served with no signature, matched on their own fields
+        // instead. A weaker identity, so the count is published rather than
+        // hidden inside the deduplicated total.
+        identityFallbacks: deduped.identityFallbacks,
+        // Rows with neither a signature nor a complete item/type/price/time
+        // set: kept whole, never merged into anything.
+        identityUnavailable: deduped.identityUnavailable,
+        ...(deduped.duplicates || deduped.identityFallbacks || deduped.identityUnavailable
           ? {
               duplicateNote:
-                `${deduped.duplicates} repeated event(s) (same signature, item and type) were read twice across pages and counted once, so flips and P&L are not doubled.` +
+                (deduped.duplicates
+                  ? `${deduped.duplicates} repeated event(s) (same signature, item and type) were read twice across pages and counted once, so flips and P&L are not doubled.`
+                  : "") +
                 (deduped.conflictingDuplicates
-                  ? ` ${deduped.conflictingDuplicates} of them came back with a different price or a different buyer/seller - one fill answered twice as the venue filled the row in, not two trades. The first copy is the one used.`
+                  ? ` ${deduped.conflictingDuplicates} of them came back with a different price or a different buyer/seller - one fill answered twice as the venue filled the row in, not two trades. Those are counted as trades and left out of every SOL total, because no copy can be shown to be the right one.`
+                  : "") +
+                (deduped.metadataConflicts
+                  ? ` ${deduped.metadataConflicts} disagreed only about metadata (item name, venue label or block time); the price both copies agreed on is still counted.`
+                  : "") +
+                (deduped.identityFallbacks
+                  ? ` ${deduped.identityFallbacks} row(s) carried no transaction signature and were identified by item, type, both sides, price and block time instead - a weaker identity, so two genuinely separate fills of the same item at the same price in the same block would be counted once.`
+                  : "") +
+                (deduped.identityUnavailable
+                  ? ` ${deduped.identityUnavailable} row(s) had neither a signature nor a complete item/type/price/time set and could not be matched against anything; they are kept as separate events, so a repeat of one of them would be counted twice.`
                   : ""),
             }
           : {}),
