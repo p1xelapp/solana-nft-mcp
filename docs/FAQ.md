@@ -89,6 +89,12 @@ Yes. `OPENSEA_API_KEY` (from the OpenSea developer portal) overrides the self-is
 completely - put it in the MCP config's `env` block, since clients launch servers with a
 clean environment. `COLLECTOR_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
+**What about Tensor and Rarible?**
+Neither is read. Tensor has no self-serve API keys. Rarible relaunched a Solana marketplace in
+August 2026, but its API needs a key with a 100-requests-per-month free tier and cannot label
+a Magic Eden fill as Magic Eden's, so reading it would repeat the venue mix-ups this server
+exists to avoid. Both sit in the source catalog as planned, with the trigger for adding them.
+
 **Does it cost anything to run?**
 No. Public endpoints, paced politely, cached in memory. Heavy use of the public Solana
 RPC will get throttled; set `SOLANA_RPC_URL` to any endpoint you have and it uses that.

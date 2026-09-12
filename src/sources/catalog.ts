@@ -283,6 +283,30 @@ export const SOURCES: readonly SourceEntry[] = [
       "CryptoSlam's own site runs on this API: public, keyless, and genuinely flaky (intermittent 500/504). Its chain list does include Solana, but nothing this server reads from it is Solana data.",
   },
   {
+    id: "rarible",
+    name: "Rarible (Solana marketplace, relaunched August 2026)",
+    kind: "marketplace",
+    tier: 3,
+    keyRequired: true,
+    keyEnvVar: "RARIBLE_API_KEY",
+    wired: false,
+    answers: [
+      "would add: collection-wide bid depth (the exit price a seller can actually get), Rarible listings and fills",
+    ],
+    cannotSee: [
+      "which venue executed a fill: its platform enum has no Magic Eden or Tensor value, so a Magic Eden sale would be relabelled",
+      "anything without a key: every data endpoint answers 403 keyless",
+    ],
+    officialDocs: "https://docs.rarible.org/",
+    statusPage: null,
+    lastVerified: "2026-09-12",
+    fallback: "magiceden-v2",
+    retention: "unknown (not documented)",
+    note:
+      "Not wired. Keys are self-serve but need a wallet, an email and allowed domains, and the free tier is 100 requests per month, which one report would spend. " +
+      "The API terms that govern caching and redistribution are referenced but not published. Revisit when a usable tier and venue attribution exist.",
+  },
+  {
     id: "tensor",
     name: "Tensor API",
     kind: "marketplace",
