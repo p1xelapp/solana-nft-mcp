@@ -513,7 +513,10 @@ registerTool(
     // key nothing was asked, and saying otherwise turns a missing credential
     // into a claim about the collection.
     let openseaSearched = false;
-    if (os.openSeaEnabled()) {
+    // One of the calls that genuinely needs OpenSea, so it is allowed to ask
+    // OpenSea for a free key if none is configured yet. A session that never
+    // asks an OpenSea question never spends one.
+    if (await os.openSeaAvailable()) {
       const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
       const q = norm(query);
       const words = q.split(" ").filter(Boolean);
@@ -550,7 +553,7 @@ registerTool(
         openseaNote = `OpenSea index unavailable: ${e instanceof Error ? e.message : String(e)}`;
       }
     } else {
-      openseaNote = "Set OPENSEA_API_KEY to also search the few hundred Solana collections OpenSea indexes (slug, on-chain address, supply).";
+      openseaNote = `OpenSea's Solana index was not searched: ${os.openSeaState().note}`;
     }
     const nothing = results.length === 0 && names.matches.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length;
     return ok({
@@ -563,10 +566,14 @@ registerTool(
         snapshotComplete: names.snapshotComplete,
         directoryComplete: names.directoryComplete,
         directoryNote: names.directoryNote,
+        lookalikes: names.lookalikes,
         next: names.matches.length ? "Use the symbol with get_collection_stats, get_collection_sales, find_listings or get_recent_sales." : undefined,
       },
       opensea,
       openseaNote,
+      // Top level rather than buried in the directory block: a near-identical
+      // name is the reason to stop and check, so it has to be the thing read.
+      warning: names.warning,
       hint: nothing
         ? `No match in the registry or the Magic Eden directory layers searched${openseaSearched ? ", and none in OpenSea's Solana index either" : ""}. ` +
           (openseaSearched ? "" : "OpenSea was not searched, so nothing here says anything about it. ") +
@@ -637,7 +644,7 @@ registerTool(
       }
     }
     const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
-    if (slug && os.openSeaEnabled()) {
+    if (slug && (await os.openSeaAvailable())) {
       const [stats, detail] = await Promise.all([
         os.collectionStats(slug).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
         os.collectionDetail(slug).catch(() => null),
@@ -652,7 +659,7 @@ registerTool(
           }
         : stats;
     } else if (slug) {
-      out.openseaNote = "OpenSea slug known but OPENSEA_API_KEY not set - cross-marketplace view skipped (server stays zero-config by default).";
+      out.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
     }
     const osBlockAny = out.opensea;
     const osOk = osBlockAny !== null && typeof osBlockAny === "object" && !("error" in osBlockAny);
@@ -751,7 +758,7 @@ registerTool(
     const r = resolve(collection);
     const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     const openseaPart =
-      slug && os.openSeaEnabled()
+      slug && (await os.openSeaAvailable())
         ? await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
         : undefined;
     if (!r.meSymbol) {
@@ -1064,7 +1071,7 @@ registerTool(
         }
       }
       const slug = reg?.openseaSlug;
-      if (slug && os.openSeaEnabled()) {
+      if (slug && (await os.openSeaAvailable())) {
         const d = await os.collectionDetail(slug).catch(() => null);
         if (d?.totalSupply) supplyShare.push({ collection: c.collection, count: c.count, totalSupply: d.totalSupply, pct: Math.round((c.count / d.totalSupply) * 100_000) / 1000, supplySource: "opensea (total_supply)" });
       }
@@ -1148,7 +1155,7 @@ registerTool(
     const summary = summarizeActivity(wallet, deduped.events, feed.truncated);
     let opensea: unknown;
     let openseaNote: string | undefined;
-    if (includeOpenSea && os.openSeaEnabled()) {
+    if (includeOpenSea && (await os.openSeaAvailable())) {
       try {
         const ev = await os.accountEvents(wallet, 2);
         opensea = summarizeOpenSeaEvents(wallet, ev.events, ev.truncated);
@@ -1156,7 +1163,7 @@ registerTool(
         openseaNote = `OpenSea account feed unavailable: ${e instanceof Error ? e.message : String(e)}`;
       }
     } else if (includeOpenSea) {
-      openseaNote = "Set OPENSEA_API_KEY to add OpenSea sales and plain transfers (the only keyed feed that shows airdrops and gifts).";
+      openseaNote = `OpenSea sales and plain transfers (the only feed that shows airdrops and gifts) are missing: ${os.openSeaState().note}`;
     }
     return ok({
       wallet,
@@ -1794,9 +1801,19 @@ server.registerPrompt(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // The banner reports the key situation as it stands and never REQUESTS one:
+  // issuing at startup would spend a daily allowance on a client that may
+  // never ask an OpenSea question at all.
+  const osState = os.openSeaState();
   console.error(
     `collector-mcp v${VERSION} ready (stdio) - ${toolCount} tools, 0 required API keys` +
-      (os.openSeaEnabled() ? ", OpenSea enabled with the configured key" : ", OpenSea off (no key set)"),
+      (osState.source === "env"
+        ? ", OpenSea enabled with the configured key"
+        : osState.source === "auto"
+          ? `, OpenSea via auto-issued key, expires ${osState.expiresAt?.slice(0, 10) ?? "unknown"}`
+          : osState.unavailableReason
+            ? `, OpenSea off (no key; auto-issue unavailable: ${osState.unavailableReason})`
+            : ", OpenSea off (no key yet; a free one is requested the first time a tool needs OpenSea)"),
   );
 }
 

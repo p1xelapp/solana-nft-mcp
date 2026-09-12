@@ -68,10 +68,23 @@ local process will run it.
 
 ### Optional: OpenSea
 
-Solana collections have traded on OpenSea since 31 Aug 2026. An `OPENSEA_API_KEY` adds OpenSea
-floors, sales, supply and royalty per collection, plain transfers per wallet, and a searchable
-index of every Solana collection OpenSea lists. Put it in the config's `env` block rather than
-the shell, because MCP clients launch the server with a clean environment:
+Solana collections have traded on OpenSea since 31 Aug 2026. OpenSea adds second-venue floors,
+sales, supply and royalty per collection, plain transfers per wallet (how airdrops and gifts
+become visible), and a searchable index of every Solana collection OpenSea lists.
+
+**This works out of the box - there is nothing to sign up for.** The first time a question
+actually needs OpenSea, the server asks OpenSea for one of its free agent keys, stores it in
+`~/.collector-mcp/opensea-key.json` on your own machine, and renews it before it expires. The
+key is yours: it never leaves your computer, is never printed to the log or into an answer, and
+a session that never asks an OpenSea question never requests one. If OpenSea declines to issue
+one (they cap key creation at about two a day per IP), OpenSea simply stays off and every
+answer names it as the missing half - nothing breaks and nothing prompts.
+
+Two switches, both optional:
+
+- `OPENSEA_API_KEY` - your own key, from the OpenSea developer portal. It overrides the
+  self-issued one entirely. Put it in the config's `env` block rather than the shell, because
+  MCP clients launch the server with a clean environment:
 
 ```json
 {
@@ -85,9 +98,11 @@ the shell, because MCP clients launch the server with a clean environment:
 }
 ```
 
-Free keys come from `curl -X POST https://api.opensea.io/api/v2/auth/keys`, two a day, seven-day
-expiry. Without a key nothing breaks and nothing prompts. `SOLANA_RPC_URL` and `DAS_RPC_URL`
-swap in a private endpoint if one is available, and neither is required.
+- `COLLECTOR_MCP_NO_AUTO_KEYS=1` - never request a key. OpenSea is then off unless you set
+  `OPENSEA_API_KEY` yourself.
+
+`SOLANA_RPC_URL` and `DAS_RPC_URL` swap in a private endpoint if one is available, and neither
+is required.
 
 ## Ask it anything
 
@@ -205,6 +220,7 @@ its source check are separate steps, so a red run names which of the two failed.
 - [How people use it, by persona](docs/HOW-PEOPLE-USE-IT.md)
 - [Things people build with it](docs/BUILD-IDEAS.md)
 - [FAQ](docs/FAQ.md)
+- [What can change under this server, and what happens when it does](docs/MAINTENANCE.md)
 - [Contributing](CONTRIBUTING.md) and [Security policy](SECURITY.md)
 
 ## About

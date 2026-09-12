@@ -230,14 +230,15 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
   );
 
   // --- OpenSea (optional) ----------------------------------------------
+  //
+  // A status check is a call that needs OpenSea, so it is one of the places a
+  // free key gets issued. Reporting "off" without having tried would make this
+  // table describe the configuration rather than the venue.
   const openSea = byId("opensea-v2");
-  const osPromise = !os.openSeaEnabled()
-    ? Promise.resolve(
-        unchecked(
-          openSea,
-          "off - no OPENSEA_API_KEY set. Every tool still answers; the OpenSea half of cross-venue questions is absent and named, not silently dropped.",
-        ),
-      )
+  const osReady = await os.openSeaAvailable();
+  const osState = os.openSeaState();
+  const osPromise = !osReady
+    ? Promise.resolve(unchecked(openSea, `off - ${osState.note}. Every tool still answers; the OpenSea half of cross-venue questions is absent and named, not silently dropped.`))
     : probe(
         openSea,
         async (signal) => {
@@ -256,7 +257,15 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
           // The currency symbol is venue-supplied text printed next to a
           // number: cleaned at this boundary, never pasted into the note raw.
           const currency = clean(stats.floorCurrency ?? "").slice(0, 16);
-          return { ok: true, note: `answered with ${OS_PROBE_SLUG} floor ${stats.floor ?? "none"} ${currency}`.trim() };
+          // Which key answered, and when it dies, belong in the row: an
+          // OpenSea column that goes quiet next week should say so in advance.
+          const via =
+            osState.source === "env"
+              ? " (key from OPENSEA_API_KEY)"
+              : osState.expiresAt
+                ? ` (free key this server issued itself, expires ${osState.expiresAt.slice(0, 10)})`
+                : "";
+          return { ok: true, note: `answered with ${OS_PROBE_SLUG} floor ${stats.floor ?? "none"} ${currency}`.trim() + via };
         },
         controller.signal,
       );
@@ -348,7 +357,7 @@ function summarize(rows: SourceStatusRow[]): string {
   const down = checked.filter((r) => !r.ok);
   const parts = [`${answering.length} of ${checked.length} sources answering`];
   if (down.length > 0) parts.push(`${down.map((r) => r.name).join(", ")} not answering`);
-  if (!os.openSeaEnabled()) parts.push("OpenSea off (no key)");
+  if (!os.openSeaEnabled()) parts.push(`OpenSea off (${os.openSeaState().source === "none" ? "no key" : "key unusable"})`);
   const planned = rows.filter((r) => r.ok === null && r.catalog.keyRequired && !r.catalog.wired).length;
   const links = rows.filter((r) => r.catalog.kind === "explorer-links").length;
   if (planned > 0 || links > 0) parts.push(`${planned} planned source(s) and ${links} reference link(s) not checked`);

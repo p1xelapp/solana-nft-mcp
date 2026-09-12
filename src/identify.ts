@@ -26,7 +26,7 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
-import { resolveName } from "./names.js";
+import { resolveName, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
@@ -58,6 +58,10 @@ export interface Identification {
   chain?: string;
   /** Set when a name this identification repeats came from a permissionless mint and looked crafted. */
   untrustedTextWarning?: string;
+  /** Collections whose names are near-identical to each other, when this query reached more than one. */
+  lookalikes?: Lookalike[];
+  /** Present with `lookalikes`: the sentence to repeat before acting on any of them. */
+  lookalikeWarning?: string;
   /** Venues confirmed to list it, by name. */
   tradesOn: string[];
   /** Every probe run, including the ones that found nothing. */
@@ -278,12 +282,17 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // could find by the same query. The directory resolver is the same one that
   // tool uses, so the two agree.
   let nameCandidates: string[] = [];
+  // Near-identical names among the collections this query reached. Surfaced
+  // even when one of them wins, because "the top match" is exactly what an
+  // impersonation is built to be.
+  let lookalikes: Lookalike[] = [];
   if (!entry && !looksLikeAddress(q)) {
     const resolved = resolveName(q);
     // A weak fuzzy hit ("matched 1 of 3 words") is a suggestion, not an
     // identification; only a strong match is allowed to name a collection.
     const strong = resolved.matches.filter((m) => m.score >= 70);
     nameCandidates = strong.map((m) => m.symbol);
+    lookalikes = findLookalikes(strong.map((m) => ({ symbol: m.symbol, name: m.name, badged: m.badged })));
     checked.push({
       source: "collection-directory",
       looked_for: `a Magic Eden collection named "${q}"`,
@@ -309,8 +318,11 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   const mePromise: Promise<Awaited<ReturnType<typeof me.collectionStats>> | { err: unknown }> = meSymbol
     ? me.collectionStats(meSymbol, { signal }).catch((err: unknown) => ({ err }))
     : Promise.resolve({ err: null });
+  // identify() is a call that needs OpenSea, so this is where a free key is
+  // issued if none exists yet - asked once and reused by both branches below.
+  const osEnabled = await os.openSeaAvailable();
   const osPromise: Promise<Awaited<ReturnType<typeof os.collectionStats>> | { err: unknown }> =
-    os.openSeaEnabled() && osSlug
+    osEnabled && osSlug
       ? os.collectionStats(osSlug, { signal }).catch((err: unknown) => ({ err }))
       : Promise.resolve({ err: null });
   const [meOutcome, osOutcome] = await Promise.all([mePromise, osPromise]);
@@ -354,15 +366,15 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   }
 
   // ---- OpenSea (optional, key-gated) -----------------------------------
-  if (!os.openSeaEnabled()) {
+  if (!osEnabled) {
     checked.push({
       source: "opensea",
       looked_for: "a collection slug",
       result: "skipped",
-      detail: "OPENSEA_API_KEY is not set - this is optional and the server stays zero-config without it",
+      detail: `OpenSea is off for this server: ${os.openSeaState().note}`,
     });
     notChecked.push(
-      "OpenSea. Set OPENSEA_API_KEY to include it. Free keys are issued instantly with no signup via POST https://api.opensea.io/api/v2/auth/keys, but they are capped at 2 per day and expire after 7 days; the OpenSea developer portal issues permanent ones.",
+      "OpenSea. This server normally issues itself a free weekly key and needs no configuration; when that is unavailable, OPENSEA_API_KEY from the OpenSea developer portal turns OpenSea back on. Key issue is capped at about 2 per day per IP.",
     );
   } else if (osSlug) {
     try {
@@ -477,7 +489,9 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     // Several collections answer to this name. Picking the top-scoring one
     // would be a confident wrong answer, which is the expensive failure here.
     kind = "ambiguous";
-    summary = `"${q}" matches ${nameCandidates.length} collections in the Magic Eden directory (${nameCandidates.join(", ")}). Ask which one, or pass one of those symbols.`;
+    summary =
+      `"${q}" matches ${nameCandidates.length} collections in the Magic Eden directory (${nameCandidates.join(", ")}). Ask which one, or pass one of those symbols.` +
+      (lookalikes.length ? ` ${LOOKALIKE_WARNING}` : "");
     confidence = "low";
     identifiers.candidateSymbols = nameCandidates.join(",");
     next.push("get_collection_stats", "search_collections");
@@ -527,6 +541,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     kind,
     summary,
     ...(untrustedTextWarning ? { untrustedTextWarning } : {}),
+    ...(lookalikes.length ? { lookalikes, lookalikeWarning: LOOKALIKE_WARNING } : {}),
     identifiers,
     standard: coreKind ? "Metaplex Core" : (indexed?.standard ?? undefined),
     chain: coreKind || indexed || tradesOn.length > 0 ? "Solana" : undefined,

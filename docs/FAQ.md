@@ -71,12 +71,23 @@ and hand back a receipt, and label a wallet's behaviour from its history.
 Also keyless, also useful, also one venue's API surfaced as tools. Same answer.
 
 **Is it really zero keys?**
-Yes for everything Magic Eden, CryptoSlam and plain Solana RPC can answer, which is
-most of the tools. An OpenSea key is optional and adds OpenSea floors, sales, plain
-transfers (airdrops, gifts) and a searchable index of the Solana collections OpenSea
-lists. Free keys exist (`POST https://api.opensea.io/api/v2/auth/keys`), two a day,
-seven-day expiry. Put it in the MCP config's `env` block; clients launch servers with a
-clean environment, so your shell variable will not reach it.
+Yes, including OpenSea. Magic Eden, CryptoSlam and plain Solana RPC need no key at all.
+OpenSea does, so the server issues itself one: the first question that actually needs
+OpenSea asks OpenSea for one of its free weekly agent keys, keeps it in
+`~/.collector-mcp/opensea-key.json` on your own machine, and renews it a day before it
+expires. That key is yours - it never leaves your computer and is never printed into a log
+or an answer - and a session that never asks an OpenSea question never requests one.
+
+**What if the key cannot be issued?**
+OpenSea caps key creation at about two a day per IP address, so on a shared or busy
+address it can refuse. Then OpenSea stays off exactly as it always could: every tool still
+answers, and the OpenSea half of a cross-venue answer is named as missing rather than
+quietly dropped. `check_sources` says which key is in use and when it expires.
+
+**Can I use my own OpenSea key, or none at all?**
+Yes. `OPENSEA_API_KEY` (from the OpenSea developer portal) overrides the self-issued key
+completely - put it in the MCP config's `env` block, since clients launch servers with a
+clean environment. `COLLECTOR_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
 **Does it cost anything to run?**
 No. Public endpoints, paced politely, cached in memory. Heavy use of the public Solana

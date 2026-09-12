@@ -115,6 +115,10 @@ export interface NameResolution {
   directoryComplete: boolean;
   /** Set whenever a layer searched was short of the full catalogue, saying why. */
   directoryNote?: string;
+  /** Matches whose names are near-identical to each other - the shape an impersonation takes. */
+  lookalikes?: Lookalike[];
+  /** Present with `lookalikes`: the sentence to repeat to a person before they act on any of them. */
+  warning?: string;
   /** What to tell the person when nothing matched. */
   hint?: string;
 }
@@ -262,6 +266,69 @@ export function closeSpellings(
     .map((r) => r.hit);
 }
 
+// ------------------------------------------------------------- lookalikes
+
+export interface Lookalike {
+  symbol: string;
+  name: string | null;
+  badged: boolean | null;
+}
+
+export const LOOKALIKE_WARNING =
+  "Several collections carry nearly the same name; fakes imitate popular names. Prefer the badged one or confirm the collection address from the project's official channel.";
+
+/**
+ * Words a copy adds to a borrowed name. Stripped before comparison because
+ * "Mad Lads Official" is not a different collection from "Mad Lads" to a
+ * reader - it is the shape an impersonation takes, and it is exactly the pair
+ * that must trip this warning.
+ */
+const DECORATION = new Set(["official", "originals", "original", "verified", "nft", "nfts", "collection", "collections", "the"]);
+
+/**
+ * Case, spacing, punctuation, trailing digits and decoration removed, so two
+ * entries that a person would read as the same name compare equal.
+ */
+function lookalikeKey(s: string): string {
+  const tokens = tokensOf(s)
+    .map((t) => t.replace(/\d+$/, ""))
+    .filter((t) => t && !DECORATION.has(t));
+  return tokens.join(" ");
+}
+
+/**
+ * Which of these entries imitate each other's names.
+ *
+ * The failure this closes: a search for a popular collection returns the real
+ * one and a copy with a near-identical name, ranked by score alone, and the
+ * copy's mint address goes into an answer as if the two were the same thing.
+ * Either a shared normalised name or a single edit between two of them is
+ * enough - both are what a person's eye skips over.
+ */
+export function findLookalikes(entries: { symbol: string; name: string | null; badged: boolean | null }[]): Lookalike[] {
+  const keyed = entries
+    .map((e) => ({ entry: e, key: lookalikeKey(e.name ?? e.symbol) }))
+    .filter((k) => k.key.length > 0);
+  const flagged = new Set<number>();
+  for (let i = 0; i < keyed.length; i++) {
+    for (let j = i + 1; j < keyed.length; j++) {
+      const a = keyed[i]!;
+      const b = keyed[j]!;
+      if (a.entry.symbol === b.entry.symbol) continue;
+      if (a.key === b.key || boundedDamerau(a.key, b.key, 1) === 1) {
+        flagged.add(i);
+        flagged.add(j);
+      }
+    }
+  }
+  return [...flagged]
+    .sort((x, y) => x - y)
+    .map((i) => {
+      const e = keyed[i]!.entry;
+      return { symbol: e.symbol, name: e.name, badged: e.badged };
+    });
+}
+
 const toMatches = (hits: NameMatch[], layer: "snapshot" | "live") =>
   hits.map((h) => ({ symbol: h.symbol, name: h.name || null, badged: h.isBadged, score: h.score, reason: h.why, layer }));
 
@@ -343,9 +410,14 @@ export function resolveName(query: string, limit = 8): NameResolution {
     matches.push({ symbol: s.symbol, name: s.name, badged: s.badged, score: s.score, reason: s.reason, layer: s.layer });
   }
 
+  // Computed over what the caller will actually see, after merging: a warning
+  // about entries that were dropped from the list would name nothing.
+  const lookalikes = findLookalikes(matches.map((m) => ({ symbol: m.symbol, name: m.name, badged: m.badged })));
+
   return {
     query: q,
     matches,
+    ...(lookalikes.length ? { lookalikes, warning: LOOKALIKE_WARNING } : {}),
     searched,
     notSearched,
     snapshotComplete,

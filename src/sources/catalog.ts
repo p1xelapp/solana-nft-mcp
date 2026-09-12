@@ -249,7 +249,7 @@ export const SOURCES: readonly SourceEntry[] = [
       "the full list of Solana collections OpenSea has indexed, for name search",
     ],
     cannotSee: [
-      "anything at all without OPENSEA_API_KEY - every OpenSea-backed field is simply absent otherwise",
+      "anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is simply absent",
       "which venue actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name",
     ],
     officialDocs: "https://docs.opensea.io/reference/api-overview",
@@ -257,7 +257,7 @@ export const SOURCES: readonly SourceEntry[] = [
     lastVerified: VERIFIED,
     fallback: "magiceden-v2",
     retention: "unknown (not documented)",
-    note: "Optional by design. No key means every tool still answers, with the OpenSea half named as missing rather than dropped.",
+    note: "No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and renews it weekly; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.",
   },
 
   // ------------------------------------------------------------- tier 3
