@@ -33,14 +33,43 @@ await client.connect(
   new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env: offlineEnv }),
 );
 
+// The EXACT public tool surface, frozen.
+//
+// The count alone was not a contract: with 20 asserted and only 12 names
+// frozen, get_floor_prices could be renamed, the count would still be 20, CI
+// would print "all assertions passed", and every integration written against
+// the README's frozen-name promise would break. The sorted list is compared
+// whole, so a rename, an addition and a removal are each caught by name.
+const TOOL_MANIFEST = [
+  "explain_mechanics",
+  "find_listings",
+  "get_asset",
+  "get_asset_provenance",
+  "get_asset_trust",
+  "get_collection_sales",
+  "get_collection_stats",
+  "get_floor_prices",
+  "get_integration_recipe",
+  "get_pack_pulls",
+  "get_recent_sales",
+  "get_source_status",
+  "get_top_traders",
+  "get_trending",
+  "get_wallet_activity",
+  "get_wallet_holdings",
+  "get_wallet_profile",
+  "identify",
+  "search_collections",
+  "verify_claim",
+];
+
 const { tools } = await client.listTools();
-assert.strictEqual(tools.length, 20, `expected 20 tools, got ${tools.length}`);
-for (const n of [
-  "identify", "get_integration_recipe", "verify_claim", "get_asset_trust", "get_wallet_profile", "get_wallet_activity",
-  "get_collection_sales", "find_listings", "get_top_traders", "get_trending", "explain_mechanics", "get_source_status",
-]) {
-  assert.ok(tools.some((t) => t.name === n), `${n} tool missing`);
-}
+assert.deepStrictEqual(
+  tools.map((t) => t.name).sort(),
+  [...TOOL_MANIFEST].sort(),
+  `the tool surface changed. Renaming or removing a tool breaks every integration written against the README's frozen names; adding one needs a manifest entry here. Got: ${tools.map((t) => t.name).sort().join(", ")}`,
+);
+assert.strictEqual(tools.length, TOOL_MANIFEST.length, `expected ${TOOL_MANIFEST.length} tools, got ${tools.length}`);
 // Descriptions carry the plain-words asks a person would type, because the
 // model picks a tool from them; a description that only names the endpoint
 // leaves "how many sales this week" unanswered.
@@ -344,6 +373,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (20 tools, 4 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

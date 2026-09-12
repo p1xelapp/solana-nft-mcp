@@ -188,11 +188,23 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(twice.coverage.duplicateEvents, activities.length, "the duplicates are counted and named");
   assert.strictEqual(twice.coverage.eventsRead, activities.length * 2, "coverage still reports every row read");
   assert.ok(/counted once/.test(twice.coverage.note));
-  // A row with no signature cannot be deduped; dropping a real sale to protect
-  // a counter is the worse error, so it is kept.
-  const anon = { type: "buyNow", source: "mmm", blockTime: 1700000000, price: 1, buyer: "B", seller: "S" };
-  const kept = summarizeSales([anon, { ...anon }], WIDE);
-  assert.strictEqual(kept.sales, 2, "signature-less rows are kept rather than collapsed");
+  // A row with no signature gets a fallback identity built from everything
+  // that would have to coincide for two rows to be the same fill: item, type,
+  // both sides, price, block time and venue. Keeping every unsigned row was
+  // the safe choice against dropping a real sale, and the wrong one against a
+  // feed that repeats identical unsigned rows across pages - that doubled the
+  // sale count and the volume. The weaker identity is reported rather than
+  // hidden, because two genuinely separate identical fills in one block would
+  // now collapse into one.
+  const anon = { type: "buyNow", source: "mmm", blockTime: 1700000000, price: 1, buyer: "B", seller: "S", tokenMint: "MINT_ANON" };
+  const collapsed = summarizeSales([anon, { ...anon }], WIDE);
+  assert.strictEqual(collapsed.sales, 1, "an identical unsigned row repeated across pages is one fill, not two");
+  assert.strictEqual(collapsed.volumeSol, 1, "and it contributes its price once");
+  assert.ok(collapsed.coverage.identityFallbacks > 0, "the rows that needed the weaker identity are counted");
+  assert.ok(/no transaction signature/.test(collapsed.coverage.note), "and named in words");
+  // Two unsigned rows that differ in any of those fields are still two sales.
+  const two = summarizeSales([anon, { ...anon, tokenMint: "MINT_OTHER" }], WIDE);
+  assert.strictEqual(two.sales, 2, "different items are different sales even without signatures");
 }
 
 // -- one transaction, two items -------------------------------------------
@@ -214,22 +226,30 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(replayed.sales, 2, "a repeated row is a duplicate");
   assert.strictEqual(replayed.volumeSol, 7);
   assert.strictEqual(replayed.coverage.duplicateEvents, 1);
-  // Same signature, mint and type with a different price is the SAME fill
-  // answered twice while the venue hydrates the row - not a second sale.
-  // Counting both doubled sales, volume and P&L on every corrected row.
+  // Same signature, mint and type with two DIFFERENT populated prices is the
+  // same fill answered twice while the venue hydrates the row - not a second
+  // sale, and not a number either: whichever copy we picked would be a guess
+  // published as a fact, so the event counts as a sale and is excluded from
+  // every money figure.
   const differing = summarizeSales([{ ...base, tokenMint: "M", price: 3 }, { ...base, tokenMint: "M", price: 5 }], WIDE);
   assert.strictEqual(differing.sales, 1, "one fill answered twice is one sale");
-  assert.strictEqual(differing.volumeSol, 3, "the first copy is the one counted");
+  assert.strictEqual(differing.volumeSol, 0, "neither contested price is counted as volume");
+  assert.strictEqual(differing.pricedSales, 0, "a contested fill carries no usable price");
   assert.strictEqual(differing.coverage.duplicateEvents, 1);
   assert.strictEqual(differing.coverage.conflictingDuplicates, 1, "the disagreement is reported, not counted as volume");
+  assert.strictEqual(differing.coverage.unsettled, 1);
   assert.ok(/disagreed with the first copy/.test(differing.coverage.note), "the note names the conflict");
-  // A hydrated buyer is the same story.
+  // A buyer that was ABSENT and then arrived is hydration, not disagreement:
+  // the populated value is merged in and the sale keeps its price. Keeping the
+  // sparse first copy was what threw away a price the venue supplied a page
+  // later and drove P&L to zero.
   const hydrated = summarizeSales(
-    [{ ...base, tokenMint: "M", price: 3, buyer: undefined }, { ...base, tokenMint: "M", price: 3, buyer: "B2" }],
+    [{ ...base, tokenMint: "M", price: undefined, buyer: undefined }, { ...base, tokenMint: "M", price: 3, buyer: "B2" }],
     WIDE,
   );
   assert.strictEqual(hydrated.sales, 1, "a filled-in buyer does not create a second sale");
-  assert.strictEqual(hydrated.coverage.conflictingDuplicates, 1);
+  assert.strictEqual(hydrated.coverage.conflictingDuplicates, 0, "filling in an absent field is not a conflict");
+  assert.strictEqual(hydrated.volumeSol, 3, "the price that arrived on the second copy is kept");
   // A clean repeat is a duplicate with nothing to report.
   const clean2 = summarizeSales([{ ...base, tokenMint: "M", price: 3 }, { ...base, tokenMint: "M", price: 3 }], WIDE);
   assert.strictEqual(clean2.coverage.conflictingDuplicates, 0, "an identical repeat is not a conflict");
@@ -269,9 +289,15 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   const revised = dedupeEvents([buy, { ...buy, price: 2 }]);
   assert.strictEqual(revised.events.length, 1, "a revised copy does not become a second event");
   assert.strictEqual(revised.conflictingDuplicates, 1, "the revision is reported");
-  assert.strictEqual(eventIdentity({ type: "buyNow" }), null, "a row with no signature cannot be identified");
+  assert.strictEqual(eventIdentity({ type: "buyNow" }), null, "a row with no signature has no signature-based identity");
+  // ...but it is not therefore unbounded: the fallback identity collapses rows
+  // that agree on everything that would have to coincide for them to be the
+  // same fill, and reports how many rows needed it.
   const anonRows = [{ type: "buyNow", tokenMint: "M" }, { type: "buyNow", tokenMint: "M" }];
-  assert.strictEqual(dedupeEvents(anonRows).events.length, 2, "unidentifiable rows are kept, never collapsed");
+  const anonDeduped = dedupeEvents(anonRows);
+  assert.strictEqual(anonDeduped.events.length, 1, "identical unsigned rows are one fill, not two");
+  assert.strictEqual(anonDeduped.identityFallbacks, 2, "and both rows are reported as relying on the weaker identity");
+  assert.strictEqual(dedupeEvents([{}, {}]).events.length, 2, "a row with NOTHING to identify it is still kept");
   assert.strictEqual(dedupeEvents(null).events.length, 0, "a missing feed must not throw");
 }
 
@@ -413,7 +439,7 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(full.coverage.truncated, false);
   assert.ok(/older sales exist/i.test(cut.coverage.note), "a truncated read must say older sales exist");
   assert.ok(!/older sales exist/i.test(full.coverage.note), "a complete read must not warn about missing history");
-  assert.ok(/everything Magic Eden holds/i.test(full.coverage.note));
+  assert.ok(/everything Magic Eden held for the window at the moment of this read/i.test(full.coverage.note));
   assert.strictEqual(summarizeSales(activities, WIDE).coverage.truncated, false, "truncated defaults to false, not undefined");
 }
 

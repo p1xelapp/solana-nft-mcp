@@ -26,15 +26,32 @@ jobs:
       # Pinned to a full commit SHA - a moved tag is a supply-chain vector.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install (locked)
+      # Setup is SEPARATE from the source check, and named so, because this
+      # workflow's whole purpose is to send exactly one email: "a real source
+      # broke". An npm registry outage failing `npm ci` used to turn the run
+      # red while every source was perfectly healthy - the same red, the same
+      # email, a different meaning. Keeping them as distinct steps means the
+      # failing step name says which happened, and a setup failure is visibly
+      # not a source break.
+      - name: Setup - install (locked)
         run: npm ci
 
-      - name: Build
+      - name: Setup - build
         run: npm run build
 
       # No secrets, no env: this proves the keyless path a new user gets.
       # OpenSea is deliberately not exercised here - it needs a key, and a
       # workflow that needs a key cannot tell us whether the zero-key promise
       # still holds.
-      - name: Live source check
+      #
+      # THIS is the step whose failure means a source broke. If the run is red
+      # and this step was skipped or never started, the sources were never
+      # asked.
+      - name: Live source check (a failure HERE means a source broke)
+        id: live
         run: node test/live.mjs
+
+      - name: Explain a setup failure
+        if: failure() && steps.live.outcome == ''
+        run: |
+          echo "::warning::This run failed BEFORE the live source check ran. No source was contacted, so this is not evidence that a venue broke - it is the runner, the npm registry, or the build."

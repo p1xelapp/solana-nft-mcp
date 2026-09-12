@@ -30,7 +30,7 @@ interface CsMint {
  * Last N mints for a contract. For licensed card platforms each mint is a
  * card being pulled from a pack - a live rip feed.
  */
-export async function recentMints(contract: string, limit: number, opts: { fresh?: boolean } = {}) {
+export async function recentMints(contract: string, limit: number, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
   const n = Math.min(Math.max(limit, 1), 20);
   // `fresh` = contact CryptoSlam now. The status tool requires it: this feed
   // is cached for a minute, and a cached page would report the flakiest
@@ -43,7 +43,7 @@ export async function recentMints(contract: string, limit: number, opts: { fresh
         "CryptoSlam",
         `${BASE}/mints/${encodeURIComponent(contract)}/${n}/last`,
         { headers: HEADERS },
-        { retries: 3, timeoutMs: 20_000 },
+        { retries: 3, timeoutMs: 20_000, signal: opts.signal },
       ),
     { fresh: opts.fresh },
   );

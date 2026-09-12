@@ -32,6 +32,8 @@
 /** Where an entry sits: a standard, one decodable plugin, a venue, or a question people actually ask. */
 export type MechanicsCategory = "standard" | "plugin" | "external-plugin" | "venue" | "question";
 
+import { clean } from "./lib/untrusted.js";
+
 export interface MechanicsEntry {
   /** Stable slug. Safe to reference from other tools' output. */
   id: string;
@@ -1245,6 +1247,17 @@ const VENUE_ALIAS_SOURCE: Record<string, string[]> = {
 const VENUE_ALIASES = new Map<string, string[]>(Object.entries(VENUE_ALIAS_SOURCE));
 
 /**
+ * Ceilings on an attacker-supplied plugin list.
+ *
+ * A Core account's plugin list comes from the chain, and anyone can create an
+ * account. Without these, a crafted account could spend the server's CPU on a
+ * quadratic scan and then push its whole list into the tool output.
+ */
+const MAX_PLUGINS_CONSIDERED = 64;
+const MAX_UNEXPLAINED_REPORTED = 64;
+const MAX_PLUGIN_NAME = 48;
+
+/**
  * Turn a decoded asset's plugin list into plain consequences for its holder.
  *
  * Built to hang off get_asset_trust: that tool says WHICH plugins are present
@@ -1255,17 +1268,25 @@ const VENUE_ALIASES = new Map<string, string[]>(Object.entries(VENUE_ALIAS_SOURC
  */
 export function mechanicsForTrust(pluginTypes: string[], venue?: string): TrustMechanics {
   const entries: MechanicsEntry[] = [];
-  const unexplained: string[] = [];
+  // A Set, not an array scanned with .includes(): a crafted account carrying
+  // thousands of unique unknown plugin names made every insertion a full scan
+  // of everything before it, so the cost grew with the square of the list.
+  const unexplainedSet = new Set<string>();
+  let unexplainedTruncated = 0;
   const seen = new Set<string>();
 
-  const wanted = Array.isArray(pluginTypes) ? pluginTypes : [];
+  const wanted = (Array.isArray(pluginTypes) ? pluginTypes : []).slice(0, MAX_PLUGINS_CONSIDERED);
+  const pluginsDropped = Math.max(0, (Array.isArray(pluginTypes) ? pluginTypes.length : 0) - wanted.length);
   for (const raw of wanted) {
     if (typeof raw !== "string") continue;
-    const type = raw.trim();
+    // Plugin names are account bytes somebody chose: neutralised and cut short
+    // before they are matched, counted, or joined into output.
+    const type = clean(raw).trim().slice(0, MAX_PLUGIN_NAME);
     if (!type) continue;
     const hit = MECHANICS.find((m) => m.pluginType === type);
     if (!hit) {
-      if (!unexplained.includes(type)) unexplained.push(type);
+      if (unexplainedSet.size < MAX_UNEXPLAINED_REPORTED) unexplainedSet.add(type);
+      else if (!unexplainedSet.has(type)) unexplainedTruncated++;
       continue;
     }
     if (seen.has(hit.id)) continue;
@@ -1289,11 +1310,14 @@ export function mechanicsForTrust(pluginTypes: string[], venue?: string): TrustM
     }
   }
 
+  const unexplained = [...unexplainedSet];
   const consequences = entries.map((e) => `${e.title}: ${e.plain}`);
-  if (unexplained.length) {
+  if (unexplained.length || unexplainedTruncated || pluginsDropped) {
+    const extra = unexplainedTruncated + pluginsDropped;
     consequences.push(
-      `Plugin(s) present that this knowledge base does not explain: ${unexplained.join(", ")}. ` +
-        `Treat the custody picture as incomplete rather than clean.`,
+      `Plugin(s) present that this knowledge base does not explain: ${unexplained.join(", ") || "none by name"}` +
+        (extra ? `, and ${extra} further unrecognised plugin name(s) not listed here - an account carrying this many is itself unusual` : "") +
+        `. Treat the custody picture as incomplete rather than clean.`,
     );
   }
   return { consequences, entries, unexplained, sources: [...new Set(entries.map((e) => e.source))] };

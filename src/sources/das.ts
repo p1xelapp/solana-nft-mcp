@@ -16,8 +16,11 @@
  * signal a keyless tool can offer.
  */
 
-import { assertOnline, cached, originGate } from "../lib/http.js";
+import { createHash } from "node:crypto";
+
+import { assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
+import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
 
 const PUBLIC_DAS = "https://api.mainnet-beta.solana.com";
@@ -48,7 +51,25 @@ interface RpcError {
 
 class DasUnsupported extends Error {}
 
-async function call<T>(method: string, params: Record<string, unknown>): Promise<{ result: T; endpoint: string }> {
+/**
+ * One signal firing on either the request timeout or the caller's own
+ * deadline. `AbortSignal.any` landed in Node 20.3 and this package supports
+ * 18.17, so the two are combined by hand.
+ */
+function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!caller) return timeout;
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  if (caller.aborted || timeout.aborted) stop();
+  else {
+    caller.addEventListener("abort", stop, { once: true });
+    timeout.addEventListener("abort", stop, { once: true });
+  }
+  return controller.signal;
+}
+
+async function call<T>(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ result: T; endpoint: string }> {
   let last = "";
   // A -32601 from one endpoint is that endpoint's answer, not the method's
   // fate: a plain RPC set as DAS_RPC_URL would otherwise take the built-in
@@ -57,21 +78,27 @@ async function call<T>(method: string, params: Record<string, unknown>): Promise
   const all = endpoints();
   for (const ep of all) {
     assertOnline(ep.url);
+    // A caller whose deadline has passed gets no further requests spent on it.
+    if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
     await gateFor(ep.url)();
+    if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
     let j: { result?: T; error?: RpcError } | null = null;
     try {
       const r = await fetch(ep.url, {
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": "collector-mcp/1.0 (+https://github.com/p1xelapp/collector-mcp)" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-        signal: AbortSignal.timeout(20_000),
+        signal: combineSignals(20_000, signal),
       });
       if (r.status === 429 || r.status >= 500) {
         last = `${ep.id} answered HTTP ${r.status}`;
         continue;
       }
-      j = (await r.json()) as { result?: T; error?: RpcError };
+      // Bounded read: a hostile or broken endpoint answering a one-line
+      // JSON-RPC request with gigabytes must not be buffered in full.
+      j = await readBoundedJson<{ result?: T; error?: RpcError }>(r, ep.id);
     } catch (e) {
+      if (e instanceof OversizedBodyError) throw e;
       last = `${ep.id} ${e instanceof Error ? e.message : String(e)}`;
       continue;
     }
@@ -134,12 +161,12 @@ let capMemo: { value: DasCapability; expiresAt: number } | null = null;
  * requires it: a cached `available: true` for a capability that was withdrawn
  * two minutes ago is exactly the lie a health check exists to prevent.
  */
-export async function capability(opts: { fresh?: boolean } = {}): Promise<DasCapability> {
+export async function capability(opts: { fresh?: boolean; signal?: AbortSignal } = {}): Promise<DasCapability> {
   if (!opts.fresh && capMemo && Date.now() < capMemo.expiresAt) return capMemo.value;
   const checkedAt = new Date().toISOString();
   let value: DasCapability;
   try {
-    const { result, endpoint } = await call<{ id?: string }>("getAsset", { id: CANARY });
+    const { result, endpoint } = await call<{ id?: string }>("getAsset", { id: CANARY }, opts.signal);
     value =
       result?.id === CANARY
         ? { available: true, state: "available", endpoint, note: "Undocumented public capability; used as a second read, never the only one.", checkedAt }
@@ -251,6 +278,15 @@ const KNOWN_INTERFACES = new Set([
 /** Longest a plugin key may be before it is cut; a real plugin name is one word. */
 const MAX_PLUGIN_KEY = 48;
 
+/**
+ * Most ids one getAssetNames call will request.
+ *
+ * Ids beyond this are not quietly dropped: the count comes back as `omitted`
+ * and is folded into `unresolved`, so a caller can never read "0 unresolved"
+ * about a window whose tail was never asked about.
+ */
+const MAX_BATCH_IDS = 5000;
+
 function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
   if (compressed) return "compressed";
   if (iface === "MplCoreAsset") return "metaplex-core";
@@ -268,7 +304,10 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.length ? 
 function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   const iface = typeof a.interface === "string" && KNOWN_INTERFACES.has(a.interface) ? a.interface : "unknown";
   const compressed = a.compression?.compressed === true;
-  const collection = (a.grouping ?? []).find((g) => g.group_key === "collection");
+  // `grouping` has been observed as an object rather than an array; .find on
+  // it throws and takes the whole read down.
+  const grouping = Array.isArray(a.grouping) ? a.grouping : [];
+  const collection = grouping.find((g) => g && typeof g === "object" && g.group_key === "collection");
   const pct =
     typeof a.royalty?.basis_points === "number"
       ? a.royalty.basis_points / 100
@@ -303,7 +342,8 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
             .map((k) => clean(k).slice(0, MAX_PLUGIN_KEY))
             .filter((k) => k.length > 0)
         : [],
-    creators: (a.creators ?? []).slice(0, 16).flatMap((c) => {
+    creators: (Array.isArray(a.creators) ? a.creators : []).slice(0, 16).flatMap((c) => {
+      if (!c || typeof c !== "object") return [];
       const address = addr(c.address);
       return address ? [{ address, share: typeof c.share === "number" ? c.share : null, verified: typeof c.verified === "boolean" ? c.verified : null }] : [];
     }),
@@ -327,11 +367,11 @@ export interface DasAssetRead {
  * Ownership from a stale index entry is the previous owner, so `stale` travels
  * with the data rather than being dropped at this boundary.
  */
-export async function getAsset(id: string): Promise<DasAssetRead> {
-  refuseIfWithdrawn(await capability());
+export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}): Promise<DasAssetRead> {
+  refuseIfWithdrawn(await capability({ signal: opts.signal }));
   const { data, stale, cachedAt } = await cached<{ raw: RawAsset; endpoint: string } | null>(`das:asset:${id}`, 60_000, async () => {
     try {
-      const { result, endpoint } = await call<RawAsset | null>("getAsset", { id });
+      const { result, endpoint } = await call<RawAsset | null>("getAsset", { id }, opts.signal);
       if (!result || typeof result !== "object") return null;
       // An answer carrying a different id is not this asset. Caching it under
       // the requested id would show one asset's owner beneath another's mint.
@@ -384,8 +424,14 @@ export async function getAssetsByOwner(owner: string, max = 2000): Promise<DasOw
         limit,
         displayOptions: { showFungible: false },
       });
-      if (!result || !Array.isArray(result.items)) throw new Error(`${SOURCE} returned an unexpected shape for getAssetsByOwner (outage or API change)`);
-      return { items: result.items as RawAsset[], endpoint };
+      // Every ROW is validated, not just the container: one `null` item, or a
+      // row whose `grouping` is an object instead of an array, used to crash
+      // normalise() mid-answer and return nothing at all.
+      const rows = objectRows<RawAsset>(SOURCE, "getAssetsByOwner items", result.items);
+      if (rows.length > limit) {
+        throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
+      }
+      return { items: rows, endpoint };
     });
     const data = hit.data;
     readFrom = data.endpoint;
@@ -414,20 +460,40 @@ export async function getAssetsByOwner(owner: string, max = 2000): Promise<DasOw
  * one or two requests instead of hundreds. Missing ids come back as null in
  * the batch and are simply absent from the map; the caller reports the count.
  */
-export async function getAssetNames(ids: string[]): Promise<{ names: Map<string, { name: string | null; standard: DasAsset["standard"] }>; stale: boolean; unresolved: number }> {
+export async function getAssetNames(
+  ids: string[],
+): Promise<{ names: Map<string, { name: string | null; standard: DasAsset["standard"] }>; stale: boolean; unresolved: number; omitted: number }> {
   const names = new Map<string, { name: string | null; standard: DasAsset["standard"] }>();
-  const unique = [...new Set(ids.filter(isBase58Address))].slice(0, 5000);
-  if (unique.length === 0) return { names, stale: false, unresolved: 0 };
+  const all = [...new Set(ids.filter(isBase58Address))];
+  const unique = all.slice(0, MAX_BATCH_IDS);
+  // Ids past the cap were never REQUESTED. Reporting them as resolved-and-fine
+  // is how a name filter silently stopped covering part of its own window, so
+  // they are named separately and counted as unresolved too.
+  const omitted = all.length - unique.length;
+  if (unique.length === 0) return { names, stale: false, unresolved: omitted, omitted };
   const cap = await capability();
   if (cap.state === "withdrawn") throw new Error(`${SOURCE} is unavailable right now (${cap.note}).`);
   let stale = false;
   for (let i = 0; i < unique.length; i += 1000) {
     const chunk = unique.slice(i, i + 1000);
-    // Keyed by the chunk's content so the same sales window hits the cache.
-    const key = `das:batch:${chunk.length}:${chunk[0]}:${chunk[chunk.length - 1]}`;
+    // Keyed by a hash of the WHOLE ordered chunk. Length plus first and last id
+    // collided for [A,B,C] and [A,X,C]: the second caller was served B's row in
+    // X's position, the identity check dropped it, and X was reported
+    // unresolved for ten minutes although the index knows it perfectly well.
+    const key = `das:batch:${createHash("sha256").update(chunk.join(",")).digest("hex")}`;
     const read = await cached<{ rows: (RawAsset | null)[]; endpoint: string }>(key, 10 * 60_000, async () => {
       const { result, endpoint } = await call<(RawAsset | null)[]>("getAssetBatch", { ids: chunk });
       if (!Array.isArray(result)) throw new Error(`${SOURCE} returned an unexpected shape for getAssetBatch (outage or API change)`);
+      if (result.length > chunk.length) {
+        throw new Error(`${SOURCE} returned ${result.length} rows for a batch of ${chunk.length} ids - the endpoint is not honouring the request, so the page was refused rather than processed`);
+      }
+      // A missing id is a legitimate null here, so rows are checked one by one
+      // rather than with the all-objects guard.
+      for (const row of result) {
+        if (row !== null && (typeof row !== "object" || Array.isArray(row))) {
+          throw new Error(`${SOURCE} returned a malformed row in getAssetBatch (a row is ${Array.isArray(row) ? "an array" : typeof row}, not an object or null) - an outage or an API change`);
+        }
+      }
       return { rows: result, endpoint };
     });
     stale = stale || read.stale;
@@ -438,5 +504,5 @@ export async function getAssetNames(ids: string[]): Promise<{ names: Map<string,
       names.set(id, { name: str(raw.content?.metadata?.name), standard: standardOf(iface, raw.compression?.compressed === true) });
     });
   }
-  return { names, stale, unresolved: unique.length - names.size };
+  return { names, stale, unresolved: unique.length - names.size + omitted, omitted };
 }

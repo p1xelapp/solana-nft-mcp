@@ -9,6 +9,7 @@
 
 import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
+import { appendAll, assertPageSize, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -17,16 +18,19 @@ const HEADERS = {
 };
 
 // 600ms between calls ≈ 1.6 req/s, under ME's ~2/s public allowance.
-const gate = rateLimiter(600);
+const gate = rateLimiter(600, "Magic Eden");
 
-async function me<T>(path: string): Promise<T> {
-  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate });
+async function me<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal });
 }
 
-/** A page must be an array; anything else is an outage or a shape change, never "no more results". */
+/**
+ * A page must be an array OF OBJECTS; anything else is an outage or a shape
+ * change, never "no more results". A single `null` row used to reach the
+ * mappers and crash them mid-answer.
+ */
 function page<T>(what: string, batch: unknown): T[] {
-  if (!Array.isArray(batch)) throw new Error(`Magic Eden returned an unexpected shape for ${what} (outage or API change)`);
-  return batch as T[];
+  return objectRows<T>("Magic Eden", what, batch);
 }
 
 const LAMPORTS = 1_000_000_000;
@@ -41,8 +45,8 @@ export interface MeStats {
   avgPrice24hr?: number;
 }
 
-export async function collectionStats(symbol: string, opts: { fresh?: boolean } = {}) {
-  const read = () => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`);
+export async function collectionStats(symbol: string, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
+  const read = () => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`, opts.signal);
   // `fresh` = the venue's answer now (coalesced and committed, never a stale
   // fallback), for verifications.
   const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, read, { fresh: opts.fresh });
@@ -128,9 +132,10 @@ export async function recentSales(symbol: string, limit: number) {
         "collection activities",
         await me<unknown>(`/collections/${encodeURIComponent(symbol)}/activities?offset=${pageNo * 100}&limit=100&type=buyNow`),
       );
+      assertPageSize("Magic Eden", "collection activities", batch, 100);
       if (batch.length === 0) break;
       scanned += batch.length;
-      collected.push(...batch.filter((a) => a.type === "buyNow" && typeof a.price === "number"));
+      appendAll(collected, batch.filter((a) => a.type === "buyNow" && typeof a.price === "number"));
       if (batch.length < 100) break;
     }
     return { collected, scanned };
@@ -265,8 +270,9 @@ export async function walletActivities(wallet: string, pages: number) {
     const all: MeWalletActivity[] = [];
     for (let p = 0; p < pages; p++) {
       const batch = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`));
+      assertPageSize("Magic Eden", "wallet activities", batch, 100);
       if (batch.length === 0) break;
-      all.push(...batch);
+      appendAll(all, batch);
       if (batch.length < 100) break;
     }
     return all;
@@ -310,8 +316,9 @@ export async function walletTokensAll(wallet: string, max: number) {
         }
         throw e;
       }
+      assertPageSize("Magic Eden", "wallet tokens", batch, Math.min(500, max - offset));
       if (batch.length === 0) break;
-      all.push(...batch);
+      appendAll(all, batch);
       // A page under 100 is the end whether ME honoured limit=500 or silently
       // capped at 100; anything else means keep walking, so a cap can never
       // truncate a wallet while reporting capped:false.
@@ -433,13 +440,14 @@ export async function collectionActivities(
         ),
     );
     const batch = page<MeCollectionActivity>("collection activities", hit.data);
+    assertPageSize("Magic Eden", "collection activities", batch, ACTIVITY_PAGE);
     stale = stale || hit.stale;
     // Pages are cached separately, so a walk mixes a page fetched now with one
     // fetched 55 seconds ago. The answer is only as fresh as its stalest page;
     // reporting the newest would overstate it.
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
     pagesRead++;
-    events.push(...batch);
+    appendAll(events, batch);
     for (const a of batch) {
       if (typeof a.blockTime !== "number") continue;
       if (oldestSeen === null || a.blockTime < oldestSeen) oldestSeen = a.blockTime;
@@ -503,6 +511,16 @@ export interface CollectionListingsRead {
   listings: MeListing[];
   /** True when the page came back full: there are more listings past what was asked for. */
   more: boolean;
+  /**
+   * True when the venue answered with a SHORT page.
+   *
+   * That is the venue saying it has nothing further to serve for this filter -
+   * which is not the same as this being every listing that exists. A faulty or
+   * hostile venue can return 99 rows for offset zero while holding thousands
+   * more, so this flag is reported as what it is (the venue's report) and
+   * never as proof of complete coverage.
+   */
+  venueReportedEnd: boolean;
   requestedLimit: number;
   appliedLimit: number;
   /** Where in the collection's listing order this page started. */
@@ -557,7 +575,9 @@ export async function collectionListings(
     ),
   );
   const listings = page<MeListing>("collection listings", data);
-  return { listings, more: listings.length >= appliedLimit, requestedLimit, appliedLimit, offset, stale, cachedAt };
+  assertPageSize("Magic Eden", "collection listings", listings, appliedLimit);
+  const more = listings.length >= appliedLimit;
+  return { listings, more, venueReportedEnd: !more, requestedLimit, appliedLimit, offset, stale, cachedAt };
 }
 
 export interface MeAvailableAttribute {
@@ -706,13 +726,39 @@ export interface MeCollectionIndexEntry {
   isOcp?: boolean;
 }
 
+/**
+ * A directory row as this server is willing to hold it.
+ *
+ * The venue's raw row carries a description, socials and categories - none of
+ * which name resolution needs, all of which are attacker-authored, and 500 of
+ * which per page across 80 pages is gigabytes retained for a day outside any
+ * bounded cache. Rows are projected to these three fields the moment they
+ * arrive; the raw payload is never retained.
+ */
+export interface DirectoryRow {
+  /** Validated against the collection-symbol grammar; rows that fail it are dropped. */
+  symbol: string;
+  /** Neutralised and capped: a directory name is minter-adjacent text that reaches a model. */
+  name: string;
+  isBadged: boolean;
+}
+
+/** Longest directory name kept. Real collection names are far shorter. */
+const MAX_DIRECTORY_NAME = 120;
+/** Rows accepted from one directory page. The venue's own page size is 500. */
+const MAX_DIRECTORY_ROWS_PER_PAGE = 500;
+/** Rows retained across the whole walk. The reachable catalogue is ~30,500. */
+const MAX_DIRECTORY_ROWS_TOTAL = 40_000;
+
 export interface CollectionsIndexRead {
-  collections: MeCollectionIndexEntry[];
+  collections: DirectoryRow[];
   /** True when OUR page budget ran out first: this is a prefix, not the catalogue. */
   partial: boolean;
   /** True when Magic Eden refused to page further. Everything past its offset ceiling is unreachable here at any budget. */
   atVenuePagingLimit: boolean;
   pagesRead: number;
+  /** Directory rows dropped because their "symbol" did not obey the symbol grammar. */
+  rowsRejected: number;
   stale: boolean;
   cachedAt: string;
 }
@@ -744,10 +790,11 @@ const isPagingCeiling = (e: unknown): boolean =>
 export async function collectionsIndex(maxPages: number): Promise<CollectionsIndexRead> {
   const budget = Math.max(1, Math.floor(maxPages));
   const { data, stale, cachedAt } = await cached(`me:cindex:${budget}`, 86_400_000, async () => {
-    const collections: MeCollectionIndexEntry[] = [];
+    const collections: DirectoryRow[] = [];
     let partial = false;
     let atVenuePagingLimit = false;
     let pagesRead = 0;
+    let rowsRejected = 0;
     for (let p = 0; p < budget; p++) {
       let batch: MeCollectionIndexEntry[];
       try {
@@ -763,15 +810,33 @@ export async function collectionsIndex(maxPages: number): Promise<CollectionsInd
         }
         throw e;
       }
+      assertPageSize("Magic Eden", "collection index", batch, MAX_DIRECTORY_ROWS_PER_PAGE);
       pagesRead++;
-      collections.push(...batch);
+      // Project HERE, before anything is retained. A row that fails the symbol
+      // grammar is not an identifier and is counted rather than carried.
+      for (const raw of batch) {
+        if (collections.length >= MAX_DIRECTORY_ROWS_TOTAL) break;
+        if (!isCollectionSymbol(raw.symbol)) {
+          rowsRejected++;
+          continue;
+        }
+        collections.push({
+          symbol: raw.symbol,
+          name: clean(raw.name ?? "").slice(0, MAX_DIRECTORY_NAME),
+          isBadged: raw.isBadged === true,
+        });
+      }
+      if (collections.length >= MAX_DIRECTORY_ROWS_TOTAL) {
+        partial = true;
+        break;
+      }
       if (batch.length < INDEX_PAGE) {
         partial = false;
         break;
       }
       partial = true;
     }
-    return { collections, partial, atVenuePagingLimit, pagesRead };
+    return { collections, partial, atVenuePagingLimit, pagesRead, rowsRejected };
   });
   return { ...data, stale, cachedAt };
 }

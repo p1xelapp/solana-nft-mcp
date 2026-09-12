@@ -404,8 +404,23 @@ export function compareReaderCounts(a: ReaderCount, b: ReaderCount): ReaderCompa
   const answered = [a, b].filter((r) => r.count !== null);
   if (answered.length < 2) return { comparable: false, note: null };
   const bounded = [a, b].filter((r) => r.bounded);
+  const staleReaders = [a, b].filter((r) => r.stale === true);
   const describe = (r: ReaderCount) =>
-    `${r.reader} listed ${r.count} item(s)${r.bounded ? ` and stopped at its limit${r.raise ? ` (raise ${r.raise} to read more)` : ""}` : ""}`;
+    `${r.reader} listed ${r.count} item(s)${r.stale ? ` from cache after a failed refresh${r.readAt ? `, last answered ${r.readAt}` : ""}` : ""}${r.bounded ? ` and stopped at its limit${r.raise ? ` (raise ${r.raise} to read more)` : ""}` : ""}`;
+  // A reader that did not answer is not a second opinion.
+  //
+  // Two cached lists can carry the same count because NEITHER reader answered,
+  // and calling that agreement describes the cache, not the wallet. Freshness
+  // is checked before the counts are ever compared.
+  if (staleReaders.length > 0) {
+    return {
+      comparable: false,
+      note:
+        `${describe(a)}; ${describe(b)}. ` +
+        `${staleReaders.length === 2 ? "Neither reader" : `${staleReaders[0]!.reader}`} answered for this read, so ${staleReaders.length === 2 ? "both counts are" : "that count is"} LAST-KNOWN rather than current. ` +
+        `Counts that are not both current cannot corroborate each other - two cached lists agreeing is the cache agreeing with itself. Ask again in a minute.`,
+    };
+  }
   if (bounded.length > 0) {
     return {
       comparable: false,
@@ -448,9 +463,29 @@ export interface FloorQuoteForValue {
  * months. So this returns a CEILING with the assumptions spelled out, never a
  * "worth".
  */
-export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
+export interface HoldingsCoverage {
+  /** True when the holdings walk stopped at the caller's cap: totals are lower bounds over what was read. */
+  capped: boolean;
+  /** True when the holdings list came from cache after a failed refresh: it describes an earlier moment. */
+  stale: boolean;
+  /** When the holdings were actually read. */
+  cachedAt?: string | null;
+  /** What to raise to read further. */
+  raise?: string;
+}
+
+export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number, coverage: HoldingsCoverage = { capped: false, stale: false }) {
   // A stale or failed quote cannot price anything "now": those items count as
   // unpriced and the reason is spelled out below.
+  // Stale holdings cannot be multiplied by a live floor.
+  //
+  // The trap: the holdings refresh failed and returned a cached list of ten
+  // items the wallet no longer owns, the floor requests succeeded live, and
+  // the product was published as a present-tense ceiling. A ceiling is
+  // arithmetic across two reads and is only about NOW if both of them are.
+  // When the holdings are stale the figure is returned as last-known, stamped
+  // with when the holdings were actually read.
+  const holdingsStale = coverage.stale === true;
   const priced = quotes.filter(
     (q) => !q.stale && !q.error && typeof q.floorSol === "number" && Number.isFinite(q.floorSol) && q.floorSol > 0 && Number.isFinite(q.count) && q.count > 0,
   );
@@ -458,10 +493,31 @@ export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
   const coveredItems = priced.reduce((s, q) => s + q.count, 0);
   const ceilingSol = round(priced.reduce((s, q) => s + (q.floorSol ?? 0) * q.count, 0));
   const thin = priced.filter((q) => (q.listedCount ?? 0) > 0 && q.count > (q.listedCount ?? 0) / 2);
+  // A capped walk saw part of the wallet. Everything derived from it is a
+  // LOWER BOUND over the items observed, and the count of items we could not
+  // price is unknowable rather than "total minus covered" - the total itself
+  // was never established.
+  const capped = coverage.capped === true;
   return {
-    ceilingSol,
+    /** What this figure is. A capped or stale read can never produce a present-tense ceiling. */
+    basis: holdingsStale
+      ? "last-known"
+      : capped
+        ? "lower-bound-over-observed-items"
+        : "ceiling-at-query-time",
+    /** Present-tense only when the holdings were current and complete; otherwise the last-known or lower-bound figure. */
+    ceilingSol: holdingsStale || capped ? null : ceilingSol,
+    /** The arithmetic itself, always available, labelled by `basis` rather than presented as a claim about now. */
+    figureSol: ceilingSol,
+    /** When the holdings behind this figure were actually read. */
+    holdingsReadAt: coverage.cachedAt ?? null,
+    holdingsStale,
+    holdingsCapped: capped,
     itemsPriced: coveredItems,
-    itemsUnpriced: Math.max(0, totalItems - coveredItems),
+    // With a capped walk, "items we could not price" is unknown: the wallet's
+    // real total was never read, so subtracting from the observed count would
+    // report a number about a population nobody counted.
+    itemsUnpriced: capped ? null : Math.max(0, totalItems - coveredItems),
     perCollection: priced.map((q) => ({
       collection: q.collection,
       count: q.count,
@@ -470,8 +526,14 @@ export function floorCeiling(quotes: FloorQuoteForValue[], totalItems: number) {
       listedOnVenue: q.listedCount,
     })),
     readThis: [
-      "This is floor x count on Magic Eden at query time: the most the wallet could list for and still be the cheapest, not what it would realise.",
-      `${Math.max(0, totalItems - coveredItems)} items had no Magic Eden floor (unindexed, no listings, or the collection was outside the priced set) and count as zero here.`,
+      holdingsStale
+        ? `LAST-KNOWN, not current: Magic Eden did not answer for the holdings themselves, so this is floor x the counts it last returned${coverage.cachedAt ? ` at ${coverage.cachedAt}` : ""}. The wallet may hold none of these items now. Ask again in a minute for a figure about the present.`
+        : capped
+          ? `A LOWER BOUND over the ${totalItems} items actually read: the holdings walk stopped at its cap${coverage.raise ? ` (raise ${coverage.raise} to read further)` : ""}, so items beyond it are absent from every figure here and the wallet's real total was never established.`
+          : "This is floor x count on Magic Eden at query time: the most the wallet could list for and still be the cheapest, not what it would realise.",
+      capped
+        ? "How many items had no Magic Eden floor cannot be stated: that count needs a total this read did not establish."
+        : `${Math.max(0, totalItems - coveredItems)} items had no Magic Eden floor (unindexed, no listings, or the collection was outside the priced set) and count as zero here.`,
       ...(thin.length
         ? [
             `${thin.map((q) => q.collection).join(", ")}: the wallet holds more than half as many items as are listed on the whole venue - selling would move the floor, so the ceiling is generous.`,

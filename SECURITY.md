@@ -28,5 +28,12 @@ fixed fast and credited in the changelog.
 ## Supply chain
 
 Two runtime dependencies (`@modelcontextprotocol/sdk`, `zod`), lockfile
-committed, install scripts disabled via `.npmrc`, CI runs a full-history secrets
-scan (gitleaks) + `npm audit` on every push.
+committed, install scripts disabled via `.npmrc`. CI runs a full-history secrets
+scan (gitleaks) on every push to every branch, and `npm audit` plus the offline
+suite on `main` and pull requests. The gitleaks allowlist is scoped to the one
+rule that misreads base58 chain addresses in `test/fixtures`, not to those
+paths wholesale - a real credential committed there still fails the scan.
+
+Releases run `node scripts/pack-check.mjs` to prove the tarball carries
+`dist/index.js` before going out; the exact release steps are in
+CONTRIBUTING.md.

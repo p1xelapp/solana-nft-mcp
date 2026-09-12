@@ -1,14 +1,18 @@
-# CI backstop: secrets scan + strict build + offline protocol test on every push.
-# The live smoke suite (npm test) talks to real endpoints, so it stays a local/dev
-# command - CI must not hammer public APIs on every push, that's the polite-client
-# rule applied to ourselves.
+# CI backstop: a secrets scan on EVERY push, plus strict build, lint and the
+# full offline suite on main and pull requests.
+#
+# The live smoke suite (npm run test:smoke) talks to real endpoints, so it stays
+# a local/dev command - CI must not hammer public APIs on every push, that's the
+# polite-client rule applied to ourselves.
 name: ci
 on:
-  # Pushes to main, and any pull request. Deliberately NOT every push to every
-  # branch: a bot's update branch would otherwise run this twice and send two
-  # failure emails for one problem.
+  # The secrets job runs on every branch (see below); the full check job is
+  # deliberately limited to main and pull requests, because a bot's update
+  # branch would otherwise run it twice and send two failure emails for one
+  # problem. That noise decision is about TESTS, not about secrets: a secret
+  # pushed to a public feature branch with no PR is public the moment it lands,
+  # so the scan cannot wait for a pull request.
   push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -18,9 +22,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # Cheap, fast, and runs on every push to every branch. Nothing else in this
+  # workflow gates a secret reaching a public branch.
+  secrets:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       # Actions pinned to full commit SHAs - a moved tag is a supply-chain vector.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -34,10 +40,14 @@ jobs:
       # worse than no gate, and this repo is going public, where every commit
       # ever made becomes readable. So: pinned binary, verified checksum,
       # whole history, every run.
+      #
+      # 8.30.x, not 8.24: the rule-scoped allowlist in .gitleaks.toml needs
+      # `targetRules`, which older binaries ignore - and ignoring it would
+      # silently widen the allowlist back to every rule.
       - name: Secrets scan (gitleaks, full history)
         env:
-          GITLEAKS_VERSION: 8.24.3
-          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
           set -euo pipefail
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -46,15 +56,33 @@ jobs:
           tar xzf "$tarball" gitleaks
           ./gitleaks detect --source=. --config=.gitleaks.toml --redact --exit-code=1 --verbose
 
+  check:
+    # Tests and build: main and pull requests only, on purpose.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       # Runner's preinstalled Node (>=20) satisfies engines; no third-party setup action needed.
       - name: Install (locked)
         run: npm ci
 
-      - name: Build (strict TypeScript)
-        run: npm run build
+      - name: Lint (eslint, the configured security and correctness rules)
+        run: npm run lint
 
-      - name: Protocol test (offline - full MCP surface over real stdio)
-        run: node test/protocol.mjs
+      # `npm test` builds and then runs the WHOLE offline suite: protocol,
+      # market, DAS, mechanics, http, serials. CI used to run only
+      # test/protocol.mjs, so a regression any of the others caught still went
+      # green - the suite the README promises and the suite CI ran were
+      # different suites.
+      - name: Build + offline test suite
+        run: npm test
+
+      # Publishing with ignore-scripts=true does not build for you: this proves
+      # the tarball would carry dist/index.js and the bundled snapshot.
+      - name: Tarball contents check
+        run: node scripts/pack-check.mjs
 
       - name: Dependency audit
         run: npm audit --audit-level=high

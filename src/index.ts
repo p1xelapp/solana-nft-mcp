@@ -32,7 +32,7 @@ import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeil
 import * as das from "./sources/das.js";
 import { SOURCES, explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
-import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial } from "./market.js";
+import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
 import { resolveName } from "./names.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
 
@@ -128,7 +128,13 @@ const guard =
     try {
       return await fn(...args);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      // An upstream error message is attacker-influenced text that this layer
+      // serialises TWICE - once as prose, once as structured content. A 50 MB
+      // message therefore cost two 50 MB allocations and an oversized protocol
+      // response; embedded newlines and instruction text reached the model
+      // unchanged. It is neutralised and capped before either copy is built.
+      const raw = err instanceof Error ? err.message : String(err);
+      const detail = inspectUntrusted(raw.replace(/\s+/g, " ").trim().slice(0, 300)).value;
       const e = explain(err);
       return {
         content: [{ type: "text", text: `${e.headline} ${e.next}
@@ -167,9 +173,12 @@ function marketView(t: Record<string, unknown>) {
     if (r.suspicious) flags.push(`${label}: ${r.flags.join(", ")}`);
     return r.value;
   };
+  // Every ROW is checked, not just the container: `attributes: [null]` from
+  // the venue used to throw here and take the whole asset lookup down.
   const attrs = Array.isArray(t.attributes)
-    ? (t.attributes as { trait_type?: unknown; value?: unknown }[])
+    ? (t.attributes as unknown[])
         .slice(0, 64)
+        .filter((a): a is { trait_type?: unknown; value?: unknown } => a !== null && typeof a === "object" && !Array.isArray(a))
         .map((a, i) => ({ trait: cl(a.trait_type, `trait ${i}`), value: cl(typeof a.value === "number" ? String(a.value) : a.value, `trait ${i} value`) }))
     : [];
   return {
@@ -287,6 +296,7 @@ registerTool(
         .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor"),
       value: z
         .number()
+        .finite()
         .positive()
         .optional()
         .describe("The claimed number - required for supply (count) and floor (SOL)"),
@@ -400,7 +410,10 @@ registerTool(
       "address, CryptoSlam contract). Collections not in the registry still work: pass a Magic Eden symbol " +
       "or a Metaplex Core collection address directly to the other tools.",
     annotations: READ_ONLY,
-    inputSchema: { query: z.string().trim().max(200).describe("Free-text name search") },
+    // A search term is required: `{"query":""}` used to validate and come back
+    // with a successful-looking broad result, which reads as "these are the
+    // matches" rather than "you did not ask for anything".
+    inputSchema: { query: z.string().trim().min(1).max(200).describe("Free-text name search") },
   },
   guard(async ({ query }) => {
     const results = searchRegistry(query);
@@ -592,9 +605,12 @@ registerTool(
 registerTool(
   "get_floor_prices",
   {
-    title: "Floor prices",
+    title: "Floor prices (Magic Eden only)",
     description:
-      "Current floor price (SOL) for up to 10 Magic Eden collections in one call. " +
+      "Current floor price in SOL for up to 10 collections, read from MAGIC EDEN ONLY - it takes Magic Eden " +
+      "symbols and returns Magic Eden rows, with no other venue and no other currency, whether or not an " +
+      "OpenSea key is configured. For a cross-venue floor comparison use get_collection_stats, which quotes " +
+      "each venue in its own currency and refuses to compare across them. " +
       "Use search_collections first if you only know a human name.",
     annotations: READ_ONLY,
     inputSchema: { symbols: z.array(symbolSchema).min(1).max(10).describe("Magic Eden collection symbols") },
@@ -629,7 +645,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80),
-      limit: z.number().int().min(1).max(50).default(10),
+      limit: z.number().int().finite().min(1).max(50).default(10),
       openseaSlug: z
         .string()
         .trim()
@@ -781,13 +797,23 @@ registerTool(
   {
     title: "Asset provenance (Core)",
     description:
-      "Full on-chain ownership history of a Metaplex Core asset: mint -> every transfer (with marketplace " +
+      "BOUNDED on-chain ownership history of a Metaplex Core asset: mint -> transfers (with marketplace " +
       "labels) -> current owner. Decoded from TransferV1 instruction accounts - data most NFT APIs return " +
-      "EMPTY for on Core assets. Ideal for Candy Digital cards and any Core collectible.",
+      "EMPTY for on Core assets. Ideal for Candy Digital cards and any Core collectible. " +
+      "This decodes at most `depth` transactions, so on a heavily traded asset the earliest ownership can " +
+      "be outside the result: ALWAYS read `historyComplete` before describing the trail as the whole story, " +
+      "and `skippedTransactions` for how much was left out. Raise `depth` to cover more.",
     annotations: READ_ONLY,
     inputSchema: {
       mint: addressSchema.describe("Core asset mint address"),
-      depth: z.number().int().min(1).max(25).default(15).describe("Max transactions to decode"),
+      depth: z
+        .number()
+        .int()
+        .finite()
+        .min(1)
+        .max(50)
+        .default(15)
+        .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything."),
     },
   },
   guard(async ({ mint, depth }) => ok(await sol.getProvenance(mint, depth))),
@@ -806,7 +832,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      limit: z.number().int().min(1).max(100).default(50),
+      limit: z.number().int().finite().min(1).max(100).default(50),
     },
   },
   guard(async ({ wallet, limit }) => {
@@ -881,7 +907,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      maxItems: z.number().int().min(50).max(3000).default(1000).describe("Cap on items fetched (500 per request)"),
+      maxItems: z.number().int().finite().min(50).max(3000).default(1000).describe("Cap on items fetched (500 per request)"),
       priceTop: z
         .number()
         .int()
@@ -945,15 +971,35 @@ registerTool(
         stale: held.stale,
         source: "magiceden (indexed collections only)",
       },
+      // Share of supply is count / total. With a capped walk the count is a
+      // lower bound over what was read, so the percentage is one too.
       supplyShare: supplyShare.length ? supplyShare : undefined,
+      supplyShareBasis: held.capped
+        ? "lower bound: the holdings walk stopped at maxItems, so each count - and therefore each percentage - covers only the items read"
+        : held.stale
+          ? `last-known: the holdings came from cache after a failed refresh${held.cachedAt ? ` (read ${held.cachedAt})` : ""}, so these shares describe an earlier moment`
+          : "counts and percentages are from a complete, current read of what Magic Eden indexes",
       supplyShareNote:
         supplyShare.length === 0
           ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (set OPENSEA_API_KEY). None of the priced collections had one."
           : undefined,
-      floorCeiling: floorCeiling(quotes, holdings.totalItems),
+      // Capped or stale holdings can never produce a present-tense ceiling:
+      // the coverage of the read travels with the numbers derived from it.
+      floorCeiling: floorCeiling(quotes, holdings.totalItems, {
+        capped: held.capped,
+        stale: held.stale,
+        cachedAt: held.cachedAt,
+        raise: "maxItems",
+      }),
       account: age,
       readThis: [
         "Holdings are what Magic Eden indexes for this address. Unindexed collections and some compressed NFTs are invisible here; the chain has more.",
+        ...(held.capped
+          ? [`The holdings walk stopped at maxItems (${maxItems}), so every total, share and ceiling here is a LOWER BOUND over the items actually read - the wallet's real size was not established. Raise maxItems to cover more.`]
+          : []),
+        ...(held.stale
+          ? [`Magic Eden did not answer for the holdings themselves, so this list is the one it last returned${held.cachedAt ? ` at ${held.cachedAt}` : ""}. Treat every figure derived from it as last-known, not current.`]
+          : []),
         "If the address is a marketplace escrow the request is refused by the source and says so - that is not a bug, it is the item being listed.",
         "Next: get_wallet_activity for buys, sells, flips and venue split; get_asset_trust on any single item before treating it as unconditionally theirs.",
       ],
@@ -976,7 +1022,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      pages: z.number().int().min(1).max(5).default(3).describe("Magic Eden activity pages of 100 events, newest first"),
+      pages: z.number().int().finite().min(1).max(5).default(3).describe("Magic Eden activity pages of 100 events, newest first"),
       includeOpenSea: z.boolean().default(true).describe("Add OpenSea sales + transfers when OPENSEA_API_KEY is set"),
     },
   },
@@ -1039,7 +1085,7 @@ registerTool(
         .max(60)
         .regex(/^[a-z0-9-]+$/i, "CryptoSlam contract slug, e.g. panini-america")
         .default("panini-america"),
-      limit: z.number().int().min(1).max(20).default(10),
+      limit: z.number().int().finite().min(1).max(20).default(10),
     },
   },
   guard(async ({ contract, limit }) => ok(await cs.recentMints(contract, limit))),
@@ -1068,9 +1114,9 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
-      days: z.number().int().min(1).max(90).default(7).describe("Window ending now"),
+      days: z.number().int().finite().min(1).max(90).default(7).describe("Window ending now"),
       nameContains: z.string().trim().max(80).optional().describe("Keep only sales whose item name contains this text, e.g. 'Ohtani' or 'Batman'; names come from the chain's asset index"),
-      maxPages: z.number().int().min(1).max(20).default(6).describe("Pages of 500 events to read; busy collections need more to cover long windows"),
+      maxPages: z.number().int().finite().min(1).max(20).default(6).describe("Pages of 500 events to read; busy collections need more to cover long windows"),
     },
   },
   guard(async ({ symbol, days, maxPages, nameContains }) => {
@@ -1089,25 +1135,66 @@ registerTool(
       namesError = e instanceof Error ? e.message : String(e);
     }
     const needle = nameContains ? clean(nameContains).toLowerCase() : null;
-    const events = needle
-      ? windowEvents.filter((e) => (e.tokenMint && names?.names.get(e.tokenMint)?.name?.toLowerCase().includes(needle)) === true)
-      : read.events;
-    const summary = summarizeSales(events, { windowStartUnix: sinceUnix, windowEndUnix: nowUnix, truncated: read.truncated });
+    // A name filter that could not resolve names matches nothing - and zero
+    // sales is the WRONG answer to "how many Ohtani cards sold", because it
+    // reads as a fact about the collection instead of a failure to look. When
+    // the index did not answer, the filter is reported as unavailable and the
+    // figures that ARE returned are the collection-wide ones, labelled as such.
+    const nameFilterRun = applyNameFilter(windowEvents, names ? names.names : null, needle);
+    const nameFilterAvailable = nameFilterRun.status === "applied";
+    const filtered = nameFilterRun.events;
+    const summarised = filtered ?? read.events;
+    const summary = summarizeSales(summarised, {
+      windowStartUnix: sinceUnix,
+      windowEndUnix: nowUnix,
+      truncated: read.truncated,
+      // A cached feed cannot describe the window up to now: whatever sold
+      // since the cache was taken is simply not in it.
+      stale: read.stale,
+      cachedAt: read.cachedAt,
+    });
     const byName = names ? breakdownByName(windowEvents, names.names) : null;
     return ok({
       symbol,
       requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString(), nameContains: nameContains ?? null },
       ...summary,
+      /** What the figures above are actually about. */
+      figuresCover: needle
+        ? nameFilterAvailable
+          ? `sales in the window whose item name contains "${needle}"`
+          : "the WHOLE collection - the name filter could not run, see nameFilter"
+        : "the whole collection over the window",
       ...(needle
-        ? {
-            nameFilter: {
-              matched: events.length,
-              of: windowEvents.length,
-              note: names
-                ? `Sales whose item name contains "${needle}", by the chain's asset index; ${names.unresolved} sale(s) had no name in the index and could not be matched.`
-                : `Name filter could not run: ${namesError ?? "asset index unavailable"}. Figures above are for the whole collection.`,
-            },
-          }
+        ? nameFilterAvailable
+          ? {
+              nameFilter: {
+                status: "applied" as const,
+                matched: filtered!.length,
+                of: windowEvents.length,
+                note:
+                  `Sales whose item name contains "${needle}", by the chain's asset index; ${names!.unresolved} sale(s) could not be matched because the index had no name for them` +
+                  (names!.omitted ? `, of which ${names!.omitted} were never requested (the batch cap was reached)` : "") +
+                  ". Those are unmatched, not non-matching.",
+              },
+            }
+          : {
+              nameFilter: {
+                status: "unavailable" as const,
+                matched: null,
+                of: windowEvents.length,
+                note: `The name filter could not run: ${namesError ?? "the chain's asset index did not answer"}. No filtered figure is reported, because zero matches here would mean "we could not look", not "nothing matched".`,
+              },
+              // Named separately so it can never be mistaken for the filtered
+              // answer the caller asked for.
+              collectionWide: summarizeSales(windowEvents, {
+                windowStartUnix: sinceUnix,
+                windowEndUnix: nowUnix,
+                truncated: read.truncated,
+                stale: read.stale,
+                cachedAt: read.cachedAt,
+              }),
+              collectionWideNote: `These are the collection's figures over the window, with no name filter applied. They answer a different question from the one asked ("${nameContains}").`,
+            }
         : {}),
       byName: byName
         ? {
@@ -1140,7 +1227,7 @@ registerTool(
       symbol: symbolSchema.describe("Magic Eden collection symbol"),
       traits: z.array(traitSchema).max(6).optional().describe("Trait filters, combined with AND"),
       nameContains: z.string().trim().max(80).optional().describe("Keep only listings whose name contains this text, e.g. '#1390' or 'Judge'"),
-      limit: z.number().int().min(1).max(100).default(20),
+      limit: z.number().int().finite().min(1).max(100).default(20),
       lowestSerials: z.boolean().default(false).describe("Hunt low edition numbers: read up to 1,000 listings, parse the serial from each name (#9, 12/250) and return the lowest serials with their asks against the floor"),
     },
   },
@@ -1153,22 +1240,32 @@ registerTool(
       const BUDGET = 10;
       const seen: me.MeListing[] = [];
       let pagesRead = 0;
-      let complete = false;
+      let venueReportedEnd = false;
       let stale = false;
       let cachedAt = "";
       for (let p = 0; p < BUDGET; p++) {
         const read = await me.collectionListings(symbol, { attributes: traits, limit: PAGE, offset: p * PAGE, sort: "listPrice", direction: "asc" });
         pagesRead++;
         stale = stale || read.stale;
-        cachedAt = read.cachedAt;
-        seen.push(...read.listings);
-        if (!read.more) {
-          complete = true;
+        // The walk is only as fresh as its STALEST page; reporting the newest
+        // would overstate it.
+        if (!cachedAt || read.cachedAt < cachedAt) cachedAt = read.cachedAt;
+        for (const l of read.listings) seen.push(l);
+        if (read.venueReportedEnd) {
+          venueReportedEnd = true;
           break;
         }
       }
       const floorRes = await me.collectionStats(symbol).then((v) => ({ ok: true as const, v }), (e: unknown) => ({ ok: false as const, e }));
+      const floorStale = floorRes.ok ? floorRes.v.stale : true;
       const floor = floorRes.ok ? floorRes.v.floorPriceSol : null;
+      // A multiple of the floor is arithmetic across two reads and is only
+      // true about NOW if both of them are. A stale listing page against a
+      // live floor - or a live page against a stale floor - produced
+      // current-looking multiples from numbers that were never current
+      // together, so the comparison is either made from two live reads or not
+      // made at all, with both read times named.
+      const multiplesComparable = !stale && !floorStale && typeof floor === "number" && Number.isFinite(floor) && floor > 0;
       const parsed = seen
         .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
         .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
@@ -1181,7 +1278,10 @@ registerTool(
           name: clean(l.token?.name ?? ""),
           tokenMint: l.tokenMint && sol.isBase58Address(l.tokenMint) ? l.tokenMint : null,
           priceSol: price,
-          vsFloor: price !== null && floor ? { floorSol: floor, multiple: Math.round((price / floor) * 100) / 100 } : null,
+          vsFloor:
+            price !== null && multiplesComparable && floor
+              ? { floorSol: floor, multiple: Math.round((price / floor) * 100) / 100 }
+              : null,
         };
       });
       return ok({
@@ -1193,12 +1293,19 @@ registerTool(
           listingsRead: seen.length,
           withSerialInName: parsed.length,
           pagesRead,
-          complete,
-          note: complete
-            ? "Every current Magic Eden listing was read."
+          /** The venue served a short page and stopped. That is its report, not proof that nothing else exists. */
+          venueReportedEnd,
+          note: venueReportedEnd
+            ? `Magic Eden returned no further page after ${seen.length} listing(s)${stale ? `, and at least one of those pages came from cache after a failed refresh (read ${cachedAt || "at an unrecorded time"})` : ` as of ${cachedAt || "this read"}`}. ` +
+              `That is the venue reporting the end of this filter's book, not an authoritative total - it publishes no listing count to check it against.`
             : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
         },
-        floor: floorRes.ok ? { floorSol: floor, listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt } : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
+        floorMultiples: multiplesComparable
+          ? "available: both the listing pages and the floor were read live"
+          : `not computed: ${[stale ? "at least one listing page came from cache after a failed refresh" : null, floorStale ? "the floor came from cache after a failed refresh" : null, floor === null ? "no floor was returned" : null].filter(Boolean).join("; ")}. A multiple of the floor is only true if both sides were read just now, so the asks are shown as they are.`,
+        floor: floorRes.ok
+          ? { floorSol: floor, listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
+          : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
         readThis: "Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number are not in this list. get_collection_sales with nameContains shows what similar items actually sold for.",
         stale,
         cachedAt,
@@ -1276,6 +1383,7 @@ registerTool(
       filters: { traits: traits ?? [], nameContains: nameContains ?? null },
       ...deals,
       more: listings.more,
+      venueReportedEnd: listings.venueReportedEnd,
       appliedLimit: listings.appliedLimit,
       search: needle
         ? {
@@ -1289,7 +1397,7 @@ registerTool(
                 ? `Read ${listingsSeen} listings over ${pagesRead} page(s) of ${NAME_PAGE}, cheapest first, and stopped at the page budget - there are dearer listings this name search never saw. Narrow it with a trait filter, or search again knowing the cheapest ${listingsSeen} were covered.`
                 : stopReason === "found"
                   ? `Read ${listingsSeen} listings over ${pagesRead} page(s), cheapest first, and stopped once ${kept.length} matched the name - the venue still has dearer listings this search never read, and top-level "more" describes the first page only.`
-                  : `Read ${listingsSeen} listings over ${pagesRead} page(s), which is every listing the venue would serve for this filter.`,
+                  : `Read ${listingsSeen} listings over ${pagesRead} page(s), and the venue returned no further page for this filter. That is Magic Eden reporting the end of the book, not an authoritative total it published.`,
           }
         : undefined,
       traitFloors: attrs ? { count: attrs.attributes.length, stale: attrs.stale, cachedAt: attrs.cachedAt } : undefined,
@@ -1312,7 +1420,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol"),
-      limit: z.number().int().min(1).max(50).default(10),
+      limit: z.number().int().finite().min(1).max(50).default(10),
     },
   },
   guard(async ({ symbol, limit }) => ok(await me.collectionLeaderboard(symbol, limit))),

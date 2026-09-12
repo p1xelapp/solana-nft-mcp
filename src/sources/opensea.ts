@@ -12,15 +12,16 @@
 
 import { cached, fetchJson, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
+import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
 export const openSeaEnabled = (): boolean => Boolean(process.env.OPENSEA_API_KEY);
 
 // Free tier is ~hundreds of reads/hour: pace conservatively at 1 req/2s.
-const gate = rateLimiter(2000);
+const gate = rateLimiter(2000, "OpenSea");
 
-async function os<T>(path: string): Promise<T> {
+async function os<T>(path: string, signal?: AbortSignal): Promise<T> {
   const key = process.env.OPENSEA_API_KEY;
   if (!key) throw new Error("OpenSea source is not enabled (set OPENSEA_API_KEY to add cross-marketplace data)");
   return fetchJson<T>(
@@ -33,7 +34,7 @@ async function os<T>(path: string): Promise<T> {
         "User-Agent": "collector-mcp/1.1 (+https://github.com/p1xelapp/collector-mcp)",
       },
     },
-    { gate },
+    { gate, signal },
   );
 }
 
@@ -42,24 +43,33 @@ interface OsStats {
 }
 
 /** Collection stats by OpenSea slug. Floor is in the listing currency (SOL for Solana collections). */
-export async function collectionStats(slug: string, opts: { fresh?: boolean } = {}) {
+export async function collectionStats(slug: string, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
   // `fresh` = contact OpenSea now. A health check served from cache reports a
   // venue answering while it is down, which is the one thing it must not do.
   const { data, stale, cachedAt } = await cached(
     `os:stats:${slug}`,
     60_000,
-    () => os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`),
+    () => os<OsStats>(`/collections/${encodeURIComponent(slug)}/stats`, opts.signal),
     { fresh: opts.fresh },
   );
   const t = data?.total;
-  if (!t) throw new Error(`OpenSea has no stats for slug "${slug}"`);
+  // An empty `total` object is a shape change, not a collection with no stats:
+  // every real answer carries at least one finite number.
+  if (!t || typeof t !== "object") throw new Error(`OpenSea has no stats for slug "${slug}"`);
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const fields = [t.floor_price, t.volume, t.sales, t.num_owners];
+  if (!fields.some((v) => num(v) !== null)) {
+    throw new Error(`OpenSea answered for slug "${slug}" with a stats block carrying no usable numbers (outage or API change)`);
+  }
   return {
     slug,
-    floor: t.floor_price ?? null,
-    floorCurrency: t.floor_price_symbol ?? null,
-    totalVolume: t.volume ?? null,
-    totalSales: t.sales ?? null,
-    owners: t.num_owners ?? null,
+    floor: num(t.floor_price),
+    // The currency symbol is venue-supplied text that is printed next to a
+    // number; it is neutralised and kept short rather than relayed.
+    floorCurrency: typeof t.floor_price_symbol === "string" ? clean(t.floor_price_symbol).slice(0, 16) || null : null,
+    totalVolume: num(t.volume),
+    totalSales: num(t.sales),
+    owners: num(t.num_owners),
     stale,
     cachedAt,
     source: "opensea",
@@ -81,8 +91,8 @@ export async function recentSales(slug: string, limit: number) {
   const { data, stale, cachedAt } = await cached(`os:sales:${slug}:${Math.min(limit, 50)}`, 30_000, () =>
     os<{ asset_events?: OsEvent[] }>(`/events/collection/${encodeURIComponent(slug)}?event_type=sale&limit=${Math.min(limit, 50)}`),
   );
-  if (!Array.isArray(data?.asset_events)) throw new Error("OpenSea returned an unexpected events shape (outage or API change)");
-  const events = data.asset_events;
+  const events = objectRows<OsEvent>("OpenSea", "collection sale events", data?.asset_events);
+  assertPageSize("OpenSea", "collection sale events", events, Math.min(limit, 50));
   return {
     slug,
     sales: events.slice(0, limit).map((e) => ({
@@ -129,9 +139,10 @@ export async function solanaCollections() {
     for (let page = 0; page < 5; page++) {
       const q = `/collections?chain=solana&limit=100&order_by=seven_day_volume${next ? `&next=${encodeURIComponent(next)}` : ""}`;
       const res = await os<{ collections?: OsSolanaCollection[]; next?: string }>(q);
-      if (!Array.isArray(res.collections)) throw new Error("OpenSea returned an unexpected collections shape (outage or API change)");
-      out.push(...res.collections);
-      if (!res.next || res.collections.length < 100) break;
+      const rows = objectRows<OsSolanaCollection>("OpenSea", "Solana collection index", res.collections);
+      assertPageSize("OpenSea", "Solana collection index", rows, 100);
+      appendAll(out, rows);
+      if (!res.next || rows.length < 100) break;
       next = res.next;
     }
     return out;
@@ -192,9 +203,10 @@ export async function accountEvents(wallet: string, pages: number) {
       const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
         `/events/accounts/${wallet}?chain=solana&limit=50${next ? `&next=${encodeURIComponent(next)}` : ""}`,
       );
-      if (!Array.isArray(res.asset_events)) throw new Error("OpenSea returned an unexpected account events shape (outage or API change)");
-      out.push(...res.asset_events);
-      if (!res.next || res.asset_events.length < 50) break;
+      const rows = objectRows<OsAccountEvent>("OpenSea", "account events", res.asset_events);
+      assertPageSize("OpenSea", "account events", rows, 50);
+      appendAll(out, rows);
+      if (!res.next || rows.length < 50) break;
       next = res.next;
     }
     return out;

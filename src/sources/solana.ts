@@ -18,7 +18,7 @@
  * Digital auction: 36/36 packs traced to their winners, 0 untraced.
  */
 
-import { cached, originGate } from "../lib/http.js";
+import { cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 
@@ -105,6 +105,51 @@ const cooldown = new Map<string, number>();
 let rpcId = 0;
 
 /**
+ * One endpoint, held for the length of a verification walk.
+ *
+ * The trap this closes: endpoint A serves the post-transfer account state and
+ * then fails, endpoint B is a slot behind and serves a signature list without
+ * that transfer. Every individual read succeeds, the walk looks complete, and
+ * "never changed hands" is confirmed from a snapshot that never existed on any
+ * node. A pinned walk reads everything from ONE node, so the answer describes
+ * a state that node actually held.
+ */
+export interface EndpointPin {
+  /** Chosen on the first read; every later read in the walk reuses it. */
+  ep: RpcEndpoint | null;
+  /** Endpoints a previous attempt already burned through. */
+  exclude: Set<string>;
+  /** Human-safe label of the pinned endpoint, once one has answered. */
+  label: string | null;
+}
+
+/** The pinned endpoint stopped answering mid-walk. The walk is restarted, never stitched. */
+class PinnedEndpointError extends Error {}
+
+const newPin = (exclude: Iterable<string> = []): EndpointPin => ({ ep: null, exclude: new Set(exclude), label: null });
+
+/**
+ * Run a read that must see ONE consistent node.
+ *
+ * If the pinned endpoint fails part-way the whole walk restarts from scratch
+ * against the next endpoint - never resumed, because a resumed walk is exactly
+ * the mixed-slot snapshot this exists to prevent. A second failure is an
+ * unverifiable read and is thrown to the caller to report as such.
+ */
+export async function pinnedWalk<T>(run: (pin: EndpointPin) => Promise<T>): Promise<{ value: T; endpointPinned: string }> {
+  const first = newPin();
+  try {
+    const value = await run(first);
+    return { value, endpointPinned: first.label ?? "no endpoint was contacted for this read" };
+  } catch (e) {
+    if (!(e instanceof PinnedEndpointError)) throw e;
+    const second = newPin(first.ep ? [first.ep.id] : []);
+    const value = await run(second);
+    return { value, endpointPinned: second.label ?? "no endpoint was contacted for this read" };
+  }
+}
+
+/**
  * One JSON-RPC call, with endpoint fallback.
  *
  * Anything that says "this endpoint is not answering" - transport failure,
@@ -114,27 +159,41 @@ let rpcId = 0;
  * is thrown straight out: rotating would only collect the same answer three
  * more times and cost the user ten seconds.
  */
-async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Promise<T> {
+async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?: EndpointPin, signal?: AbortSignal): Promise<T> {
   const all = endpoints();
   const now = Date.now();
   const isCooling = (ep: RpcEndpoint) => (cooldown.get(ep.id) ?? 0) >= now;
   // Cooling endpoints are demoted, never removed. Skipping them entirely lets
   // one fresh endpoint fail and produce "every endpoint was tried" while two
   // recovered ones were never asked - a self-inflicted outage.
-  const list = [...all.filter((ep) => !isCooling(ep)), ...all.filter(isCooling)];
+  let list = [...all.filter((ep) => !isCooling(ep)), ...all.filter(isCooling)];
+  if (pin) {
+    // Pinned: one endpoint for the whole walk. Rotating mid-walk is what
+    // produces a snapshot stitched from two different slots.
+    list = pin.ep ? [pin.ep] : list.filter((ep) => !pin.exclude.has(ep.id));
+    if (list.length === 0) {
+      throw new Error(
+        `no Solana endpoint is left to pin this read to (every one was already tried). That is the free public RPC being busy, not a problem with what you asked.`,
+      );
+    }
+  }
   const problems: string[] = [];
   for (const ep of list) {
     const wasCooling = isCooling(ep);
     let lastErr: unknown;
     for (let attempt = 0; attempt < ATTEMPTS_PER_ENDPOINT; attempt++) {
+      // A caller that has already given up gets no further requests spent on
+      // its behalf, and none of the source's rate budget either.
+      if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
       if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
       await gateFor(ep.url)();
+      if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
       try {
         const res = await fetch(ep.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-          signal: AbortSignal.timeout(12_000),
+          signal: combineSignals(12_000, signal),
         });
         if (!res.ok) {
           await res.body?.cancel().catch(() => undefined);
@@ -142,8 +201,11 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Prom
         }
         let j: { result?: T; error?: { code: number; message: string } };
         try {
-          j = (await res.json()) as { result?: T; error?: { code: number; message: string } };
-        } catch {
+          // Bounded read: an endpoint answering a one-line request with
+          // gigabytes must not be buffered in full before anything checks it.
+          j = await readBoundedJson<{ result?: T; error?: { code: number; message: string } }>(res, ep.id);
+        } catch (e) {
+          if (e instanceof OversizedBodyError) throw e;
           throw new EndpointError("returned a non-JSON body");
         }
         if (j.error) {
@@ -154,6 +216,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Prom
         // "no account" or "no history" downstream.
         if (!("result" in j)) throw new EndpointError("returned an envelope with no result field");
         cooldown.delete(ep.id);
+        if (pin && !pin.ep) {
+          pin.ep = ep;
+          pin.label = label(ep);
+        }
         if (trace) {
           const name = label(ep);
           trace.endpoint = name;
@@ -164,12 +230,20 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Prom
         return j.result as T;
       } catch (e) {
         if (e instanceof ChainError) throw new Error(e.message);
+        if (e instanceof OversizedBodyError) throw e;
         lastErr = e;
       }
     }
     cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     problems.push(
       `${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+    );
+  }
+  if (pin) {
+    // The pinned endpoint is gone. The caller restarts the whole walk against
+    // the next one rather than continuing against a second node.
+    throw new PinnedEndpointError(
+      `the Solana endpoint this read was pinned to stopped answering part-way (${problems.join("; ")})`,
     );
   }
   throw new Error(
@@ -181,6 +255,24 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace): Prom
 
 /** This endpoint is not answering: retry it, then move to the next one. */
 class EndpointError extends Error {}
+
+/**
+ * One signal firing on either the request timeout or the caller's own
+ * deadline. `AbortSignal.any` landed in Node 20.3 and this package supports
+ * 18.17, so the two are combined by hand.
+ */
+function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!caller) return timeout;
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  if (caller.aborted || timeout.aborted) stop();
+  else {
+    caller.addEventListener("abort", stop, { once: true });
+    timeout.addEventListener("abort", stop, { once: true });
+  }
+  return controller.signal;
+}
 
 /** The chain answered, and the answer was an error. Every endpoint would say the same. */
 class ChainError extends Error {}
@@ -396,13 +488,15 @@ export interface CoreAccountRead {
  */
 export async function getCoreAccountWithMeta(
   address: string,
-  opts: { fresh?: boolean; trace?: RpcTrace } = {},
+  opts: { fresh?: boolean; trace?: RpcTrace; pin?: EndpointPin; signal?: AbortSignal } = {},
 ): Promise<CoreAccountRead> {
   const read = async () => {
     const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>(
       "getAccountInfo",
       [address, { encoding: "base64" }],
       opts.trace,
+      opts.pin,
+      opts.signal,
     );
     if (!info?.value) return { missing: true as const };
     if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner };
@@ -425,7 +519,7 @@ export async function getCoreAccountWithMeta(
 
 export async function getCoreAccount(
   address: string,
-  opts: { fresh?: boolean; trace?: RpcTrace } = {},
+  opts: { fresh?: boolean; trace?: RpcTrace; pin?: EndpointPin; signal?: AbortSignal } = {},
 ): Promise<CoreAsset | CoreCollection | null> {
   return (await getCoreAccountWithMeta(address, opts)).account;
 }
@@ -455,6 +549,8 @@ interface ParsedInstruction {
 // log_wrapper - omitted optionals are filled with the program id, so
 // new_owner is always index 4.
 const IX_TRANSFER_V1 = 14;
+const IX_CREATE_V1 = 0;
+const IX_BURN_V1 = 12;
 const TRANSFER_NEW_OWNER_INDEX = 4;
 
 /** First byte of a base58 instruction payload, or null when it is not decodable. */
@@ -494,114 +590,174 @@ interface ParsedTx {
 export async function getProvenance(mint: string, depth = 15, opts: { fresh?: boolean } = {}) {
   // Which endpoint actually served this history is part of the evidence: a
   // reader checking the result by hand needs to know whose node they are
-  // disagreeing with.
+  // disagreeing with. A `fresh` read is a verification walk and is pinned to
+  // ONE endpoint for the account, the signature pages and the transactions.
   const trace: RpcTrace = {};
-  const account = await getCoreAccount(mint, { fresh: opts.fresh, trace });
-  if (!account || account.kind !== "asset") {
-    throw new Error(
-      account?.kind === "collection"
-        ? `${mint} is a Core COLLECTION (${account.name}). Pass an asset mint, or use get_collection_stats for collections.`
-        : `${mint} exists but does not decode as a Core asset (possibly burned).`,
-    );
-  }
-
-  // Walk the signature list to the end (paged, newest first) so the oldest
-  // event is the real mint and totals are real totals. Capped at 5 pages of
-  // 1,000; beyond that the result says the history is incomplete.
-  const walkSignatures = async () => {
-    const all: { signature: string; blockTime: number | null; err: unknown }[] = [];
-    let before: string | undefined;
-    let complete = false;
-    for (let page = 0; page < 5; page++) {
-      const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
-        "getSignaturesForAddress",
-        [mint, before ? { limit: 1000, before } : { limit: 1000 }],
-        trace,
+  const run = async (pin?: EndpointPin) => {
+    const account = await getCoreAccount(mint, { fresh: opts.fresh, trace, pin });
+    if (!account || account.kind !== "asset") {
+      throw new Error(
+        account?.kind === "collection"
+          ? `${mint} is a Core COLLECTION (${account.name}). Pass an asset mint, or use get_collection_stats for collections.`
+          : `${mint} exists but does not decode as a Core asset (possibly burned).`,
       );
-      if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
-      all.push(...batch);
-      if (batch.length < 1000) { complete = true; break; }
-      before = batch[batch.length - 1]!.signature;
     }
-    return { sigs: all, complete };
-  };
-  // A verification must walk the chain now; a cached walk from two minutes
-  // ago can miss the transfer that just happened.
-  const walk = opts.fresh ? await walkSignatures() : (await cached(`sigs:${mint}`, 120_000, walkSignatures)).data;
-  const sigs = walk.sigs;
 
-  const ok = sigs.filter((s) => !s.err);
-  // Newest-first from RPC. Always include the oldest (the mint) plus the most
-  // recent `depth - 1`; announce anything we skipped rather than hiding it.
-  let selected = ok;
-  let skipped = 0;
-  if (ok.length > depth) {
-    selected = [...ok.slice(0, depth - 1), ok[ok.length - 1]!];
-    skipped = ok.length - selected.length;
-  }
-
-  const events: ProvenanceEvent[] = [];
-  // A signature the RPC could not return, or one with no metadata or logs, is
-  // a hole in the evidence and is counted as such - never silently skipped.
-  let unreadable = 0;
-  for (const sig of selected) {
-    const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
-      rpc<ParsedTx | null>(
-        "getTransaction",
-        [sig.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
-        trace,
-      ),
-    );
-    if (!tx?.meta) { unreadable++; continue; }
-    if (tx.meta.err) continue; // failed transaction: nothing happened on chain
-    if (!tx.meta.logMessages) { unreadable++; continue; }
-
-    const logs = tx.meta.logMessages ?? [];
-    const isTransfer = logs.some((l) => l.includes("Instruction: Transfer"));
-    const isCreate = logs.some((l) => l.includes("Instruction: Create"));
-    const isBurn = logs.some((l) => l.includes("Instruction: Burn"));
-
-    const all: ParsedInstruction[] = [
-      ...tx.transaction.message.instructions,
-      ...(tx.meta.innerInstructions ?? []).flatMap((i) => i.instructions),
-    ];
-    const marketplace = all
-      .map((i) => MARKETPLACE_PROGRAMS[i.programId])
-      .find((m): m is string => Boolean(m));
-
-    const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
-
-    if (isTransfer) {
-      // Pick the TransferV1 instruction for THIS asset by its discriminator
-      // and read the fixed new_owner slot. Fall back to the account heuristic
-      // only when the RPC gave no instruction data, and say so.
-      const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
-      const transferIx = coreIxs.find((i) => discriminator(i.data) === IX_TRANSFER_V1);
-      let newOwner: string | undefined;
-      let ownerNote: string | undefined;
-      if (transferIx) {
-        newOwner = transferIx.accounts?.[TRANSFER_NEW_OWNER_INDEX];
-      } else {
-        const coreIx = coreIxs[0];
-        const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
-        const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a));
-        newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
-        ownerNote = "new owner inferred from the account list (no instruction data available); treat as probable";
+    // Walk the signature list to the end (paged, newest first) so the oldest
+    // event is the real mint and totals are real totals. Capped at 5 pages of
+    // 1,000; beyond that the result says the history is incomplete.
+    const walkSignatures = async () => {
+      const all: { signature: string; blockTime: number | null; err: unknown }[] = [];
+      let before: string | undefined;
+      let complete = false;
+      for (let page = 0; page < 5; page++) {
+        const batch = await rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
+          "getSignaturesForAddress",
+          [mint, before ? { limit: 1000, before } : { limit: 1000 }],
+          trace,
+          pin,
+        );
+        if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
+        all.push(...batch);
+        if (batch.length < 1000) { complete = true; break; }
+        before = batch[batch.length - 1]!.signature;
       }
-      events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace, ...(ownerNote ? { note: ownerNote } : {}) });
-    } else if (isBurn) {
-      events.push({ signature: sig.signature, time, event: "burned", marketplace });
-    } else if (isCreate) {
-      events.push({ signature: sig.signature, time, event: "minted", marketplace });
-    } else if (marketplace) {
-      // Listing/delisting/escrow motion on a marketplace - no ownership change.
-      events.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace });
-    } else {
-      events.push({ signature: sig.signature, time, event: "other", marketplace });
-    }
-  }
+      return { sigs: all, complete };
+    };
+    // A verification must walk the chain now; a cached walk from two minutes
+    // ago can miss the transfer that just happened.
+    const walk = opts.fresh ? await walkSignatures() : (await cached(`sigs:${mint}`, 120_000, walkSignatures)).data;
+    const sigs = walk.sigs;
 
-  events.reverse(); // oldest first - reads as a story
+    const ok = sigs.filter((s) => !s.err);
+    // Newest-first from RPC. Always include the oldest (the mint) plus the most
+    // recent `depth - 1`; announce anything we skipped rather than hiding it.
+    let selected = ok;
+    let skipped = 0;
+    if (ok.length > depth) {
+      selected = [...ok.slice(0, depth - 1), ok[ok.length - 1]!];
+      skipped = ok.length - selected.length;
+    }
+
+    const events: ProvenanceEvent[] = [];
+    // A signature the RPC could not return, or one carrying neither logs nor a
+    // readable instruction list, is a hole in the evidence and is counted as
+    // such - never silently skipped.
+    let unreadable = 0;
+    // Transactions whose logs and whose decoded instructions disagreed about
+    // whether a transfer happened. The INSTRUCTIONS win; the count is reported
+    // so a reader knows the log text could not corroborate them.
+    let logsDisagreed = 0;
+    for (const sig of selected) {
+      // Confirmed transactions are immutable, so a cached one is the same bytes
+      // whichever node served it; only the reads that actually go out are
+      // pinned.
+      const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
+        rpc<ParsedTx | null>(
+          "getTransaction",
+          [sig.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+          trace,
+          pin,
+        ),
+      );
+      if (!tx?.meta) { unreadable++; continue; }
+      if (tx.meta.err) continue; // failed transaction: nothing happened on chain
+
+      const all: ParsedInstruction[] = [
+        ...(Array.isArray(tx.transaction?.message?.instructions) ? tx.transaction.message.instructions : []),
+        ...(Array.isArray(tx.meta.innerInstructions) ? tx.meta.innerInstructions : []).flatMap((i) =>
+          Array.isArray(i?.instructions) ? i.instructions : [],
+        ),
+      ].filter((i): i is ParsedInstruction => Boolean(i) && typeof i.programId === "string");
+
+      // Log text is a CROSS-CHECK, never the detector.
+      //
+      // The trap this closes: a transaction carrying a Core TransferV1 whose
+      // logMessages happen to lack "Instruction: Transfer" - truncated logs, a
+      // CPI whose wrapper swallowed them, a node that returned none - used to
+      // be read as "no transfer", and with an otherwise complete history that
+      // became a confirmed "never changed hands". Transfers are now identified
+      // from the program id, the instruction discriminator and the account
+      // slot on EVERY instruction of every readable transaction; the logs only
+      // get to agree or disagree afterwards.
+      const logs = Array.isArray(tx.meta.logMessages) ? tx.meta.logMessages : [];
+      const logsMissing = !Array.isArray(tx.meta.logMessages);
+      const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
+      const decodable = coreIxs.filter((i) => discriminator(i.data) !== null);
+      const transferIx = coreIxs.find((i) => discriminator(i.data) === IX_TRANSFER_V1);
+      const createIx = coreIxs.find((i) => discriminator(i.data) === IX_CREATE_V1);
+      const burnIx = coreIxs.find((i) => discriminator(i.data) === IX_BURN_V1);
+
+      // A transaction we can read neither way is a hole, not an absence of
+      // events: no logs AND no decodable Core instruction means we cannot say
+      // what it did.
+      if (logsMissing && decodable.length === 0) { unreadable++; continue; }
+
+      const logSaysTransfer = logs.some((l) => typeof l === "string" && l.includes("Instruction: Transfer"));
+      const logSaysCreate = logs.some((l) => typeof l === "string" && l.includes("Instruction: Create"));
+      const logSaysBurn = logs.some((l) => typeof l === "string" && l.includes("Instruction: Burn"));
+
+      const marketplace = all
+        .map((i) => MARKETPLACE_PROGRAMS[i.programId])
+        .find((m): m is string => Boolean(m));
+
+      const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
+
+      // A Core instruction on this asset that we could not decode at all, with
+      // logs claiming a transfer, is still a transfer - just one whose new
+      // owner has to be inferred.
+      const undecodableTransfer = !transferIx && logSaysTransfer && coreIxs.length > 0;
+
+      if (transferIx || undecodableTransfer) {
+        let newOwner: string | undefined;
+        const notes: string[] = [];
+        if (transferIx) {
+          const candidate = transferIx.accounts?.[TRANSFER_NEW_OWNER_INDEX];
+          // The slot is fixed, but the value still has to look like a pubkey
+          // and must not be one of the structural accounts.
+          const structural = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
+          newOwner = candidate && isBase58Address(candidate) && !structural.has(candidate) ? candidate : undefined;
+          if (!newOwner) notes.push("the TransferV1 new_owner slot did not hold a usable address; the transfer is recorded, the recipient is not");
+          if (!logSaysTransfer) {
+            logsDisagreed++;
+            notes.push(
+              logsMissing
+                ? "this transaction carried no logs; the transfer was identified from the Core program id, the TransferV1 discriminator and the account list"
+                : "the transaction logs do not mention a Transfer instruction, but a TransferV1 for this asset is present in the instruction list - the instructions are the record, the logs could not corroborate them",
+            );
+          }
+        } else {
+          const coreIx = coreIxs[0];
+          const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
+          const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a) && isBase58Address(a));
+          newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
+          notes.push("new owner inferred from the account list (no instruction data available); treat as probable");
+        }
+        events.push({ signature: sig.signature, time, event: "transferred", newOwner, marketplace, ...(notes.length ? { note: notes.join("; ") } : {}) });
+      } else if (burnIx || (logSaysBurn && coreIxs.length > 0)) {
+        events.push({ signature: sig.signature, time, event: "burned", marketplace });
+      } else if (createIx || (logSaysCreate && coreIxs.length > 0)) {
+        events.push({ signature: sig.signature, time, event: "minted", marketplace });
+      } else if (marketplace) {
+        // Listing/delisting/escrow motion on a marketplace - no ownership change.
+        events.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace });
+      } else {
+        events.push({ signature: sig.signature, time, event: "other", marketplace });
+      }
+    }
+
+    events.reverse(); // oldest first - reads as a story
+    return { account, events, skipped, unreadable, logsDisagreed, walk, okCount: ok.length };
+  };
+
+  // A fresh read is a verification walk: one endpoint for the whole thing, or
+  // one clean restart, or unverifiable. An ordinary read keeps the old
+  // behaviour, where rotating between endpoints costs nothing but a label.
+  const { value, endpointPinned } = opts.fresh
+    ? await pinnedWalk(run)
+    : { value: await run(), endpointPinned: "not pinned (this was not a verification read)" };
+  const { account, events, skipped, unreadable, logsDisagreed, walk, okCount } = value;
+
   return {
     mint,
     explorer: `https://solscan.io/token/${mint}`,
@@ -612,13 +768,17 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       "If the asset is listed on a marketplace, currentOwner may be an escrow account, not the seller's wallet.",
     events,
     skippedTransactions: skipped,
-    /** Signatures whose transaction could not be fetched or carried no logs to read. */
+    /** Signatures whose transaction could not be fetched, or which carried neither logs nor a decodable Core instruction. */
     unreadableTransactions: unreadable,
-    totalSignatures: ok.length,
+    /** Transactions where the logs did not corroborate a TransferV1 that the instruction list clearly carries. */
+    transfersWithoutLogEvidence: logsDisagreed,
+    totalSignatures: okCount,
     /** The last Solana endpoint to serve part of this read (host only - a private URL's key is never echoed). */
     rpcEndpointUsed: trace.endpoint ?? "cache (no endpoint was contacted for this read)",
     /** Every endpoint that served part of it: the account, the signature pages and the transactions can come from different ones. */
     rpcEndpointsUsed: trace.endpoints ?? [],
+    /** For a verification walk, the ONE endpoint every read in it was pinned to. */
+    endpointPinned,
     ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     /** True only when every signature was listed, every transaction was decoded (none skipped for depth), and every one was readable. */
     historyComplete: walk.complete && unreadable === 0 && skipped === 0,
@@ -640,30 +800,37 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
 export async function findRecentCollectionAssets(
   collection: string,
   max = 3,
-  opts: { maxTransactions?: number; deadlineMs?: number } = {},
+  opts: { maxTransactions?: number; deadlineMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ assets: string[]; transactionsRead: number; timedOut: boolean }> {
   const maxTransactions = opts.maxTransactions ?? 8;
   const deadline = Date.now() + (opts.deadlineMs ?? 6_000);
+  const signal = opts.signal;
   // Listings (e.g. Magic Eden CoreSell) carry no Core instruction, so a
   // listing-heavy stretch needs headroom before we hit a real transfer.
-  const sigs = await rpc<{ signature: string; err: unknown }[]>("getSignaturesForAddress", [
-    collection,
-    { limit: 25 },
-  ]);
+  const sigs = await rpc<{ signature: string; err: unknown }[]>(
+    "getSignaturesForAddress",
+    [collection, { limit: 25 }],
+    undefined,
+    undefined,
+    signal,
+  );
   const found = new Set<string>();
   let transactionsRead = 0;
   let ranOut = false;
   for (const s of sigs.filter((x) => !x.err)) {
     if (found.size >= max) break;
-    if (transactionsRead >= maxTransactions || Date.now() > deadline) {
+    if (transactionsRead >= maxTransactions || Date.now() > deadline || signal?.aborted) {
       ranOut = true;
       break;
     }
     transactionsRead++;
-    const tx = await rpc<ParsedTx | null>("getTransaction", [
-      s.signature,
-      { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
-    ]);
+    const tx = await rpc<ParsedTx | null>(
+      "getTransaction",
+      [s.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+      undefined,
+      undefined,
+      signal,
+    );
     if (!tx?.meta || tx.meta.err) continue;
     const all = [
       ...tx.transaction.message.instructions,
@@ -717,6 +884,28 @@ export async function walletAge(wallet: string, maxPages = 3) {
       break;
     }
   }
+  // One sentinel read past the page budget.
+  //
+  // Exactly `maxPages` full pages is ambiguous: the wallet may have exactly
+  // that many signatures, or millions more. Asking for ONE more signature
+  // settles it for the cost of a single call, so a wallet whose history ends
+  // precisely on the budget is reported as exact instead of being told its
+  // "true first transaction is earlier" when it is not.
+  let sentinelFailed = false;
+  if (!complete && before) {
+    try {
+      const sentinel = await rpc<{ signature: string; blockTime: number | null }[]>(
+        "getSignaturesForAddress",
+        [wallet, { limit: 1, before }],
+        trace,
+      );
+      if (Array.isArray(sentinel) && sentinel.length === 0) complete = true;
+    } catch {
+      // The sentinel is an extra confirmation, never a reason to fail the
+      // whole read; without it the count stays a lower bound, which is true.
+      sentinelFailed = true;
+    }
+  }
   const iso = (t: number | null) => (t ? new Date(t * 1000).toISOString() : null);
   const days = oldest ? Math.floor((Date.now() / 1000 - oldest) / 86_400) : null;
   return {
@@ -731,6 +920,7 @@ export async function walletAge(wallet: string, maxPages = 3) {
     ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     note: complete
       ? "Every signature was counted."
-      : `Stopped after ${count} signatures (${maxPages} pages). The wallet is AT LEAST this old and this busy; the true first transaction is earlier.`,
+      : `Stopped after ${count} signatures (${maxPages} pages)${sentinelFailed ? ", and the one extra signature that would have settled whether more exist could not be read" : ""}. ` +
+        `The wallet is AT LEAST this old and this busy; the true first transaction MAY be earlier.`,
   };
 }

@@ -56,6 +56,23 @@ export interface VerificationResult {
 const near = (a: number, b: number, tolerance = 0) => Math.abs(a - b) <= tolerance;
 
 /**
+ * A number this module is willing to compare.
+ *
+ * JSON parses `1e400` as `Infinity`, and `Infinity <= Infinity` is true - so a
+ * claimed floor of `1e400` compared inside a 2% tolerance against ANY observed
+ * floor came back "confirmed within 2%". Every comparison here now requires
+ * both sides to be finite and above zero, independently of whatever the input
+ * schema allowed, because a verifier that trusts its caller's arithmetic is
+ * not a verifier.
+ */
+const comparable = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+/** The same refusal, worded for a reader, wherever a claimed number is unusable. */
+const unusableClaim = (claimed: unknown): string =>
+  `The claimed value (${typeof claimed === "number" ? (Number.isNaN(claimed) ? "not a number" : String(claimed)) : String(claimed)}) is not a finite number above zero, so there is nothing to compare against. ` +
+  `Very large JSON numbers arrive as infinity and would compare equal to anything; this is refused rather than confirmed.`;
+
+/**
  * Verify a supply claim against the on-chain collection account.
  *
  * Supply is the claim most worth checking, because it is the one that
@@ -74,6 +91,16 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   // getCoreAccount throws for accounts that are not Core (a wallet, an SPL
   // mint). That is an unverifiable claim, not an error - catch it here so the
   // tool can say so instead of failing.
+  if (!comparable(claimed)) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: unusableClaim(claimed),
+      evidence: [],
+      caveats: ["Pass a finite supply count above zero."],
+    };
+  }
+
   const acct = await sol.getCoreAccount(collectionAddress, { fresh: true }).catch(() => null);
   if (!acct || acct.kind !== "collection") {
     return {
@@ -112,6 +139,18 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   caveats.push(
     "This counts what the collection account records. It does not prove the issuer will not mint more later unless the authority is renounced.",
   );
+
+  // The OBSERVED side has to be a real number too: a decode that produced NaN
+  // or infinity must not be compared, it must be reported as unreadable.
+  if (!Number.isFinite(acct.numMinted) || !Number.isFinite(acct.currentSize)) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `The collection account at ${collectionAddress} did not decode into usable mint counts, so there is no on-chain figure to check the claim against.`,
+      evidence,
+      caveats,
+    };
+  }
 
   if (near(acct.numMinted, claimed) || near(acct.currentSize, claimed)) {
     const which = near(acct.numMinted, claimed) ? "minted" : "currently existing";
@@ -180,6 +219,11 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
       method: "Core TransferV1 instructions decoded from each signature touching the asset.",
       observed: `${transfers.length} transfer(s) across ${prov.totalSignatures} total signatures (${prov.unreadableTransactions} unreadable, ${prov.skippedTransactions} not decoded)`,
     },
+    {
+      source: `Solana RPC endpoint ${prov.endpointPinned}`,
+      method: "Every read in this walk - the account, the signature pages and each transaction - came from this one endpoint, so the answer describes a state that node actually held rather than a snapshot stitched from two.",
+      observed: `endpointPinned = ${prov.endpointPinned}`,
+    },
   ];
 
   const caveats = [
@@ -188,6 +232,12 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   if (prov.skippedTransactions > 0) {
     caveats.push(
       `${prov.skippedTransactions} older transaction(s) were beyond the decode depth and were not examined.`,
+    );
+  }
+
+  if (prov.transfersWithoutLogEvidence > 0) {
+    caveats.push(
+      `${prov.transfersWithoutLogEvidence} transaction(s) carried a Core TransferV1 for this asset that the transaction logs did not mention. The instruction list is the record and was used; the logs could not corroborate it.`,
     );
   }
 
@@ -236,8 +286,14 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
 
   let acct: Awaited<ReturnType<typeof sol.getCoreAccount>> = null;
   let readError: string | undefined;
+  let endpointPinned = "no endpoint was contacted for this read";
   try {
-    acct = await sol.getCoreAccount(mint, { fresh: true });
+    // Pinned even though this is a single read: the result records WHICH node
+    // said it, so a reader who disagrees knows whom they are disagreeing with,
+    // and a mid-read failure restarts cleanly instead of silently rotating.
+    const walk = await sol.pinnedWalk((pin) => sol.getCoreAccount(mint, { fresh: true, pin }));
+    acct = walk.value;
+    endpointPinned = walk.endpointPinned;
   } catch (e) {
     readError = e instanceof Error ? e.message : String(e);
   }
@@ -260,6 +316,11 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
       source: `Solana account ${mint}`,
       method: "Metaplex Core asset account, owner field decoded from bytes 1-33.",
       observed: `owner = ${acct.owner}`,
+    },
+    {
+      source: `Solana RPC endpoint ${endpointPinned}`,
+      method: "The endpoint this read was pinned to, so the answer names the node whose state it describes.",
+      observed: `endpointPinned = ${endpointPinned}`,
     },
   ];
 
@@ -295,6 +356,16 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     reproduce: `GET https://api-mainnet.magiceden.dev/v2/collections/${symbol}/stats and divide floorPrice by 1e9 to get SOL. No key required.`,
   };
 
+  if (!comparable(claimed)) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: unusableClaim(claimed),
+      evidence: [],
+      caveats: ["Pass a finite price above zero, in SOL."],
+    };
+  }
+
   let stats: Awaited<ReturnType<typeof me.collectionStats>> | null = null;
   let statsError: string | undefined;
   try {
@@ -327,6 +398,15 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     };
   }
   const observed = stats.floorPriceSol;
+  if (!comparable(observed)) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `Magic Eden returned a floor for "${symbol}" that is not a finite number above zero, so it cannot be compared with the claim.`,
+      evidence: [],
+      caveats: ["That is a venue shape problem, not a statement about the collection. Retry shortly."],
+    };
+  }
   const evidence: Evidence[] = [
     {
       source: `Magic Eden collection stats for ${symbol}`,

@@ -50,6 +50,12 @@ const watchdog = setTimeout(() => {
 watchdog.unref?.();
 
 const failures = [];
+// Sources that are down but deliberately do not fail the run. CryptoSlam feeds
+// one non-Solana tool and is the documented flaky one, so its outage is
+// reported rather than paged - but the closing line must NAME it. It used to
+// print "every source family answered" over exactly this state, which is the
+// one sentence a health check must never get wrong.
+const degraded = [];
 function fail(source, what, detail) {
   console.error(`❌ ${what} [${source}] - ${detail}`);
   failures.push(`${what} (${source})`);
@@ -167,9 +173,11 @@ try {
         // documented flaky source. Its outage is reported, not paged: a weekly
         // email for a venue nobody on Solana depends on is the noise this check
         // exists to avoid. Anything Solana-side failing still fails the run.
+        degraded.push(`CryptoSlam (status: ${slam.note}; get_pack_pulls served no pulls)`);
         pass("CryptoSlam", "get_pack_pulls", `WARNING - CryptoSlam is down on their side: status said "${slam.note}" and the feed served no pulls. Only get_pack_pulls is affected.`);
       }
     } catch (e) {
+      degraded.push(`CryptoSlam (status: ${slam.note}; get_pack_pulls threw: ${e.message})`);
       pass("CryptoSlam", "get_source_status", `WARNING - CryptoSlam is not answering (${slam.note}; get_pack_pulls: ${e.message}). Their outage, one tool affected, not a failure of this server.`);
     }
   } else {
@@ -224,6 +232,17 @@ if (failures.length > 0) {
   console.error(`\nLIVE CHECK FAILED in ${elapsed()}: ${failures.join(", ")}.`);
   console.error("One named source stopped answering or changed shape. Check its status page (docs/SOURCES.md lists them) before changing any code.");
   process.exit(1);
+}
+if (degraded.length > 0) {
+  // Exit 0 on purpose - a CryptoSlam-only outage is not worth a weekly email -
+  // but the line says WHICH source is degraded and never claims the set is
+  // healthy.
+  console.log(
+    `\nLIVE CHECK PASSED WITH A DEGRADED SOURCE in ${elapsed()}: ${degraded.join("; ")}. ` +
+      `Every Solana source family answered, including the undocumented asset index; the source(s) named above did NOT, ` +
+      `and the tools that depend on them (get_pack_pulls) are affected. Not failing the run: this source is documented flaky and feeds one non-Solana tool.`,
+  );
+  process.exit(0);
 }
 console.log(`\nLIVE CHECK PASSED in ${elapsed()} - every source family answered, including the undocumented asset index.`);
 process.exit(0);

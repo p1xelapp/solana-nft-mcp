@@ -136,10 +136,10 @@ without raising an error.
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
 | `get_collection_stats` | chain supply, floors per venue, and a reconciliation that refuses to rank SOL against USDC |
-| `get_floor_prices` | current floor and listed count per venue, each labelled with its currency |
+| `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-venue floors live in `get_collection_stats`) |
 | `get_recent_sales` | latest completed fills with buyer, seller, price and signature |
 | `get_asset` | three readers for one item: the venue, a byte-level decode, and the chain's asset index, with owner agreement reported |
-| `get_asset_provenance` | every owner of a Core asset, dated, marketplaces named, back to the mint |
+| `get_asset_provenance` | bounded ownership history of a Core asset, dated, marketplaces named - `historyComplete` says whether it reached the mint |
 | `get_wallet_holdings` | holdings from two independent readers, with the gap between them named |
 | `get_wallet_profile` | holdings by collection, share of wallet and of supply, listed and compressed counts, floor ceiling with assumptions, wallet age |
 | `get_wallet_activity` | buys and sells, net flow, venue split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
@@ -171,7 +171,9 @@ for a collection or a wallet in one step.
   with its assumptions attached, because a stale price feed is wrong with the same confidence as
   a good one.
 - Sales history reaches as far as the venue keeps it, and the result says how far it got.
-  Ownership history for Core assets comes from the chain, back to the mint.
+  Ownership history for Core assets comes from the chain and is bounded by `depth`: the result
+  carries `historyComplete` and `skippedTransactions`, so a partial trail is never presented as
+  the whole story.
 - Public RPC throttles bursts, and cached values come back labelled `stale: true` rather than
   erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](docs/TRUST-AND-LIMITS.md)
   and [docs/SOURCES.md](docs/SOURCES.md).
@@ -187,8 +189,11 @@ npm run snapshot   # refresh the bundled Magic Eden collection directory
 npm run inspect    # open the MCP Inspector against a local build
 ```
 
-CI runs the offline suite and a full-history secrets scan on every push. A scheduled workflow
-runs the live check weekly and only makes noise when a source breaks.
+A full-history secrets scan (gitleaks) runs on every push to every branch - a secret on a public
+feature branch is public before any pull request exists. The offline suite, lint, the tarball
+check and `npm audit` run on `main` and on pull requests, which keeps a bot's update branch from
+emailing twice about one problem. A scheduled workflow runs the live check weekly; its setup and
+its source check are separate steps, so a red run names which of the two failed.
 
 ## Docs
 

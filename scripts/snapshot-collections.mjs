@@ -32,6 +32,25 @@ const out = {
   atVenuePagingLimit: read.atVenuePagingLimit,
   collections,
 };
+// A partial read must not REPLACE a good snapshot.
+//
+// The failure this closes: Magic Eden serves one page and then has a bad
+// minute, the walk stops, `complete:false` is recorded honestly - and the
+// 30,499-entry dataset is overwritten with that prefix anyway, exit code 0.
+// Every later name search then misses collections that are perfectly real, and
+// nothing anywhere says why. A short read is discarded unless the operator
+// explicitly asks for it.
+const force = process.argv.includes("--allow-partial");
+if (!out.complete && !force) {
+  console.error(
+    `refusing to overwrite the bundled snapshot with a partial read: ` +
+      `${collections.length} collections over ${read.pagesRead} page(s), partial=${read.partial}, atVenuePagingLimit=${read.atVenuePagingLimit}.\n` +
+      `The existing snapshot is untouched and is still the better answer. Re-run when Magic Eden is serving the whole directory, ` +
+      `or pass --allow-partial if you genuinely want this prefix bundled.`,
+  );
+  process.exit(1);
+}
+
 const dir = path.join(root, "data");
 fs.mkdirSync(dir, { recursive: true });
 const file = path.join(dir, "me-collections.json.gz");
@@ -39,5 +58,6 @@ fs.writeFileSync(file, gzipSync(Buffer.from(JSON.stringify(out)), { level: 9 }))
 console.log(
   `wrote ${path.relative(root, file)}: ${collections.length} collections, ${read.pagesRead} pages, ` +
     `${Math.round((Date.now() - started) / 1000)}s, ${fs.statSync(file).size} bytes, complete=${out.complete}` +
-    `, atVenuePagingLimit=${out.atVenuePagingLimit}`,
+    `, atVenuePagingLimit=${out.atVenuePagingLimit}` +
+    (out.complete ? "" : " (WRITTEN PARTIAL - --allow-partial was passed)"),
 );

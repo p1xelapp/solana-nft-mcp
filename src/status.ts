@@ -18,6 +18,7 @@ import * as os from "./sources/opensea.js";
 import * as cs from "./sources/cryptoslam.js";
 import * as das from "./sources/das.js";
 import { rpcHealth } from "./sources/solana.js";
+import { clean } from "./lib/untrusted.js";
 
 export interface SourceStatusRow {
   id: string;
@@ -49,24 +50,47 @@ const CS_PROBE_CONTRACT = "panini-america";
 
 const short = (e: unknown): string => {
   const msg = e instanceof Error ? e.message : String(e);
-  return msg.replace(/\s+/g, " ").trim().slice(0, 180);
+  // Every upstream message printed here is attacker-influenced text on its way
+  // into model context, so it is neutralised as well as shortened.
+  return clean(msg.replace(/\s+/g, " ").trim().slice(0, 180));
 };
+
+/** One probe's whole budget, including every retry the source's own client makes. */
+const PROBE_DEADLINE_MS = 12_000;
 
 /** Run one probe, and turn any outcome - including a throw - into a row. */
 async function probe(
   entry: SourceEntry,
-  run: () => Promise<{ ok: boolean; note: string }>,
+  run: (signal: AbortSignal) => Promise<{ ok: boolean; note: string }>,
+  signal: AbortSignal,
 ): Promise<SourceStatusRow> {
   const started = Date.now();
   try {
     // A status check that waits 45 s on one flaky source (measured, CryptoSlam)
     // blows past MCP clients' default request timeout and reports nothing at
-    // all. A source that has not answered in 8 s is reported as slow-or-down.
-    const deadline = new Promise<{ ok: boolean; note: string }>((resolve) =>
-      setTimeout(() => resolve({ ok: false, note: `${entry.name} did not answer within 8 s (slow or down on their side)` }), 8_000).unref(),
-    );
-    const { ok, note } = await Promise.race([run(), deadline]);
-    return { ...base(entry), ok, latencyMs: Date.now() - started, note };
+    // all. Two things had to change: the probes share ONE overall deadline
+    // instead of each getting its own (four sequential 8 s races is 32 s before
+    // the chain endpoints are even read), and the loser of a race is ABORTED
+    // and awaited rather than left running - `Promise.race` cancels nothing, so
+    // every timed-out probe used to keep its request alive behind the response
+    // and pile up behind the source's rate gate on the next call.
+    const settled = await new Promise<{ ok: boolean; note: string }>((resolve) => {
+      let done = false;
+      const finish = (v: { ok: boolean; note: string }) => {
+        if (done) return;
+        done = true;
+        resolve(v);
+      };
+      const onAbort = () =>
+        finish({ ok: false, note: `${entry.name} did not answer within the status check's ${PROBE_DEADLINE_MS / 1000} s budget (slow or down on their side)` });
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+      void run(signal).then(
+        (v) => finish(v),
+        (e: unknown) => finish({ ok: false, note: `${entry.name} did not answer: ${short(e)}` }),
+      );
+    });
+    return { ...base(entry), ok: settled.ok, latencyMs: Date.now() - started, note: settled.note };
   } catch (e) {
     return {
       ...base(entry),
@@ -94,6 +118,12 @@ function unchecked(entry: SourceEntry, note: string): SourceStatusRow {
 export async function sourceStatus(): Promise<SourceStatusReport> {
   const checkedAt = new Date().toISOString();
   const rows: SourceStatusRow[] = [];
+  // One budget for every independent probe. They run concurrently - each
+  // source has its own rate gate, so they are not a burst against any one of
+  // them - and the whole set is abandoned together when the budget runs out.
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), PROBE_DEADLINE_MS);
+  deadline.unref?.();
 
   // --- chain endpoints: one batched getHealth + getSlot each -------------
   let health: Awaited<ReturnType<typeof rpcHealth>> = [];
@@ -120,25 +150,37 @@ export async function sourceStatus(): Promise<SourceStatusReport> {
   }
 
   // --- Magic Eden -------------------------------------------------------
-  rows.push(
-    await probe(byId("magiceden-v2"), async () => {
+  const mePromise = probe(
+    byId("magiceden-v2"),
+    async (signal) => {
       // `fresh` on purpose: a cached floor would report the venue healthy
       // while it is down, which is the exact lie this tool exists to prevent.
-      const stats = await me.collectionStats(ME_PROBE_SYMBOL, { fresh: true });
+      const stats = await me.collectionStats(ME_PROBE_SYMBOL, { fresh: true, signal });
+      // HTTP 200 is not health. The venue has been observed answering the
+      // probe with a different symbol and a non-numeric floor; a shape that
+      // does not echo back what was asked for is a shape change, not an "ok".
+      if (stats.symbol !== ME_PROBE_SYMBOL) {
+        return { ok: false, note: `answered a request for ${ME_PROBE_SYMBOL} with stats for "${clean(String(stats.symbol)).slice(0, 40)}" - a shape change, not a healthy venue` };
+      }
+      if (stats.floorPriceSol !== null && !Number.isFinite(stats.floorPriceSol)) {
+        return { ok: false, note: `answered with a floor that is not a finite number - a shape change, not a healthy venue` };
+      }
       return {
         ok: true,
         note: `answered with ${ME_PROBE_SYMBOL} floor ${stats.floorPriceSol ?? "none listed"} SOL`,
       };
-    }),
+    },
+    controller.signal,
   );
 
   // --- asset index on the public RPC (undocumented, so probed every time) --
-  rows.push(
-    await probe(byId("das-public"), async () => {
+  const dasPromise = probe(
+    byId("das-public"),
+    async (signal) => {
       // `fresh` on purpose: the ten-minute capability memo would report the
       // index healthy minutes after the methods were withdrawn, which is the
       // exact lie this tool exists to prevent.
-      const cap = await das.capability({ fresh: true });
+      const cap = await das.capability({ fresh: true, signal });
       // "Withdrawn" and "busy" are different sentences: one means the tools
       // that lean on this index are gone until further notice, the other means
       // ask again in a minute. Reporting a bad minute as a withdrawal is the
@@ -146,45 +188,69 @@ export async function sourceStatus(): Promise<SourceStatusReport> {
       return {
         ok: cap.available,
         note: cap.available
-          ? `getAsset answered via ${cap.endpoint}; ${cap.note}`
+          ? `getAsset answered via ${clean(cap.endpoint ?? "an unnamed endpoint")}; ${clean(cap.note)}`
           : cap.state === "withdrawn"
-            ? `not serving DAS methods: ${cap.note}`
-            : `temporarily unreachable: ${cap.note}`,
+            ? `not serving DAS methods: ${clean(cap.note)}`
+            : `temporarily unreachable: ${clean(cap.note)}`,
       };
-    }),
+    },
+    controller.signal,
   );
 
   // --- OpenSea (optional) ----------------------------------------------
   const openSea = byId("opensea-v2");
-  if (!os.openSeaEnabled()) {
-    rows.push(
-      unchecked(
+  const osPromise = !os.openSeaEnabled()
+    ? Promise.resolve(
+        unchecked(
+          openSea,
+          "off - no OPENSEA_API_KEY set. Every tool still answers; the OpenSea half of cross-venue questions is absent and named, not silently dropped.",
+        ),
+      )
+    : probe(
         openSea,
-        "off - no OPENSEA_API_KEY set. Every tool still answers; the OpenSea half of cross-venue questions is absent and named, not silently dropped.",
-      ),
-    );
-  } else {
-    rows.push(
-      await probe(openSea, async () => {
-        const stats = await os.collectionStats(OS_PROBE_SLUG, { fresh: true });
-        if (stats.stale) {
-          return { ok: false, note: `did not answer just now; showing the last value seen at ${stats.cachedAt}` };
-        }
-        return { ok: true, note: `answered with ${OS_PROBE_SLUG} floor ${stats.floor ?? "none"} ${stats.floorCurrency ?? ""}`.trim() };
-      }),
-    );
-  }
+        async (signal) => {
+          const stats = await os.collectionStats(OS_PROBE_SLUG, { fresh: true, signal });
+          if (stats.stale) {
+            return { ok: false, note: `did not answer just now; showing the last value seen at ${stats.cachedAt}` };
+          }
+          // Same rule as Magic Eden: the answer has to be ABOUT what was
+          // asked for, and its numbers have to be numbers.
+          if (stats.slug !== OS_PROBE_SLUG) {
+            return { ok: false, note: `answered a request for ${OS_PROBE_SLUG} with stats for "${clean(String(stats.slug)).slice(0, 40)}" - a shape change, not a healthy venue` };
+          }
+          if (stats.floor === null && stats.owners === null) {
+            return { ok: false, note: `answered with a stats block carrying neither a floor nor an owner count - a shape change, not a healthy venue` };
+          }
+          // The currency symbol is venue-supplied text printed next to a
+          // number: cleaned at this boundary, never pasted into the note raw.
+          const currency = clean(stats.floorCurrency ?? "").slice(0, 16);
+          return { ok: true, note: `answered with ${OS_PROBE_SLUG} floor ${stats.floor ?? "none"} ${currency}`.trim() };
+        },
+        controller.signal,
+      );
 
   // --- CryptoSlam -------------------------------------------------------
-  rows.push(
-    await probe(byId("cryptoslam"), async () => {
-      const feed = await cs.recentMints(CS_PROBE_CONTRACT, 1, { fresh: true });
+  const csPromise = probe(
+    byId("cryptoslam"),
+    async (signal) => {
+      const feed = await cs.recentMints(CS_PROBE_CONTRACT, 1, { fresh: true, signal });
       if (feed.stale) {
         return { ok: false, note: `did not answer just now; showing the last feed seen at ${feed.cachedAt}` };
       }
+      if (!Array.isArray(feed.pulls)) {
+        return { ok: false, note: "answered without a pull list - a shape change, not a healthy feed" };
+      }
       return { ok: true, note: `answered with ${feed.pulls.length} recent pull(s) from ${CS_PROBE_CONTRACT}` };
-    }),
+    },
+    controller.signal,
   );
+
+  // Every loser of the shared deadline is aborted AND awaited: a probe left
+  // running behind the response is the one that queues up behind the next
+  // status call's rate gate.
+  for (const row of await Promise.all([mePromise, dasPromise, osPromise, csPromise])) rows.push(row);
+  clearTimeout(deadline);
+  controller.abort();
 
   // --- described but not called -----------------------------------------
   for (const entry of SOURCES) {

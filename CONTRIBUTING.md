@@ -22,7 +22,31 @@ priority; blue-chip Solana collections are welcome when they help demos.
 - Keyless sources only. PRs that add an API-key requirement will be declined -
   zero-config is the product.
 - Read-only forever. No signing, no transactions, no wallet code.
-- `npm test` (live smoke) and `node test/protocol.mjs` (offline) must pass;
-  eslint + strict tsc are enforced.
+- `npm test` is the OFFLINE suite (build + protocol, market, DAS, mechanics,
+  http and serial tests) and is what CI runs. `npm run test:smoke` is the live
+  smoke test that makes real calls to the sources, and `npm run test:live` is
+  the weekly keyless source check. All of them must pass before a release;
+  `npm run lint` (eslint) and strict tsc are enforced in CI.
 - Every fetch goes through the shared plumbing in `src/lib/http.ts` (rate gate,
-  retry, stale-on-error cache) - no bare `fetch` in source modules.
+  retry, bounded body read, stale-on-error cache) - no bare `fetch` in source
+  modules.
+
+## Release
+
+`.npmrc` sets `ignore-scripts=true` as supply-chain hardening, and npm applies
+that to OUR lifecycle scripts too - so `npm publish` on a fresh clone can ship a
+package with no `dist/` in it, and `npx collector-mcp` dies with
+MODULE_NOT_FOUND for every user. Build explicitly, prove the tarball, then
+publish with scripts enabled for that one command:
+
+```
+npm run build && node scripts/pack-check.mjs && npm publish --ignore-scripts=false
+```
+
+`scripts/pack-check.mjs` asks npm what would actually go into the tarball and
+fails unless `dist/index.js` and `data/me-collections.json.gz` are both in it.
+It runs in CI too, so a missing build is caught before release day.
+
+Before releasing, also refresh the bundled directory snapshot with
+`npm run snapshot` - it refuses to overwrite a good snapshot with a partial
+read, so a failed run leaves the existing data alone.

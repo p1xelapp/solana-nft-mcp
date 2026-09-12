@@ -24,6 +24,7 @@ import * as me from "./sources/magiceden.js";
 import { findByName, type NameMatch } from "./market.js";
 import { searchRegistry } from "./registry.js";
 import { clean } from "./lib/untrusted.js";
+import { isCollectionSymbol } from "./lib/shapes.js";
 
 interface Snapshot {
   takenAt: string;
@@ -141,7 +142,13 @@ export function resolveName(query: string, limit = 8): NameResolution {
   // when the file says complete: both flags have to agree.
   const snapshotComplete = snap ? layerComplete(snap.complete !== true, snap.atVenuePagingLimit === true) : null;
   if (snap) {
-    const index = snap.collections.map((c) => ({ symbol: c.s, name: c.n, isBadged: c.b === 1 }));
+    // The bundled snapshot is a captured venue payload, so it gets the same
+    // boundary treatment as a live directory read: a "symbol" that does not
+    // obey the symbol grammar is not an identifier and is dropped, and a name
+    // is neutralised and capped before it can be indexed, scored or returned.
+    const index = snap.collections
+      .filter((c) => c && isCollectionSymbol(c.s))
+      .map((c) => ({ symbol: c.s, name: clean(c.n ?? "").slice(0, 120), isBadged: c.b === 1 }));
     out.push(...toMatches(findByName(index, q).slice(0, limit), "snapshot"));
     searched.push(
       `Magic Eden directory snapshot (${snap.count.toLocaleString("en-US")} collections, taken ${snap.takenAt.slice(0, 10)}${snapshotComplete ? "" : ", short of the full catalogue"})`,
