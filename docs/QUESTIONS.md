@@ -172,7 +172,6 @@ types a tool name; the assistant picks.
 | Question | How it is answered | Status |
 |---|---|---|
 | "give me a stat for a post about this collection" | Window sales: count, volume, top sale, with the venue and timestamp to cite | ANSWERS NOW |
-| "make me a chart of sales this month" | Daily series for the window, handed over as rows to render | ANSWERS NOW |
 | "write a thread about who has owned this card" | Dated ownership history with marketplaces named, as the thread's spine | ANSWERS NOW (Core only) |
 | "what is the top sale today" | Highest sale over a one-day window | ANSWERS NOW |
 | "I need the image for this card for my post" | Image URL comes back with the asset; downloading and reuse rights are yours to check | PARTIAL (URL yes, rights not adjudicated) |
@@ -236,4 +235,4 @@ types a tool name; the assistant picks.
 
 ---
 
-**Total: 132 questions.**
+**Total: 141 questions.**

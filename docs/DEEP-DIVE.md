@@ -26,7 +26,7 @@ Claude / MCP client
    ▼
 ┌─────────────────────────────────────────────────┐
 │ MCP layer (official TypeScript SDK)             │
-│  8 tools · 1 resource · 1 prompt                │
+│  20 tools · 4 resources · 2 prompts             │
 │  zod validation on every input                  │
 ├─────────────────────────────────────────────────┤
 │ Domain layer                                    │
