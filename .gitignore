@@ -32,3 +32,9 @@ IMAGES/
 
 # release-day scratch (placeholder package, local only)
 .release/
+
+# internal launch working files - never publish
+LAUNCH-PLAYBOOK.html
+LAUNCH-NOTES.md
+CHECKLIST.md
+docs/LAUNCH-KIT.md

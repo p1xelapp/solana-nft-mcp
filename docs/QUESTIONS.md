@@ -5,7 +5,6 @@ types a tool name; the assistant picks.
 
 **Status key**
 - `ANSWERS NOW` - works today.
-- `ANSWERS NOW` - in the capabilities landing this release.
 - `PARTIAL` - part of it answers, the rest is named as a gap.
 - `NOT YET` - honest reason given in one clause.
 

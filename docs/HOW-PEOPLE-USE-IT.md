@@ -1,6 +1,6 @@
 # How people actually use collector-mcp
 
-Real setups, real people, real questions. Written so you can hand it to someone who has
+Illustrative setups built from questions people have actually asked. Written so you can hand it to someone who has
 never heard the words "MCP server" and they get to an answer in five minutes.
 
 The short version: you install it once, then you talk to your AI like a person. It picks
@@ -47,7 +47,7 @@ claude mcp add collector -- node /absolute/path/to/collector-mcp/dist/index.js
 ```
 
 Save, fully quit Claude Desktop, reopen. A small tools icon appears under the chat box.
-Click it: fourteen collector tools.
+Click it: 20 collector tools.
 
 *Cursor:* Settings → MCP → Add new global MCP server. Same JSON.
 
@@ -108,8 +108,9 @@ Say them in your own words. Roughly grouped by who tends to ask.
 
 ## The people
 
-Every persona below is a composite of someone I have actually watched hit the problem.
-Names are made up. The mistakes are not.
+The personas below are illustrations, not real people. Each one is built around a mistake I
+have actually watched someone make. The names, wallets, and numbers are invented to show the
+flow; treat every figure in this section as an example, not a measurement.
 
 ### 1. Sam, first week in Solana
 

@@ -22,8 +22,8 @@ finding is not sensitive. Realistic classes worth reporting:
 - cache poisoning between tool calls
 - dependency issues (`npm audit` runs in CI on every push)
 
-No bug bounty - this is an open-source, zero-revenue project - but reports get
-fixed fast and credited in the changelog.
+No bug bounty - this is an open-source, zero-revenue project - but confirmed reports
+get fixed and credited in the changelog.
 
 ## Supply chain
 

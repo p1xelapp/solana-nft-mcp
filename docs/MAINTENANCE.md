@@ -3,9 +3,9 @@
 What can change under this server, and what happens when it does.
 
 Every dependency here belongs to somebody else. None of them owes this project notice
-before it changes. So the useful question is not "will it break" but "when it does, does
-the server notice, does the user get a sentence they can act on, and how long is the
-repair". This page answers those three for each one.
+before it changes. So each one will break at some point. When it does: does the server
+notice, does the user get a sentence they can act on, and how long is the repair? This
+page answers those three for each one.
 
 ## Dependencies
 

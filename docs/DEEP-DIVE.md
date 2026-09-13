@@ -1,4 +1,4 @@
-# collector-mcp - The Deep Dive
+# collector-mcp - Under the hood
 
 Everything about what this is, how it works, why it exists, and who it's for.
 
@@ -121,11 +121,11 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 
 ## 9. FAQ
 
-**Why not just use a Helius/DAS-based server?** Keys, credits, and - for Core assets - empty transfer history. This exists precisely for the data DAS-based paths miss, at a price (free) that can't be beaten.
+**Why not just use a Helius/DAS-based server?** Keys, credits, and - for Core assets - empty transfer history. This exists for the data DAS-based paths miss, and it costs nothing to run.
 
 **Does it work outside Claude?** Any MCP client: Cursor, Windsurf, Cline, custom agents via the SDK.
 
-**Can it trade / list / mint?** No, and it never will in this repo. Read-only is a feature, not a missing feature.
+**Can it trade / list / mint?** No, and it never will in this repo. Read-only is deliberate: a tool that cannot sign cannot drain a wallet.
 
 **Why is VeVe not included?** No official public API surface exists; unofficial access is a TOS risk. This repo only ships sources that are public and TOS-clean.
 

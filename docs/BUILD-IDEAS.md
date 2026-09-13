@@ -85,7 +85,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Ask:** "Show me pulls as they happen, with player, set, serial and owner."
 **Server supplies:** the live pull feed, cached and gated, labelled best effort because the upstream is flaky by nature.
 **You build:** the display, and a reconciliation pass on boot. The recipe is blunt about this one: a feed built purely by accumulating events loses everything that happened while you were down, and looks complete afterwards.
-**What it saves you:** a tracker sized to the count announced at the time silently evicted 8,409 real pulls when the set grew past the cap. Size storage to the maximum the set can ever reach, and alert before you get near it.
+**What it saves you:** a tracker sized to the count announced at the time silently evicted 8,409 real pulls in one of my own trackers when the set grew past the cap. Size storage to the maximum the set can ever reach, and alert before you get near it.
 **Time:** 4 hours.
 
 ### 11. Deal finder

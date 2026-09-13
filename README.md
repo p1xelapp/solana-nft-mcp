@@ -226,7 +226,7 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 ## Docs
 
 - [How it was built, and why](docs/HOW-IT-WAS-BUILT.md)
-- [Deep dive](docs/DEEP-DIVE.md)
+- [Under the hood](docs/DEEP-DIVE.md)
 - [Every data source, tiered](docs/SOURCES.md)
 - [Trust language and limits](docs/TRUST-AND-LIMITS.md)
 - [Questions people ask, and which ones it can answer](docs/QUESTIONS.md)
