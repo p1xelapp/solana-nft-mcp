@@ -4,7 +4,7 @@
 
 # collector-mcp
 
-**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, where the deals are, and much more. Read-only, no API keys, nothing collected, runs on your machine.
+**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no API keys, nothing collected, runs on your machine.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
@@ -24,8 +24,8 @@ floor next to a USDC floor and call one of them 170x the other. It will multiply
 item count and call the result a portfolio value.
 
 collector-mcp hands the same assistant live, labelled data instead: the chain for supply,
-ownership, provenance and custody rules, Magic Eden without a key, OpenSea when a key is
-present. Each number comes back with its venue, its currency, its read time, and what the
+ownership, provenance and custody rules, Magic Eden without a key, and OpenSea
+through a free key the server issues itself. Each number comes back with its venue, its currency, its read time, and what the
 source could not see.
 
 ## Install
@@ -60,11 +60,19 @@ Settings -> Developer -> Edit Config, then add:
 
 Quit the app fully and reopen it.
 
-### Cursor, Windsurf, Codex CLI, Gemini CLI, Zed, Cline, VS Code
+### Every other MCP client
 
-Every one of these takes the same `command` / `args` pair in its own MCP config file. The
-server speaks stdio and holds no client-specific code, so any MCP client that can launch a
-local process will run it.
+Cursor, Windsurf, Codex CLI, Gemini CLI, Zed, Cline and VS Code take the same `command` /
+`args` pair in their own MCP config. The server speaks stdio and holds no client-specific
+code, so anything that can launch a local process will run it. ChatGPT on the web and Grok
+cannot: they have nowhere to run a local server.
+
+### Did it work?
+
+Most apps list the tools under a small icon near the message box; Claude Code shows them with
+`/mcp`. You should see 20 tools, starting with `identify`. If you see none: the path in the
+config must be absolute and must point at `dist/index.js`, `npm run build` must have been run,
+and the app must be fully quit and reopened, tray icon included.
 
 ### Optional: OpenSea
 
@@ -72,19 +80,16 @@ Solana collections have traded on OpenSea since 31 Aug 2026. OpenSea adds second
 sales, supply and royalty per collection, plain transfers per wallet (how airdrops and gifts
 become visible), and a searchable index of every Solana collection OpenSea lists.
 
-**This works out of the box - there is nothing to sign up for.** The first time a question
-actually needs OpenSea, the server asks OpenSea for one of its free agent keys, stores it in
-`~/.collector-mcp/opensea-key.json` on your own machine, and renews it before it expires. The
-key is yours: it never leaves your computer, is never printed to the log or into an answer, and
-a session that never asks an OpenSea question never requests one. If OpenSea declines to issue
-one (they cap key creation at about two a day per IP), OpenSea simply stays off and every
-answer names it as the missing half - nothing breaks and nothing prompts.
+There is nothing to sign up for. The first time a question needs OpenSea, the server asks
+OpenSea for one of its free agent keys and stores it in `~/.collector-mcp/opensea-key.json` on
+your own machine, renewing it before it expires. The key stays in that file: never logged,
+never printed into an answer, and never requested at all by a session that asks no OpenSea
+question. OpenSea caps new keys at about two a day per IP address, so if yours is refused,
+OpenSea stays off and every answer names it as the missing half.
 
-Two switches, both optional:
-
-- `OPENSEA_API_KEY` - your own key, from the OpenSea developer portal. It overrides the
-  self-issued one entirely. Put it in the config's `env` block rather than the shell, because
-  MCP clients launch the server with a clean environment:
+- `OPENSEA_API_KEY` - your own key from the OpenSea developer portal, for when the self-issued
+  one cannot be had. It overrides the self-issued key entirely. Put it in the config's `env`
+  block rather than the shell, because MCP clients launch the server with a clean environment:
 
 ```json
 {
@@ -113,7 +118,7 @@ Nobody types a tool name. These are asked in plain words and the assistant picks
 - Can the project still freeze, move or burn what is in my wallet?
 - What is in wallet 7HHs3..., and does that wallet flip or hold?
 - What is the cheapest Legendary listing in that DC collection right now?
-- Can you find a low edition number, something like #1 or #100, that is currently listed?
+- Any Superman or Batman DC comic #1 or #100 for sale, and are any of them close to floor?
 - Which collection is performing best right now on Magic Eden?
 - What did Shohei Ohtani cards sell for this week, and how many changed hands?
 - Are the Magic Eden and OpenSea floors for this collection even comparable?
@@ -121,7 +126,7 @@ Nobody types a tool name. These are asked in plain words and the assistant picks
 
 A collection name, a player name, a card number or a trait is enough to start. Names resolve
 against a bundled snapshot of the Magic Eden directory (30,499 collections, refreshed in the
-background) and against the OpenSea Solana index when a key is set.
+background) and against OpenSea's Solana index.
 
 ## What it reads
 
@@ -130,7 +135,7 @@ background) and against the OpenSea Solana index when a key is set.
 | Solana RPC (three public endpoints, rotated) | supply, current owner from decoded Core account bytes, transfer history, wallet age | none |
 | Asset index (DAS) on the public RPC | a second, independent opinion on ownership and wallet contents | none |
 | Magic Eden v2 | floors, listings, sales, activity, top traders, trending | none |
-| OpenSea v2 | second-venue floors, sales, supply, royalty, wallet transfers | optional |
+| OpenSea v2 | second-venue floors, sales, supply, royalty, wallet transfers | self-issued |
 | CryptoSlam | live pack-rip feed for licensed card platforms | none |
 
 No account, no sign-in, no telemetry, no log leaves the machine. The only thing that goes
@@ -181,6 +186,10 @@ for a collection or a wallet in one step.
 - Buying, selling, listing and signing are absent. No code exists for them.
 - Provenance and trust decoding cover Metaplex Core only. Legacy SPL and compressed NFTs are
   reported as named gaps, never as empty lists. Holdings and activity cover both.
+- Magic Eden and OpenSea only, for venue data. Tensor has no self-serve API keys. Rarible's
+  Solana API needs a key on a 100-request-a-month free tier and cannot say that a fill happened
+  on Magic Eden, which is the mislabelling this server exists to avoid. Both sit in the source
+  catalog as planned, with the condition that would add them.
 - Solana only. Keyless indexed NFT data on other chains went away with Reservoir and SimpleHash.
 - No valuations and no currency conversion. A floor-times-count figure is returned as a ceiling
   with its assumptions attached, because a stale price feed is wrong with the same confidence as
@@ -193,6 +202,13 @@ for a collection or a wallet in one step.
   erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](docs/TRUST-AND-LIMITS.md)
   and [docs/SOURCES.md](docs/SOURCES.md).
 
+## Security
+
+Minting is permissionless, so a collection name is attacker-controlled text. Every name from a
+chain or a marketplace is neutralised before a model sees it: invisible and bidi characters
+stripped, newlines collapsed, delimiter markup defanged, instruction-shaped phrasing flagged.
+This is covered by the offline test suite. Reporting: [SECURITY.md](SECURITY.md).
+
 ## Development
 
 ```bash
@@ -204,11 +220,8 @@ npm run snapshot   # refresh the bundled Magic Eden collection directory
 npm run inspect    # open the MCP Inspector against a local build
 ```
 
-A full-history secrets scan (gitleaks) runs on every push to every branch - a secret on a public
-feature branch is public before any pull request exists. The offline suite, lint, the tarball
-check and `npm audit` run on `main` and on pull requests, which keeps a bot's update branch from
-emailing twice about one problem. A scheduled workflow runs the live check weekly; its setup and
-its source check are separate steps, so a red run names which of the two failed.
+CI runs a full-history secrets scan on every push to every branch, the offline suite, lint, the
+tarball check and `npm audit` on `main` and pull requests, and the live check weekly.
 
 ## Docs
 
