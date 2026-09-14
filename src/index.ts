@@ -36,6 +36,7 @@ import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, 
 import { resolveName } from "./names.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
 import { NotFoundError, WrongKindError, TypedError, firstTypedFailure } from "./lib/errors.js";
+import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
@@ -1680,7 +1681,15 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {},
   },
-  guard(async () => ok(await sourceStatus())),
+  guard(async () => {
+    const [status, update] = await Promise.all([sourceStatus(), checkForUpdate(VERSION)]);
+    // The update line sits in readThis too, because a person reads that list
+    // and rarely the raw field.
+    const readThis = update.behind && update.latest
+      ? [`This server is ${VERSION}; ${update.latest} is published. ${update.howTo}.`, ...status.readThis]
+      : status.readThis;
+    return ok({ ...status, readThis, update });
+  }),
 );
 
 // -------------------------------------------------------------- resources
@@ -1827,6 +1836,12 @@ async function main() {
             ? `, OpenSea off (no key; auto-issue unavailable: ${osState.unavailableReason})`
             : ", OpenSea off (no key yet; a free one is requested the first time a tool needs OpenSea)"),
   );
+  // After the banner, never before it: the ready line must not wait on the
+  // registry. One stderr line if a newer version exists, nothing otherwise.
+  void checkForUpdate(VERSION).then((u) => {
+    const line = updateNotice(u);
+    if (line) console.error(line);
+  });
 }
 
 main().catch((err) => {

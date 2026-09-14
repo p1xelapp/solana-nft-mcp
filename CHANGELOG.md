@@ -314,3 +314,12 @@ catalog. 20 tools, 4 resources.
 - When both wallet readers fail with a venue classification (429, 5xx, a full
   queue, a deadline), that classification is the answer.
 - A capped wallet profile calls its shares shares of the items read, not lower bounds.
+
+## 1.8.3 - 2026-09-14
+
+- The server checks the npm registry once at startup and prints one stderr line when
+  a newer version is published; `get_source_status` carries the same fact as `update`.
+  Nothing is printed when the registry is unreachable, and COLLECTOR_MCP_NO_UPDATE_CHECK=1
+  turns the request off.
+- The weekly live check opens or updates one GitHub issue when a source fails or degrades,
+  and pings an optional LIVE_CHECK_WEBHOOK secret, so a break is a ticket, not a buried email.

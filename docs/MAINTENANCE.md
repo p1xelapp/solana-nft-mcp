@@ -48,3 +48,11 @@ the ones this server deliberately does not read. `docs/SOURCES.md` is generated 
 (`npm run docs:sources`) - edit the catalog, never the markdown. A source that is retired
 keeps its row with `wired: false`, so a number that used to be available is a documented
 gap rather than a silent absence.
+
+## How you find out
+
+Three signals, none of which need you to remember to look:
+
+- **The weekly live check** (`.github/workflows/live-check.yml`, Mondays 09:00 Boise) opens or updates one issue titled "Live source check: a source is not answering" whenever a source fails or degrades, and pings the `LIVE_CHECK_WEBHOOK` repository secret if you set one to a Discord webhook. Close the issue when a run is green again.
+- **Dependabot** batches dependency bumps weekly; CI runs the full suite on each.
+- **Users see it too.** At startup the server asks the npm registry once and prints one line if a newer version is published; `get_source_status` reports the same in its `update` field, so an assistant can tell them. Every answer already names its source and read time, and every miss names the layer that missed, so a stale directory or a dead venue reads as exactly that.

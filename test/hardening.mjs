@@ -351,4 +351,54 @@ const jsonResponse = (body, headers = {}) =>
   ok("b15 a typed failure from either wallet reader survives both readers failing");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15)`);
+// ------------------------------------------------------------------ b16
+// A server on someone else's machine cannot tell them it is stale unless it
+// checks. The check must never throw, never run offline, and only speak when
+// the registry's version is actually newer.
+{
+  const { checkForUpdate, resetUpdateCheck, compareVersions, updateNotice } = await import("../dist/lib/update.js");
+  assert.strictEqual(compareVersions("1.9.0", "1.8.2"), 1);
+  assert.strictEqual(compareVersions("1.8.2", "1.10.0"), -1);
+  assert.strictEqual(compareVersions("v2.0.0", "2.0.0"), 0);
+  assert.strictEqual(compareVersions("garbage", "1.0.0"), 0, "an unreadable version compares as equal, never as newer");
+
+  const stub = (version, status = 200) => async () => ({ ok: status === 200, status, json: async () => ({ version }) });
+  const saved = process.env.COLLECTOR_MCP_OFFLINE;
+
+  process.env.COLLECTOR_MCP_OFFLINE = "1";
+  resetUpdateCheck();
+  let u = await checkForUpdate("1.8.2", { fetch: () => { throw new Error("must not be called offline"); } });
+  assert.strictEqual(u.checked, false);
+  assert.strictEqual(u.behind, false);
+  assert.strictEqual(updateNotice(u), null);
+  delete process.env.COLLECTOR_MCP_OFFLINE;
+
+  resetUpdateCheck();
+  u = await checkForUpdate("1.8.2", { fetch: stub("1.9.0") });
+  assert.strictEqual(u.behind, true);
+  assert.strictEqual(u.latest, "1.9.0");
+  assert.match(updateNotice(u), /1\.8\.2 is behind: 1\.9\.0 is published/);
+  assert.match(u.howTo, /npm run build/);
+
+  resetUpdateCheck();
+  u = await checkForUpdate("1.8.2", { fetch: stub("0.0.1") });
+  assert.strictEqual(u.behind, false, "a placeholder older than the running build is not an update");
+  assert.strictEqual(updateNotice(u), null);
+
+  resetUpdateCheck();
+  u = await checkForUpdate("1.8.2", { fetch: async () => { throw new Error("ENOTFOUND registry.npmjs.org"); } });
+  assert.strictEqual(u.behind, false);
+  assert.match(u.reason, /not reachable/);
+  assert.strictEqual(updateNotice(u), null, "an unreachable registry says nothing");
+
+  resetUpdateCheck();
+  const first = checkForUpdate("1.8.2", { fetch: stub("1.9.0") });
+  const second = checkForUpdate("1.8.2", { fetch: () => { throw new Error("asked twice"); } });
+  assert.strictEqual(await first, await second, "one process asks the registry once");
+
+  if (saved !== undefined) process.env.COLLECTOR_MCP_OFFLINE = saved;
+  resetUpdateCheck();
+  ok("b16 the update check speaks only when the registry is newer, never offline, never twice, never by throwing");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16)`);

@@ -1,6 +1,6 @@
 {
   "name": "collector-mcp",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "Zero-key MCP server for Solana collectibles: wallet profiles and behaviour, Metaplex Core ownership history most NFT APIs return empty, who can freeze or burn an asset, cross-venue floors that refuse bad comparisons. Read-only, runs on your machine.",
   "homepage": "https://p1xel.app/collector-mcp/",
   "bugs": {

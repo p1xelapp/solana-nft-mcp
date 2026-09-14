@@ -12,6 +12,9 @@ on:
 
 permissions:
   contents: read
+  # A red run is an email that gets buried. An issue stays open until someone
+  # closes it, and a webhook reaches a phone. Both below.
+  issues: write
 concurrency:
   group: live-check
   cancel-in-progress: false
@@ -93,3 +96,39 @@ jobs:
           echo "::warning::This run failed BEFORE the live source check ran, at: ${where}. No source was contacted, so this is NOT evidence that a venue broke."
           echo "### Not a source break" >> "$GITHUB_STEP_SUMMARY"
           echo "This run failed at: ${where}. No source was contacted." >> "$GITHUB_STEP_SUMMARY"
+
+      # A source break or a degraded source becomes ONE open issue, updated on
+      # each later run rather than duplicated, so the repo itself shows what is
+      # currently broken. It closes by hand once the fix ships. DEGRADED exits
+      # 0 above on purpose (a CryptoSlam outage is theirs), but it is still the
+      # signal a maintainer wants, so it lands here too.
+      - name: Open or update the source-break issue
+        if: "always() && steps.live.outcome != 'skipped' && (steps.live.outcome == 'failure' || startsWith(steps.live.outputs.verdict, 'RESULT: DEGRADED'))"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERDICT: ${{ steps.live.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Live source check: a source is not answering"
+          body="$(printf '%s\n\n%s\n\nRun: %s\n\nWhat to do: open docs/MAINTENANCE.md, find the row for the source named above, follow its repair column. Close this issue when a run is green again.' "$(date -u +'%Y-%m-%d %H:%MZ')" "$VERDICT" "$RUN_URL")"
+          existing="$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "updated issue #$existing"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+      # Optional phone-reaching alert. Set the LIVE_CHECK_WEBHOOK repository
+      # secret to a Discord (or Slack-compatible) webhook URL; with it unset
+      # this step does nothing and says so.
+      - name: Ping the alert webhook, if one is configured
+        if: "always() && steps.live.outcome != 'skipped' && (steps.live.outcome == 'failure' || startsWith(steps.live.outputs.verdict, 'RESULT: DEGRADED'))"
+        env:
+          HOOK: ${{ secrets.LIVE_CHECK_WEBHOOK }}
+          VERDICT: ${{ steps.live.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "no LIVE_CHECK_WEBHOOK secret set; skipping the webhook ping"; exit 0; fi
+          payload="$(node -e 'const [v,u]=process.argv.slice(1);process.stdout.write(JSON.stringify({content:`collector-mcp weekly source check: ${v}\n${u}`}))' "$VERDICT" "$RUN_URL")"
+          curl -fsS -H 'Content-Type: application/json' -d "$payload" "$HOOK" >/dev/null && echo "webhook pinged"
