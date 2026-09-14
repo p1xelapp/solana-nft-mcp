@@ -22,9 +22,9 @@ can answer it. There is nothing to opt out of because nothing is collected.
 **Why does it make answers faster and cheaper?**
 Without it your assistant has to guess, search the web, open marketplace pages, read
 raw transactions and reconcile them, and it often gets that wrong. With it, one call
-returns the number, its source, its time and its gaps as typed data. Fewer round trips,
-fewer tokens spent on scraping and second-guessing, and less of your time spent
-checking. The server does the confirming so the conversation does not have to.
+returns the number, its source, its time and its gaps as typed data. One tool call replaces several
+searches and page reads, and the server does the confirming so the conversation
+does not have to.
 
 **Can I paste a screenshot?**
 The tools take text: an address, a marketplace link, a symbol or a plain name. Your
@@ -68,7 +68,7 @@ decode Metaplex Core plugins into "who can freeze, move or burn this", verify a 
 and hand back a receipt, and label a wallet's behaviour from its history.
 
 **There is a Magic Eden MCP too.**
-Also keyless, also useful, also one venue's API surfaced as tools. Same answer.
+Magic Eden's MCP is keyless too and it covers Magic Eden's data. Same answer.
 
 **Is it really zero keys?**
 Yes, including OpenSea. Magic Eden, CryptoSlam and plain Solana RPC need no key at all.
@@ -126,7 +126,7 @@ identical on chain.
 
 **Which wallet activity does it see?**
 Magic Eden's feed: listings, delists, bids, buys and sells on the order book and AMM
-pools. Not Tensor. Not OpenSea without a key. Not mints, not plain transfers. The result
+pools. It excludes Tensor, mints and plain transfers, and OpenSea unless a key is present. The result
 says this every time so the model does not present one venue as a wallet's whole life.
 
 **Does it understand packs?**

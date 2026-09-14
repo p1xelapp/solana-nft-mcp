@@ -1,6 +1,6 @@
 # Maintenance
 
-What can change under this server, and what happens when it does.
+Run `get_source_status` first, then use the dependency table to find the module a break touches.
 
 Every dependency here belongs to somebody else. None of them owes this project notice
 before it changes. So each one will break at some point. When it does: does the server

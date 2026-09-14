@@ -61,7 +61,7 @@ Initial public release.
   those read as a 170x gap; converted they roughly agree. The block refuses to
   rank across currencies and says why, rather than letting an agent pick one
   and be confidently wrong. No USD conversion on purpose - a stale price feed
-  produces wrong answers with the same confidence as a good one.
+  produces wrong answers with no warning.
 - **`collector://glossary` resource.** Domain vocabulary where each entry names
   the specific wrong answer it prevents: a floor is an ask not a valuation, a
   listed item's on-chain owner is the marketplace escrow, an opened Candy pack
@@ -83,7 +83,7 @@ Initial public release.
   and why, and a confidence rating. Verified against `okay_bears`, which has no
   registry entry and was still resolved from live data. An empty result now
   means "the places I can see do not list it", never "it does not exist".
-- **`get_integration_recipe` - the reason to use this over a search engine.**
+- **`get_integration_recipe`** - endpoints, pacing and failure modes for a build, as data.
   Looking a number up is solved. Building something that keeps looking it up
   correctly for months is not. Five recipes (sales bot, floor dashboard,
   provenance page, wallet tracker, pack watcher) carrying verified endpoints,

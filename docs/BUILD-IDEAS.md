@@ -217,7 +217,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Ask:** "Compare supply, floor and listed counts per venue and flag every disagreement."
 **Server supplies:** chain supply, per-venue floors and counts, and the comparability verdict.
 **You build:** the job, the history table, and the alert. Disagreement is the product here, so store both numbers rather than picking one, and read the provider's usage graph 24 and 48 hours after you switch it on.
-**Time:** a weekend, and it will teach you more about this market than any dashboard.
+**Time:** a weekend, including testing the comparison job.
 
 ---
 

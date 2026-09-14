@@ -1,6 +1,6 @@
 # collector-mcp - Under the hood
 
-Everything about what this is, how it works, why it exists, and who it's for.
+Start with the layer diagram below to see where a tool call actually goes.
 
 ---
 
@@ -9,8 +9,6 @@ Everything about what this is, how it works, why it exists, and who it's for.
 collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, live pack rips, and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is built for **licensed digital collectibles** - Candy Digital (official MLB license), Panini America (NBA/NFL/Soccer), and any Metaplex Core or Magic Eden collection.
 
 ## 2. The problem it solves
-
-Three gaps, one server:
 
 **Gap 1 - AI agents are blind to collectibles.** MCP directories index 22,000+ servers. The Solana ones are wallet/DeFi agent kits: they want your *private key* so an agent can trade, and an RPC provider API key before anything works. If you just want your AI to *answer questions* about collectibles - "what's my collection worth?", "who owned this card?" - there was nothing. You'd be pasting screenshots into chat.
 
@@ -58,7 +56,7 @@ For a Core asset, the server:
 The output is a story: `minted → listed (Magic Eden) → transferred → current owner`, each event with a timestamp and a verifiable tx signature.
 
 ### The plumbing layer (the production part)
-- **Rate gates**: serialized limiters per source (Magic Eden ~1.6 req/s, Solana RPC 1 per 350ms). Being a polite client is the entire viability model of a keyless server.
+- **Rate gates**: serialized limiters per source (Magic Eden ~1.6 req/s, Solana RPC 1 per 350ms). Public endpoints throttle bursts, so requests are spaced out.
 - **Retries**: network errors, 5xx, and 429s retry with escalating backoff (slower for 429).
 - **Never-blank caching**: every remote read is cached with a per-kind TTL. If a refresh fails and a previous good value exists, the server returns it **labeled `stale: true`** instead of erroring. An agent mid-conversation is better served by 90-second-old floor prices marked stale than by an exception.
 - **Bounded memory**: the cache is capped (oldest-evicted) so a long-lived session can't grow unbounded.
@@ -82,7 +80,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 - **AI developers / agent builders** - drop-in collectibles data for agents with no key management, no wallet risk surface, and production patterns (caching, rate limits, graceful degradation) already handled.
 - **Collectors who use Claude** - "what's my wallet worth", "did that card ever sell on ME", "watch pack pulls" answered conversationally from live data. Install is copy-paste.
 - **Licensed-collectible communities** (Candy Digital, Panini) - their assets are exactly the ones mainstream NFT tooling handles worst (Core assets, marketplace-less drops). This server treats them as first-class.
-- **Solana teams / hiring managers** - the repo is a worked example of MCP done properly: full protocol surface (tools + resources + prompts), strict TypeScript, live end-to-end tests, honest error surfaces, no slop.
+- **Solana teams / hiring managers** - the repo carries the full protocol surface (tools, resources and prompts), strict TypeScript, live end-to-end tests, and errors that say which source failed and what still works.
 - **Data journalists / analysts** - provenance queries ("who accumulated these 1-of-1s?") without writing RPC decoders.
 
 ## 6. Pros and cons, honestly
@@ -106,10 +104,10 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 
 ## 7. Why it can stand out
 
-- **A true "first"**: MCP directories have no licensed-digital-collectibles server. Verifiable, specific, defensible.
+- **A true "first"**: MCP directories have no licensed-digital-collectibles server.
 - **Anti-key positioning**: "your AI should be able to *look at* collectibles without holding your keys" is a message both crypto-native and crypto-cautious audiences agree with.
 - **A demo that lands in 45 seconds**: asking Claude "who owned this card?" and watching a full provenance timeline print is visceral in a way "38 DeFi tools" is not.
-- **Expertise you can diff**: the Core decoding isn't wrapped from a library - it's in the repo, commented, with the verification story attached.
+- **The Core decoder is in the repo**: not wrapped from a library, commented byte by byte, with the verification story attached.
 
 ## 8. Security model
 

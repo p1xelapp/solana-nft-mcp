@@ -1,7 +1,7 @@
 # Questions people actually ask
 
-Every line is phrased the way someone types it, not the way a tool is named. The person never
-types a tool name; the assistant picks.
+Every line is phrased the way someone types it, not the way a tool is named. Try any of them with your own
+collection name or address.
 
 **Status key**
 - `ANSWERS NOW` - works today.

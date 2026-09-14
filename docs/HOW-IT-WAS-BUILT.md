@@ -2,12 +2,12 @@
 
 ### The problem came from a job, not a whiteboard
 
-P1xel built and runs CandyScan, a tracker used by Candy Digital MLB collectors, backed by a
-704,000-row asset database that gets reconciled against chain state and marketplace feeds every
-day. Alongside it the team runs a fleet of sales bots watching VeVe, Candy Digital, Panini, sports card
+I built and run CandyScan, a tracker used by Candy Digital MLB collectors, backed by an
+895,000-row asset database that gets reconciled against chain state and marketplace feeds every
+day. Alongside it I run a fleet of sales bots watching VeVe, Candy Digital, Panini, sports card
 and TCG drops from an always-on machine, and SolGrails, a Solana marketplace with real money
-moving through it. None of that is background colour. It is where the three failures in this
-server's design came from.
+moving through it. The three failures below are the ones those systems kept hitting, which is
+why this server reads the way it does.
 
 **Failure one: empty history.** Candy Digital mints Metaplex Core assets. Core stores ownership
 inside the asset account rather than in a token account, and the consequence is that mainstream
@@ -29,7 +29,7 @@ built from one seller's ask on a book three listings deep.
 
 ### The design choices
 
-**Chain first.** For anything the chain can answer authoritatively, the chain answers it. Supply
+**Chain first.** Supply
 comes from the collection account. Current owner comes from a hand-decoded asset account, not from
 an indexer's opinion. Ownership history comes from walking the transfer instructions in each
 transaction. There is no indexer in the path and no key required to do it.
@@ -53,8 +53,8 @@ repository, so the ability to move anything was never written rather than merely
 on the user's own machine, keeps nothing, and asks for no account.
 
 **Refuse to guess.** The stats block will not rank a SOL floor against a USDC floor. No currency
-conversion happens, on purpose, because a stale price feed is wrong with the same confidence as a
-good one. A floor-times-count figure is returned as a ceiling with its assumptions attached. An
+conversion happens, on purpose, because it would mean depending on a second price
+feed I cannot check. A floor-times-count figure is returned as a ceiling with its assumptions attached. An
 empty history is reported as unsupported or unread, never as untraded.
 
 ### What was tested
@@ -69,5 +69,5 @@ back labelled stale rather than erroring mid-conversation. Caps are disclosed. D
 shown rather than resolved by a coin flip. Every claim check hands back a line telling you how to
 reproduce it without trusting this server at all.
 
-Every one of those lessons was paid for on a live system with people watching it. They are written
-into the code and into the build recipes so that the next person does not have to pay for them again.
+Each of those lessons came off a live system with people watching. They are in the code and in
+the build recipes so the next person does not have to learn them the same way.

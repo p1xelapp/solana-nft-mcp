@@ -33,7 +33,7 @@ Listed in the order they are tried.
 
 ## What each wired source cannot see
 
-A healthy source still has a horizon. These are the gaps that stay gaps, and the reason
+These limits apply even when a source is answering normally, and the reason
 one venue's number is never presented as the market's.
 
 - **Your own Solana RPC endpoint** cannot see: marketplace listings, offers or floor prices - those never touch the chain until a trade settles. Optional. Set SOLANA_RPC_URL and it is tried first, then the public list. The URL is never printed back: status and provenance report the host only, so a key in a query string cannot leak into a transcript.

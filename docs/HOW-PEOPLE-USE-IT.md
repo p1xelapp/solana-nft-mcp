@@ -1,7 +1,7 @@
 # How people actually use collector-mcp
 
-Illustrative setups built from questions people have actually asked. Written so you can hand it to someone who has
-never heard the words "MCP server" and they get to an answer in five minutes.
+Invented setups built from questions people actually ask. Install the server, then try one of these
+with your own wallet address or a collection name.
 
 The short version: you install it once, then you talk to your AI like a person. It picks
 the tool. You never type a tool name.
@@ -143,7 +143,7 @@ Marcus pastes the mint: *"Has this ever changed hands?"*
 
 **What happens:** `verify_claim` (never-traded) returns **CONTRADICTED, 4 transfers**,
 and a one-line receipt. *"Show me"* runs `get_asset_provenance`: listed, delisted,
-relisted twice this month. He pastes the receipt into the thread. Argument over.
+relisted twice this month. He pastes the receipt and the transfer history into the thread.
 
 **Why it beats a plain AI:** the usual NFT APIs return an empty history for Metaplex
 Core assets. A plain AI reads empty as "never traded" and agrees with the seller.
@@ -245,9 +245,9 @@ Magic Eden and OpenSea?"*
 
 **What happens:** `get_collection_stats` returns 0.053 SOL on Magic Eden and 9 USDC on
 OpenSea and says **not comparable as printed**. No conversion, on purpose, because a
-stale price feed is wrong with the same confidence as a good one. The glossary reminds
+price feed that has gone stale gives a wrong number with no warning. The glossary reminds
 the assistant that gacha odds are an operator claim the chain cannot verify. Jordan
-writes both numbers with their venues and one sentence about odds. Editor happy.
+writes both numbers with their venues and one sentence about odds.
 
 ### 9. Chen, brand licensing lead doing due diligence
 
@@ -293,7 +293,7 @@ today.
 ### 12. Grace, about to buy a "1 of 1 legendary"
 
 **Level:** intermediate. **Background:** the price is a month's rent. **Why
-collector-mcp:** she wants to be sure before, not sorry after.
+collector-mcp:** she wants to check the seller's claims before she pays.
 
 **Asks:** the OpenSea link + *"Everything I should know before I pay for this."*
 

@@ -1,8 +1,8 @@
 # Trust language: how it talks when it cannot give you a clean answer
 
 The voice rule underneath all of this: name the upstream, never blame the tool, never apologise
-twice, always end with the next step. A limitation stated plainly reads as competence. A
-limitation dressed up reads as a bug being hidden.
+twice, always end with the next step. Say what failed, what is still available, and what
+to try next.
 
 ---
 
@@ -89,12 +89,12 @@ limitation dressed up reads as a bug being hidden.
 
 ## Eight lines of site and README copy
 
-1. A tool, not an oracle. It reads sources and names them; it does not decide what a number means for you.
+1. It reports what the sources say and names each one. It does not decide what a number means for you.
 2. Every answer carries three things: where it came from, when it was read, and what it could not see.
 3. When two sources disagree it shows both. Picking one silently is how wrong numbers spread.
 4. A floor is one seller's ask. It is displayed as an ask, next to what buyers actually paid.
 5. Cached values are served labelled stale rather than shown as fresh or hidden behind an error.
-6. Unverifiable is a real verdict here, alongside confirmed and contradicted. Three outcomes, not two.
+6. Unverifiable is a real verdict here, alongside confirmed and contradicted.
 7. Read-only by construction. There is no signing code in the repository, so there is nothing to misuse.
 8. Runs on your machine, reads public data, keeps nothing. No account, no sign-in, no keys required.
 
@@ -106,7 +106,7 @@ limitation dressed up reads as a bug being hidden.
 - **Ask for a private key, a seed phrase or a wallet connection.** Wallet questions take a public address, the same one anyone can paste into a block explorer.
 - **Collect anything.** No accounts, no telemetry, no logs sent anywhere. It runs locally and talks to three public sources.
 - **Call a floor a valuation.** Floor times count comes back labelled a ceiling, with the items it could not price counted.
-- **Convert currencies.** A SOL floor and a USDC floor are shown as they are quoted. A stale price feed is wrong with the same confidence as a good one.
+- **Convert currencies.** A SOL floor and a USDC floor are each shown as their venue quoted them.
 - **Rank two numbers that are not comparable.** It says not comparable as printed and shows both.
 - **Render an empty result as a fact.** An empty history means unsupported or unread, never "never traded".
 - **Give financial, tax or legal advice.** It gives the figures, the sources and the gaps.
