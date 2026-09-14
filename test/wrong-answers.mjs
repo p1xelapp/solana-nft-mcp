@@ -74,7 +74,7 @@ const AT = 1_700_000_000;
   assert.strictEqual(side.events[0].unsettled, true, "a disagreed side is a money conflict too");
 
   const merged = mergeEventCopies({ ...base }, { ...base, name: "x", source: "y" });
-  assert.deepStrictEqual(merged.conflicts, ["source", "name"].sort((a, b) => (a === "source" ? -1 : 1)), "every conflicting field is listed");
+  assert.deepStrictEqual(merged.conflicts, ["source", "name"], "every conflicting field is listed");
   assert.strictEqual(merged.moneyConflict, false);
   ok("new 4 only a price or a side conflict takes an event out of the money figures");
 }

@@ -35,7 +35,7 @@ import { sourceStatus } from "./status.js";
 import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
 import { resolveName } from "./names.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
-import { NotFoundError, WrongKindError, TypedError } from "./lib/errors.js";
+import { NotFoundError, WrongKindError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
@@ -942,6 +942,12 @@ registerTool(
     const marketplace = meRes.status === "fulfilled" ? meRes.value : null;
     const index = dasRes.status === "fulfilled" ? dasRes.value : null;
     if (!marketplace && !index) {
+      // A typed failure from either reader is the answer, not a symptom: an
+      // escrow address is an escrow address whichever reader said so, and
+      // wrapping it in a plain Error turned the wording layer's specific
+      // explanation into "try again", with the reason cut off in the detail.
+      const typed = firstTypedFailure([meRes, dasRes]);
+      if (typed) throw typed;
       const why = [meRes, dasRes].map((r) => (r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : String(r.reason)) : null)).filter(Boolean).join("; ");
       throw new Error(`neither reader could list ${wallet}: ${why}`);
     }

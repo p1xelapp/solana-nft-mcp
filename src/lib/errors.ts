@@ -59,3 +59,16 @@ export class BadInputError extends TypedError {
     super(msg, "bad-input");
   }
 }
+
+/**
+ * When several readers were asked and every one failed, the failure to report
+ * is the one that carries a kind. A wrapper Error built from the messages
+ * loses the kind, so the wording layer can only say "try again" about an
+ * address that is, and will stay, a marketplace escrow.
+ */
+export function firstTypedFailure(settled: PromiseSettledResult<unknown>[]): TypedError | null {
+  for (const r of settled) {
+    if (r.status === "rejected" && r.reason instanceof TypedError) return r.reason;
+  }
+  return null;
+}

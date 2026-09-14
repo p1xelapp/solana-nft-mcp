@@ -329,4 +329,26 @@ const jsonResponse = (body, headers = {}) =>
   ok(`b14 no source file carries a raw NUL byte (${scanned} files scanned)`);
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14)`);
+// ------------------------------------------------------------------ b15
+// get_wallet_holdings asks two readers. When both failed, the escrow answer
+// Magic Eden gave was wrapped in a plain Error, so the wording layer said
+// "try again" about an address that will never list, and the reason was cut
+// off in the detail. The typed failure has to survive the join.
+{
+  const { EscrowError, TypedError, firstTypedFailure } = await import("../dist/lib/errors.js");
+  const escrow = new EscrowError("Magic Eden will not list holdings for X - it blocks this address");
+  const busy = new Error("the public Solana RPC asset index (DAS) did not answer");
+  const settled = (a, b) => [
+    { status: "rejected", reason: a },
+    { status: "rejected", reason: b },
+  ];
+  assert.strictEqual(firstTypedFailure(settled(escrow, busy)), escrow, "the escrow reason wins over a busy index");
+  assert.strictEqual(firstTypedFailure(settled(busy, escrow)), escrow, "order of the readers does not matter");
+  assert.ok(firstTypedFailure(settled(escrow, busy)) instanceof TypedError);
+  assert.strictEqual(firstTypedFailure(settled(busy, new Error("x"))), null, "two plain failures stay a plain failure");
+  assert.strictEqual(firstTypedFailure([{ status: "fulfilled", value: 1 }, { status: "rejected", reason: escrow }]), escrow);
+  assert.strictEqual(firstTypedFailure([]), null);
+  ok("b15 a typed failure from either wallet reader survives both readers failing");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15)`);

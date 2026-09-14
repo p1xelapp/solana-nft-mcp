@@ -19,11 +19,17 @@ export default tseslint.config(
     },
   },
   {
-    files: ["test/**/*.mjs", "eslint.config.mjs"],
+    files: ["test/**/*.mjs", "scripts/**/*.mjs", "eslint.config.mjs"],
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ["test/**/*.mjs"],
-    languageOptions: { globals: { console: "readonly", process: "readonly" } },
+    files: ["test/**/*.mjs", "scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly", process: "readonly", Buffer: "readonly", URL: "readonly",
+        setTimeout: "readonly", clearTimeout: "readonly", AbortController: "readonly", AbortSignal: "readonly",
+        fetch: "readonly", Response: "readonly", ReadableStream: "readonly", globalThis: "readonly",
+      },
+    },
   },
 );
