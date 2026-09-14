@@ -299,3 +299,11 @@ catalog. 20 tools, 4 resources.
   against the floor, saying how much of the book it saw.
 - Status probes carry an 8 s per-source deadline; the weekly live check
   reports a CryptoSlam outage as theirs and does not fail on it.
+
+## 1.8.2 - 2026-09-13
+
+- `get_wallet_holdings`: when Magic Eden refuses an address as its own escrow
+  and the public asset index times out in the same call, the answer is the
+  escrow explanation, not "try again". A typed failure from either reader now
+  survives both readers failing.
+- Lint covers `scripts/` with the same rules as `test/`.
