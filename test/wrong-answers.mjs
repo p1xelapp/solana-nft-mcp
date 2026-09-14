@@ -189,6 +189,28 @@ const AT = 1_700_000_000;
   ok("b2 a gate wait ends when the caller's deadline does");
 }
 
+// ------------------------------------------------------------------ b3
+// A caller that gave up still held its place in the queue and spent a full
+// interval when its turn came, so a live sibling behind five abandoned
+// callers waited six intervals for one request.
+{
+  const gate = rateLimiter(300, "test source");
+  await gate(); // take the first turn so every later one has to wait
+  const gone = [];
+  for (let i = 0; i < 5; i++) {
+    const c = new AbortController();
+    const p = gate(c.signal);
+    c.abort();
+    gone.push(p.catch(() => undefined));
+  }
+  await Promise.all(gone);
+  const started = Date.now();
+  await gate();
+  const took = Date.now() - started;
+  assert.ok(took < 900, `a live caller behind five abandoned turns waited ${took} ms, which is more than one interval`);
+  ok("b3 an abandoned turn is not spent, so a live caller is not parked behind dead ones");
+}
+
 // ------------------------------------------------------------------ new 2
 // The shared status budget was spent on rpcHealth() before a single
 // marketplace was contacted, so every venue was reported as timed out.
@@ -251,4 +273,4 @@ const AT = 1_700_000_000;
   ok("new 2 a slow chain endpoint cannot spend the status budget before the venues are asked");
 }
 
-console.log(`\nwave8 test: ${passed} groups passed (new 1-6, b2)`);
+console.log(`\nwave8 test: ${passed} groups passed (new 1-6, b2, b3)`);

@@ -305,7 +305,7 @@ export async function walletTokens(wallet: string, limit: number) {
     // the common case for an address taken from provenance: a listed item's
     // on-chain owner IS the marketplace escrow, not the seller. Say so,
     // because "HTTP 400" sends the agent hunting for a bug that isn't there.
-    if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
+    if (e instanceof HttpError && e.status === 400 && /blocked nft owner/i.test(e.reason)) {
       throw new EscrowError(
         `Magic Eden will not list holdings for ${wallet} - it blocks this address, ` +
           `which usually means it is a marketplace escrow or program account rather than ` +
@@ -403,7 +403,7 @@ export async function walletTokensAll(wallet: string, max: number) {
           await me<unknown>(`/wallets/${wallet}/tokens?offset=${offset}&limit=${Math.min(500, max - offset)}&listedOnly=false`),
         );
       } catch (e) {
-        if (e instanceof HttpError && /blocked nft owner/i.test(e.reason)) {
+        if (e instanceof HttpError && e.status === 400 && /blocked nft owner/i.test(e.reason)) {
           throw new EscrowError(
             `Magic Eden will not list holdings for ${wallet} - it is a marketplace escrow or program account, not a user wallet.`,
           );

@@ -141,7 +141,7 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
               next: "get_asset still shows the marketplace and asset-index view for it; explain_mechanics describes what its standard supports.",
             };
       case "escrow":
-        return { kind: "escrow", headline: "That address is a marketplace escrow or program account, not a person's wallet, so holdings cannot be listed for it.", next: "If it came from a provenance trail, the item is listed for sale; the seller is the wallet that transferred it in." };
+        return { kind: "escrow", headline: "Magic Eden refuses to list holdings for that address, which is what it does for its own escrow and program accounts rather than for people's wallets.", next: "If the address came from a provenance trail, the item is most likely listed for sale and held in escrow; the seller is the wallet that transferred it in." };
       case "unsupported":
         return { kind: "source-unsupported", headline: "The keyless asset index on the public RPC is not serving that read right now.", next: "The chain and marketplace tools still answer. get_source_status says whether the index is down or withdrawn; DAS_RPC_URL points this server at an index of your own." };
       case "bad-input":
@@ -948,7 +948,13 @@ registerTool(
       // explanation into "try again", with the reason cut off in the detail.
       const typed = firstTypedFailure([meRes, dasRes]);
       if (typed) throw typed;
-      const why = [meRes, dasRes].map((r) => (r.status === "rejected" ? (r.reason instanceof Error ? r.reason.message : String(r.reason)) : null)).filter(Boolean).join("; ");
+      // No typed reason, but a venue's own classification (a 429, a 5xx, a
+      // full queue, a deadline) still words better than "try again".
+      const reasons = [meRes, dasRes].flatMap((r) => (r.status === "rejected" ? [r.reason as unknown] : []));
+      const classified =
+        reasons.find((r) => r instanceof HttpError) ?? reasons.find((r) => r instanceof BusyError || r instanceof AbortedError);
+      if (classified) throw classified;
+      const why = reasons.map((r) => (r instanceof Error ? r.message : String(r))).join("; ");
       throw new Error(`neither reader could list ${wallet}: ${why}`);
     }
     const byStandard: Record<string, number> = {};
@@ -1119,7 +1125,7 @@ registerTool(
       readThis: [
         "Holdings are what Magic Eden indexes for this address. Unindexed collections and some compressed NFTs are invisible here; the chain has more.",
         ...(held.capped
-          ? [`The holdings walk stopped at maxItems (${maxItems}), so every total, share and ceiling here is a LOWER BOUND over the items actually read - the wallet's real size was not established. Raise maxItems to cover more.`]
+          ? [`The holdings walk stopped at maxItems (${maxItems}), so every total and ceiling here is a LOWER BOUND, and every share is a share of the items actually read, not of the wallet - its real size was not established. Raise maxItems to cover more.`]
           : []),
         ...(held.stale
           ? [`Magic Eden did not answer for the holdings themselves, so this list is the one it last returned${held.cachedAt ? ` at ${held.cachedAt}` : ""}. Treat every figure derived from it as last-known, not current.`]

@@ -234,6 +234,11 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
     if (waiting >= MAX_GATE_QUEUE) return Promise.reject(new BusyError(label));
     waiting++;
     chain = chain.then(async () => {
+      // A caller whose deadline passed while it queued has already been told
+      // so and has gone. Spending its turn anyway would make every caller
+      // behind it wait for a request that will never be sent, so a sibling
+      // reader sharing this origin could time out behind a dead backlog.
+      if (signal?.aborted) return;
       const wait = last + interval - performance.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       last = performance.now();

@@ -307,3 +307,10 @@ catalog. 20 tools, 4 resources.
   escrow explanation, not "try again". A typed failure from either reader now
   survives both readers failing.
 - Lint covers `scripts/` with the same rules as `test/`.
+- A caller that gave up while queued for a rate gate no longer spends its turn,
+  so a live reader behind abandoned callers waits one interval, not six.
+- Escrow detection is limited to the documented refusal (HTTP 400) and the
+  explanation says what Magic Eden did rather than asserting what the address is.
+- When both wallet readers fail with a venue classification (429, 5xx, a full
+  queue, a deadline), that classification is the answer.
+- A capped wallet profile calls its shares shares of the items read, not lower bounds.
