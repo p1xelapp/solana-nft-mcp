@@ -158,7 +158,7 @@ collection name or address.
 | "build me a floor dashboard across both marketplaces" | Floor-dashboard recipe plus the live reconciliation rule to copy into the UI | ANSWERS NOW |
 | "a page that shows every owner a card has had" | Provenance-lookup recipe plus the live history call | ANSWERS NOW |
 | "wallet tracker for my own address" | Wallet-tracker recipe: three states held, listed and sold, plus coverage disclosure | ANSWERS NOW |
-| "live pack pull feed" | Pack-watcher recipe plus the pull feed itself | ANSWERS NOW (Panini via CryptoSlam) |
+| "live pack pull feed" | Pack-watcher recipe: page the collection from the asset index and treat ids you have not stored as the new pulls | PARTIAL (the recipe and the per-card history, not a ready-made feed) |
 | "which source should I use for what" | Source catalog with tiers and fallbacks | ANSWERS NOW |
 | "what breaks silently in this build" | Every recipe orders its pitfalls by how quietly they fail | ANSWERS NOW |
 | "can I call this from my own script instead of a chat" | It is an MCP server; any MCP client or your own agent can call it | ANSWERS NOW |
@@ -187,15 +187,15 @@ collection name or address.
 
 | Question | How it is answered | Status |
 |---|---|---|
-| "what is being pulled right now" | Live pack-pull feed with player, set, serial and owner | ANSWERS NOW (Panini via CryptoSlam) |
-| "did anyone pull a one of one today" | Pull feed entries carry serial and population | ANSWERS NOW (best effort, the upstream is flaky) |
+| "what is being pulled right now" | No keyless feed sorts a Solana collection by mint time, so the answer says so and points at the pack-watcher recipe | NOT YET (the public asset index cannot sort by creation) |
+| "did anyone pull a one of one today" | Serial and population come from the card itself, so a named card answers; a whole-day sweep does not | PARTIAL (per card, not per day) |
 | "how many packs are left" | Pack asset supply from the collection account where packs are Core assets | PARTIAL (supply yes; issuer-held inventory is not visible) |
 | "what are the odds on this pack" | Odds are an operator claim the chain cannot verify, and the answer says so | NOT YET (odds are unverifiable on chain) |
 | "does opening a pack destroy it" | Depends on the issuer; the custody decode shows burn versus return-to-treasury behaviour | ANSWERS NOW |
-| "how many of this card exist" | Chain supply for the card's collection, plus population in the pull feed where present | ANSWERS NOW |
+| "how many of this card exist" | Chain supply for the card's collection, plus the population printed on the card where present | ANSWERS NOW |
 | "trace these auction packs to their winners" | Transfer decoding walks each pack to its final owner | ANSWERS NOW (Core only) |
 | "is the announced print run accurate" | Claim verification against the collection account | ANSWERS NOW |
-| "show me pulls from a set that isn't Panini" | The keyless pull feed covers Panini via CryptoSlam only | PARTIAL (one issuer feed today) |
+| "show me every card in this set" | The asset index pages a Metaplex Core collection in full | ANSWERS NOW (by collection address) |
 | "how many were burned" | Minted minus current size from the collection account | ANSWERS NOW |
 
 ---
@@ -206,7 +206,7 @@ collection name or address.
 |---|---|---|
 | "which of these three collections is doing better" | Window sales for each, compared on count and volume with venues named | ANSWERS NOW |
 | "compare floors across my watchlist" | Batch floor lookup, up to ten collections in one call | ANSWERS NOW |
-| "is Candy or Panini moving more volume" | Window volume per collection, with the coverage of each feed stated | ANSWERS NOW |
+| "is Candy MLB or Candy DC moving more volume" | Window volume per collection, with the coverage of each feed stated | ANSWERS NOW |
 | "serial #69 across every Solana project" | Would need a full chain index of every collection, which nobody offers keyless | NOT YET (no keyless whole-chain index exists) |
 | "which Solana collections does OpenSea actually index" | The OpenSea Solana collection index, with each on-chain address | ANSWERS NOW (needs the optional key) |
 | "same collection, both venues, which has more depth" | Listed counts per venue, with the currency caveat when floors differ in unit | ANSWERS NOW |

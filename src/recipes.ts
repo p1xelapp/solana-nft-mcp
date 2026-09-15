@@ -254,17 +254,19 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
 
   "pack-watcher": {
     goal: "pack-watcher",
-    buildingWhat: "A live feed of cards as they are pulled from packs, with rarity and serial numbers.",
+    buildingWhat: "A feed of cards as they appear from packs, with rarity and serial numbers.",
     dataSources: [
       {
-        name: "CryptoSlam public API",
-        use: "Panini pack-pull feed.",
-        auth: "None.",
-        rateLimit: "Flaky by nature. Cache hard and degrade gracefully rather than retrying aggressively.",
+        name: "The public Solana asset index (DAS getAssetsByGroup)",
+        use: "Every asset in the pack's collection, paged. New ids since the last page are the new pulls.",
+        auth: "None on the Foundation endpoint; a keyed DAS provider is faster and has a higher ceiling.",
+        rateLimit:
+          "About 100 requests per 10 seconds per IP, shared with plain RPC reads. There is no sort by creation time on the " +
+          "public endpoint, so a watcher diffs ids it has already seen rather than asking for the newest.",
       },
       {
-        name: "collector-mcp get_pack_pulls",
-        use: "The feed, already cached and gated.",
+        name: "collector-mcp get_asset_provenance",
+        use: "The story behind any single pull: mint, pack open, transfers, sales.",
         auth: "None.",
         rateLimit: "Inherits source gates.",
       },
@@ -287,7 +289,8 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
       },
     ],
     costNote: "Free to read. The cost is storage if you retain full history - size it to the full set, not to today's count.",
-    skeleton: `const pulls = await getPackPulls(20);  // 20 is the tool's page cap; backfill covers the rest
+    skeleton: `const page = await dasGetAssetsByGroup(collection, { page: 1, limit: 1000 });
+const fresh = page.items.filter((a) => !seen.has(a.id));  // ids you have never stored ARE the new pulls
 // Reconcile on boot: what the issuer says exists vs what we stored.
 const missing = await reconcileAgainstIssuer(storedCount);
 if (missing > 0) log.warn(\`backfilling \${missing} pulls missed while down\`);`,

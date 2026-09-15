@@ -4,7 +4,7 @@
 
 collector-mcp is read-only by construction. It holds no keys, no wallets, and no
 secrets; it contains no signing or transaction paths; it talks to three public
-data sources (Magic Eden v2, CryptoSlam, a Solana RPC endpoint) plus OpenSea v2
+data sources (Magic Eden v2, a Solana RPC endpoint) plus OpenSea v2
 only when the user supplies their own `OPENSEA_API_KEY`, and nothing else. That
 key is read from the environment, sent only to api.opensea.io, and redacted from
 every error message before it can reach a log or a model. The worst plausible failure is wrong or stale data - never lost

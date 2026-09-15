@@ -3,8 +3,8 @@
  * collector-mcp - zero-key MCP server for Solana digital collectibles.
  *
  * Runs over stdio. No API keys, no wallet, no config: every data source is a
- * public, keyless endpoint (Magic Eden v2, CryptoSlam, plain Solana RPC), and
- * the server is read-only by design - it cannot sign, send, or spend anything.
+ * public, keyless endpoint (Magic Eden v2, the public Solana RPC and its asset
+ * index), and the server is read-only by design: it cannot sign, send, or spend anything.
  *
  * IMPORTANT for contributors: never write to stdout (console.log) - stdout IS
  * the MCP protocol channel. Diagnostics go to stderr (console.error).
@@ -17,7 +17,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import * as me from "./sources/magiceden.js";
-import * as cs from "./sources/cryptoslam.js";
 import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
@@ -111,10 +110,10 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   // passes to fetchJson, never from anything an upstream wrote.
   const venue = (): string | null => {
     if (err instanceof HttpError || err instanceof BusyError) {
-      const src = /^(Magic Eden|OpenSea|CryptoSlam)/.exec(msg)?.[1];
+      const src = /^(Magic Eden|OpenSea)/.exec(msg)?.[1];
       if (src) return src;
     }
-    return /^Magic Eden |^OpenSea |^CryptoSlam /.test(msg)
+    return /^Magic Eden |^OpenSea /.test(msg)
       ? (msg.split(" ")[0] === "Magic" ? "Magic Eden" : msg.split(" ")[0]!)
       : /public Solana RPC|Solana endpoint|Solana read/i.test(msg)
         ? "the public Solana RPC"
@@ -518,9 +517,9 @@ registerTool(
   {
     title: "Search collections",
     description:
-      "Find digital-collectible collections by name (e.g. 'candy gold series', 'panini', 'mad lads'). " +
+      "Find digital-collectible collections by name (e.g. 'candy gold series', 'batman', 'mad lads'). " +
       "Returns curated entries with the identifiers other tools need (Magic Eden symbol, Core collection " +
-      "address, CryptoSlam contract). Collections not in the registry still work: pass a Magic Eden symbol " +
+      "address). Collections not in the registry still work: pass a Magic Eden symbol " +
       "or a Metaplex Core collection address directly to the other tools.",
     annotations: READ_ONLY,
     // A search term is required: `{"query":""}` used to validate and come back
@@ -812,7 +811,7 @@ registerTool(
       if (openseaPart) return ok({ requested: collection, opensea: openseaPart });
       throw new Error(
         `"${collection}" has no Magic Eden symbol. For Candy Digital collections use get_asset_provenance ` +
-          `on a specific card, or get_pack_pulls for Panini rips - or pass an openseaSlug with OPENSEA_API_KEY set.`,
+          `on a specific card, or pass an openseaSlug with OPENSEA_API_KEY set.`,
       );
     }
     try {
@@ -1268,27 +1267,6 @@ registerTool(
       openseaNote,
     });
   }),
-);
-
-registerTool(
-  "get_pack_pulls",
-  {
-    title: "Live pack pulls",
-    description:
-      "Live feed of licensed-card pack rips (default: Panini America - NBA/NFL/Soccer/Baseball). Each entry " +
-      "is a card just pulled from a pack: player, set/parallel, serial number, population, owner wallet, image.",
-    annotations: READ_ONLY,
-    inputSchema: {
-      contract: z
-        .string()
-        .trim()
-        .max(60)
-        .regex(/^[a-z0-9-]+$/i, "CryptoSlam contract slug, e.g. panini-america")
-        .default("panini-america"),
-      limit: z.number().int().finite().min(1).max(20).default(10),
-    },
-  },
-  guard(async ({ contract, limit }) => ok(await cs.recentMints(contract, limit))),
 );
 
 // ------------------------------------------------------ collection market

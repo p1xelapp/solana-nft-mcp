@@ -2,7 +2,7 @@
  * Curated collection registry - the domain knowledge layer.
  *
  * Generic NFT tools make the user hunt for marketplace symbols and on-chain
- * addresses. This registry maps human names ("candy gold series", "panini")
+ * addresses. This registry maps human names ("candy gold series", "batman")
  * to the identifiers each data source needs. Entries are hand-verified;
  * anything NOT listed here still works by passing a Magic Eden symbol or a
  * Metaplex Core collection address directly to the tools.
@@ -18,8 +18,6 @@ export interface RegistryEntry {
   meSymbol?: string;
   /** Metaplex Core collection address for direct on-chain stats/provenance. */
   coreCollection?: string;
-  /** CryptoSlam contract name for the mints/pulls feed. */
-  cryptoslamContract?: string;
   /** OpenSea collection slug - used only when OPENSEA_API_KEY is set (optional cross-marketplace view). */
   openseaSlug?: string;
   keywords: string[];
@@ -43,16 +41,6 @@ export const REGISTRY: RegistryEntry[] = [
     coreCollection: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
     keywords: ["candy", "candy digital", "gold", "gold series", "mlb", "auction", "ohtani", "soto"],
     notes: "36 auctioned packs / 226 cards incl. 1-of-1s. Fully traceable on-chain.",
-  },
-  {
-    id: "panini-america",
-    name: "Panini America (NBA / NFL / Soccer / Baseball / NASCAR)",
-    platform: "Panini (official league licenses)",
-    cryptoslamContract: "panini-america",
-    keywords: ["panini", "nba", "nfl", "soccer", "nascar", "sports cards", "blockchain cards"],
-    notes:
-      "NOT on Solana: Panini's blockchain cards live on Panini's own chain with an Ethereum bridge (OpenSea is the bridged venue). " +
-      "Included because pack pulls are a collector question; the feed comes from CryptoSlam, and none of the Solana tools (floors, provenance, trust) apply to it.",
   },
   {
     id: "mad_lads",

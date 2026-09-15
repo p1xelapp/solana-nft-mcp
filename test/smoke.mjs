@@ -3,8 +3,8 @@
  * official MCP client, and calls every tool against live public endpoints.
  *
  * PASS  = tool returned real data with the expected shape.
- * WARN  = upstream (CryptoSlam is flaky by nature) failed after retries - the
- *         server degraded gracefully instead of crashing. Not a code failure.
+ * WARN  = an upstream failed after retries and the server degraded gracefully
+ *         instead of crashing. Not a code failure.
  * FAIL  = wrong shape, crash, or protocol error. Exit code 1.
  *
  * Run: npm test   (network required; takes ~60-90s because every public API
@@ -60,7 +60,7 @@ try {
   // exact count; this only asks that nothing it drives has disappeared.
   const required = [
     "get_asset", "get_asset_provenance", "get_asset_trust", "get_collection_stats", "get_floor_prices",
-    "get_integration_recipe", "get_pack_pulls", "get_recent_sales", "get_wallet_activity", "get_wallet_holdings",
+    "get_integration_recipe", "get_recent_sales", "get_wallet_activity", "get_wallet_holdings",
     "get_wallet_profile", "identify", "search_collections", "verify_claim",
   ];
   const missing = required.filter((t) => !names.includes(t));
@@ -195,19 +195,6 @@ try {
   report(good ? "PASS" : "FAIL", "get_wallet_activity",
     good ? `${m.window.events} events, ${m.buys.count} buys / ${m.sells.count} sells, ${m.behaviour.label}` : JSON.stringify(r).slice(0, 200));
 } catch (e) { report("FAIL", "get_wallet_activity", e.message); }
-
-try {
-  const res = await client.callTool({ name: "get_pack_pulls", arguments: { limit: 5 } });
-  if (res.isError) {
-    // CryptoSlam is flaky upstream - graceful degradation is the tested behavior.
-    report("WARN", "get_pack_pulls", `upstream flaky: ${res.content?.[0]?.text?.slice(0, 120)}`);
-  } else {
-    const r = parse(res);
-    const good = Array.isArray(r.pulls) && r.pulls.length > 0 && r.pulls[0].card;
-    report(good ? "PASS" : "WARN", "get_pack_pulls",
-      good ? `latest rip: ${r.pulls[0].card} (${r.pulls[0].set ?? "?"}) #${r.pulls[0].serial ?? "?"}` : "empty feed");
-  }
-} catch (e) { report("WARN", "get_pack_pulls", e.message); }
 
 // -- OpenSea (OPTIONAL) --------------------------------------------------
 // The zero-key promise means CI and ordinary users must never need a key.

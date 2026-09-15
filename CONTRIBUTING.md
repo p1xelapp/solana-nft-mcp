@@ -10,7 +10,6 @@ Edit `src/registry.ts` and open a PR with:
 1. **Identifiers, verified live:**
    - `meSymbol` - confirm `https://api-mainnet.magiceden.dev/v2/collections/<symbol>/stats` returns a floor or volume (a bare `{symbol, listedCount: 0}` echo means the symbol does NOT exist - the phantom-200 trap).
    - `coreCollection` - confirm the address decodes as a Core collection: `get_collection_stats` on it must return `onchain.name`.
-   - `cryptoslamContract` - confirm `/v1/mints/<contract>/5/last` returns entries.
 2. **Keywords** collectors would actually type.
 3. In the PR description: one line on why this collection matters + the command output proving each identifier.
 

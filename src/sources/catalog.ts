@@ -265,27 +265,6 @@ export const SOURCES: readonly SourceEntry[] = [
 
   // ------------------------------------------------------------- tier 3
   {
-    id: "cryptoslam",
-    name: "CryptoSlam public web API",
-    kind: "aggregator",
-    tier: 3,
-    keyRequired: false,
-    keyEnvVar: null,
-    wired: true,
-    answers: ["the live pack-rip feed for licensed card platforms: card, set, serial and population as each is pulled"],
-    cannotSee: [
-      "prices - the mints feed carries no sale value",
-      "Solana Core assets in the feed this server reads; the pack-pull contract we call (panini-america) settles on Panini's own chain, so its numbers must never be reconciled against a Solana floor",
-    ],
-    officialDocs: "https://www.cryptoslam.io/",
-    statusPage: null,
-    lastVerified: VERIFIED,
-    fallback: null,
-    retention: "last N mints only (20 max per call); no historical window is offered",
-    note:
-      "CryptoSlam's own site runs on this API: public, keyless, and genuinely flaky (intermittent 500/504). Its chain list does include Solana, but nothing this server reads from it is Solana data.",
-  },
-  {
     id: "rarible",
     name: "Rarible (Solana marketplace, relaunched August 2026)",
     kind: "marketplace",

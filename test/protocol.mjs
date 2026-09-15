@@ -50,7 +50,6 @@ const TOOL_MANIFEST = [
   "get_collection_stats",
   "get_floor_prices",
   "get_integration_recipe",
-  "get_pack_pulls",
   "get_recent_sales",
   "get_source_status",
   "get_top_traders",
@@ -146,6 +145,26 @@ assert.ok(/base58|invalid|must be/i.test(badText), `bad address not rejected cle
 // Registry search is pure logic - no network.
 const search = await client.callTool({ name: "search_collections", arguments: { query: "candy gold" } });
 assert.ok(JSON.parse(search.content[0].text).results[0].id === "candy-mlb-gold-auction-1");
+
+// A collection spelled out by name resolves to itself, not to "ambiguous".
+// With every Candy collection in the registry, "mad lads" also scores a hit on
+// "Mad Magazine", and an id-only match called that pair ambiguous - so the one
+// collection actually named Mad Lads could not be identified at all.
+for (const [query, id] of [["mad lads", "mad_lads"], ["2026 MLB ICON Series", "candy-mlb-icon-2026"], ["collector crypt", "collector-crypt"]]) {
+  const idr = JSON.parse((await client.callTool({ name: "identify", arguments: { query } })).content[0].text);
+  const reg = idr.checked.find((c) => c.source === "registry");
+  assert.equal(reg.result, "found", `identify("${query}") should resolve to one entry, got ${reg.result}: ${reg.detail}`);
+  assert.ok(reg.detail.startsWith(id), `identify("${query}") resolved to ${reg.detail}`);
+}
+// A genuinely broad query stays ambiguous, and says so without printing the
+// whole registry at the reader.
+{
+  const broad = JSON.parse((await client.callTool({ name: "identify", arguments: { query: "candy" } })).content[0].text);
+  const reg = broad.checked.find((c) => c.source === "registry");
+  assert.equal(reg.result, "ambiguous", "a one-word query matching hundreds of entries is ambiguous");
+  assert.ok(reg.detail.length < 400, `the ambiguity note must stay short, got ${reg.detail.length} characters`);
+  assert.ok(/and \d+ more/.test(reg.detail), "the ambiguity note should say how many it did not list");
+}
 
 // -- untrusted text neutralisation (security, pure logic) -----------------
 // NFT names are attacker-chosen: minting is permissionless. Anything that
@@ -397,6 +416,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (19 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

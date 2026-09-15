@@ -47,7 +47,7 @@ return three verdicts, because a tool with only true and false will eventually r
 something it simply could not see.
 
 **Zero keys, read-only, local.** Every default source is public: Magic Eden's v2 endpoints,
-CryptoSlam, plain Solana RPC. Requests are paced per source and cached, because being a polite
+plain Solana RPC and its asset index. Requests are paced per source and cached, because being a polite
 client is the only thing that keeps a keyless server viable. There is no signing code in the
 repository, so the ability to move anything was never written rather than merely disabled. It runs
 on the user's own machine, keeps nothing, and asks for no account.

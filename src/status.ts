@@ -15,7 +15,6 @@
 import { SOURCES, WIRED_SOURCES, type SourceEntry } from "./sources/catalog.js";
 import * as me from "./sources/magiceden.js";
 import * as os from "./sources/opensea.js";
-import * as cs from "./sources/cryptoslam.js";
 import * as das from "./sources/das.js";
 import { rpcHealth } from "./sources/solana.js";
 import { clean } from "./lib/untrusted.js";
@@ -46,7 +45,6 @@ export interface SourceStatusReport {
 // costs a real query is a status check people turn off.
 const ME_PROBE_SYMBOL = "mad_lads";
 const OS_PROBE_SLUG = "mad-lads";
-const CS_PROBE_CONTRACT = "panini-america";
 
 const short = (e: unknown): string => {
   const msg = e instanceof Error ? e.message : String(e);
@@ -78,7 +76,7 @@ async function probe(
 ): Promise<SourceStatusRow> {
   const started = Date.now();
   try {
-    // A status check that waits 45 s on one flaky source (measured, CryptoSlam)
+    // A status check that waits 45 s on one slow source
     // blows past MCP clients' default request timeout and reports nothing at
     // all. Two things had to change: the probes share ONE overall deadline
     // instead of each getting its own (four sequential 8 s races is 32 s before
@@ -270,27 +268,11 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
         controller.signal,
       );
 
-  // --- CryptoSlam -------------------------------------------------------
-  const csPromise = probe(
-    byId("cryptoslam"),
-    async (signal) => {
-      const feed = await cs.recentMints(CS_PROBE_CONTRACT, 1, { fresh: true, signal });
-      if (feed.stale) {
-        return { ok: false, note: `did not answer just now; showing the last feed seen at ${feed.cachedAt}` };
-      }
-      if (!Array.isArray(feed.pulls)) {
-        return { ok: false, note: "answered without a pull list - a shape change, not a healthy feed" };
-      }
-      return { ok: true, note: `answered with ${feed.pulls.length} recent pull(s) from ${CS_PROBE_CONTRACT}` };
-    },
-    controller.signal,
-  );
-
   // Every loser of the shared deadline is aborted AND awaited: a probe left
   // running behind the response is the one that queues up behind the next
   // status call's rate gate. The chain endpoints are awaited here, alongside
   // the marketplaces, because they were started alongside them.
-  const [health, ...probed] = await Promise.all([healthPromise, mePromise, dasPromise, osPromise, csPromise]);
+  const [health, ...probed] = await Promise.all([healthPromise, mePromise, dasPromise, osPromise]);
   if ("failed" in health) {
     // rpcHealth is written not to throw; if it ever does, say so rather than
     // letting one source take down the whole report.

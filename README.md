@@ -70,7 +70,7 @@ cannot: they have nowhere to run a local server.
 ### Did it work?
 
 Most apps list the tools under a small icon near the message box; Claude Code shows them with
-`/mcp`. You should see 20 tools, starting with `identify`. If you see none: the path in the
+`/mcp`. You should see 19 tools, starting with `identify`. If you see none: the path in the
 config must be absolute and must point at `dist/index.js`, `npm run build` must have been run,
 and the app must be fully quit and reopened, tray icon included.
 
@@ -136,7 +136,6 @@ background) and against OpenSea's Solana index.
 | Asset index (DAS) on the public RPC | a second, independent opinion on ownership and wallet contents | none |
 | Magic Eden v2 | floors, listings, sales, activity, top traders, trending | none |
 | OpenSea v2 | second-venue floors, sales, supply, royalty, wallet transfers | self-issued |
-| CryptoSlam | live pack-rip feed for licensed card platforms | none |
 
 No account, no sign-in, no telemetry, no log leaves the machine. The only thing that goes
 anywhere is the public address or name being asked about, sent to the public source that can
@@ -145,7 +144,7 @@ than merely disabled, and every tool declares `readOnlyHint` in the protocol.
 
 ## Tools
 
-20 tools. Names are frozen: agents reference them in prompts, and a rename breaks integrations
+19 tools. Names are frozen: agents reference them in prompts, and a rename breaks integrations
 without raising an error.
 
 | Tool | Back |
@@ -163,7 +162,6 @@ without raising an error.
 | `get_wallet_holdings` | holdings from two independent readers, with the gap between them named |
 | `get_wallet_profile` | holdings by collection, share of wallet and of supply, listed and compressed counts, floor ceiling with assumptions, wallet age |
 | `get_wallet_activity` | buys and sells, net flow, venue split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
-| `get_pack_pulls` | live pack rips as they land: card, set, serial and population |
 | `get_collection_sales` | sales over a window: count, volume, top and bottom sale, median, buyers, sellers, per-day series, a per-name breakdown (which player or character sold most), a name filter, how far back the feed was read |
 | `find_listings` | cheapest-first listings, trait filters combined with AND, name filter, a lowest-serials mode for #1 and #100 hunters, each ask against its trait floor |
 | `get_top_traders` | the largest wallets in a collection by Magic Eden volume, all time |
@@ -250,5 +248,5 @@ open-sourced.
 
 MIT. See [LICENSE](LICENSE).
 
-Not affiliated with Candy Digital, Panini America, MLB, Magic Eden, OpenSea or CryptoSlam, and
+Not affiliated with Candy Digital, MLB, DC Comics, Magic Eden or OpenSea, and
 nothing here is financial advice.

@@ -6,7 +6,7 @@ Start with the layer diagram below to see where a tool call actually goes.
 
 ## 1. What it is, in one paragraph
 
-collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, live pack rips, and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is built for **licensed digital collectibles** - Candy Digital (official MLB license), Panini America (NBA/NFL/Soccer), and any Metaplex Core or Magic Eden collection.
+collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
 
 ## 2. The problem it solves
 
@@ -24,7 +24,7 @@ Claude / MCP client
    ▼
 ┌─────────────────────────────────────────────────┐
 │ MCP layer (official TypeScript SDK)             │
-│  20 tools · 4 resources · 3 prompts             │
+│  19 tools · 4 resources · 3 prompts             │
 │  zod validation on every input                  │
 ├─────────────────────────────────────────────────┤
 │ Domain layer                                    │
@@ -32,7 +32,7 @@ Claude / MCP client
 │  ("candy gold" -> Core address, ME symbol...)   │
 ├─────────────────────────────────────────────────┤
 │ Source layer (one module per upstream)          │
-│  magiceden.ts   cryptoslam.ts   solana.ts       │
+│  magiceden.ts   opensea.ts     solana.ts        │
 ├─────────────────────────────────────────────────┤
 │ Plumbing layer                                  │
 │  per-source rate gates · retry w/ backoff       │
@@ -44,7 +44,7 @@ Claude / MCP client
 Standard `@modelcontextprotocol/sdk` server over stdio. Every tool input is validated with zod schemas (base58 shape checks on addresses, length caps, enum-like regexes on symbols) *before* any network call. Errors return as clean `isError` results with actionable messages ("try search_collections, or pass a Core collection address") - an agent can recover mid-conversation instead of dead-ending.
 
 ### The domain layer (the differentiator)
-Generic NFT tools make the user hunt for marketplace symbols. The curated registry maps human vocabulary ("candy gold series", "panini") to the *right identifier for each source*: a Magic Eden symbol for market data, a Metaplex Core collection address for on-chain supply, a CryptoSlam contract for the pulls feed. Everything not in the registry still works by passing identifiers directly - the registry is a convenience layer, not a wall.
+Generic NFT tools make the user hunt for marketplace symbols. The curated registry maps human vocabulary ("candy gold series", "batman") to the *right identifier for each source*: a Magic Eden symbol for market data, a Metaplex Core collection address for on-chain supply, an OpenSea slug for the second venue. Everything not in the registry still works by passing identifiers directly - the registry is a convenience layer, not a wall.
 
 ### The provenance engine (the hard part)
 For a Core asset, the server:
@@ -73,13 +73,12 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 | `get_asset` | ME + chain | Marketplace view AND authoritative on-chain owner side by side; flags possible escrow ownership |
 | `get_asset_provenance` | chain | The party trick (see above); depth-capped with explicit skip counts |
 | `get_wallet_holdings` | ME | Read-only; the server can never move anything |
-| `get_pack_pulls` | CryptoSlam | Live licensed-card rip feed: player, set/parallel, serial, population, owner, image; labeled best-effort because the upstream is flaky by nature |
 
 ## 5. Who is this for?
 
 - **AI developers / agent builders** - drop-in collectibles data for agents with no key management, no wallet risk surface, and production patterns (caching, rate limits, graceful degradation) already handled.
-- **Collectors who use Claude** - "what's my wallet worth", "did that card ever sell on ME", "watch pack pulls" answered conversationally from live data. Install is copy-paste.
-- **Licensed-collectible communities** (Candy Digital, Panini) - their assets are exactly the ones mainstream NFT tooling handles worst (Core assets, marketplace-less drops). This server treats them as first-class.
+- **Collectors who use Claude** - "what's my wallet worth", "did that card ever sell on ME", "what is the cheapest #1 listed" answered conversationally from live data. Install is copy-paste.
+- **Licensed-collectible communities** (Candy Digital MLB and DC) - their assets are exactly the ones mainstream NFT tooling handles worst (Core assets, marketplace-less drops). This server treats them as first-class.
 - **Solana teams / hiring managers** - the repo carries the full protocol surface (tools, resources and prompts), strict TypeScript, live end-to-end tests, and errors that say which source failed and what still works.
 - **Data journalists / analysts** - provenance queries ("who accumulated these 1-of-1s?") without writing RPC decoders.
 
@@ -97,7 +96,6 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 **Cons / limitations (by design or by v1)**
 - Public endpoints are rate-limited: heavy parallel workloads want a personal `SOLANA_RPC_URL` (still keyless from the server's perspective)
 - Provenance covers **Metaplex Core** assets; SPL/compressed NFTs get marketplace data but not the decoded history (v1 scope)
-- CryptoSlam upstream is flaky; the feed is best-effort (cached, labeled)
 - Sales/holdings coverage is as good as Magic Eden's indexing; escrow-held listed items show the escrow as owner (flagged in output)
 - No USD conversion (SOL-denominated; deliberate - no extra price-feed dependency)
 - The public Solana RPC blocks datacenter IPs - fine for local/desktop use (residential), but a hosted deployment needs its own endpoint

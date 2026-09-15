@@ -344,3 +344,19 @@ catalog. 20 tools, 4 resources.
 - `get_trending` carries OpenSea's own Solana trending order beside Magic Eden's list, as
   rank only, because OpenSea publishes no volume on those rows.
 - `npm run bundle` builds the one-click Claude Desktop install (`.release/collector-mcp-<version>.mcpb`).
+
+## 1.9.0 - 2026-09-15
+
+- `get_pack_pulls`, the Panini registry entry and the CryptoSlam source are gone. The feed
+  worked, but Panini's cards settle on Panini's own chain with a bridge to Ethereum, so it was
+  the one tool in a Solana server that could never answer a Solana question, and the flakiest
+  source in the set. 19 tools now. Nothing else read CryptoSlam.
+- The pack-watcher recipe stays and now describes how to build the same thing on Solana: page a
+  Metaplex Core collection from the public asset index and treat ids you have not stored as the
+  new pulls. The public index cannot sort a collection by mint time, and the recipe says so.
+- Prompts: every argument is optional and a request that carries no arguments at all is treated
+  as an empty one, so a prompt attaches even in a client that loses the value you typed. New
+  `getting_started` prompt reads live source status and hands over five questions to try.
+- Each `collector://` resource opens with a line saying what to ask once it is attached, and the
+  registry hoists the sentence that repeated on 400 Candy rows.
+- The install bundle carries the white logo, which was invisible against a dark panel.

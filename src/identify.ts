@@ -133,12 +133,27 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   const tradesOn: string[] = [];
 
   // ---- 1. curated registry (free, no network) --------------------------
-  const exact = REGISTRY.find((e) => e.id === q);
+  const norm = (v: string) => v.toLowerCase().trim().replace(/\s+/g, " ");
+  const nq = norm(q);
+  // An id is the strongest match, then the collection's own name spelled out.
+  // Name matching is not a nicety: with every Candy collection in the registry,
+  // "mad lads" scored a hit on "Mad Magazine" too, and an id-only test called
+  // the pair ambiguous - so the one collection actually named Mad Lads could
+  // not be identified at all.
+  const exact =
+    REGISTRY.find((e) => e.id === q) ??
+    REGISTRY.find((e) => norm(e.name) === nq) ??
+    REGISTRY.find((e) => e.meSymbol === q);
   const fuzzy = exact ? [exact] : searchRegistry(q);
   // A fuzzy hit is only an identification when it is the only one. "candy"
   // matches several Candy Digital drops and must come back as candidates,
-  // never as whichever entry sorted first.
-  const entry: RegistryEntry | undefined = exact ?? (fuzzy.length === 1 ? fuzzy[0] : undefined);
+  // never as whichever entry sorted first. One exception, because it is a
+  // difference in kind rather than in score: when the query appears whole
+  // inside exactly one candidate's name, that candidate is the answer and the
+  // rest merely share a word with it.
+  const named = fuzzy.filter((e) => norm(e.name).includes(nq));
+  const entry: RegistryEntry | undefined =
+    exact ?? (fuzzy.length === 1 ? fuzzy[0] : named.length === 1 ? named[0] : undefined);
   checked.push({
     source: "registry",
     looked_for: "a hand-verified entry matching this id or name",
@@ -146,7 +161,14 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     detail: entry
       ? `${entry.id} - ${entry.name}`
       : fuzzy.length > 1
-        ? `${fuzzy.length} curated entries match: ${fuzzy.map((e) => e.id).join(", ")} - pass one of these ids to be specific`
+        ? // Capped, because "candy" matches 399 entries and printing all of
+          // them spends the reader's context on a list nobody scrolls. The
+          // best-scoring few plus the count is what makes the next query
+          // narrower.
+          `${fuzzy.length} curated entries match: ${fuzzy
+            .slice(0, 8)
+            .map((e) => e.id)
+            .join(", ")}${fuzzy.length > 8 ? ` and ${fuzzy.length - 8} more` : ""} - pass one of these ids, or add a word to narrow it`
         : "no curated entry; falling through to live probes",
   });
 
@@ -157,7 +179,6 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     if (entry.meSymbol) identifiers.meSymbol = entry.meSymbol;
     if (entry.openseaSlug) identifiers.openseaSlug = entry.openseaSlug;
     if (entry.coreCollection) identifiers.coreCollection = entry.coreCollection;
-    if (entry.cryptoslamContract) identifiers.cryptoslamContract = entry.cryptoslamContract;
   }
 
   // ---- 2. on-chain, when the string could be an address ----------------

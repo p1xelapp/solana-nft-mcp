@@ -7,8 +7,6 @@
  *   get_asset_provenance  -> public Solana RPC + the Metaplex Core layout,
  *                            asserted down to a decoded transfer owner
  *   get_source_status     -> the undocumented DAS capability on the public RPC
- *                            AND the CryptoSlam row, the only source behind
- *                            get_pack_pulls
  *   get_asset             -> that capability actually feeding an asset read
  *   identify              -> the routing that decides which source to ask
  *
@@ -51,11 +49,10 @@ const watchdog = setTimeout(() => {
 watchdog.unref?.();
 
 const failures = [];
-// Sources that are down but deliberately do not fail the run. CryptoSlam feeds
-// one non-Solana tool and is the documented flaky one, so its outage is
-// reported rather than paged - but the closing line must NAME it. It used to
-// print "every source family answered" over exactly this state, which is the
-// one sentence a health check must never get wrong.
+// Sources that are down but deliberately do not fail the run: an optional one
+// whose outage is reported rather than paged. The closing line must NAME any
+// that land here. It used to print "every source family answered" over exactly
+// this state, which is the one sentence a health check must never get wrong.
 const degraded = [];
 function fail(source, what, detail) {
   console.error(`❌ ${what} [${source}] - ${detail}`);
@@ -138,10 +135,9 @@ try {
 // Undocumented and withdrawable: a -32601 turns get_asset's second reader and
 // the whole chain-index half of get_wallet_holdings off, silently.
 try {
-  // This one call pings every wired source in turn, and CryptoSlam alone has
-  // been measured at 45s of retries when it is having a bad minute. The
-  // client's default 60s request timeout is not enough for a probe that waits
-  // on the slowest source by design, so this call gets its own.
+  // This one call pings every wired source in turn, and the slowest of them
+  // sets the pace. The client's default 60s request timeout is not enough for
+  // a probe that waits on every source by design, so this call gets its own.
   const r = parse(await client.callTool({ name: "get_source_status", arguments: {} }, undefined, { timeout: 120_000 }));
   const row = (r.sources ?? []).find((s) => s.id === "das-public");
   if (!row) {
@@ -154,35 +150,6 @@ try {
     );
   } else {
     pass("asset index (DAS)", "get_source_status", `das-public answering (tier ${row.tier}, ${row.latencyMs}ms): ${row.note}`);
-  }
-  // The summary line used to say every source family answered while this row
-  // sat at ok:false unexamined - the one source in the set measured at 45s of
-  // retries is exactly the one a green run must not skip.
-  const slam = (r.sources ?? []).find((s) => s.id === "cryptoslam");
-  if (!slam) {
-    fail("CryptoSlam", "get_source_status", "no cryptoslam row in the status report - the source catalog or the status wiring changed");
-  } else if (slam.ok !== true) {
-    // CryptoSlam is the documented flaky one (intermittent 500/504), and the
-    // status probe gives it 8 s. Before calling the run failed, ask the tool
-    // that depends on it: only when both say no is the source really down.
-    try {
-      const pulls = parse(await client.callTool({ name: "get_pack_pulls", arguments: { contract: "panini-america", limit: 3 } }, undefined, { timeout: 60_000 }));
-      if (Array.isArray(pulls.pulls) && pulls.pulls.length > 0) {
-        pass("CryptoSlam", "get_pack_pulls", `status probe said "${slam.note}" but the feed served ${pulls.pulls.length} pull(s) on retry`);
-      } else {
-        // CryptoSlam feeds one non-Solana tool (Panini pack pulls) and is the
-        // documented flaky source. Its outage is reported, not paged: a weekly
-        // email for a venue nobody on Solana depends on is the noise this check
-        // exists to avoid. Anything Solana-side failing still fails the run.
-        degraded.push(`CryptoSlam (status: ${slam.note}; get_pack_pulls served no pulls)`);
-        pass("CryptoSlam", "get_pack_pulls", `WARNING - CryptoSlam is down on their side: status said "${slam.note}" and the feed served no pulls. Only get_pack_pulls is affected.`);
-      }
-    } catch (e) {
-      degraded.push(`CryptoSlam (status: ${slam.note}; get_pack_pulls threw: ${e.message})`);
-      pass("CryptoSlam", "get_source_status", `WARNING - CryptoSlam is not answering (${slam.note}; get_pack_pulls: ${e.message}). Their outage, one tool affected, not a failure of this server.`);
-    }
-  } else {
-    pass("CryptoSlam", "get_source_status", `cryptoslam answering (${slam.latencyMs}ms): ${slam.note}`);
   }
 } catch (e) {
   fail("asset index (DAS)", "get_source_status", e.message);
@@ -241,15 +208,15 @@ if (failures.length > 0) {
   process.exit(1);
 }
 if (degraded.length > 0) {
-  // Exit 0 on purpose - a CryptoSlam-only outage is not worth a weekly email -
-  // but the verdict is DEGRADED, never PASSED, and it names the source. The
-  // old line said "PASSED WITH A DEGRADED SOURCE", which every skim read as a
-  // pass.
+  // Exit 0 on purpose - an optional source's outage is not worth a weekly
+  // email - but the verdict is DEGRADED, never PASSED, and it names the
+  // source. The old line said "PASSED WITH A DEGRADED SOURCE", which every
+  // skim read as a pass.
   result(`DEGRADED (${degraded.map((d) => String(d).split(" ")[0].toLowerCase().replace(/[^a-z]/g, "")).join(", ")})`);
   console.log(
     `\nLIVE CHECK DEGRADED in ${elapsed()}: ${degraded.join("; ")}. ` +
-      `Every Solana source family answered, including the undocumented asset index; the source(s) named above did NOT, ` +
-      `and the tools that depend on them (get_pack_pulls) are affected. Not failing the run: this source is documented flaky and feeds one non-Solana tool.`,
+      `Every required source family answered, including the undocumented asset index; the source(s) named above did NOT. ` +
+      `Not failing the run: nothing required depends on them.`,
   );
   process.exit(0);
 }

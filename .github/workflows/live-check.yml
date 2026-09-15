@@ -60,7 +60,7 @@ jobs:
       # THIS is the step whose failure means a source broke. If the run is red
       # and this step was skipped or never started, the sources were never
       # asked.
-      # The check exits 0 for a CryptoSlam-only outage, so a green tick alone
+      # The check exits 0 for an optional source's outage, so a green tick alone
       # does not mean every source answered. Its last line is a verdict -
       # RESULT: PASSED | DEGRADED (source) | FAILED (...) - and that line is
       # echoed into the run summary so the state is readable without opening
@@ -100,7 +100,7 @@ jobs:
       # A source break or a degraded source becomes ONE open issue, updated on
       # each later run rather than duplicated, so the repo itself shows what is
       # currently broken. It closes by hand once the fix ships. DEGRADED exits
-      # 0 above on purpose (a CryptoSlam outage is theirs), but it is still the
+      # 0 above on purpose (an optional source's outage is theirs), but it is still the
       # signal a maintainer wants, so it lands here too.
       - name: Open or update the source-break issue
         if: "always() && steps.live.outcome != 'skipped' && (steps.live.outcome == 'failure' || startsWith(steps.live.outputs.verdict, 'RESULT: DEGRADED'))"

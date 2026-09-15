@@ -71,7 +71,7 @@ and hand back a receipt, and label a wallet's behaviour from its history.
 Magic Eden's MCP is keyless too and it covers Magic Eden's data. Same answer.
 
 **Is it really zero keys?**
-Yes, including OpenSea. Magic Eden, CryptoSlam and plain Solana RPC need no key at all.
+Yes, including OpenSea. Magic Eden and plain Solana RPC need no key at all.
 OpenSea does, so the server issues itself one: the first question that actually needs
 OpenSea asks OpenSea for one of its free weekly agent keys, keeps it in
 `~/.collector-mcp/opensea-key.json` on your own machine, and renews it a day before it
