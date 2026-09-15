@@ -164,7 +164,6 @@ async function startWith(env = {}) {
   const c = await startWith();
   const { tools } = await c.listTools();
   const { prompts } = await c.listPrompts();
-  const { resources } = await c.listResources();
   await c.close();
 
   const readme = readFileSync(join(root, "README.md"), "utf8");
@@ -182,9 +181,10 @@ async function startWith(env = {}) {
   const claimed = /(\d+) tools\. Names are frozen/.exec(readme)?.[1];
   assert.equal(Number(claimed), tools.length, `the README says ${claimed} tools, the server publishes ${tools.length}`);
 
-  for (const r of resources) assert.ok(readme.includes(r.uri), `resource ${r.uri} is not in the README`);
   for (const p of prompts) assert.ok(readme.includes(`\`${p.name}\``), `prompt ${p.name} is not in the README`);
-  ok(`r5 the README and the server agree: ${tools.length} tools, ${resources.length} resources, ${prompts.length} prompts, all named in both`);
+  // The resources are gone on purpose, so the README must not promise them.
+  assert.ok(!/collector:\/\//.test(readme), "the README still advertises collector:// resources");
+  ok(`r5 the README and the server agree: ${tools.length} tools, no resources, ${prompts.length} prompts, all named in both`);
 }
 
 {

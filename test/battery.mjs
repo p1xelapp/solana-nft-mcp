@@ -383,14 +383,15 @@ check("G2", "sources", "status says what a reader should do with it", async () =
   const r = await call("get_source_status", {});
   return (r.readThis?.length ?? 0) > 0 || "no readThis guidance";
 });
-check("G3", "sources", "the source catalog resource explains itself", async () => {
-  const r = JSON.parse((await client.readResource({ uri: "collector://sources" })).contents[0].text);
-  return /attach this/i.test(r.howToUse ?? "") || "the catalog does not say how to use it";
+check("G3", "sources", "the source catalog is reachable without attaching a file", async () => {
+  const r = await call("get_source_status", {});
+  const rows = r.sources ?? [];
+  return rows.every((s) => has(s.tier) && has(s.name)) && rows.length >= 4 ? true : `status rows are thin: ${text(rows).slice(0, 160)}`;
 });
 check("G4", "sources", "the glossary names the wrong answer each term prevents", async () => {
-  const r = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
-  const withPitfall = (r.glossary ?? []).filter((g) => g.pitfall).length;
-  return withPitfall >= 20 || `only ${withPitfall} glossary entries name a pitfall`;
+  const r = await call("explain_mechanics", { topic: "glossary" });
+  const withPitfall = (r.vocabulary ?? []).filter((g) => g.pitfall).length;
+  return withPitfall >= 20 || `only ${withPitfall} terms name a pitfall`;
 });
 check("G5", "sources", "mechanics answers a custody question with a source link", async () => {
   const r = await call("explain_mechanics", { topic: "escrow" });
@@ -755,9 +756,9 @@ check("N4", "bounds", "no single answer is larger than a client will accept", as
   const bytes = text(r).length;
   return bytes < 400_000 || `one answer was ${Math.round(bytes / 1024)} KB`;
 });
-check("N5", "bounds", "the registry resource stays small enough to attach", async () => {
-  const r = (await client.readResource({ uri: "collector://registry" })).contents[0].text;
-  return r.length < 200_000 || `the registry resource is ${Math.round(r.length / 1024)} KB`;
+check("N5", "bounds", "a name search stays small enough to read", async () => {
+  const r = text(await call("search_collections", { query: "batman" }));
+  return r.length < 200_000 || `a name search returned ${Math.round(r.length / 1024)} KB`;
 });
 
 // ====================================================== O. venues
@@ -838,9 +839,9 @@ check("R1", "escrow", "a listed item's on-chain owner is explained as escrow, no
   const t = text(asset);
   return /escrow|listed|marketplace/i.test(t) || `a listed item's owner was reported flat: ${t.slice(0, 250)}`;
 });
-check("R2", "escrow", "the glossary states the escrow rule a reader needs", async () => {
-  const g = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
-  return /escrow/i.test(text(g.glossary)) || "the glossary never mentions escrow";
+check("R2", "escrow", "the vocabulary states the escrow rule a reader needs", async () => {
+  const g = await call("explain_mechanics", { topic: "glossary" });
+  return /escrow/i.test(text(g.vocabulary)) || "the vocabulary never mentions escrow";
 });
 check("R3", "escrow", "explain_mechanics answers what a marketplace does with custody", async () => {
   const r = await call("explain_mechanics", { topic: "escrow" });
@@ -997,8 +998,8 @@ check("W2", "every-tool", "every tool result is small enough to read", async () 
 
 // ====================================================== X. registry integrity
 check("X1", "registry", "every registry entry has a unique id and a usable identifier", async () => {
-  const reg = JSON.parse((await client.readResource({ uri: "collector://registry" })).contents[0].text);
-  const rows = reg.collections ?? [];
+  const { REGISTRY } = await import("../dist/registry.js");
+  const rows = REGISTRY;
   const ids = new Set();
   for (const e of rows) {
     if (ids.has(e.id)) return `duplicate id ${e.id}`;
@@ -1008,14 +1009,14 @@ check("X1", "registry", "every registry entry has a unique id and a usable ident
   return rows.length > 380 || `only ${rows.length} entries`;
 });
 check("X2", "registry", "every chain address in the registry is valid base58", async () => {
-  const reg = JSON.parse((await client.readResource({ uri: "collector://registry" })).contents[0].text);
-  const bad = (reg.collections ?? []).filter((e) => e.coreCollection && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(e.coreCollection));
+  const { REGISTRY } = await import("../dist/registry.js");
+  const bad = REGISTRY.filter((e) => e.coreCollection && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(e.coreCollection));
   return bad.length === 0 || `${bad.length} bad addresses, first ${bad[0]?.id}`;
 });
 check("X3", "registry", "no two entries claim the same chain address", async () => {
-  const reg = JSON.parse((await client.readResource({ uri: "collector://registry" })).contents[0].text);
+  const { REGISTRY } = await import("../dist/registry.js");
   const seen = new Map();
-  for (const e of reg.collections ?? []) {
+  for (const e of REGISTRY) {
     if (!e.coreCollection) continue;
     if (seen.has(e.coreCollection)) return `${e.id} and ${seen.get(e.coreCollection)} share ${e.coreCollection}`;
     seen.set(e.coreCollection, e.id);

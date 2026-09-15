@@ -80,58 +80,57 @@ for (const t of tools) {
   assert.ok(t.description && t.description.length > 40, `${t.name} needs a real description`);
 }
 
-const { resources } = await client.listResources();
-assert.ok(resources.some((r) => r.uri === "collector://registry"), "registry resource missing");
-
-const reg = await client.readResource({ uri: "collector://registry" });
-const registry = JSON.parse(reg.contents[0].text);
-const entries = registry.collections;
-assert.ok(Array.isArray(entries) && entries.length >= 5, "registry should have >=5 entries");
-assert.equal(entries.length, registry.count, "registry count should match the list it ships");
-// The payload has to say what to do with it: a user attaches this file and
-// otherwise gets a wall of JSON with no instructions.
-assert.ok(typeof registry.howToUse === "string" && registry.howToUse.length > 60, "registry resource needs a howToUse line");
-assert.ok(entries.every((e) => e.id && e.name), "every registry row needs an id and a name");
-
-assert.ok(resources.some((r) => r.uri === "collector://glossary"), "glossary resource missing");
-assert.ok(resources.some((r) => r.uri === "collector://sources"), "sources resource missing");
-assert.ok(resources.some((r) => r.uri === "collector://mechanics"), "mechanics resource missing");
-const sourcesDoc = JSON.parse((await client.readResource({ uri: "collector://sources" })).contents[0].text);
-const sources = sourcesDoc.sources;
-assert.ok(Array.isArray(sources) && sources.length >= 15, "source catalog should list every source, wired or planned");
-for (const s of sources) {
-  assert.ok([1, 2, 3, 4].includes(s.tier) && s.answers.length && s.cannotSee.length && s.officialDocs, `${s.id} needs tier, answers, cannotSee, docs`);
-}
-assert.ok(sources.some((s) => s.id === "das-public" && s.wired), "the public asset index should be wired");
-const mechDoc = JSON.parse((await client.readResource({ uri: "collector://mechanics" })).contents[0].text);
-const mech = mechDoc.mechanics;
-assert.ok(mech.length >= 40 && mech.every((m) => m.pitfall && /^https:\/\//.test(m.source)), "mechanics entries need a pitfall and a source URL");
-assert.ok(mech.every((m) => m.verified || m.unverifiedReason), "an unverified mechanics entry must say why");
-const gloss = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
-assert.ok(gloss.glossary.length >= 20, "glossary should carry the domain vocabulary");
-assert.ok(gloss.presentationRules.length >= 5, "presentation rules missing");
-// Every resource has to say what it is for: a person attaches the file and
-// otherwise sees only JSON.
-for (const [uri, doc] of [["sources", sourcesDoc], ["mechanics", mechDoc], ["glossary", gloss], ["registry", registry]]) {
-  assert.ok(typeof doc.howToUse === "string" && doc.howToUse.length > 60, `collector://${uri} needs a howToUse line`);
-}
-// The entries exist to prevent specific wrong answers, so most must name one.
-assert.ok(
-  gloss.glossary.filter((g) => g.pitfall).length >= gloss.glossary.length - 1,
-  "nearly every glossary entry should name the pitfall it prevents",
+// No resources on purpose. They were four `collector://` files that a client
+// shows to the PERSON, as things to attach beside their message, and nobody
+// attaches a glossary to ask what a card is worth. Every one of them is
+// reachable through a tool the model calls on its own, which is checked below.
+// With none registered the capability itself is gone, so a client never even
+// offers them: listResources answers "Method not found" rather than an empty
+// list, and nothing appears in the attach menu.
+assert.equal(client.getServerCapabilities()?.resources, undefined, "this server must not advertise resources");
+const listedResources = await client.listResources().then(
+  (r) => r.resources,
+  () => null,
 );
+assert.equal(listedResources, null, `this server publishes no resources; got ${listedResources?.map((r) => r.uri).join(", ")}`);
+
+// The vocabulary that used to be the glossary resource now comes back with the
+// mechanics, because words are part of explaining how something works.
+{
+  const all = JSON.parse((await client.callTool({ name: "explain_mechanics", arguments: { topic: "glossary" } })).content[0].text);
+  assert.ok(all.vocabulary.length >= 20, `the whole vocabulary should come back for "glossary", got ${all.vocabulary.length}`);
+  assert.ok(all.presentationRules.length >= 5, "the presentation rules travel with it");
+  assert.ok(
+    all.vocabulary.filter((g) => g.pitfall).length >= all.vocabulary.length - 1,
+    "nearly every term should name the wrong answer it prevents",
+  );
+  const one = JSON.parse((await client.callTool({ name: "explain_mechanics", arguments: { topic: "floor price" } })).content[0].text);
+  assert.ok(one.vocabulary.some((g) => /floor/i.test(g.term)), "asking about a term should return that term");
+  assert.ok(one.vocabulary.length < all.vocabulary.length, "a narrow question should not return the whole dictionary");
+}
 
 const { prompts } = await client.listPrompts();
 assert.ok(prompts.some((p) => p.name === "collection_report"), "collection_report prompt missing");
 assert.ok(prompts.some((p) => p.name === "wallet_report"), "wallet_report prompt missing");
 assert.ok(prompts.some((p) => p.name === "getting_started"), "getting_started prompt missing");
-// Every prompt argument is optional, and every prompt has to survive a client
-// that sends an empty argument object. A required argument plus a client that
-// loses the typed value is a prompt that simply cannot be attached.
+// No prompt takes an argument, and every one returns FIXED text. A bundled
+// install compares the text a prompt returns against the text its manifest
+// declares and rejects a mismatch as a possible injection, so anything
+// interpolated cannot be attached at all. Each prompt asks for what it needs
+// in the conversation instead.
+const { PROMPT_TEXTS } = await import("../dist/prompts.js");
 for (const p of prompts) {
-  for (const a of p.arguments ?? []) assert.ok(!a.required, `prompt ${p.name} argument ${a.name} must not be required`);
+  assert.deepStrictEqual(p.arguments ?? [], [], `prompt ${p.name} must take no arguments`);
+  const bare = await client.getPrompt({ name: p.name });
   const empty = await client.getPrompt({ name: p.name, arguments: {} });
-  assert.ok(empty.messages[0].content.text.length > 80, `prompt ${p.name} should work with empty arguments`);
+  assert.equal(bare.messages[0].content.text, empty.messages[0].content.text, `prompt ${p.name} must not vary with arguments`);
+  assert.equal(bare.messages[0].content.text, PROMPT_TEXTS[p.name], `prompt ${p.name} must return exactly the declared text`);
+}
+// And the bundle declares those same words: a manifest that drifts from the
+// server is a prompt nobody can attach after a one-click install.
+{
+  const bundleScript = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "bundle-mcpb.mjs"), "utf8");
+  assert.ok(/PROMPT_TEXTS\[name\]/.test(bundleScript), "the manifest must take its prompt text from the server's own module, not a copy");
 }
 // A prompt that takes nothing must also answer a request that carries no
 // arguments key at all, which is what a client sends for a zero-input prompt.
@@ -417,6 +416,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (20 tools by exact name, 0 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

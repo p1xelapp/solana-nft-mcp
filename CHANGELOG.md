@@ -496,3 +496,25 @@ Found by sweeping 37 real collections rather than the same few fixtures.
 - One unresolvable name no longer kills a whole group scan. A name shared by two
   collections threw, and in a batch of twenty that is a row to report rather than
   a reason to abandon the other nineteen.
+
+## 1.11.0 - 2026-09-15
+
+The prompt menu, fixed properly, and four files removed from it.
+
+- Prompts take no arguments and return FIXED text. The client compares what a
+  prompt returns against what the manifest declares and rejects a mismatch as a
+  possible injection, logging "content validation failed" while the person sees
+  only "Failed to attach prompt". An interpolated body can never match a
+  declaration, so `collection_report` and `wallet_report` now ask which
+  collection or wallet in the conversation instead of opening an input box.
+- The words live in one module, `src/prompts.ts`, which the server registers
+  from and the bundle script declares from. They cannot drift apart, and a test
+  fails if either side stops reading it.
+- The four `collector://` resources are gone. A client shows resources to the
+  PERSON, as files to attach beside a message, and nobody attaches a glossary to
+  ask what a card is worth. Everything they carried is reachable by a tool the
+  model calls on its own: `explain_mechanics` for how a standard or venue
+  behaves and for the vocabulary (ask for "glossary" to get all of it with the
+  presentation rules), `get_source_status` for the source catalog,
+  `search_collections` for the registry. The capability is no longer advertised,
+  so nothing appears in the attach menu at all.

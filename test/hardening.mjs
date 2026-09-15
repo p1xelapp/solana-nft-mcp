@@ -621,14 +621,30 @@ const jsonResponse = (body, headers = {}) =>
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
   const { prompts } = await client.listPrompts();
   await client.close();
+  const { PROMPT_TEXTS, PROMPT_LIST } = await import("../dist/prompts.js");
   const bundleScript = readFileSync(join(here, "..", "scripts", "bundle-mcpb.mjs"), "utf8");
+  // The manifest is built from PROMPT_LIST rather than retyped, so the check is
+  // that the bundle still reads from it AND that the server registers exactly
+  // what that list holds.
+  assert.ok(/PROMPT_LIST\.map/.test(bundleScript), "the bundle must build its prompt list from the server's own module");
+  assert.ok(/PROMPT_TEXTS\[name\]/.test(bundleScript), "the bundle must take the prompt TEXT from that module too");
+  assert.deepStrictEqual(
+    prompts.map((p) => p.name).sort(),
+    PROMPT_LIST.map(([name]) => name).sort(),
+    "the server and the manifest list different prompts, so one of them cannot be attached after a one-click install",
+  );
   for (const p of prompts) {
-    assert.ok(bundleScript.includes(`name: "${p.name}"`), `prompt ${p.name} is registered but the bundle manifest does not declare it, so it cannot be attached after a one-click install`);
-    for (const a of p.arguments ?? []) {
-      assert.ok(bundleScript.includes(`"${a.name}"`), `prompt ${p.name} takes an argument ${a.name} the bundle manifest does not list`);
-    }
+    assert.deepStrictEqual(p.arguments ?? [], [], `prompt ${p.name} takes an argument; an interpolated body cannot match a declared one`);
+    const body = (await (async () => {
+      const c2 = new Client({ name: "manifest-text", version: "1.0.0" });
+      await c2.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
+      const got = await c2.getPrompt({ name: p.name });
+      await c2.close();
+      return got.messages[0].content.text;
+    })());
+    assert.equal(body, PROMPT_TEXTS[p.name], `prompt ${p.name} returns text the manifest does not declare, which a client rejects as a possible injection`);
   }
-  ok("c4 every prompt the server registers is declared in the install bundle, or it cannot be attached there");
+  ok("c4 every prompt is declared in the install bundle with exactly the words the server returns");
 }
 
 // c5 - a search for something that does not exist must come back empty.

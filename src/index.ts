@@ -29,13 +29,14 @@ import { decodeCoreAccountPlugins, deriveTrust } from "./lib/coreplugins.js";
 import { clean, cleanFields, inspectUntrusted } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
-import { SOURCES, explorerLinks } from "./sources/catalog.js";
+import { explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
 import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
 import { resolveName, symbolForCollectionName, collectionNameKey } from "./names.js";
 import { classifyAirdrop, summariseAirdrops } from "./spam.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
-import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
+import { explainMechanics, mechanicsForTrust } from "./mechanics.js";
+import { PROMPT_TEXTS, PROMPT_LIST } from "./prompts.js";
 import { NotFoundError, WrongKindError, AmbiguousError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
@@ -2068,14 +2069,31 @@ registerTool(
   },
   guard(async ({ topic }) => {
     const entries = explainMechanics(topic);
+    // The vocabulary lives here too. It used to be a `collector://glossary`
+    // resource, which meant a person had to attach a file to get the one thing
+    // that stops a floor being read as a valuation. Words are part of
+    // explaining how something works, so they come back with the mechanics.
+    const q = topic.toLowerCase().trim();
+    const wantsAll = /^(glossary|terms|vocabulary|definitions|jargon)$/.test(q);
+    const words = q.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+    const vocabulary = wantsAll
+      ? GLOSSARY
+      : GLOSSARY.filter((g) => {
+          const hay = `${g.term} ${g.meaning} ${g.pitfall ?? ""}`.toLowerCase();
+          return hay.includes(q) || words.some((w) => g.term.toLowerCase().includes(w));
+        });
     return Promise.resolve(
       ok({
         topic: clean(topic),
         entries: entries.slice(0, 8),
         count: entries.length,
+        // Every term carries the wrong answer it exists to prevent, which is
+        // the part worth reading.
+        vocabulary: vocabulary.slice(0, wantsAll ? GLOSSARY.length : 6),
+        ...(wantsAll ? { presentationRules: PRESENTATION_RULES } : {}),
         hint:
-          entries.length === 0
-            ? "Nothing in the knowledge base matched. Try a standard name (Core, Token Metadata, compressed), a plugin name, a venue, or a plain question such as 'why did my NFT move'."
+          entries.length === 0 && vocabulary.length === 0
+            ? "Nothing in the knowledge base matched. Try a standard name (Core, Token Metadata, compressed), a plugin name, a venue, a plain question such as 'why did my NFT move', or 'glossary' for the whole vocabulary and the rules for presenting this data."
             : undefined,
         readThis: "Entries marked verified: false could not be confirmed from a primary source and say why; treat them as leads, not facts.",
       }),
@@ -2105,159 +2123,19 @@ registerTool(
   }),
 );
 
-// -------------------------------------------------------------- resources
-
-server.registerResource(
-  "sources",
-  "collector://sources",
-  {
-    title: "Source catalog",
-    description:
-      "Every data source: tier (1 chain, 2 primary venue, 3 optional keyed, 4 link-only), what it answers, what it cannot see, " +
-      "retention, fallback, docs and status page. Read this to explain where a number came from or why one is missing.",
-    mimeType: "application/json",
-  },
-  (uri) =>
-    Promise.resolve({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify(
-            {
-              // Attaching a file that opens on a wall of JSON tells a person
-              // nothing. The first line says what to ask once it is attached.
-              howToUse:
-                "Attach this to ask where a number came from, why one is missing, or what this server cannot see. " +
-                "Tier 1 is the chain itself, tier 2 the venue feeds that need no key, tier 3 sources that need a key, " +
-                "tier 4 links only. get_source_status says which of them are answering right now.",
-              sources: SOURCES,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }),
-);
-
-server.registerResource(
-  "mechanics",
-  "collector://mechanics",
-  {
-    title: "How standards and venues handle assets",
-    description:
-      "Knowledge base behind explain_mechanics: every Metaplex Core plugin, Token Metadata delegates and rule sets, compressed NFTs, " +
-      "and each Solana venue's custody and royalty behaviour, with sources, pitfalls, and documented-versus-observed notes.",
-    mimeType: "application/json",
-  },
-  (uri) =>
-    Promise.resolve({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify(
-            {
-              howToUse:
-                "Attach this to ask how a standard or a venue actually behaves: who can freeze or burn an item, what a " +
-                "marketplace does with custody while something is listed, how royalties are enforced. Every entry names " +
-                "the pitfall it exists to prevent and links its source. explain_mechanics answers one question from the same set.",
-              mechanics: MECHANICS,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }),
-);
-
-server.registerResource(
-  "glossary",
-  "collector://glossary",
-  {
-    title: "Collectibles glossary + presentation rules",
-    description:
-      "Domain vocabulary with the specific wrong answer each term exists to prevent (floor is not a valuation, " +
-      "a listed item's on-chain owner is the marketplace escrow, an opened Candy pack is returned not burned), " +
-      "plus how to present this data to a person. Read this before interpreting or summarising any output.",
-    mimeType: "application/json",
-  },
-  (uri) =>
-    Promise.resolve({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify(
-            {
-              howToUse:
-                "Attach this before reading any output from this server. It defines the words a collector uses and, for " +
-                "each one, the wrong answer it exists to prevent: a floor is an ask and not a valuation, a listed item's " +
-                "on-chain owner is the marketplace escrow and not a person, an opened Candy pack is returned and not burned.",
-              glossary: GLOSSARY,
-              presentationRules: PRESENTATION_RULES,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }),
-);
-
-server.registerResource(
-  "registry",
-  "collector://registry",
-  {
-    title: "Curated collection registry",
-    description:
-      "Every collection this server can resolve by name, with the identifier each source needs. " +
-      "Attach it to ask which collections are covered; for a single lookup, search_collections is faster.",
-    mimeType: "application/json",
-  },
-  (uri) =>
-    Promise.resolve({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify(
-            {
-              howToUse:
-                "Names in this list can be passed to any tool that takes a collection. Entries with a meSymbol trade on " +
-                "Magic Eden; entries with a coreCollection can be read straight from the chain. A collection that is not " +
-                "listed still works: pass a Magic Eden symbol or a Metaplex Core collection address directly.",
-              count: REGISTRY.length,
-              // The full entries carry keywords and a note, and for the
-              // generated Candy rows that note is the same sentence 400 times.
-              // Attaching it whole spends a person's context on repetition, so
-              // the shared sentence is hoisted and each row keeps only what
-              // makes it findable and callable.
-              candyNote:
-                "Candy Digital rows come from the CandyScan collection list. The Magic Eden symbol resolves by name " +
-                "through the directory; pass a symbol directly for listings and sales.",
-              collections: REGISTRY.map((e) => {
-                const generated = e.notes?.startsWith("From the CandyScan collection list");
-                return {
-                  id: e.id,
-                  name: e.name,
-                  platform: e.platform,
-                  meSymbol: e.meSymbol,
-                  coreCollection: e.coreCollection,
-                  openseaSlug: e.openseaSlug,
-                  notes: generated ? undefined : e.notes,
-                };
-              }),
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }),
-);
+// --------------------------------------------------------- no resources
+//
+// This server used to publish four `collector://` resources: the source
+// catalog, the mechanics knowledge base, the glossary and the registry. They
+// were removed on purpose.
+//
+// A client shows resources to the PERSON, as files to attach next to their
+// message, and nobody wants to attach a glossary to ask what a card is worth.
+// They sat in that menu without context, and every one of them was already
+// reachable through a tool the model can call on its own: explain_mechanics
+// for the mechanics and the vocabulary, get_source_status for the catalog,
+// search_collections for the registry. A surface a person has to understand
+// before they can ignore it is a surface worth deleting.
 
 // ---------------------------------------------------------------- prompts
 
@@ -2265,97 +2143,17 @@ server.registerResource(
 // menu in most clients shows a title and nothing else, so someone who has
 // never used an MCP server has no idea what to type. This takes no arguments,
 // says what the server can answer, and hands over five questions to try.
-server.registerPrompt(
-  "getting_started",
-  {
-    title: "Start here: what can I ask?",
-    description: "New to collector-mcp? This explains what it can answer and gives you questions to try.",
-    // No argsSchema at all, not an empty one: an empty schema still makes the
-    // server reject a request that arrives without an `arguments` object, and
-    // some clients send none for a prompt that takes nothing.
-  },
-  () => ({
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text:
-            `I just installed collector-mcp and I do not know what to ask yet. Using its own tools, not your memory:\n` +
-            `1. Call get_source_status and tell me which sources are live right now and whether OpenSea is on.\n` +
-            `2. In plain language, say what this server can answer: the history of a single card, who can freeze or burn it, ` +
-            `what a collection is worth at floor and what actually sold, the cheapest listings and low serial numbers, ` +
-            `and what any wallet holds and how it trades.\n` +
-            `3. Say clearly what it cannot do: it never moves anything, never signs anything, and only reads public data.\n` +
-            `4. Give me five questions I can copy, using real collections you can resolve with search_collections. ` +
-            `Make them the kind a collector actually asks, one per area above.\n` +
-            `Keep it short. No lists of tool names.`,
-        },
-      },
-    ],
-  }),
-);
-
-server.registerPrompt(
-  "collection_report",
-  {
-    title: "Collection market report",
-    description: "Build a concise market report for a collection using the collector-mcp tools.",
-    // Optional on purpose. A required argument makes the prompt unusable in a
-    // client that cannot collect one, and a client that loses the typed value
-    // then refuses to attach the prompt at all. With nothing filled in, the
-    // prompt still works: it asks which collection first.
-    argsSchema: { collection: z.string().optional().describe("Collection name, symbol, or address") },
-  },
-  ({ collection }) => ({
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text:
-            (collection
-              ? `Build a market report for "${collection}" using collector-mcp tools:\n`
-              : `Ask me which collection I mean first, then build a market report for it using collector-mcp tools:\n`) +
-            `1. search_collections to resolve identifiers.\n` +
-            `2. get_collection_stats for supply + floor.\n` +
-            `3. get_recent_sales (if it trades on Magic Eden) - summarize price range and velocity.\n` +
-            `4. If it is a Metaplex Core collection, pick one recently active asset and show its ` +
-            `get_asset_provenance timeline as a story.\n` +
-            `Close with 3 bullet takeaways for a collector. Label any stale data.`,
-        },
-      },
-    ],
-  }),
-);
-
-server.registerPrompt(
-  "wallet_report",
-  {
-    title: "Wallet report",
-    description: "Profile a Solana wallet as a collector: what they hold, how they trade, what it is worth at floor (as a ceiling), with every number labelled.",
-    // Optional for the same reason as collection_report above.
-    argsSchema: { wallet: z.string().optional().describe("Wallet address") },
-  },
-  ({ wallet }) => ({
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text:
-            (wallet
-              ? `Profile the wallet ${wallet} using collector-mcp tools:\n`
-              : `Ask me for the wallet address first, then profile it using collector-mcp tools:\n`) +
-            `1. get_wallet_profile - lead with what they collect (top 3 collections, share of wallet, share of supply if known), wallet age, and the floor CEILING (call it a ceiling, never a value).\n` +
-            `2. get_wallet_activity - buys vs sells, net SOL flow, the behaviour label and why, best and worst flip, venue split.\n` +
-            `3. If one collection dominates, get_collection_stats on it for context.\n` +
-            `Write it as a short profile a collector would read, then list what the feeds could NOT see (other venues, transfers, unindexed items). Label stale data.`,
-        },
-      },
-    ],
-  }),
-);
+/**
+ * Three prompts, no arguments, fixed text. The words live in ./prompts.js,
+ * which the install bundle imports too: a client compares the text a prompt
+ * returns against the text the manifest declares, and rejects a mismatch as a
+ * possible injection.
+ */
+for (const [name, title, description] of PROMPT_LIST) {
+  server.registerPrompt(name, { title, description }, () => ({
+    messages: [{ role: "user", content: { type: "text" as const, text: PROMPT_TEXTS[name] } }],
+  }));
+}
 
 // ------------------------------------------------------------------ main
 

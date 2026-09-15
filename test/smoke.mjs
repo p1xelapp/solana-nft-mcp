@@ -69,11 +69,11 @@ try {
 } catch (e) { report("FAIL", "listTools", e.message); }
 
 try {
-  const { resources } = await client.listResources();
-  report(resources.some((r) => r.uri === "collector://registry") ? "PASS" : "FAIL", "listResources");
-  const reg = await client.readResource({ uri: "collector://registry" });
-  const entries = JSON.parse(reg.contents[0].text).collections;
-  report(entries.length >= 5 ? "PASS" : "FAIL", "registry resource", `${entries.length} entries`);
+  // No resources by design: they showed up in a client's attach menu as files
+  // nobody wanted to attach. The registry they carried is reachable through
+  // search_collections, which is exercised below.
+  const advertised = client.getServerCapabilities()?.resources;
+  report(advertised === undefined ? "PASS" : "FAIL", "no resources advertised", advertised ? JSON.stringify(advertised) : "none");
 } catch (e) { report("FAIL", "resources", e.message); }
 
 try {

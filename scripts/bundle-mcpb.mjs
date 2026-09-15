@@ -14,6 +14,10 @@ import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// The prompt bodies come from the same module the server registers them from,
+// so the manifest cannot drift from what the server actually returns. It has
+// no side effects, unlike the server entry.
+import { PROMPT_TEXTS, PROMPT_LIST } from "../dist/prompts.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
@@ -67,31 +71,13 @@ const manifest = {
     { name: "get_wallet_profile", description: "What a wallet holds and how it trades" },
   ],
   tools_generated: true,
-  // Claude Desktop refuses to attach a prompt the manifest does not declare:
-  // "Extension collector-mcp attempted undeclared prompt: wallet_report", and
-  // the person only sees "Failed to attach prompt". Registering a prompt on
-  // the server is not enough for a bundled install, so each one is listed here
-  // with the arguments it accepts.
-  prompts: [
-    {
-      name: "getting_started",
-      description: "New to collector-mcp? What it can answer, and five questions to try.",
-      arguments: [],
-      text: "Show me what this server can answer and give me five questions to try, using live source status rather than memory.",
-    },
-    {
-      name: "collection_report",
-      description: "A market report for one collection: supply, floor, what sold, and one item's story.",
-      arguments: ["collection"],
-      text: "Build a market report for this collection: identifiers, supply and floor, what sold recently, and one asset's ownership story. Label anything stale.",
-    },
-    {
-      name: "wallet_report",
-      description: "Profile a wallet as a collector: what it holds, how it trades, what it is worth at floor as a ceiling.",
-      arguments: ["wallet"],
-      text: "Profile this wallet as a collector: what it collects, how it trades, and the floor ceiling called a ceiling rather than a value. Say what the feeds could not see.",
-    },
-  ],
+  // A bundled extension may only use prompts the manifest DECLARES, and the
+  // client compares the text each one returns against the text declared here.
+  // An undeclared prompt logs "attempted undeclared prompt" and a mismatched
+  // one logs "content validation failed. Rejecting response to prevent
+  // potential prompt injection" - both of which reach the person as nothing
+  // more than "Failed to attach prompt". Built from the server's own words.
+  prompts: PROMPT_LIST.map(([name, , description]) => ({ name, description, arguments: [], text: PROMPT_TEXTS[name] })),
   keywords: ["solana", "nft", "collectibles", "candy digital", "magic eden", "opensea", "metaplex core"],
   license: "MIT",
   compatibility: { platforms: ["darwin", "win32", "linux"], runtimes: { node: ">=20.0.0" } },

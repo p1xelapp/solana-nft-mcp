@@ -170,29 +170,19 @@ without raising an error.
 | `explain_mechanics` | escrow, freezing, delegates, royalties, wash trades and migrations, per standard and venue, each entry citing its source |
 | `get_source_status` | every source pinged live: tier, fallback, what it cannot see, which need a key |
 
-## Resources and prompts
+## Prompts
 
-Four resources give an assistant the ground rules before it calls anything:
-`collector://glossary` (a floor is an ask, a listed item's on-chain owner is the escrow, an
-opened Candy pack is returned rather than burned), `collector://sources` (every source with its
-tier, fallback and blind spots), `collector://mechanics` (how each standard and venue handles
-custody, freezing and royalties) and `collector://registry` (a curated set of collections with
-their identifiers). Three prompts: `getting_started` says what the server answers and hands you
-five questions to try, and `collection_report` and `wallet_report` run the full sequence for a
-collection or a wallet in one step. Every prompt argument is optional, so a prompt attaches even
-when the client sends nothing and asks you for the missing piece instead.
+Three, and none of them asks you to fill in a box. `getting_started` says what the server
+answers and hands you five questions to try. `collection_report` and `wallet_report` ask which
+collection or wallet you mean and then run the whole sequence: identifiers, supply, floor, what
+actually sold, and one item's story.
 
-## Testing
-
-`npm test` runs the offline suites plus a live smoke pass over every tool: protocol
-surface, hardening regressions, an adversarial gauntlet, and the real endpoints.
-
-`node test/battery.mjs` is the slower one, and the one that finds things. 157 live
-checks asking what a person asks, then testing how the ANSWER behaves: that a gap is
-named rather than hidden, that two currencies are never ranked against each other,
-that an empty result is never dressed up as a fact about the world, that a failure
-says which source broke and what still works. Pass an area name to run one group
-(`node test/battery.mjs consistency`).
+There are deliberately no MCP resources. A client shows those to you as files to attach beside
+your message, and nobody wants to attach a glossary to ask what a card is worth. Everything they
+used to carry is reachable by a tool the assistant calls on its own: `explain_mechanics` for how
+a standard or a venue behaves and for the vocabulary (ask it for "glossary" to get all of it
+with the rules for presenting this data), `get_source_status` for the source catalog, and
+`search_collections` for the collection registry.
 
 ## Trust and limits
 
