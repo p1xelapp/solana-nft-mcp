@@ -640,7 +640,11 @@ registerTool(
     }
     const nothing = results.length === 0 && names.matches.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length;
     return ok({
-      query,
+      // Echoed through the same neutraliser as anything an upstream wrote. A
+      // direction-override character pasted into a search came back intact in
+      // the result, and a result is exactly where such a character does its
+      // work: it reverses how the text after it renders.
+      query: clean(query),
       results,
       magicEdenDirectory: {
         matches: names.matches,

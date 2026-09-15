@@ -26,7 +26,7 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
-import { resolveName, symbolForCollectionName, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
+import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
@@ -133,7 +133,10 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   const tradesOn: string[] = [];
 
   // ---- 1. curated registry (free, no network) --------------------------
-  const norm = (v: string) => v.toLowerCase().trim().replace(/\s+/g, " ");
+  // The same key both sides, punctuation and issuer stripped, so "Absolute
+  // Batman (2024) #1" reaches the entry stored as "Candy Digital - Absolute
+  // Batman (2024-) #1". Comparing raw lowercase text missed every one of them.
+  const norm = collectionNameKey;
   const nq = norm(q);
   // An id is the strongest match, then the collection's own name spelled out.
   // Name matching is not a nicety: with every Candy collection in the registry,
@@ -152,7 +155,12 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // difference in kind rather than in score: when the query appears whole
   // inside exactly one candidate's name, that candidate is the answer and the
   // rest merely share a word with it.
-  const named = fuzzy.filter((e) => norm(e.name).includes(nq));
+  // Containment has to stop at a word boundary. Plain `includes` made
+  // "Absolute Batman (2024) #1" match issues #1, #10, #11 and #12 alike, so
+  // four candidates looked ambiguous and the answer fell through to a
+  // directory guess that landed on an Ashcan special edition.
+  const whole = (hay: string) => ` ${hay} `.includes(` ${nq} `);
+  const named = fuzzy.filter((e) => whole(norm(e.name)) || (e.aliases ?? []).some((a) => whole(norm(a))));
   const entry: RegistryEntry | undefined =
     exact ?? (fuzzy.length === 1 ? fuzzy[0] : named.length === 1 ? named[0] : undefined);
   checked.push({

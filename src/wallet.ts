@@ -298,6 +298,15 @@ export function summarizeActivity(
   } else if (buys.count + sells.count > 0) {
     label = "mixed";
     why = `${buys.count} buys and ${sells.count} sells in the window - too few purchases to call a pattern.`;
+  } else {
+    // Every other branch is a judgement with its reason. This one used to fall
+    // through as the label "unknown" with an EMPTY reason, which is the one
+    // combination a reader cannot act on: a wallet that listed and delisted
+    // and never completed a trade is not mysterious, it just did not trade.
+    label = "unknown";
+    why =
+      `No completed buys or sells in this window, so there is no pattern to label: the feed carried ` +
+      `${events.length} event(s), ${lists} of them listings. Widen the window or read get_wallet_holdings for what it actually holds.`;
   }
 
   const firstBuy = chrono.find(
