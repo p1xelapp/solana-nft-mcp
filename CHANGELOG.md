@@ -323,3 +323,12 @@ catalog. 20 tools, 4 resources.
   turns the request off.
 - The weekly live check opens or updates one GitHub issue when a source fails or degrades,
   and pings an optional LIVE_CHECK_WEBHOOK secret, so a break is a ticket, not a buried email.
+
+## 1.8.4 - 2026-09-14
+
+- Three OpenSea reads added in 2026 are wired, with the same self-issued key: the
+  cheapest listing per trait value (joined onto every deal in `find_listings` as
+  `openSeaFloor` next to Magic Eden's `traitFloorSol`), a 7-day floor series and the
+  largest holders with their share of supply (both in `get_collection_stats`). Each
+  names itself as OpenSea; nothing from two venues is ever summed.
+- `find_listings` takes an optional `openseaSlug`; registry entries that carry one are used automatically.

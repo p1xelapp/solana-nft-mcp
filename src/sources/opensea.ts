@@ -460,3 +460,132 @@ export async function accountEvents(wallet: string, pages: number) {
   });
   return { events: data, truncated: data.length >= pages * 50, stale, cachedAt };
 }
+
+// ------------------------------------------------- newer OpenSea reads (2026)
+// Three endpoints OpenSea added in 2026 that answer for Solana with the same
+// key: a floor per trait value, a floor time series, and the holder list. Each
+// is a second opinion next to Magic Eden's, never the only one, and each names
+// itself as OpenSea so two venues are never summed.
+
+interface OsTraitFloor {
+  trait_type?: string;
+  value?: string;
+  floor_price?: number;
+  payment_token_symbol?: string;
+}
+
+export interface TraitFloorEntry {
+  traitType: string;
+  value: string;
+  floor: number;
+  currency: string;
+}
+
+/**
+ * Cheapest active listing for every text trait value in a collection, across
+ * every marketplace OpenSea aggregates. Keyed "type::value" for a direct join
+ * against Magic Eden's per-trait floor on the same listing.
+ */
+export async function traitFloors(slug: string) {
+  const { data, stale, cachedAt } = await cached(`os:traitfloors:${slug}`, 300_000, () =>
+    os<{ chain?: string; floors?: OsTraitFloor[] }>(`/traits/${encodeURIComponent(slug)}/floors`),
+  );
+  if (!data || !Array.isArray(data.floors)) throw new Error(`OpenSea returned no trait floor list for "${slug}" (outage or API change)`);
+  const byKey = new Map<string, TraitFloorEntry>();
+  for (const f of data.floors) {
+    if (typeof f.trait_type !== "string" || typeof f.value !== "string") continue;
+    if (typeof f.floor_price !== "number" || !Number.isFinite(f.floor_price)) continue;
+    const entry: TraitFloorEntry = {
+      traitType: clean(f.trait_type).slice(0, 64),
+      value: clean(f.value).slice(0, 64),
+      floor: f.floor_price,
+      currency: typeof f.payment_token_symbol === "string" ? clean(f.payment_token_symbol).slice(0, 16) : "SOL",
+    };
+    const key = `${entry.traitType}::${entry.value}`;
+    // A value listed in two currencies appears twice; keep the SOL one, else the first.
+    const prev = byKey.get(key);
+    if (!prev || (prev.currency !== "SOL" && entry.currency === "SOL")) byKey.set(key, entry);
+  }
+  return { slug, chain: typeof data.chain === "string" ? clean(data.chain) : null, floors: byKey, count: byKey.size, stale, cachedAt, source: "opensea" as const };
+}
+
+interface OsFloorPoint {
+  time?: number;
+  token_unit?: number;
+  usd_price?: string | number;
+}
+
+export type FloorInterval = "1d" | "7d" | "30d";
+
+/**
+ * Floor price over time, as OpenSea sampled it. Returned as a summary a person
+ * can read (start, end, low, high, change) plus the sampled points, in the
+ * listing currency. It is OpenSea's floor series, not Magic Eden's.
+ */
+export async function floorHistory(slug: string, interval: FloorInterval = "7d") {
+  const { data, stale, cachedAt } = await cached(`os:floorhist:${slug}:${interval}`, 600_000, () =>
+    os<{ floor_prices?: OsFloorPoint[] }>(`/collections/${encodeURIComponent(slug)}/floor_prices?interval=${interval}`),
+  );
+  if (!data || !Array.isArray(data.floor_prices)) throw new Error(`OpenSea returned no floor history for "${slug}" (outage or API change)`);
+  const points = data.floor_prices
+    .filter((p) => typeof p.time === "number" && typeof p.token_unit === "number" && Number.isFinite(p.token_unit))
+    .map((p) => ({ at: new Date((p.time as number) * 1000).toISOString(), floor: p.token_unit as number, usd: typeof p.usd_price === "string" ? Number(p.usd_price) : typeof p.usd_price === "number" ? p.usd_price : null }))
+    .sort((a, b) => a.at.localeCompare(b.at));
+  if (points.length === 0) return { slug, interval, points: [], summary: null, stale, cachedAt, source: "opensea" as const };
+  const floors = points.map((p) => p.floor);
+  const first = floors[0] as number;
+  const last = floors[floors.length - 1] as number;
+  return {
+    slug,
+    interval,
+    points,
+    summary: {
+      start: first,
+      end: last,
+      low: Math.min(...floors),
+      high: Math.max(...floors),
+      changePct: first > 0 ? Math.round(((last - first) / first) * 1000) / 10 : null,
+      samples: points.length,
+      currency: "SOL",
+    },
+    stale,
+    cachedAt,
+    source: "opensea" as const,
+  };
+}
+
+interface OsHolder {
+  address?: string;
+  quantity?: number;
+  percentage?: number;
+}
+
+/**
+ * Largest holders as OpenSea counts them. OpenSea's own `percentage` has been
+ * seen as 0 on real holdings, so the share is recomputed here from the
+ * collection's total supply when the caller knows it, and left null otherwise.
+ */
+export async function holders(slug: string, limit = 10, totalSupply: number | null = null) {
+  const n = Math.max(1, Math.min(50, limit));
+  const { data, stale, cachedAt } = await cached(`os:holders:${slug}:${n}`, 600_000, () =>
+    os<{ holders?: OsHolder[] }>(`/collections/${encodeURIComponent(slug)}/holders?limit=${n}`),
+  );
+  if (!data || !Array.isArray(data.holders)) throw new Error(`OpenSea returned no holder list for "${slug}" (outage or API change)`);
+  const rows = data.holders
+    .filter((h) => typeof h.address === "string" && typeof h.quantity === "number")
+    .map((h) => ({
+      wallet: h.address as string,
+      items: h.quantity as number,
+      sharePct: totalSupply && totalSupply > 0 ? Math.round(((h.quantity as number) / totalSupply) * 10000) / 100 : null,
+    }));
+  const topItems = rows.reduce((s, r) => s + r.items, 0);
+  return {
+    slug,
+    top: rows,
+    topCombinedSharePct: totalSupply && totalSupply > 0 ? Math.round((topItems / totalSupply) * 10000) / 100 : null,
+    shareBasis: totalSupply ? `share of OpenSea's total supply (${totalSupply})` : "no total supply known, so no share was computed",
+    stale,
+    cachedAt,
+    source: "opensea" as const,
+  };
+}

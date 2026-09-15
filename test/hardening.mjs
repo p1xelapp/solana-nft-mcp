@@ -401,4 +401,74 @@ const jsonResponse = (body, headers = {}) =>
   ok("b16 the update check speaks only when the registry is newer, never offline, never twice, never by throwing");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16)`);
+// ------------------------------------------------------------------ b17
+// The three OpenSea reads added in 1.8.4 parse defensively: a missing list is
+// a shape change (throw, named), a bad row is skipped, a duplicate trait value
+// in two currencies keeps the SOL one, OpenSea's own percentage is ignored in
+// favour of a share computed from a supply the caller vouches for, and an
+// empty floor series is a null summary rather than NaN arithmetic.
+{
+  const os = await import("../dist/sources/opensea.js");
+  const realFetch = globalThis.fetch;
+  const savedKey = process.env.OPENSEA_API_KEY;
+  process.env.OPENSEA_API_KEY = "test-key-never-sent";
+  os.resetKeyCache();
+  const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  const routes = new Map();
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    for (const [path, body] of routes) if (u.includes(path)) return json(body);
+    return new Response("{}", { status: 404 });
+  };
+  try {
+    routes.set("/traits/tf-test/floors", { chain: "solana", floors: [
+      { trait_type: "Hat", value: "Crown", floor_price: 2.5, payment_token_symbol: "USDC" },
+      { trait_type: "Hat", value: "Crown", floor_price: 0.01, payment_token_symbol: "SOL" },
+      { trait_type: "Hat", value: "None", floor_price: "bad" },
+      { trait_type: 7, value: "x", floor_price: 1 },
+    ] });
+    const tf = await os.traitFloors("tf-test");
+    assert.strictEqual(tf.count, 1, "one usable trait value survives");
+    assert.deepStrictEqual(tf.floors.get("Hat::Crown"), { traitType: "Hat", value: "Crown", floor: 0.01, currency: "SOL" }, "the SOL quote wins over the USDC one");
+
+    routes.set("/traits/tf-empty/floors", { chain: "solana" });
+    await assert.rejects(os.traitFloors("tf-empty"), /no trait floor list/, "a missing list is a named shape change");
+
+    routes.set("/collections/fh-test/floor_prices", { floor_prices: [
+      { time: 1_700_000_100, token_unit: 2.0, usd_price: "300" },
+      { time: 1_700_000_000, token_unit: 1.0, usd_price: "150" },
+      { time: 1_700_000_200, token_unit: 1.5 },
+      { time: "nope", token_unit: 9 },
+    ] });
+    const fh = await os.floorHistory("fh-test", "7d");
+    assert.strictEqual(fh.points.length, 3, "the unreadable point is dropped");
+    assert.strictEqual(fh.summary.start, 1.0, "points are ordered by time, not by arrival");
+    assert.strictEqual(fh.summary.end, 1.5);
+    assert.strictEqual(fh.summary.high, 2.0);
+    assert.strictEqual(fh.summary.changePct, 50);
+
+    routes.set("/collections/fh-empty/floor_prices", { floor_prices: [] });
+    const empty = await os.floorHistory("fh-empty", "7d");
+    assert.strictEqual(empty.summary, null, "no samples is a null summary, never NaN");
+
+    routes.set("/collections/h-test/holders", { holders: [
+      { address: "A".repeat(32), quantity: 250, percentage: 0 },
+      { address: "B".repeat(32), quantity: 50, percentage: 0 },
+      { address: 5, quantity: 1 },
+    ] });
+    const h = await os.holders("h-test", 10, 1000);
+    assert.strictEqual(h.top.length, 2);
+    assert.strictEqual(h.top[0].sharePct, 25, "share comes from the supply the caller passed, not OpenSea's zero");
+    assert.strictEqual(h.topCombinedSharePct, 30);
+    const h2 = await os.holders("h-test", 10, null);
+    assert.strictEqual(h2.top[0].sharePct, null, "no supply, no share, no guess");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedKey === undefined) delete process.env.OPENSEA_API_KEY;
+    else process.env.OPENSEA_API_KEY = savedKey;
+    os.resetKeyCache();
+  }
+  ok("b17 OpenSea trait floors, floor history and holders parse defensively and never invent a share");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17)`);

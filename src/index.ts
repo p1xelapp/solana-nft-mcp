@@ -593,7 +593,9 @@ registerTool(
       "Market + supply stats for a collection. Accepts a registry id, a Magic Eden symbol, or a Metaplex " +
       "Core collection ADDRESS. Addresses are decoded straight from the chain (name, minted, current size) - " +
       "works for collections no marketplace indexes, e.g. Candy Digital drops. If OPENSEA_API_KEY is set, " +
-      "an OpenSea cross-marketplace view is added (pass openseaSlug, or rely on registry entries that carry one).",
+      "an OpenSea cross-marketplace view is added (pass openseaSlug, or rely on registry entries that carry one): " +
+      "OpenSea's floor, supply and royalty, plus its 7-day floor trend and the largest holders with their share of supply. " +
+      "Answers 'is the floor up or down this week', 'who holds the most', 'is one wallet holding half of it'.",
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80).describe("Registry id, ME symbol, or Core collection address"),
@@ -646,10 +648,22 @@ registerTool(
     }
     const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     if (slug && (await os.openSeaAvailable())) {
-      const [stats, detail] = await Promise.all([
-        os.collectionStats(slug).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
+      const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+      const [stats, detail, history] = await Promise.all([
+        os.collectionStats(slug).catch((e: unknown) => ({ error: errText(e) })),
         os.collectionDetail(slug).catch(() => null),
+        os.floorHistory(slug, "7d").catch((e: unknown) => ({ error: errText(e) })),
       ]);
+      // Holders need the supply for a share, so they wait for the detail read.
+      const top = await os.holders(slug, 10, detail?.totalSupply ?? null).catch((e: unknown) => ({ error: errText(e) }));
+      const floor7d = "error" in history
+        ? { note: `OpenSea floor history not read: ${history.error}` }
+        : history.summary
+          ? { ...history.summary, at: history.cachedAt, stale: history.stale, note: "OpenSea's sampled floor over 7 days, in the listing currency; Magic Eden's floor is in market.floorPriceSol." }
+          : { note: "OpenSea has no floor samples for this collection in the last 7 days." };
+      const topHolders = "error" in top
+        ? { note: `OpenSea holder list not read: ${top.error}` }
+        : { top: top.top, topCombinedSharePct: top.topCombinedSharePct, shareBasis: top.shareBasis, at: top.cachedAt, stale: top.stale, note: "Largest holders as OpenSea counts them. A marketplace escrow can appear here as a holder; get_wallet_holdings on an address says which." };
       out.opensea = detail
         ? {
             ...stats,
@@ -657,8 +671,10 @@ registerTool(
             creatorRoyaltyPct: detail.creatorRoyaltyPct,
             onchainCollection: detail.onchainCollection,
             royaltyNote: "creatorRoyaltyPct is what the project asks OpenSea to collect; whether the chain enforces it is a per-asset question (get_asset_trust).",
+            floor7d,
+            topHolders,
           }
-        : stats;
+        : { ...stats, floor7d, topHolders };
     } else if (slug) {
       out.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
     }
@@ -1389,9 +1405,17 @@ registerTool(
       nameContains: z.string().trim().max(80).optional().describe("Keep only listings whose name contains this text, e.g. '#1390' or 'Judge'"),
       limit: z.number().int().finite().min(1).max(100).default(20),
       lowestSerials: z.boolean().default(false).describe("Hunt low edition numbers: read up to 1,000 listings, parse the serial from each name (#9, 12/250) and return the lowest serials with their asks against the floor"),
+      openseaSlug: z
+        .string()
+        .trim()
+        .min(1)
+        .max(80)
+        .regex(/^[a-z0-9-]+$/)
+        .optional()
+        .describe("OpenSea collection slug; adds OpenSea's per-trait floor next to Magic Eden's on every deal. Registry entries that carry one are used automatically."),
     },
   },
-  guard(async ({ symbol, traits, nameContains, limit, lowestSerials }) => {
+  guard(async ({ symbol, traits, nameContains, limit, lowestSerials, openseaSlug }) => {
     // Before the book: an unknown symbol returns an empty page, which reads as
     // "nothing is for sale" rather than "no such collection".
     const unknown = await refuseUnknownSymbol(symbol);
@@ -1543,7 +1567,29 @@ registerTool(
       traitFloorsStale: attrs === null || attrs.stale,
       traitFloorsReadAt: attrs?.cachedAt ?? null,
     });
+    // Second venue's trait floors, joined onto each deal's traits by name.
+    // OpenSea aggregates every marketplace it indexes, so its trait floor can
+    // sit below Magic Eden's; both are shown, labelled, never merged.
+    const slug = openseaSlug ?? REGISTRY.find((e) => e.meSymbol === symbol)?.openseaSlug;
+    let openSeaTraitFloors: Record<string, unknown> | undefined;
+    if (slug && (await os.openSeaAvailable())) {
+      try {
+        const tf = await os.traitFloors(slug);
+        for (const d of deals.deals) {
+          for (const t of d.traits) {
+            const hit = tf.floors.get(`${t.traitType}::${t.value}`);
+            (t as unknown as Record<string, unknown>).openSeaFloor = hit ? { price: hit.floor, currency: hit.currency } : null;
+          }
+        }
+        openSeaTraitFloors = { slug, count: tf.count, stale: tf.stale, cachedAt: tf.cachedAt, note: "Each deal's traits carry openSeaFloor: OpenSea's cheapest listing with that trait across the venues it aggregates, in that listing's currency. traitFloorSol is Magic Eden's. Compare within one currency only." };
+      } catch (e) {
+        openSeaTraitFloors = { slug, note: `OpenSea trait floors not read: ${e instanceof Error ? e.message : String(e)}` };
+      }
+    } else if (slug) {
+      openSeaTraitFloors = { slug, note: `OpenSea slug known but skipped: ${os.openSeaState().note}` };
+    }
     return ok({
+      ...(openSeaTraitFloors ? { openSeaTraitFloors } : {}),
       symbol,
       symbolKnown: true,
       filters: { traits: traits ?? [], nameContains: nameContains ?? null },

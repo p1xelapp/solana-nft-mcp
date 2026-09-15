@@ -247,6 +247,9 @@ export const SOURCES: readonly SourceEntry[] = [
       "sales priced in something other than SOL, in the currency OpenSea reports",
       "transfers in and out of a wallet, including ones with no sale attached",
       "the full list of Solana collections OpenSea has indexed, for name search",
+      "the cheapest listing per trait value across every venue OpenSea aggregates, joined onto each deal in find_listings",
+      "a 7-day floor series (start, end, low, high, change) in get_collection_stats",
+      "the largest holders and their combined share of supply in get_collection_stats",
     ],
     cannotSee: [
       "anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is simply absent",
