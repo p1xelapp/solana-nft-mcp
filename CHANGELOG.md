@@ -450,3 +450,18 @@ found six real bugs, all fixed here.
 - A collection with no OpenSea slug said nothing about OpenSea at all.
 - An empty wallet answer now says when the chain has no account at that address,
   which is what a mistyped address looks like.
+
+## 1.10.4 - 2026-09-15
+
+A robustness suite, `test/robustness.mjs`, now part of `npm test`: every reader fed
+eleven broken upstream shapes, a corrupt install, and a drift check between the
+server and the README. Two bugs of the same class fell out.
+
+- A Solana or asset-index endpoint answering the literal `null`, or a bare string,
+  crashed inside our own reader with a type error, and the caller saw a generic
+  failure carrying our stack. Both readers now treat a body that is not a JSON-RPC
+  response as an endpoint failure and move to the next one.
+- The suite also pins things that were already right and could quietly stop being:
+  a corrupt collection list degrades to the hand-written registry, a truncated
+  directory snapshot leaves the registry layer answering, no answer carries a key,
+  a file path or a stack frame, and the README's tool count is the server's.

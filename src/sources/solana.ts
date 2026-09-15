@@ -225,6 +225,14 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           if (e instanceof OversizedBodyError) throw e;
           throw new EndpointError("returned a non-JSON body");
         }
+        // A JSON-RPC response is an object. An endpoint that answers the
+        // literal `null`, or a bare string or number, is not answering the
+        // protocol at all - and reading `.error` off it threw a TypeError from
+        // inside this reader, which then travelled to the caller as our own
+        // stack wrapped in an endpoint failure.
+        if (j === null || typeof j !== "object" || Array.isArray(j)) {
+          throw new EndpointError("returned a body that is not a JSON-RPC response");
+        }
         if (j.error) {
           if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(`${j.error.code}: ${j.error.message}`);
           throw new ChainError(`Solana RPC ${j.error.code}: ${j.error.message}`);

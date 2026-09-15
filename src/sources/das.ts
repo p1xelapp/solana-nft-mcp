@@ -101,6 +101,14 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       last = `${ep.id} ${e instanceof Error ? e.message : String(e)}`;
       continue;
     }
+    // A JSON-RPC response is an object. An endpoint answering the literal
+    // `null`, or a bare string or number, is not a response at all - and
+    // reading `.error` off it threw a TypeError from inside this reader, which
+    // reached the caller as a generic failure with our own stack in it.
+    if (j === null || typeof j !== "object" || Array.isArray(j)) {
+      last = `${ep.id} answered with something that is not a JSON-RPC response`;
+      continue;
+    }
     if (j.error?.code === -32601) {
       withoutTheMethod.push(ep.id);
       last = `${ep.id} does not serve ${method}`;
