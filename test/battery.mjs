@@ -181,6 +181,20 @@ check("B14", "collections", "a collection that exists on chain but not on Magic 
   return (r.onchain?.numMinted ?? 0) > 0 || `DC Merge Fuel gave no supply: ${text(r).slice(0, 160)}`;
 });
 
+check("B15", "collections", "a collection never reports more listed than were ever minted", async () => {
+  // The tell that two sources describe different collections. It is how the
+  // wrong symbol was caught in the first place: 2 minted, 10 listed.
+  for (const id of ["candy-absolute-batman-2024-1", "2026 MLB Base Series ICONs", "candy-mlb-gold-auction-1"]) {
+    const r = await call("get_collection_stats", { collection: id });
+    const minted = r.onchain?.numMinted;
+    const listed = r.market?.listedCount;
+    if (typeof minted === "number" && typeof listed === "number" && listed > minted) {
+      return `${id}: ${listed} listed against ${minted} minted, so the two halves are not the same collection`;
+    }
+  }
+  return true;
+});
+
 // ====================================================== C. assets
 check("C1", "assets", "a Core asset's provenance reaches back and says whether it is complete", async () => {
   const sales = await call("get_recent_sales", { collection: "2026_mlb_base_series_icons_candy_digital", limit: 3 });

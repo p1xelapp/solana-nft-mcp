@@ -1949,6 +1949,8 @@ registerTool(
           ? `This call read ${slice.length} of ${chosen.length} collections. Call again with startAt ${nextStartAt} for the next batch; a "no match" only covers what has been read so far.`
           : `Every collection in this set has now been read.`,
         "Prices are asks on Magic Eden, not what anyone paid, and each floor is the cheapest ask in that collection's own book at the moment it was read.",
+        "Symbols carrying a symbolNote were matched by name and are NOT checked against the chain here, because that would double the reads for a scan this size. " +
+          "get_collection_stats on any single row does check it, and says so.",
         ...(noSymbol.length
           ? [
               `${noSymbol.length} collection(s) are not listed on Magic Eden under a name this server could match, so no listings were read for them: ` +

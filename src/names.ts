@@ -414,6 +414,7 @@ export function symbolForCollectionName(name: string): SymbolFromDirectory | nul
   };
 }
 
+
 const toMatches = (hits: NameMatch[], layer: "snapshot" | "live") =>
   hits.map((h) => ({ symbol: h.symbol, name: h.name || null, badged: h.isBadged, score: h.score, reason: h.why, layer }));
 
