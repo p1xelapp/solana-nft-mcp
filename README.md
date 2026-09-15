@@ -215,7 +215,7 @@ This is covered by the offline test suite. Reporting: [SECURITY.md](SECURITY.md)
 ## Development
 
 ```bash
-npm test           # offline: every tool, resource, prompt, validation, wallet and market logic
+npm test           # offline: every tool, prompt, validation, wallet and market logic
                    # on captured feeds, plus the prompt-injection defence. No network at all.
 npm run test:live  # live: floors, a real provenance trace, source status per family, name lookup
 npm run test:smoke # live: every tool against real endpoints, a real wallet, hostile inputs

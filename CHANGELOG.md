@@ -518,3 +518,31 @@ The prompt menu, fixed properly, and four files removed from it.
   presentation rules), `get_source_status` for the source catalog,
   `search_collections` for the registry. The capability is no longer advertised,
   so nothing appears in the attach menu at all.
+
+## 1.11.1 - 2026-09-15
+
+Installed the package the way a stranger would, and found two things pointing at
+features that no longer exist.
+
+- `get_integration_recipe` told the reader to "Read collector://glossary",
+  months after the last resource was deleted. Text naming a dead capability is
+  worse than no text: the model either fails the call or invents the contents.
+  It now names the call that actually answers, `explain_mechanics` with topic
+  "glossary".
+- A glossary answer opened with `count: 0` and an empty `entries` list, because
+  `count` counts mechanics entries and a pure vocabulary question legitimately
+  matches none. A reader that stopped at the zero would report that nothing was
+  found, with the whole glossary sitting underneath it. Every answer now leads
+  with a line saying what matched and where to look.
+- `scripts/verify-bundle.mjs` opens a built `.mcpb` and checks the things that
+  decide whether it works once a person double-clicks it: the declared prompt
+  text byte-for-byte against the module the server registers from, no arguments
+  on any prompt, no mention of a removed capability, and that the entry point,
+  the dependencies and the marketplace directory snapshot are all really inside.
+  `npm run bundle` now runs it, so an unverified bundle cannot be produced.
+- The test suite grew the check that would have caught this class: everything a
+  client can receive without a network read - every recipe, the glossary, the
+  tool list, every prompt and the server instructions - is scanned for the names
+  of features that were cut.
+- Docs that still claimed a resources surface, and a publish description that
+  still advertised pack pulls, say what the server actually does.

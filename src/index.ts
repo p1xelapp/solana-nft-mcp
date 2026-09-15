@@ -576,7 +576,7 @@ registerTool(
       ok({
         ...recipe,
         readFirst:
-          "Read collector://glossary before writing user-facing copy - it names the wrong answers this domain invites.",
+          "Call explain_mechanics with topic \"glossary\" before writing user-facing copy - every term names the wrong answer it exists to prevent.",
       }),
     );
   }),
@@ -2085,6 +2085,14 @@ registerTool(
     return Promise.resolve(
       ok({
         topic: clean(topic),
+        // `count` is the number of mechanics entries, and it is legitimately 0
+        // for a pure vocabulary question. Without this line a reader sees the
+        // zero first and reports that nothing was found, with the whole
+        // glossary sitting underneath it.
+        summary:
+          entries.length === 0 && vocabulary.length > 0
+            ? `No mechanics entry matched, but ${vocabulary.length} glossary term(s) did. The answer is in vocabulary below.`
+            : `Matched ${entries.length} mechanics entries and ${vocabulary.length} glossary terms.`,
         entries: entries.slice(0, 8),
         count: entries.length,
         // Every term carries the wrong answer it exists to prevent, which is

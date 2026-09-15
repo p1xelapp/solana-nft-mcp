@@ -1,7 +1,7 @@
 /**
  * Domain vocabulary and the nuances that trip up general-purpose models.
  *
- * Served as the `collector://glossary` resource. This exists because the
+ * Returned by explain_mechanics. This exists because the
  * expensive mistakes in this space are not arithmetic - they are an agent
  * using a word confidently and wrongly. "Owner" means something different
  * when an item is listed. "Burned" is wrong for a Candy pack that was opened.

@@ -80,7 +80,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 - **AI developers / agent builders** - drop-in collectibles data for agents with no key management, no wallet risk surface, and production patterns (caching, rate limits, graceful degradation) already handled.
 - **Collectors who use Claude** - "what's my wallet worth", "did that card ever sell on ME", "what is the cheapest #1 listed" answered conversationally from live data. Install is copy-paste.
 - **Licensed-collectible communities** (Candy Digital MLB and DC) - their assets are exactly the ones mainstream NFT tooling handles worst (Core assets, marketplace-less drops). This server treats them as first-class.
-- **Solana teams / hiring managers** - the repo carries the full protocol surface (tools, resources and prompts), strict TypeScript, live end-to-end tests, and errors that say which source failed and what still works.
+- **Solana teams / hiring managers** - the repo carries the full protocol surface (tools and prompts), strict TypeScript, live end-to-end tests, and errors that say which source failed and what still works.
 - **Data journalists / analysts** - provenance queries ("who accumulated these 1-of-1s?") without writing RPC decoders.
 
 ## 6. Pros and cons, honestly
@@ -91,7 +91,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 - Provenance data almost nothing else surfaces (Core TransferV1 decoding)
 - Domain registry: speaks collector, not just protocol
 - Production-grade plumbing: rate-gated, retried, cached, never-blank
-- Full MCP surface (tools + resources + prompts), official SDK, strict TS
+- Full MCP surface (20 tools + 3 prompts), official SDK, strict TS
 - Live test suite proving every tool against real endpoints, plus a 160-check behavioural battery that tests how each ANSWER behaves and a robustness suite that feeds every reader broken upstreams
 
 **Cons / limitations (by design or by v1)**

@@ -367,6 +367,54 @@ for (const p of recipe.pitfalls) {
 assert.ok(recipe.beforeShipping.length >= 3, "recipe needs a pre-launch checklist");
 assert.ok(/\$180|cost|free/i.test(recipe.costNote), "recipe must state running cost");
 
+// -- nothing we hand a client points at a feature we removed --------------
+// A recipe once told the reader to "Read collector://glossary", months after
+// the last resource was deleted. Text that names a dead capability is worse
+// than no text: the model either fails the call or invents the contents. This
+// walks everything a client can actually receive without a network read.
+{
+  const dead = [
+    ["collector://", "a resource URI - this server publishes none"],
+    ["get_pack_pulls", "a tool that was cut"],
+    ["cryptoslam", "a source that was cut"],
+  ];
+  const { RECIPE_GOALS } = await import("../dist/recipes.js");
+  const surfaces = [];
+  for (const goal of RECIPE_GOALS) {
+    surfaces.push([`recipe ${goal}`, (await client.callTool({ name: "get_integration_recipe", arguments: { goal } })).content[0].text]);
+  }
+  surfaces.push(["glossary", (await client.callTool({ name: "explain_mechanics", arguments: { topic: "glossary" } })).content[0].text]);
+  const listed = await client.listTools();
+  surfaces.push(["tool list", JSON.stringify(listed.tools)]);
+  const prompts = await client.listPrompts();
+  for (const p of prompts.prompts) {
+    surfaces.push([`prompt ${p.name}`, JSON.stringify(await client.getPrompt({ name: p.name, arguments: {} }))]);
+  }
+  surfaces.push(["instructions", client.getInstructions?.() ?? ""]);
+  for (const [where, text] of surfaces) {
+    for (const [needle, what] of dead) {
+      assert.ok(
+        !text.toLowerCase().includes(needle),
+        `${where} still tells a client about ${needle} (${what})`,
+      );
+    }
+  }
+}
+
+// -- a vocabulary answer is never reported as an empty answer -------------
+// `count` counts mechanics entries, and for "glossary" it is legitimately 0
+// while the whole vocabulary sits below it. A reader that stops at the zero
+// says nothing was found.
+{
+  const gloss = JSON.parse(
+    (await client.callTool({ name: "explain_mechanics", arguments: { topic: "glossary" } })).content[0].text,
+  );
+  assert.ok(gloss.vocabulary.length > 10, "the glossary topic must return the whole vocabulary");
+  assert.ok(gloss.summary && !/^0 /.test(gloss.summary), `a zero-entry glossary answer needs a summary that points at the vocabulary: ${gloss.summary}`);
+  assert.ok(/glossary term/.test(gloss.summary), `the summary has to name what was found: ${gloss.summary}`);
+  assert.ok(Array.isArray(gloss.presentationRules) && gloss.presentationRules.length > 0, "the glossary topic carries the presentation rules");
+}
+
 const badGoal = await client.callTool({ name: "get_integration_recipe", arguments: { goal: "nope" } }).catch((e) => e);
 const badGoalText = badGoal?.content?.[0]?.text ?? String(badGoal?.message ?? badGoal);
 assert.ok(/invalid|expected|enum|unknown/i.test(badGoalText), `bad goal not rejected: ${badGoalText.slice(0, 100)}`);

@@ -59,7 +59,7 @@ empty history is reported as unsupported or unread, never as untraded.
 
 ### What was tested
 
-Every tool, resource and prompt is exercised offline against captured feeds, including the wallet logic and the prompt-injection defence, and again live against the real endpoints with a real provenance trace, a real wallet and hostile inputs. The design was put through repeated hostile review rounds, and CI runs the offline suite plus a full-history secrets scan on every push. A weekly live check re-reads the real sources, and the hardest piece - extracting the new owner from a Core transfer whose account layout varies between two shapes - was verified against a live 36-pack auction, where all 36 packs traced to their winners with none left untraced.
+Every tool and prompt is exercised offline against captured feeds, including the wallet logic and the prompt-injection defence, and again live against the real endpoints with a real provenance trace, a real wallet and hostile inputs. The design was put through repeated hostile review rounds, and CI runs the offline suite plus a full-history secrets scan on every push. A weekly live check re-reads the real sources, and the hardest piece - extracting the new owner from a Core transfer whose account layout varies between two shapes - was verified against a live 36-pack auction, where all 36 packs traced to their winners with none left untraced.
 
 ### Why that is worth trusting
 
