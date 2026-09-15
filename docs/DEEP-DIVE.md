@@ -92,7 +92,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 - Domain registry: speaks collector, not just protocol
 - Production-grade plumbing: rate-gated, retried, cached, never-blank
 - Full MCP surface (tools + resources + prompts), official SDK, strict TS
-- Live test suite proving every tool against real endpoints
+- Live test suite proving every tool against real endpoints, plus a 160-check behavioural battery that tests how each ANSWER behaves and a robustness suite that feeds every reader broken upstreams
 
 **Cons / limitations (by design or by v1)**
 - Public endpoints are rate-limited: heavy parallel workloads want a personal `SOLANA_RPC_URL` (still keyless from the server's perspective)
