@@ -42,3 +42,4 @@ battery-report.json
 sweep-report.json
 .battery-live.txt
 .battery-*.txt
+battery2-report.json
