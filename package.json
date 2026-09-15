@@ -35,7 +35,8 @@
     "test:live": "npm run build && node test/live.mjs",
     "docs:sources": "npm run build && node scripts/sources-md.mjs",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "snapshot": "node scripts/snapshot-collections.mjs"
+    "snapshot": "node scripts/snapshot-collections.mjs",
+    "bundle": "node scripts/bundle-mcpb.mjs"
   },
   "keywords": [
     "mcp",
