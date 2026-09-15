@@ -21,6 +21,21 @@ export interface RegistryEntry {
   /** OpenSea collection slug - used only when OPENSEA_API_KEY is set (optional cross-marketplace view). */
   openseaSlug?: string;
   keywords: string[];
+  /**
+   * The family a collection belongs to, when it is one of many that ship
+   * together: "DC" is 272 separate Metaplex Core collections, one per comic
+   * issue, and nobody asks about them one at a time. find_in_group scans them
+   * in batches.
+   */
+  group?: string;
+  /**
+   * Other names the same collection is filed under. The hand-written entries
+   * predate the generated list and sometimes spell a collection differently
+   * from the issuer's own export - the 2026 MLB ICON Series is "2026 MLB Base
+   * Series ICONs" there, and the venue directory only knows that spelling. The
+   * duplicate address is dropped; its name is kept here so either one resolves.
+   */
+  aliases?: string[];
   notes?: string;
 }
 
@@ -30,6 +45,7 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Candy Digital - 2026 MLB ICON Series",
     platform: "Candy Digital (official MLB license)",
     coreCollection: "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+    group: "MLB",
     keywords: ["candy", "candy digital", "mlb", "icon", "baseball", "packs", "2026"],
     notes:
       "Metaplex Core collection. Pack pulls are Core assets - use get_asset_provenance on any card mint for its full ownership trail.",
@@ -39,6 +55,7 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Candy Digital - MLB Gold Series Auction #1",
     platform: "Candy Digital (official MLB license)",
     coreCollection: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
+    group: "MLB",
     keywords: ["candy", "candy digital", "gold", "gold series", "mlb", "auction", "ohtani", "soto"],
     notes: "36 auctioned packs / 226 cards incl. 1-of-1s. Fully traceable on-chain.",
   },
@@ -110,13 +127,23 @@ function loadCandyCollections(): RegistryEntry[] {
   } catch {
     return [];
   }
-  const known = new Set(REGISTRY.map((e) => e.coreCollection).filter(Boolean));
+  const byAddress = new Map(REGISTRY.filter((e) => e.coreCollection).map((e) => [e.coreCollection!, e]));
   const ids = new Set(REGISTRY.map((e) => e.id));
   const out: RegistryEntry[] = [];
   for (const r of rows) {
     if (typeof r.address !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r.address)) continue;
     if (typeof r.name !== "string" || !r.name.trim()) continue;
-    if (known.has(r.address)) continue;
+    const already = byAddress.get(r.address);
+    if (already) {
+      // Same collection, different spelling. Keep the hand-written entry and
+      // let the issuer's name reach it too.
+      const name = typeof r.name === "string" ? r.name.trim() : "";
+      if (name && name !== already.name) {
+        already.aliases = [...new Set([...(already.aliases ?? []), name])];
+        already.keywords = [...new Set([...already.keywords, ...name.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2)])];
+      }
+      continue;
+    }
     const name = r.name.trim();
     const category = typeof r.category === "string" ? r.category.trim() : "Other";
     let id = "candy-" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
@@ -128,6 +155,7 @@ function loadCandyCollections(): RegistryEntry[] {
       name: `Candy Digital - ${name}`,
       platform: `Candy Digital (${category === "MLB" ? "official MLB license" : category === "DC" ? "official DC license" : category})`,
       coreCollection: r.address,
+      group: category,
       keywords: [...new Set(["candy", "candy digital", category.toLowerCase(), ...tokens])],
       notes: "From the CandyScan collection list. The Magic Eden symbol resolves by name through the directory; pass a symbol directly for listings and sales.",
     });

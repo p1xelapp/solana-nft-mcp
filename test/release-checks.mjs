@@ -215,7 +215,7 @@ await check("D15 every published string bound has a maxLength and every number a
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
   try {
     const { tools } = await client.listTools();
-    assert.strictEqual(tools.length, 19, "the frozen tool surface");
+    assert.strictEqual(tools.length, 20, "the frozen tool surface");
     const gaps = [];
     const walk = (tool, name, schema) => {
       if (!schema || typeof schema !== "object") return;

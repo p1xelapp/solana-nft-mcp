@@ -26,7 +26,7 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
-import { resolveName, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
+import { resolveName, symbolForCollectionName, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
@@ -143,6 +143,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   const exact =
     REGISTRY.find((e) => e.id === q) ??
     REGISTRY.find((e) => norm(e.name) === nq) ??
+    REGISTRY.find((e) => (e.aliases ?? []).some((a) => norm(a) === nq)) ??
     REGISTRY.find((e) => e.meSymbol === q);
   const fuzzy = exact ? [exact] : searchRegistry(q);
   // A fuzzy hit is only an identification when it is the only one. "candy"
@@ -175,8 +176,29 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // A registry hit supplies identifiers but is not the final answer - the live
   // probes below still run, because the registry records what we knew when it
   // was written, not what is true now.
+  // A registry entry that carries only a chain address answers supply,
+  // provenance and custody but nothing about the market, because floors, sales
+  // and listings are keyed by the venue's own symbol. The directory already
+  // holds it under the collection's own name, so it is looked up here rather
+  // than left for a model to guess - the guess was
+  // `absolute_batman_2024_1_candy_digital` for a collection Magic Eden lists
+  // as `absolute_batman_2024_1`, and the empty answer read as "never traded".
+  let symbolFromDirectory: string | undefined;
+  if (entry && !entry.meSymbol) {
+    const found = [entry.name, ...(entry.aliases ?? [])].map((n) => symbolForCollectionName(n)).find(Boolean);
+    if (found) {
+      symbolFromDirectory = found.symbol;
+      checked.push({
+        source: "collection-directory",
+        looked_for: `a Magic Eden symbol for "${entry.name}"`,
+        result: "found",
+        detail: `${found.symbol} - ${found.note}`,
+      });
+    }
+  }
   if (entry) {
     if (entry.meSymbol) identifiers.meSymbol = entry.meSymbol;
+    else if (symbolFromDirectory) identifiers.meSymbol = symbolFromDirectory;
     if (entry.openseaSlug) identifiers.openseaSlug = entry.openseaSlug;
     if (entry.coreCollection) identifiers.coreCollection = entry.coreCollection;
   }
@@ -334,7 +356,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // was simply twice the wait whenever both were slow.
   // A single strong directory hit is the symbol to probe; several are a
   // question for the caller, never a pick.
-  const meSymbol = entry?.meSymbol ?? (nameCandidates.length === 1 ? nameCandidates[0] : undefined) ?? (looksLikeSlug(q) ? q : undefined);
+  const meSymbol = entry?.meSymbol ?? symbolFromDirectory ?? (nameCandidates.length === 1 ? nameCandidates[0] : undefined) ?? (looksLikeSlug(q) ? q : undefined);
   const osSlug = entry?.openseaSlug ?? (looksLikeSlug(q) ? q : undefined);
   const mePromise: Promise<Awaited<ReturnType<typeof me.collectionStats>> | { err: unknown }> = meSymbol
     ? me.collectionStats(meSymbol, { signal }).catch((err: unknown) => ({ err }))

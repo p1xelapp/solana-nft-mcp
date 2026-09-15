@@ -65,6 +65,7 @@ const LIVE_PAGES = 80;
  * the first morning: anything listed since was invisible and nothing said so.
  */
 const LIVE_TTL_MS = 24 * 60 * 60_000;
+let symbolByName: Map<string, string[]> | null = null;
 let liveWarming: Promise<me.CollectionsIndexRead> | null = null;
 let liveReady: me.CollectionsIndexRead | null = null;
 let liveReadyAt = 0;
@@ -87,6 +88,11 @@ function warmLive(): void {
       liveReady = r;
       liveReadyAt = Date.now();
       liveWarming = null;
+      // The name-to-symbol index is built once and cached; a fresh live layer
+      // is exactly the case where a collection listed since the snapshot can
+      // now be resolved, so the index is rebuilt on next use rather than
+      // staying at whatever the bundled file knew.
+      symbolByName = null;
       return r;
     })
     .catch((e: unknown) => {
@@ -327,6 +333,85 @@ export function findLookalikes(entries: { symbol: string; name: string | null; b
       const e = keyed[i]!.entry;
       return { symbol: e.symbol, name: e.name, badged: e.badged };
     });
+}
+
+// ------------------------------------------------- name -> venue symbol
+
+/**
+ * The Magic Eden symbol for a collection this server knows only by name and
+ * on-chain address.
+ *
+ * Why it exists: every Candy Digital collection is in the registry with its
+ * Metaplex Core address, which answers supply, provenance and custody, but
+ * with no marketplace symbol, which is what floors, sales and listings need.
+ * Asked for market data, a model had to invent one - it guessed
+ * `absolute_batman_2024_1_candy_digital` for a collection Magic Eden lists as
+ * `absolute_batman_2024`, got nothing back, and reported the collection as
+ * untraded. The directory already holds the answer.
+ *
+ * Deliberately strict. The name has to match a directory entry exactly once
+ * the punctuation is stripped, and exactly one distinct symbol has to come
+ * back. A near match is not used at all, because the cost of being wrong here
+ * is a confident floor printed under the wrong collection's name.
+ */
+/**
+ * One spelling for a collection name, whichever source wrote it.
+ *
+ * The same collection is "Absolute Batman (2024-) #1" on chain, "Absolute
+ * Batman (2024) #1" when a person types it, and "Absolute Batman (2024-) #1 -
+ * Candy Digital" in the venue directory. Punctuation and the issuer's name
+ * carry no information here, so both come off before anything is compared.
+ */
+export const collectionNameKey = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/^\s*candy digital\s*[-:]\s*/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s*candy digital\s*$/, "")
+    .trim();
+
+const nameKey = collectionNameKey;
+const withoutIssuer = collectionNameKey;
+
+function symbolIndex(): Map<string, string[]> {
+  if (symbolByName) return symbolByName;
+  const map = new Map<string, string[]>();
+  const add = (name: string, symbol: string) => {
+    for (const k of new Set([nameKey(name), withoutIssuer(name)])) {
+      if (!k) continue;
+      const rows = map.get(k);
+      if (rows) rows.push(symbol);
+      else map.set(k, [symbol]);
+    }
+  };
+  for (const row of loadSnapshot()?.collections ?? []) add(row.n, row.s);
+  // The live layer only contributes once a background walk has landed; it is
+  // never waited for here.
+  for (const row of liveReady?.collections ?? []) add(row.name, row.symbol);
+  symbolByName = map;
+  return map;
+}
+
+export interface SymbolFromDirectory {
+  symbol: string;
+  /** Plain words for an answer: where this identifier came from and how far it can be trusted. */
+  note: string;
+}
+
+export function symbolForCollectionName(name: string): SymbolFromDirectory | null {
+  const hits = symbolIndex().get(nameKey(name));
+  if (!hits) return null;
+  const distinct = [...new Set(hits)];
+  if (distinct.length !== 1) return null;
+  const snap = loadSnapshot();
+  return {
+    symbol: distinct[0]!,
+    note:
+      `Magic Eden symbol matched by exact name in the bundled directory snapshot` +
+      (snap?.takenAt ? ` taken ${snap.takenAt}` : "") +
+      `, not hand-verified. If the market figures look like a different collection, pass the symbol yourself.`,
+  };
 }
 
 const toMatches = (hits: NameMatch[], layer: "snapshot" | "live") =>

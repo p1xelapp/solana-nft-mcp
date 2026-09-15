@@ -43,7 +43,7 @@ const manifest = {
   description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No keys, read-only, runs on your machine.",
   long_description:
     "Reads the chain and the venues (Magic Eden, OpenSea) and labels every number with where and when it came from. " +
-    "19 tools: who owned a card, who can freeze it, what sold this week, the cheapest low serial, what a wallet holds and how it trades. " +
+    "20 tools: who owned a card, who can freeze it, what sold this week, the cheapest low serial, what a wallet holds and how it trades. " +
     "Builders get the same reads as parsed, typed results with the raw Metaplex Core and Token Metadata fields kept intact, " +
     "so an agent or an app can use them without writing a parser first. " +
     "Nothing is collected; only the public address or name you ask about leaves your machine.",
@@ -62,6 +62,7 @@ const manifest = {
     { name: "get_asset_provenance", description: "Who owned it, from the chain, back to the mint" },
     { name: "get_asset_trust", description: "Who can freeze or burn it" },
     { name: "find_listings", description: "Cheapest listings, deals, low serials, trait floors" },
+    { name: "find_in_group", description: "Hunt one edition number across a whole family of collections" },
     { name: "get_collection_sales", description: "What sold, for how much, by name" },
     { name: "get_wallet_profile", description: "What a wallet holds and how it trades" },
   ],

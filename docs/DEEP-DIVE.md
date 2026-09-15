@@ -24,7 +24,7 @@ Claude / MCP client
    ▼
 ┌─────────────────────────────────────────────────┐
 │ MCP layer (official TypeScript SDK)             │
-│  19 tools · 4 resources · 3 prompts             │
+│  20 tools · 4 resources · 3 prompts             │
 │  zod validation on every input                  │
 ├─────────────────────────────────────────────────┤
 │ Domain layer                                    │
@@ -72,7 +72,8 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 | `get_recent_sales` | ME | Walks up to 500 activity events for true sales (`buyNow`); reports how much it scanned so quiet markets are explainable |
 | `get_asset` | ME + chain | Marketplace view AND authoritative on-chain owner side by side; flags possible escrow ownership |
 | `get_asset_provenance` | chain | The party trick (see above); depth-capped with explicit skip counts |
-| `get_wallet_holdings` | ME | Read-only; the server can never move anything |
+| `get_wallet_holdings` | ME + chain | Two independent readers, the gap between them named, and airdrop spam labelled with the reason it was labelled |
+| `find_in_group` | ME + chain | One edition number hunted across a whole family of collections in batches, each match measured against that collection's own floor |
 
 ## 5. Who is this for?
 

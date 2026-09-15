@@ -522,4 +522,76 @@ const jsonResponse = (body, headers = {}) =>
   ok("b19 COLLECTOR_MCP_LOG=1 writes one JSON line per call with the tool, timing, outcome and argument names only");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19)`);
+// c1 - a collection the registry knows only by name and chain address has to
+// reach its marketplace symbol, or every market question about it comes back
+// empty and reads as "never traded". The guess that prompted this was
+// `absolute_batman_2024_1_candy_digital` for a collection listed as
+// `absolute_batman_2024_1`.
+{
+  const { symbolForCollectionName, collectionNameKey } = await import("../dist/names.js");
+  const found = symbolForCollectionName("Absolute Batman (2024-) #1");
+  assert.ok(found, "a Candy collection spelled as the issuer spells it should reach a Magic Eden symbol");
+  assert.equal(found.symbol, "absolute_batman_2024_1");
+  assert.ok(/not hand-verified/.test(found.note), "a symbol matched by name must say it was matched, not verified");
+  // Punctuation and the issuer suffix carry no meaning and must not decide a match.
+  assert.equal(collectionNameKey("Absolute Batman (2024) #1"), collectionNameKey("Candy Digital - Absolute Batman (2024-) #1"));
+  assert.equal(collectionNameKey("2022 Leadoff ICONs - Candy Digital"), collectionNameKey("2022 Leadoff ICONs"));
+  // A name nothing lists must stay unresolved rather than reach for a near match.
+  assert.equal(symbolForCollectionName("a collection that does not exist anywhere"), null);
+  ok("c1 a collection known only by name and chain address resolves to its venue symbol, labelled as matched rather than verified");
+}
+
+// c2 - airdrop spam labelled, never removed. One real wallet held 1,171 items
+// of which 1,166 were unsolicited drops; the five real holdings were invisible.
+{
+  const { classifyAirdrop, summariseAirdrops } = await import("../dist/spam.js");
+  const spam = ["Redeem NFT Voucher", "104 SOL For You ETHCrate.com", "1700$ Random Pass TAKESAGA.com", "WEN Vоucher"];
+  for (const name of spam) {
+    const v = classifyAirdrop({ name, compressed: true, collectionVerified: false });
+    assert.ok(v.likelySpam, `"${name}" should be labelled`);
+    assert.ok(v.signals.length > 0, "a label without a reason is an opinion");
+  }
+  for (const name of ["2025 Bulbasaur CGC 10 Pristine", "Mad Lads #4201", "Jupiter JLP/USDC LP", "Absolute Batman (2024-) #1", "Batman (1940-2011) #609 222"]) {
+    assert.equal(classifyAirdrop({ name, compressed: false, collectionVerified: true }).likelySpam, false, `"${name}" is a real holding`);
+  }
+  // Being compressed and uncollected is corroboration, never the verdict on its own.
+  assert.equal(classifyAirdrop({ name: "Tensorian #900", compressed: true, collectionVerified: false }).likelySpam, false, "a cheap standard is not evidence of spam by itself");
+  const summary = summariseAirdrops([{ likelySpam: true, signals: ["x"] }, { likelySpam: false, signals: [] }]);
+  assert.deepEqual([summary.likelySpam, summary.examined, summary.rest], [1, 2, 1]);
+  assert.ok(/never removed/i.test(summary.note), "the summary must say nothing was dropped from the list");
+  ok("c2 airdrop spam is labelled with named reasons, real holdings are left alone, and nothing is removed");
+}
+
+// c3 - the largest holder of a collection is often a marketplace escrow, and
+// "top holder" printed beside a share of supply reads as a whale. The chain
+// answers it structurally, so a failed read must say unknown rather than
+// defaulting to "a person".
+{
+  const sol = await import("../dist/sources/solana.js");
+  const realFetch = globalThis.fetch;
+  const reply = (owner) =>
+    Promise.resolve(
+      new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { value: owner === null ? null : { owner, executable: false } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  try {
+    globalThis.fetch = () => reply("M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K");
+    const escrow = await sol.accountNature("1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix");
+    assert.equal(escrow.looksLikeAWallet, false, "a program-owned account is not a person's wallet");
+    assert.ok(/Magic Eden/.test(escrow.ownerName ?? ""), "a program this server can name should be named");
+    globalThis.fetch = () => reply("11111111111111111111111111111111");
+    const person = await sol.accountNature("8Ew6iQXcTRHAUNNu3X9VBn1g1bJkXEZJ9gFD2AGKtdPB");
+    assert.equal(person.looksLikeAWallet, true, "a System Program account is what a wallet looks like");
+    globalThis.fetch = () => Promise.reject(new Error("endpoint down"));
+    const unknown = await sol.accountNature("8Ew6iQXcTRHAUNNu3X9VBn1g1bJkXEZJ9gFD2AGKtdPB");
+    assert.equal(unknown.looksLikeAWallet, null, "a failed read is unknown, never 'a person'");
+    assert.ok(unknown.note.length > 20, "and it says why");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  ok("c3 a top holder is checked against the chain for what kind of account it is, and an unreadable one stays unknown");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3)`);

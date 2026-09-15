@@ -42,6 +42,7 @@ await client.connect(
 // whole, so a rename, an addition and a removal are each caught by name.
 const TOOL_MANIFEST = [
   "explain_mechanics",
+  "find_in_group",
   "find_listings",
   "get_asset",
   "get_asset_provenance",
@@ -416,6 +417,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (19 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

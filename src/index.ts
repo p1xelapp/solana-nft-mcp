@@ -32,7 +32,8 @@ import * as das from "./sources/das.js";
 import { SOURCES, explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
 import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
-import { resolveName } from "./names.js";
+import { resolveName, symbolForCollectionName, collectionNameKey } from "./names.js";
+import { classifyAirdrop, summariseAirdrops } from "./spam.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
 import { NotFoundError, WrongKindError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { checkForUpdate, updateNotice } from "./lib/update.js";
@@ -343,11 +344,44 @@ async function refuseUnknownSymbol(symbol: string): Promise<ToolResult | null> {
 }
 
 /** Resolve a user-supplied id: registry id -> entry, else raw symbol/address. */
-function resolve(idOrSymbolOrAddress: string) {
-  const entry = REGISTRY.find((e) => e.id === idOrSymbolOrAddress);
-  if (entry) return entry;
-  if (sol.isBase58Address(idOrSymbolOrAddress)) return { coreCollection: idOrSymbolOrAddress };
-  return { meSymbol: idOrSymbolOrAddress };
+function resolve(idOrSymbolOrAddress: string): {
+  id?: string;
+  name?: string;
+  meSymbol?: string;
+  coreCollection?: string;
+  openseaSlug?: string;
+  /** Set when the venue symbol came from the directory by name rather than from a hand-verified entry. */
+  symbolNote?: string;
+} {
+  const q = idOrSymbolOrAddress.trim();
+  // The same key both sides, so "Absolute Batman (2024) #1" reaches the entry
+  // stored as "Candy Digital - Absolute Batman (2024-) #1".
+  const norm = collectionNameKey;
+  // An id, then the collection's own name, then its on-chain address. A name
+  // and an address both used to fall through to "treat the whole string as a
+  // Magic Eden symbol", so asking for stats by name read a feed for a symbol
+  // that does not exist and the collection came back quiet.
+  const entry =
+    REGISTRY.find((e) => e.id === q) ??
+    REGISTRY.find((e) => norm(e.name) === norm(q)) ??
+    REGISTRY.find((e) => (e.aliases ?? []).some((a) => norm(a) === norm(q))) ??
+    (sol.isBase58Address(q) ? REGISTRY.find((e) => e.coreCollection === q) : undefined);
+  if (entry) {
+    if (entry.meSymbol) return entry;
+    // Only a chain address on the entry: the market half of every answer is
+    // missing until the venue symbol is found, and the directory holds it
+    // under the collection's own name.
+    // Try every name this collection is filed under, not just the one on the
+    // entry: the venue directory knows the issuer's spelling, which is
+    // sometimes the alias rather than the title.
+    for (const candidate of [entry.name, ...(entry.aliases ?? [])]) {
+      const found = symbolForCollectionName(candidate);
+      if (found) return { ...entry, meSymbol: found.symbol, symbolNote: found.note };
+    }
+    return entry;
+  }
+  if (sol.isBase58Address(q)) return { coreCollection: q };
+  return { meSymbol: q };
 }
 
 // ------------------------------------------------------------------ tools
@@ -640,7 +674,12 @@ registerTool(
   guard(async ({ collection, openseaSlug }) => {
     const r = resolve(collection);
     const out: Record<string, unknown> = { requested: collection };
-    if ("name" in r) out.registry = { id: r.id, name: r.name, platform: r.platform };
+    if (r.name) out.registry = { id: r.id, name: r.name };
+    // Say where a symbol nobody typed came from, every time it is used. A
+    // floor printed under a collection's name is a claim about that
+    // collection, and this is the one identifier in the answer that was
+    // matched rather than verified.
+    if (r.symbolNote && r.meSymbol) out.symbolResolvedFromDirectory = { meSymbol: r.meSymbol, note: r.symbolNote };
     if (r.coreCollection) {
       const acct = await sol.getCoreAccount(r.coreCollection);
       if (acct?.kind === "collection") {
@@ -690,9 +729,36 @@ registerTool(
         : history.summary
           ? { ...history.summary, at: history.cachedAt, stale: history.stale, note: "OpenSea's sampled floor over 7 days, in the listing currency; Magic Eden's floor is in market.floorPriceSol." }
           : { note: "OpenSea has no floor samples for this collection in the last 7 days." };
+      // The largest holder of a collection is often a marketplace escrow, and
+      // "top holder" printed next to a share of supply reads as a whale. The
+      // chain answers it structurally: a person's wallet is owned by the
+      // System Program, an escrow by the marketplace's own program. One cheap
+      // read per row, capped, and a row whose read fails says so rather than
+      // being called a person by default.
+      const topRows = "error" in top ? [] : top.top.slice(0, 10);
+      const natures = await Promise.all(topRows.map((h) => sol.accountNature(h.wallet)));
       const topHolders = "error" in top
         ? { note: `OpenSea holder list not read: ${top.error}` }
-        : { top: top.top, topCombinedSharePct: top.topCombinedSharePct, shareBasis: top.shareBasis, at: top.cachedAt, stale: top.stale, note: "Largest holders as OpenSea counts them. A marketplace escrow can appear here as a holder; get_wallet_holdings on an address says which." };
+        : {
+            top: top.top.map((h, i) => {
+              const n = natures[i];
+              if (!n) return h;
+              return {
+                ...h,
+                looksLikeAWallet: n.looksLikeAWallet,
+                ...(n.ownerName ? { heldBy: n.ownerName } : {}),
+                ...(n.looksLikeAWallet === false ? { custodyNote: n.note } : {}),
+              };
+            }),
+            topCombinedSharePct: top.topCombinedSharePct,
+            shareBasis: top.shareBasis,
+            at: top.cachedAt,
+            stale: top.stale,
+            note:
+              "Largest holders as OpenSea counts them, each checked against the chain for what kind of account it is. " +
+              "looksLikeAWallet false means a program holds those items on other people's behalf, so it is not one collector; " +
+              "null means the account could not be read and nothing should be assumed either way.",
+          };
       out.opensea = detail
         ? {
             ...stats,
@@ -1038,16 +1104,25 @@ registerTool(
                   rejectedNote: `${index.rowsRejected} row(s) the asset index served carried no usable id and were dropped rather than counted, so count is a floor, not a total (outage or API change at the index).`,
                 }
               : {}),
-            items: index.items.slice(0, limit).map((a) => ({
-              mint: a.id,
-              name: a.name,
-              standard: a.standard,
-              collection: a.collection,
-              collectionVerified: a.collectionVerified,
-              frozen: a.frozen,
-              compressed: a.compressed,
-              burnt: a.burnt,
-            })),
+            // Airdrop spam is labelled here rather than left for a reader to
+            // notice: one real wallet came back with 1,171 items of which
+            // 1,166 were unsolicited drops, and the five things the person
+            // collects were invisible underneath them.
+            airdropSpam: summariseAirdrops(index.items.map((a) => classifyAirdrop(a))),
+            items: index.items.slice(0, limit).map((a) => {
+              const verdict = classifyAirdrop(a);
+              return {
+                mint: a.id,
+                name: a.name,
+                standard: a.standard,
+                collection: a.collection,
+                collectionVerified: a.collectionVerified,
+                frozen: a.frozen,
+                compressed: a.compressed,
+                burnt: a.burnt,
+                ...(verdict.likelySpam ? { likelySpam: true, spamSignals: verdict.signals } : {}),
+              };
+            }),
           }
         : undefined,
       comparison: comparison.note,
@@ -1627,6 +1702,162 @@ registerTool(
       ...(!attrsRes.ok ? { traitFloorsError: attrsRes.error instanceof Error ? attrsRes.error.message : String(attrsRes.error) } : {}),
       stale: listings.stale,
       cachedAt: listings.cachedAt,
+    });
+  }),
+);
+
+registerTool(
+  "find_in_group",
+  {
+    title: "Hunt across a family of collections",
+    description:
+      "Search MANY collections at once for a specific edition number. DC comics on Candy are 272 separate " +
+      "collections, one per issue, so 'is any DC #1 or #100 listed, and how close to floor' cannot be asked of " +
+      "one collection - this asks a batch of them and hands back a cursor for the rest. Answers 'any #1 for sale " +
+      "across DC', 'cheapest low serial in the MLB set', 'which issues have a #100 listed under 1 SOL'. " +
+      "Each match names its collection, its ask, that collection's floor and how far above floor it is. " +
+      "Use groups from search_collections, or name the collections yourself.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      group: z
+        .string()
+        .trim()
+        .min(1)
+        .max(40)
+        .optional()
+        .describe("A family in the registry: DC, MLB or Other. Case-insensitive."),
+      collections: z
+        .array(z.string().trim().min(1).max(120))
+        .max(20)
+        .optional()
+        .describe("Explicit collection names, ids or Magic Eden symbols, instead of a group"),
+      serials: z
+        .array(z.number().int().finite().min(1).max(1_000_000))
+        .max(6)
+        .default([1, 100])
+        .describe("Edition numbers to hunt, e.g. [1, 100]. Ignored when lowestOnly is true."),
+      lowestOnly: z.boolean().default(false).describe("Return the lowest serial listed in each collection instead of specific numbers"),
+      maxPriceSol: z.number().finite().min(0).max(1_000_000).optional().describe("Keep only asks at or below this price"),
+      startAt: z.number().int().finite().min(0).max(1000).default(0).describe("Where in the group to start; use nextStartAt from the previous call"),
+      batch: z.number().int().finite().min(1).max(20).default(8).describe("How many collections to read in this call. Each one costs a request or two, so a large batch is a long wait."),
+      pagesPerCollection: z.number().int().finite().min(1).max(5).default(2).describe("Pages of 100 listings to read per collection, cheapest first"),
+    },
+  },
+  guard(async ({ group, collections, serials, lowestOnly, maxPriceSol, startAt, batch, pagesPerCollection }) => {
+    // Either a family or an explicit list, never both silently: a caller who
+    // passes both means one of them, and picking for them is how the wrong
+    // set gets scanned without anybody noticing.
+    if (group && collections?.length) {
+      throw new Error("Pass either a group or a list of collections, not both - they would select different sets.");
+    }
+    const wanted = new Set(serials);
+    const chosen = collections?.length
+      ? collections.map((c) => ({ requested: c, ...resolve(c) }))
+      : REGISTRY.filter((e) => (e.group ?? "").toLowerCase() === (group ?? "").toLowerCase()).map((e) => {
+          const r = resolve(e.id);
+          return { requested: e.name, ...r };
+        });
+    if (chosen.length === 0) {
+      const groups = [...new Set(REGISTRY.map((e) => e.group).filter(Boolean))].sort();
+      throw new Error(
+        group
+          ? `No collections are filed under "${group}". The groups this registry knows are: ${groups.join(", ")}.`
+          : "Pass a group or a list of collections to scan.",
+      );
+    }
+    const slice = chosen.slice(startAt, startAt + batch);
+    const scanned: Record<string, unknown>[] = [];
+    const matches: Record<string, unknown>[] = [];
+    const noSymbol: string[] = [];
+    for (const c of slice) {
+      if (!c.meSymbol) {
+        noSymbol.push(c.requested ?? c.name ?? "unnamed");
+        continue;
+      }
+      let listings: me.MeListing[] = [];
+      let sawWholeBook = false;
+      let stale = false;
+      let failed: string | undefined;
+      try {
+        for (let p = 0; p < pagesPerCollection; p++) {
+          const read = await me.collectionListings(c.meSymbol, { limit: 100, offset: p * 100, sort: "listPrice", direction: "asc" });
+          stale = stale || read.stale;
+          listings = listings.concat(read.listings);
+          if (read.venueReportedEnd) {
+            sawWholeBook = true;
+            break;
+          }
+        }
+      } catch (e) {
+        failed = e instanceof Error ? e.message : String(e);
+      }
+      // The book is read cheapest-first, so the first ask IS this collection's
+      // floor. Asking the stats endpoint for it as well would double the
+      // requests for a number already in hand.
+      const floor = listings.length > 0 && typeof listings[0]?.price === "number" ? listings[0].price : null;
+      scanned.push({
+        collection: c.name ?? c.requested,
+        symbol: c.meSymbol,
+        listingsRead: listings.length,
+        sawWholeBook,
+        floorSol: floor,
+        stale,
+        ...(c.symbolNote ? { symbolNote: c.symbolNote } : {}),
+        ...(failed ? { error: failed } : {}),
+        // An empty book is not proof of an empty market when the symbol was
+        // matched by name rather than hand-verified: it can equally be the
+        // wrong symbol, and those two must never read the same.
+        ...(listings.length === 0 && !failed
+          ? { note: c.symbolNote ? "No listings came back. The symbol was matched by name, so this could also be the wrong symbol." : "No listings on Magic Eden right now." }
+          : {}),
+      });
+      const withSerials = listings
+        .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
+        .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
+        .sort((a, b) => a.s.serial - b.s.serial || (a.l.price ?? Infinity) - (b.l.price ?? Infinity));
+      const keep = lowestOnly ? withSerials.slice(0, 1) : withSerials.filter((x) => wanted.has(x.s.serial));
+      for (const { l, s } of keep) {
+        const price = typeof l.price === "number" && Number.isFinite(l.price) ? l.price : null;
+        if (maxPriceSol !== undefined && (price === null || price > maxPriceSol)) continue;
+        matches.push({
+          collection: c.name ?? c.requested,
+          symbol: c.meSymbol,
+          serial: s.serial,
+          editionSize: s.of,
+          name: clean(l.token?.name ?? ""),
+          tokenMint: l.tokenMint ?? null,
+          priceSol: price,
+          floorSol: floor,
+          // Only arithmetic on two numbers from the SAME read, so it cannot
+          // describe a moment that never existed.
+          pctOverFloor: price !== null && floor !== null && floor > 0 ? Math.round(((price - floor) / floor) * 1000) / 10 : null,
+          atFloor: price !== null && floor !== null && price <= floor,
+          stale,
+        });
+      }
+    }
+    matches.sort((a, b) => ((a.priceSol as number | null) ?? Infinity) - ((b.priceSol as number | null) ?? Infinity));
+    const nextStartAt = startAt + slice.length;
+    const remaining = Math.max(0, chosen.length - nextStartAt);
+    return ok({
+      group: group ?? null,
+      hunting: lowestOnly ? "the lowest serial listed in each collection" : `serial ${serials.join(" or ")}`,
+      collectionsInGroup: chosen.length,
+      scannedThisCall: slice.length,
+      startAt,
+      nextStartAt: remaining > 0 ? nextStartAt : null,
+      remaining,
+      matches,
+      scanned,
+      ...(noSymbol.length ? { noMarketSymbol: noSymbol } : {}),
+      readThis: [
+        remaining > 0
+          ? `This call read ${slice.length} of ${chosen.length} collections. Call again with startAt ${nextStartAt} for the next batch; a "no match" only covers what has been read so far.`
+          : `Every collection in this set has now been read.`,
+        "Prices are asks on Magic Eden, not what anyone paid, and each floor is the cheapest ask in that collection's own book at the moment it was read.",
+        ...(noSymbol.length ? [`${noSymbol.length} collection(s) have no Magic Eden symbol, so nothing could be read for them: ${noSymbol.slice(0, 5).join(", ")}${noSymbol.length > 5 ? " and more" : ""}.`] : []),
+      ],
+      next: "find_listings goes deeper on one collection; get_collection_sales says what actually sold there.",
     });
   }),
 );

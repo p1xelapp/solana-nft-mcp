@@ -360,3 +360,33 @@ catalog. 20 tools, 4 resources.
 - Each `collector://` resource opens with a line saying what to ask once it is attached, and the
   registry hoists the sentence that repeated on 400 Candy rows.
 - The install bundle carries the white logo, which was invisible against a dark panel.
+
+## 1.10.0 - 2026-09-15
+
+Four fixes, each one a question the server got wrong by hand first.
+
+- Collections the registry knows only by name and chain address now reach their
+  Magic Eden symbol through the bundled directory, matched on the collection's own
+  name. Asked for the market side of a Candy collection, a model had to invent a
+  symbol; the guess for Absolute Batman #1 was `absolute_batman_2024_1_candy_digital`
+  against a real symbol of `absolute_batman_2024_1`, and the empty answer read as
+  "never traded". 361 of the 398 Candy collections resolve this way. Every answer
+  that uses one says the symbol was matched by name rather than hand-verified.
+- Entries that share a chain address keep both spellings: the 2026 MLB ICON Series
+  is "2026 MLB Base Series ICONs" in the issuer's own export, and only that spelling
+  is in the venue directory. Either name now resolves to the same collection.
+- New `find_in_group`: hunt one edition number across a whole family of collections.
+  DC on Candy is 272 separate collections, one per issue, so "is any #1 or #100
+  listed, and how close to floor" could not be asked at all. It reads a batch,
+  measures every match against that collection's own floor, and hands back a cursor
+  for the rest. Twenty collections take about twelve seconds.
+- `get_wallet_holdings` labels airdrop spam and says why: a web address in the name,
+  a reward to claim, a token amount, or Latin letters mixed with lookalikes from
+  another alphabet. Nothing is removed from the list. One real wallet held 1,171
+  items of which 1,166 were unsolicited drops, and the five real holdings were
+  invisible underneath them.
+- The largest holders of a collection are each checked against the chain for what
+  kind of account they are. A wallet is owned by the System Program; an escrow is
+  owned by the marketplace's own program, and is named when the program is one this
+  server knows. An unreadable account stays unknown rather than defaulting to a
+  person.

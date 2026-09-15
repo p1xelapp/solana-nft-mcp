@@ -1069,3 +1069,77 @@ export async function walletAge(wallet: string, maxPages = 3) {
         `The wallet is AT LEAST this old and this busy; the true first transaction MAY be earlier.`,
   };
 }
+
+// --------------------------------------------------- is this a person?
+
+/**
+ * Known program accounts, named. Verified from program source and
+ * documentation while building the mechanics knowledge base.
+ */
+const NAMED_PROGRAMS: Record<string, string> = {
+  M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden's order book program",
+  mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden's pool program (MMM)",
+};
+
+export interface AccountNature {
+  address: string;
+  /** The program that owns the account. A plain wallet is owned by the System Program. */
+  ownerProgram: string | null;
+  /** False when the account is owned by any program other than the System Program. */
+  looksLikeAWallet: boolean | null;
+  /** Set when the owning program is one this server can name. */
+  ownerName?: string;
+  note: string;
+}
+
+/**
+ * Whether an address is a person's wallet or a program's account.
+ *
+ * The question behind it: a collection's largest "holder" is often a
+ * marketplace escrow or a pool, and calling that a whale is wrong in a way a
+ * reader cannot check. On Solana the answer is structural rather than a
+ * guess - a wallet is owned by the System Program and an escrow is owned by
+ * the marketplace's own program - so no address blocklist is needed and
+ * nothing goes stale.
+ *
+ * Never throws: an unreadable account returns nulls and says so, because a
+ * failed read must not turn into a claim about who holds what.
+ */
+export async function accountNature(address: string, opts: { signal?: AbortSignal } = {}): Promise<AccountNature> {
+  try {
+    const info = await rpc<{ value: { owner: string; executable?: boolean } | null }>(
+      "getAccountInfo",
+      [address, { encoding: "base64", dataSlice: { offset: 0, length: 0 } }],
+      undefined,
+      undefined,
+      opts.signal,
+    );
+    if (!info?.value) {
+      return {
+        address,
+        ownerProgram: null,
+        looksLikeAWallet: null,
+        note: "The chain has no account at this address right now, which is normal for a wallet that holds only tokens and no SOL.",
+      };
+    }
+    const owner = info.value.owner;
+    const isWallet = owner === SYSTEM_PROGRAM;
+    const named = NAMED_PROGRAMS[owner];
+    return {
+      address,
+      ownerProgram: owner,
+      looksLikeAWallet: isWallet,
+      ...(named ? { ownerName: named } : {}),
+      note: isWallet
+        ? "Owned by the System Program, which is what a person's wallet looks like."
+        : `Owned by ${named ?? `the program ${owner}`}, so it is a program account rather than a person's wallet. Items counted here are most likely held on someone else's behalf.`,
+    };
+  } catch {
+    return {
+      address,
+      ownerProgram: null,
+      looksLikeAWallet: null,
+      note: "The chain did not answer for this address, so whether it is a wallet or a program account is unknown here.",
+    };
+  }
+}
