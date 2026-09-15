@@ -583,3 +583,52 @@ A client refused every call that left a default out.
   one answer produced a mint whose head belonged to the asset and whose tail
   belonged to its collection: a string that reads as an identifier, pastes into
   an explorer, and finds nothing.
+
+## 1.12.0 - 2026-09-15
+
+The directory was never the catalogue, and the answers were too big to arrive.
+
+- **"DeGods" returned eight imitations and not DeGods.** Magic Eden refuses to
+  page past offset 30,000 and its catalogue is larger than that, so the bundled
+  directory is a PREFIX of the venue. The collections past the ceiling are not
+  obscure: DeGods, Okay Bears, Cets on Creck and Degenerate Ape Academy were all
+  missing while degodscasino, anti_okay_bears and ai_okay_bears_ were present
+  and scored. `identify` and `search_collections` now ask the venue about the
+  name directly, which has no ceiling, and accept the answer only when the
+  venue's own record confirms it.
+- **Two confident wrong answers, both about price.** "solana monkey business"
+  resolved to Rare Solana Monkey Business, 0.055 SOL over 3 listings, against
+  the real collection's 12.28 SOL over 242. "yoots" resolved to Pixel Yoots
+  instead of y00ts. A single fuzzy match whose NAME is not what was asked for
+  is now offered as a candidate with the mismatch stated, never asserted.
+- A collection can be rebranded without its symbol changing - the venue calls
+  `solana_monkey_business` "SMB Gen2" - so an exact slugification of the name
+  is accepted on its own, and the different display name is said out loud.
+- **An answer four times too big to arrive.** `find_listings` at limit 100
+  returned 247,385 characters, past every client's ceiling; the client cuts the
+  overflow off silently and the model reads the surviving prefix as the whole
+  list. 140 KB of it was a trait array repeated on every row, with the same
+  trait floors already aggregated once above. Row detail is now dropped before
+  rows are, and every reduction is named in the answer with how to undo it.
+  find_listings 247 KB to 42, search_collections 50 to 25, wallet holdings 72
+  to 51.
+- **OpenSea for every collection, not four.** Slugs were hand-curated and had
+  reached 4 of 402 registry entries - 1 of the 399 Candy collections - two weeks
+  after Candy became a launch partner for OpenSea's Solana support. A slug is
+  now found from the on-chain address against OpenSea's own Solana index, and
+  failing that by name, accepted only when OpenSea's record carries the same
+  chain address. Absolute Batman went from "no OpenSea slug is known" to a real
+  two-venue reconciliation: 0.22 SOL on Magic Eden against 0.4876 on OpenSea.
+- OpenSea answered with a lifetime volume of 7.6e-17 against zero sales, and a
+  total supply of 0 for a collection the chain says has 2,457. Both are its own
+  indexing state rather than facts, and both are now labelled as such.
+- `test/compat.mjs`: ten groups of published CLIENT constraints rather than spec
+  rules - Claude Code's 25,000-token result ceiling, Cursor's silent 40-tool
+  cap, the OpenAI strict-mode schema subset, the Anthropic name regex and
+  review criteria. It is what "works on Codex, Cursor and local models" is
+  checked against instead of assumed.
+- `test/battery2.mjs`: 80 checks the first battery does not cover - 35 of them
+  messy input, because nobody types "Absolute Batman (2024-) #1". Measured on
+  the 30 real spellings a person might use: 15 resolve, 15 leave a usable next
+  step, none dead-end, and none resolve to the wrong collection.
+- Docs called `get_source_status` by a name it has never had.

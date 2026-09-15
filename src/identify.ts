@@ -27,6 +27,7 @@ import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
+import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
@@ -374,6 +375,54 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     });
     for (const n of resolved.notSearched) notChecked.push(n);
     if (!resolved.directoryComplete && resolved.directoryNote) notChecked.push(resolved.directoryNote);
+
+    // The directory stops at the venue's paging ceiling, and the collections
+    // past it are not the obscure ones: DeGods and Okay Bears were both absent
+    // while knock-offs wearing their names were present and scored. So when
+    // the directory has not produced exactly one strong match, ask the venue
+    // about the name directly - that path has no ceiling. A hit is accepted
+    // only when the venue's own name for the symbol is the name asked for, and
+    // it then outranks everything the directory offered, because a collection
+    // the venue itself names beats an imitation that merely scored well.
+    //
+    // One strong match is only an ANSWER when the collection is actually
+    // called that. A fuzzy winner whose name merely contains the query is a
+    // candidate, and asserting it produced the worst answers this server has
+    // given: "solana monkey business" resolved to Rare Solana Monkey Business
+    // (0.055 SOL, 3 listed) instead of Solana Monkey Business (12.28 SOL, 242
+    // listed), and "yoots" resolved to Pixel Yoots instead of y00ts. Both were
+    // confident, both were off by more than a hundred times on price.
+    const onlyMatch = strong.length === 1 ? (strong[0] ?? null) : null;
+    const exactlyNamed = onlyMatch !== null && norm(onlyMatch.name ?? "") === nq;
+    if (!exactlyNamed) {
+      const direct = await findSymbolByName(q, { signal });
+      if (direct.found) {
+        nameCandidates = [direct.symbol];
+        lookalikes = [];
+      } else if (onlyMatch) {
+        // The venue could not confirm a collection by this name, and the one
+        // the directory offered is not called this. Offer it, do not assert
+        // it: nameCandidates stays as it is so the probe below still reads the
+        // market, but the caller is told the name does not match.
+        checked.push({
+          source: "collection-directory",
+          looked_for: `a collection actually NAMED "${q}"`,
+          result: "ambiguous",
+          detail:
+            `The closest match is "${onlyMatch.name ?? onlyMatch.symbol}" (${onlyMatch.symbol}), which is not what was asked for. ` +
+            `A name that merely contains the words you typed is often a different collection entirely - a tribute, a spin-off or ` +
+            `a derivative that trades at a fraction of the price. Confirm the name before using these figures.`,
+        });
+      }
+      checked.push({
+        source: "magiceden-direct",
+        looked_for: `a Magic Eden collection whose own name is "${q}"`,
+        // A miss the venue refused to confirm is not a "not_found": saying so
+        // would turn a rate limit into evidence that a collection is absent.
+        result: direct.found ? "found" : direct.conclusive ? "not_found" : "error",
+        detail: direct.note,
+      });
+    }
   }
 
   // ---- 3+4. the marketplaces, probed AT THE SAME TIME -------------------

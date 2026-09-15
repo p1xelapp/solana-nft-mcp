@@ -308,14 +308,28 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   if (!fields.some((v) => num(v) !== null)) {
     throw new Error(`OpenSea answered for slug "${slug}" with a stats block carrying no usable numbers (outage or API change)`);
   }
+  // Float dust is not a figure. OpenSea answered for a Candy collection with
+  // a lifetime volume of 7.6e-17 next to zero sales, which is what its own
+  // arithmetic leaves behind rather than anything that traded. Printed as-is,
+  // a reader repeats it as a real number in scientific notation.
+  const volume = num(t.volume);
+  const sales = num(t.sales);
+  const dust = volume !== null && volume > 0 && volume < 1e-9;
   return {
     slug,
     floor: num(t.floor_price),
     // The currency symbol is venue-supplied text that is printed next to a
     // number; it is neutralised and kept short rather than relayed.
     floorCurrency: typeof t.floor_price_symbol === "string" ? clean(t.floor_price_symbol).slice(0, 16) || null : null,
-    totalVolume: num(t.volume),
-    totalSales: num(t.sales),
+    totalVolume: dust ? 0 : volume,
+    ...(dust
+      ? {
+          volumeNote:
+            `OpenSea reported a lifetime volume of ${volume} against ${sales ?? 0} sales. That is rounding dust from its own ` +
+            `arithmetic, not a trade, so it is reported as zero.`,
+        }
+      : {}),
+    totalSales: sales,
     owners: num(t.num_owners),
     stale,
     cachedAt,
@@ -395,6 +409,85 @@ export async function solanaCollections() {
     return out;
   });
   return { collections: data, stale, cachedAt };
+}
+
+/**
+ * The OpenSea slug for a collection, found from its on-chain address.
+ *
+ * Hand-curating slugs does not scale and was not even trying to: 4 of 402
+ * registry entries carried one, and 1 of the 399 Candy collections, while
+ * Candy became a launch partner for OpenSea's Solana support on 2026-08-31.
+ * So most collections silently had no second venue, and the answer said "no
+ * OpenSea slug is known" as though the collection were absent from OpenSea.
+ *
+ * OpenSea's own Solana index carries each collection's on-chain address, so
+ * the join needs no curation at all. It covers what OpenSea ranks by 7-day
+ * volume rather than everything OpenSea holds, which is why a miss here is
+ * reported as "not in the ranked index", never as "not on OpenSea".
+ */
+export async function slugForOnchainCollection(
+  address: string,
+): Promise<{ slug: string; name: string | null; note: string } | null> {
+  const { collections, stale, cachedAt } = await solanaCollections();
+  const hit = collections.find((c) => c.contracts?.some((k) => k.chain === "solana" && k.address === address));
+  if (!hit?.collection) return null;
+  return {
+    slug: clean(hit.collection),
+    name: hit.name ? clean(hit.name) : null,
+    note:
+      `OpenSea slug matched by on-chain collection address against OpenSea's own Solana index` +
+      `${stale ? " (served stale" : " (read"} ${cachedAt}), not hand-curated.`,
+  };
+}
+
+/**
+ * The OpenSea slug for a collection, guessed from its NAME and then proved
+ * against its on-chain address.
+ *
+ * The ranked index above only covers what OpenSea sorts by 7-day volume - 103
+ * Solana collections when this was measured - so a collection that exists on
+ * OpenSea but has not traded this week is invisible to it. An OpenSea slug is
+ * usually the collection's name in lower case with hyphens, so this asks for
+ * the two or three spellings it could be.
+ *
+ * The proof is what makes it safe: the slug is accepted only when OpenSea's
+ * own record for it carries the SAME Solana collection address we started
+ * from. A name collision cannot survive that, so a wrong second venue can
+ * never be attached to a collection's figures.
+ */
+export async function slugByNameForCollection(
+  name: string,
+  onchainAddress: string,
+): Promise<{ slug: string; note: string } | null> {
+  const base = name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    // Issuer prefixes like "Candy Digital - " are not part of an OpenSea slug.
+    .replace(/^[a-z0-9 ]+ - /, "")
+    .trim();
+  const words = base.split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.length === 0) return null;
+  const candidates = [...new Set([words.join("-"), words.join(""), words.join("_")])].slice(0, 3);
+  for (const slug of candidates) {
+    let detail: Awaited<ReturnType<typeof collectionDetail>> | null = null;
+    try {
+      detail = await collectionDetail(slug);
+    } catch {
+      // 404 or an upstream having a bad minute; the next spelling is the only
+      // useful move either way, and a miss here never becomes a claim.
+      continue;
+    }
+    if (detail?.onchainCollection && detail.onchainCollection === onchainAddress) {
+      return {
+        slug,
+        note:
+          `OpenSea slug found by trying "${slug}" and confirming OpenSea's own record for it carries this ` +
+          `collection's on-chain address. Not hand-curated, and not accepted on the name alone.`,
+      };
+    }
+  }
+  return null;
 }
 
 // OpenSea's own 1% marketplace fee is listed alongside creator fees; it goes

@@ -39,6 +39,8 @@ import { explainMechanics, mechanicsForTrust } from "./mechanics.js";
 import { PROMPT_TEXTS, PROMPT_LIST } from "./prompts.js";
 import { NotFoundError, WrongKindError, AmbiguousError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { checkForUpdate, updateNotice } from "./lib/update.js";
+import { fitRows, omit } from "./lib/fit.js";
+import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
@@ -655,14 +657,60 @@ registerTool(
     } else {
       openseaNote = `OpenSea's Solana index was not searched: ${os.openSeaState().note}`;
     }
+    // The directory stops at Magic Eden's paging ceiling, so the collection a
+    // person means can be missing while its imitations are all present. A
+    // search for "okay bears" returned eight spin-offs and knock-offs and not
+    // the real thing, which is the worst possible answer for the one tool
+    // somebody uses BECAUSE they do not know the exact name. Ask the venue.
+    let venueConfirmed: { symbol: string; name: string; note: string } | undefined;
+    const exactInDirectory = names.matches.some((m) => m.score >= 100);
+    if (!exactInDirectory) {
+      const direct = await findSymbolByName(query);
+      if (direct.found) {
+        venueConfirmed = { symbol: direct.symbol, name: direct.venueName, note: direct.note };
+        // Put it where a reader looks first. Everything the directory offered
+        // stays below it, because those are what an impersonation looks like.
+        names.matches.unshift({
+          symbol: direct.symbol,
+          name: direct.venueName,
+          badged: null,
+          score: 100,
+          reason: "the venue's own record for this name",
+          layer: "live",
+        });
+      }
+    }
+
     const nothing = results.length === 0 && names.matches.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length;
+    // A broad word like "batman" matches 77 registry entries, and their notes
+    // and keywords made that 35 KB on their own. The notes are context for one
+    // collection a reader has already chosen, not something to read 77 times.
+    const fittedResults = fitRows(results, {
+      budget: 24_000,
+      slim: (r) => omit(r as typeof r & { notes?: unknown; keywords?: unknown }, ["notes", "keywords"]) as typeof r,
+      slimmedAway: "the per-collection notes and keywords",
+      detailHint: "Search a narrower name, or call get_collection_stats on one id, to get the detail for it.",
+      moreHint: "Narrow the query to see the rest.",
+    });
     return ok({
       // Echoed through the same neutraliser as anything an upstream wrote. A
       // direction-override character pasted into a search came back intact in
       // the result, and a result is exactly where such a character does its
       // work: it reverses how the text after it renders.
       query: clean(query),
-      results,
+      results: fittedResults.rows,
+      ...(fittedResults.note ? { answerSize: fittedResults.note } : {}),
+      ...(venueConfirmed
+        ? {
+            venueConfirmed: {
+              ...venueConfirmed,
+              readThis:
+                `This is the collection Magic Eden itself names "${venueConfirmed.name}". The directory entries below share ` +
+                `words with it and are a different thing: spin-offs, tributes and imitations all sit next to a well known name. ` +
+                `Use this symbol unless you specifically wanted one of those.`,
+            },
+          }
+        : {}),
       magicEdenDirectory: {
         matches: names.matches,
         searched: names.searched,
@@ -782,7 +830,31 @@ registerTool(
         out.meta = cleaned.warning ? { ...cleaned.data, untrustedTextWarning: cleaned.warning } : cleaned.data;
       }
     }
-    const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
+    // A curated slug first, then the on-chain address joined against OpenSea's
+    // own Solana index. Curation had reached 4 of 402 registry entries, so
+    // nearly every collection was answering "no OpenSea slug is known" while
+    // Candy was a launch partner for OpenSea's Solana support.
+    let slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
+    let slugNote: string | undefined;
+    const coreAddress = (out.onchain as { address?: string } | undefined)?.address;
+    if (!slug && coreAddress && (await os.openSeaAvailable())) {
+      const found = await os.slugForOnchainCollection(coreAddress).catch(() => null);
+      if (found) {
+        slug = found.slug;
+        slugNote = found.note;
+      } else {
+        // The ranked index only covers what OpenSea sorts by 7-day volume, so
+        // a collection that exists there but has not traded this week is not
+        // in it. Try the name, and accept it only if OpenSea's own record for
+        // that slug carries this collection's address.
+        const chainName = (out.onchain as { name?: string } | undefined)?.name;
+        const byName = chainName ? await os.slugByNameForCollection(chainName, coreAddress).catch(() => null) : null;
+        if (byName) {
+          slug = byName.slug;
+          slugNote = byName.note;
+        }
+      }
+    }
     if (slug && (await os.openSeaAvailable())) {
       const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
       const [stats, detail, history] = await Promise.all([
@@ -827,17 +899,33 @@ registerTool(
               "looksLikeAWallet false means a program holds those items on other people's behalf, so it is not one collector; " +
               "null means the account could not be read and nothing should be assumed either way.",
           };
+      // OpenSea answered 0 for a collection the chain says has 2,457 items.
+      // A zero from a venue that has only just indexed a collection is its
+      // own backfill state, not the supply, and the chain is the authority on
+      // how many exist. Reporting it unqualified is how "supply 0" gets said
+      // about a live collection.
+      const chainSupply = (out.onchain as { numMinted?: number } | undefined)?.numMinted ?? null;
+      const osSupply = detail?.totalSupply ?? null;
+      const supplyDisagrees = osSupply === 0 && typeof chainSupply === "number" && chainSupply > 0;
       out.opensea = detail
         ? {
             ...stats,
-            totalSupply: detail.totalSupply,
+            totalSupply: supplyDisagrees ? null : osSupply,
+            ...(supplyDisagrees
+              ? {
+                  totalSupplyNote:
+                    `OpenSea reported a total supply of 0 while the chain shows ${chainSupply}. That is OpenSea still indexing ` +
+                    `this collection, not the supply, so it is reported as unknown here; onchain.numMinted is the figure to use.`,
+                }
+              : {}),
             creatorRoyaltyPct: detail.creatorRoyaltyPct,
             onchainCollection: detail.onchainCollection,
             royaltyNote: "creatorRoyaltyPct is what the project asks OpenSea to collect; whether the chain enforces it is a per-asset question (get_asset_trust).",
             floor7d,
             topHolders,
+            ...(slugNote ? { slugSource: slugNote } : {}),
           }
-        : { ...stats, floor7d, topHolders };
+        : { ...stats, floor7d, topHolders, ...(slugNote ? { slugSource: slugNote } : {}) };
     } else if (slug) {
       out.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
     } else {
@@ -845,7 +933,9 @@ registerTool(
       // collections genuinely have no OpenSea slug, and the answer has to say
       // that rather than simply not mentioning OpenSea at all.
       out.openseaNote =
-        "No OpenSea slug is known for this collection, so only Magic Eden and the chain were read. " +
+        "No OpenSea slug is known for this collection, and its on-chain address is not in OpenSea's ranked Solana index " +
+        "(which covers what OpenSea ranks by 7-day volume, not everything it holds), so only Magic Eden and the chain were read. " +
+        "That is a gap in what was searched, not evidence the collection is absent from OpenSea. " +
         "search_collections shows whether OpenSea lists it under another name; pass openseaSlug to add the second venue.";
     }
     const osBlockAny = out.opensea;
@@ -1171,9 +1261,44 @@ registerTool(
       { reader: "Magic Eden", count: meCount, bounded: marketplace?.capped === true, raise: "limit", stale: marketplace?.stale === true, readAt: marketplace?.cachedAt },
       { reader: "the chain's asset index", count: idxCount, bounded: index?.truncated === true, stale: index?.stale === true, readAt: index?.cachedAt },
     );
+    // Two independent readers each listing 100 items came to 71 KB, which is
+    // most of what a client will carry for one answer. An image URL is the
+    // biggest field on a row and the one thing a model cannot use; the mint
+    // beside it fetches the item in full when somebody actually wants it.
+    const fittedMe = marketplace
+      ? fitRows(marketplace.tokens ?? [], {
+          budget: 18_000,
+          slim: (tk) => omit(tk as typeof tk & { image?: unknown }, ["image"]) as typeof tk,
+          slimmedAway: "each item's image URL",
+          detailHint: "get_asset on a mint returns that item in full, image included.",
+          moreHint: "Lower limit, or read the chain index list below, to see a different slice.",
+        })
+      : null;
+    const shapedIndexItems = (index?.items ?? []).slice(0, limit).map((a) => {
+      const verdict = classifyAirdrop(a);
+      return {
+        mint: a.id,
+        name: a.name,
+        standard: a.standard,
+        collection: a.collection,
+        collectionVerified: a.collectionVerified,
+        frozen: a.frozen,
+        compressed: a.compressed,
+        burnt: a.burnt,
+        ...(verdict.likelySpam ? { likelySpam: true, spamSignals: verdict.signals } : {}),
+      };
+    });
+    const fittedIndex = index
+      ? fitRows(shapedIndexItems, {
+          budget: 18_000,
+          slimmedAway: "nothing; whole rows were dropped",
+          moreHint: "get_wallet_profile summarises the whole wallet by collection without listing every item.",
+        })
+      : null;
+
     return ok({
       wallet,
-      magicEden: marketplace ?? undefined,
+      magicEden: marketplace ? { ...marketplace, tokens: fittedMe?.rows ?? [], ...(fittedMe?.note ? { answerSize: fittedMe.note } : {}) } : undefined,
       chainIndex: index
         ? {
             count: idxCount,
@@ -1200,20 +1325,8 @@ registerTool(
             // 1,166 were unsolicited drops, and the five things the person
             // collects were invisible underneath them.
             airdropSpam: summariseAirdrops(index.items.map((a) => classifyAirdrop(a))),
-            items: index.items.slice(0, limit).map((a) => {
-              const verdict = classifyAirdrop(a);
-              return {
-                mint: a.id,
-                name: a.name,
-                standard: a.standard,
-                collection: a.collection,
-                collectionVerified: a.collectionVerified,
-                frozen: a.frozen,
-                compressed: a.compressed,
-                burnt: a.burnt,
-                ...(verdict.likelySpam ? { likelySpam: true, spamSignals: verdict.signals } : {}),
-              };
-            }),
+            items: fittedIndex?.rows ?? [],
+            ...(fittedIndex?.note ? { answerSize: fittedIndex.note } : {}),
           }
         : undefined,
       comparison: comparison.note,
@@ -1763,12 +1876,31 @@ registerTool(
     } else if (slug) {
       openSeaTraitFloors = { slug, note: `OpenSea slug known but skipped: ${os.openSeaState().note}` };
     }
+    // Every deal was carrying its whole trait list, and at limit 100 that was
+    // 140 KB of the 247 KB answer - four times what a client keeps, with the
+    // same trait floors already aggregated once in traitFloors above. A client
+    // cuts the overflow off silently, so the model reads a truncated list as a
+    // complete one. Rows keep their strongest trait, which is the part the
+    // deal is argued from, and the full list comes off only if the answer is
+    // still too big to arrive whole.
+    const fitted = fitRows(deals.deals, {
+      // The rest of the answer - trait floors, the search note, readThis -
+      // costs about 13 KB, so the rows get what is left of the budget.
+      budget: 30_000,
+      slim: (d) => omit(d as typeof d & { traits?: unknown }, ["traits"]) as typeof d,
+      slimmedAway: "the full per-listing trait list",
+      detailHint: "traitFloors above carries every trait floor for the collection, and get_asset on one mint returns that item's whole trait list.",
+      moreHint: "Ask for a smaller limit, or filter by trait or name, to see a different part of the book.",
+    });
+
     return ok({
       ...(openSeaTraitFloors ? { openSeaTraitFloors } : {}),
       symbol,
       symbolKnown: true,
       filters: { traits: traits ?? [], nameContains: nameContains ?? null },
       ...deals,
+      deals: fitted.rows,
+      ...(fitted.note ? { answerSize: fitted.note } : {}),
       // After the spread on purpose: bestDeals carries its own readThis list
       // and the not-advice line has to survive alongside it.
       readThis: [...(Array.isArray(deals.readThis) ? deals.readThis : [deals.readThis]), NOT_ADVICE],

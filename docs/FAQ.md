@@ -82,7 +82,7 @@ or an answer - and a session that never asks an OpenSea question never requests 
 OpenSea caps key creation at about two a day per IP address, so on a shared or busy
 address it can refuse. Then OpenSea stays off exactly as it always could: every tool still
 answers, and the OpenSea half of a cross-venue answer is named as missing rather than
-quietly dropped. `check_sources` says which key is in use and when it expires.
+quietly dropped. `get_source_status` says which key is in use and when it expires.
 
 **Can I use my own OpenSea key, or none at all?**
 Yes. `OPENSEA_API_KEY` (from the OpenSea developer portal) overrides the self-issued key
