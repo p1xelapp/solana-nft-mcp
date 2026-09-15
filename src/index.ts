@@ -1842,8 +1842,18 @@ registerTool(
       throw new Error("Pass either a group or a list of collections, not both - they would select different sets.");
     }
     const wanted = new Set(serials);
-    const chosen = collections?.length
-      ? collections.map((c) => ({ requested: c, ...resolve(c) }))
+    // One unresolvable name must not kill a batch of twenty. A name shared by
+    // two collections throws, and in a scan that is a row to report rather
+    // than a reason to abandon the other nineteen.
+    const safely = (c: string) => {
+      try {
+        return { requested: c, ...resolve(c) };
+      } catch (e) {
+        return { requested: c, unresolved: e instanceof Error ? e.message : String(e) };
+      }
+    };
+    const chosen: (ReturnType<typeof resolve> & { requested: string; unresolved?: string })[] = collections?.length
+      ? collections.map((c) => safely(c))
       : REGISTRY.filter((e) => (e.group ?? "").toLowerCase() === (group ?? "").toLowerCase()).map((e) => {
           const r = resolve(e.id);
           return { requested: e.name, ...r };
@@ -1862,10 +1872,14 @@ registerTool(
     // A collection with no venue symbol is not a dead end: its chain address
     // still answers supply, provenance and custody, so the address travels
     // with the name instead of the row being dropped as "skipped".
-    const noSymbol: { collection: string; coreCollection: string | null }[] = [];
+    const noSymbol: { collection: string; coreCollection: string | null; why?: string }[] = [];
     for (const c of slice) {
       if (!c.meSymbol) {
-        noSymbol.push({ collection: c.name ?? c.requested ?? "unnamed", coreCollection: c.coreCollection ?? null });
+        noSymbol.push({
+          collection: c.name ?? c.requested ?? "unnamed",
+          coreCollection: c.coreCollection ?? null,
+          ...(c.unresolved ? { why: c.unresolved } : {}),
+        });
         continue;
       }
       let listings: me.MeListing[] = [];

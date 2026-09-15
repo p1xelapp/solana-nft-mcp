@@ -493,3 +493,6 @@ Found by sweeping 37 real collections rather than the same few fixtures.
   with none a minute later, and the empty answer would have read as "this card has
   never moved". The walk is retried against another endpoint, and an empty result
   that survives says plainly that the endpoint could not see it.
+- One unresolvable name no longer kills a whole group scan. A name shared by two
+  collections threw, and in a batch of twenty that is a row to report rather than
+  a reason to abandon the other nineteen.
