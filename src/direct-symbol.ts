@@ -12,7 +12,7 @@
  *
  * A collection's symbol is almost always its own name, lowercased with the
  * spaces filled in. That path has no offset and no ceiling, so this turns the
- * name into the two or three symbols it could be and asks the venue about each.
+ * name into the one or two symbols it could be and asks the venue about each.
  *
  * The rule that keeps it honest: a symbol is accepted only when the venue's
  * OWN name for it matches the name that was asked for. Without that check,
@@ -24,7 +24,15 @@ import { collectionNameKey } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 
-/** Symbols a collection with this name plausibly has, most likely first. */
+/**
+ * Symbols a collection with this name plausibly has, most likely first.
+ *
+ * Kept to TWO, and usually one, because every candidate is a gated request on
+ * the critical path of a question somebody is waiting for. Measured with four:
+ * a name the venue does not have cost 7.8 s to rule out, and identify() as a
+ * whole went past its own 25-second deadline. The third and fourth spellings
+ * had never once been the one that hit.
+ */
 export function symbolCandidates(name: string): string[] {
   const base = name
     .normalize("NFKD")
@@ -33,16 +41,13 @@ export function symbolCandidates(name: string): string[] {
     .toLowerCase()
     .trim();
   const words = base.split(/[^a-z0-9]+/).filter(Boolean);
-  if (words.length === 0) return [];
-  const out = [words.join("_"), words.join(""), words.join("-")];
-  // A trailing "s" that the venue dropped, or the other way round, is the one
-  // near-miss common enough to be worth a probe: "Froganas" is `froganas`
-  // while the collection is named "Frogana".
-  if (words.length === 1 && words[0]!.length > 4) {
-    const w = words[0]!;
-    out.push(w.endsWith("s") ? w.slice(0, -1) : `${w}s`);
-  }
-  return [...new Set(out)].filter((s) => s.length >= 2 && s.length <= 80).slice(0, 4);
+  // A sentence is not a collection name. Probing one spends requests on a
+  // question the venue was never going to answer.
+  if (words.length === 0 || words.length > 4 || base.length > 60) return [];
+  // Underscore is what Magic Eden uses; no separator is the other real form
+  // (`kanpaipandas`). For a single word the two are the same string, so most
+  // names cost exactly one request to rule out.
+  return [...new Set([words.join("_"), words.join("")])].filter((s) => s.length >= 2 && s.length <= 80);
 }
 
 export interface DirectSymbolHit {
@@ -82,7 +87,21 @@ const MISS_TTL_MS = 10 * 60_000;
  * transport failure. Only an all-404 sweep is conclusive, and only a
  * conclusive miss is remembered.
  */
+/**
+ * How long the whole probe may take.
+ *
+ * This runs on the critical path of a question somebody is waiting for, and it
+ * shares one rate gate with every other Magic Eden call - including the
+ * background walk that refreshes the directory, which is 61 pages long. Behind
+ * that walk, two ungated-looking requests can wait a very long time. The probe
+ * is an EXTRA chance at an answer, so it gets a budget and gives up politely:
+ * an unfinished probe is inconclusive, which is already handled honestly.
+ */
+const PROBE_BUDGET_MS = 6_000;
+
 export async function findSymbolByName(name: string, opts: { signal?: AbortSignal } = {}): Promise<DirectSymbolOutcome> {
+  const deadline = Date.now() + PROBE_BUDGET_MS;
+  const outOfTime = () => Date.now() > deadline;
   const wanted = collectionNameKey(name);
   if (!wanted) return { found: false, conclusive: true, note: "the name has no letters or digits to turn into a symbol" };
   const cachedMiss = misses.get(wanted);
@@ -93,8 +112,14 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
   const tried: string[] = [];
   const unreadable: string[] = [];
   for (const symbol of symbolCandidates(name)) {
-    if (opts.signal?.aborted) {
-      return { found: false, conclusive: false, note: `ran out of time after trying ${tried.join(", ") || "nothing"}` };
+    if (opts.signal?.aborted || outOfTime()) {
+      return {
+        found: false,
+        conclusive: false,
+        note:
+          `the ${PROBE_BUDGET_MS / 1000}s budget for asking the venue about this name ran out after trying ` +
+          `${tried.join(", ") || "nothing"}, so this check proves nothing either way`,
+      };
     }
     tried.push(symbol);
 

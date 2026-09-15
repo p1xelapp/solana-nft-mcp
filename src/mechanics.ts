@@ -928,6 +928,56 @@ export const MECHANICS: MechanicsEntry[] = [
     keywords: ["panini", "ethereum", "bridge", "opensea", "escrow", "not solana", "packs"],
   },
 
+  {
+    id: "venue-candy-secondary-settles-on-magiceden",
+    category: "venue",
+    title: "A sale made on candy.io settles through Magic Eden",
+    venue: "candy",
+    plain:
+      "Candy opened its secondary market on 2026-07-24. The listing screen is on candy.io, but the transaction itself happens on Solana through Magic Eden, priced in SOL. So a fill that began on Candy's own site appears in Magic Eden's feed, and this server reports it as a Magic Eden sale, because Magic Eden's program is what executed it.",
+    pitfall:
+      "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the venue on the record says Magic Eden.",
+    documented:
+      "Transactions take place on Solana through Magic Eden.",
+    verified: true,
+    source: "https://blog.candy.io/candys-secondary-market-is-now-open-what-you-need-to-know/",
+    sourceRead: "2026-09-15",
+    keywords: ["candy", "secondary", "magic eden", "settles", "venue", "sale", "where did it sell"],
+  },
+  {
+    id: "venue-candy-auctions-are-off-chain-until-settled",
+    category: "venue",
+    title: "A Candy auction is not a listing, and does not exist on chain until it settles",
+    venue: "candy",
+    plain:
+      "Candy added standard auctions on 2026-09-10, run on its own site with a starting price and minimum increments in dollars. Nothing about a live auction is on the chain and nothing about it is an order on Magic Eden, so an item under auction can show as unlisted here while it is actively being bid on. Only the settlement appears on chain.",
+    pitfall:
+      "Reading 'not listed' as 'not for sale'. An item can be mid-auction on Candy with no listing anywhere this server can see, and a floor built from listings will not include it.",
+    documented:
+      "Standard auctions arrived at Candy Digital, with a $100 starting price and a $50 minimum bid increment, on Candy's own marketplace.",
+    verified: true,
+    source: "https://blog.candy.io/standard-auctions-arrive-at-candy-digital/",
+    sourceRead: "2026-09-15",
+    keywords: ["candy", "auction", "bid", "not listed", "off chain", "unlisted", "for sale"],
+  },
+  {
+    id: "venue-candy-burn-window-broke-supply-comparisons",
+    category: "venue",
+    title: "Candy supply before May 2026 is not comparable to supply after it",
+    venue: "candy",
+    plain:
+      "Candy re-minted its collectibles onto Solana as Metaplex Core during 2026, and is reported to have run a burn window in May 2026 in which eligible collectibles were destroyed for credits. Supply counts either side of that migration measure different populations, so a figure quoted from before it cannot be set against one read from the chain today. Treat the exact window as unconfirmed - the point that stands is that the populations differ.",
+    pitfall:
+      "Comparing a supply or a mint count quoted from an older article against the chain's current size and calling the difference a discrepancy, or an error in this server.",
+    documented: "Not established this session.",
+    verified: false,
+    unverifiedReason:
+      "The dates and the credit rate come from a summary of Candy's blog rather than from the announcement post itself, which was not opened here. The migration to Metaplex Core is separately documented; the burn WINDOW is the part to confirm before repeating it.",
+    source: "https://blog.candy.io/",
+    sourceRead: "2026-09-15",
+    keywords: ["candy", "burn", "supply", "migration", "core", "re-mint", "comparison", "count changed"],
+  },
+
   // ---------------------------------------------------------------- questions
   {
     id: "q-moved-to-unknown-wallet",
