@@ -332,3 +332,15 @@ catalog. 20 tools, 4 resources.
   largest holders with their share of supply (both in `get_collection_stats`). Each
   names itself as OpenSea; nothing from two venues is ever summed.
 - `find_listings` takes an optional `openseaSlug`; registry entries that carry one are used automatically.
+
+## 1.8.5 - 2026-09-15
+
+- Every Candy Digital collection on Solana is in the registry: 398 entries generated from
+  `data/candy-collections.json` (name, category, Core collection address, exported from the
+  CandyScan tracker's reconciled list). A plain name like "2022 Leadoff ICONs" now resolves
+  straight to chain reads. Hand-written entries keep their cross-venue ids.
+- `COLLECTOR_MCP_LOG=1` writes one JSON line per tool call to stderr: tool, milliseconds,
+  outcome and argument names. Never values, never stdout.
+- `get_trending` carries OpenSea's own Solana trending order beside Magic Eden's list, as
+  rank only, because OpenSea publishes no volume on those rows.
+- `npm run bundle` builds the one-click Claude Desktop install (`.release/collector-mcp-<version>.mcpb`).

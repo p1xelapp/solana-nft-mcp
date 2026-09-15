@@ -53,7 +53,18 @@ const server = new McpServer({ name: "collector-mcp", version: VERSION });
 let toolCount = 0;
 const registerTool: typeof server.registerTool = (...args) => {
   toolCount++;
-  return server.registerTool(...args);
+  // Stamp the tool name for the call log before the guarded handler runs.
+  // Handlers are async but read the name synchronously on entry, so this is
+  // correct even when two calls overlap.
+  const [name, config, handler] = args as unknown as [string, unknown, (...h: unknown[]) => unknown];
+  return (server.registerTool as unknown as (n: string, c: unknown, h: (...x: unknown[]) => unknown) => ReturnType<typeof server.registerTool>)(
+    name,
+    config,
+    (...h: unknown[]) => {
+      currentTool = name;
+      return handler(...h);
+    },
+  );
 };
 
 // ---------------------------------------------------------------- helpers
@@ -162,12 +173,31 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   return { kind: "error", headline: "That request could not be completed.", next: "Try again, or try a narrower request." };
 }
 
+// Structured logging, opt in: COLLECTOR_MCP_LOG=1 writes one JSON line per
+// tool call to stderr (never stdout, which is the protocol channel). Argument
+// NAMES are logged, never values: a wallet address in a log file is somebody's
+// data. Bot builders read these to see which call was slow or failed at 3am.
+const LOG_CALLS = process.env.COLLECTOR_MCP_LOG === "1";
+const logCall = (tool: string, args: unknown, ms: number, outcome: { ok: true } | { ok: false; kind: string }) => {
+  if (!LOG_CALLS) return;
+  const argNames = args && typeof args === "object" ? Object.keys(args) : [];
+  console.error(JSON.stringify({ at: new Date().toISOString(), tool, args: argNames, ms, ...outcome }));
+};
+let currentTool = "unknown";
+
 const guard =
   <A extends unknown[]>(fn: (...args: A) => Promise<ToolResult>) =>
   async (...args: A): Promise<ToolResult> => {
+    const tool = currentTool;
+    const started = performance.now();
     try {
-      return await fn(...args);
+      const result = await fn(...args);
+      const errKind = result.structuredContent?.error;
+      logCall(tool, args[0], Math.round(performance.now() - started), result.isError ? { ok: false, kind: typeof errKind === "string" ? errKind : "error" } : { ok: true });
+      return result;
     } catch (err) {
+      const e0 = explain(err);
+      logCall(tool, args[0], Math.round(performance.now() - started), { ok: false, kind: e0.kind });
       // An upstream error message is attacker-influenced text that this layer
       // serialises TWICE - once as prose, once as structured content. A 50 MB
       // message therefore cost two 50 MB allocations and an oversized protocol
@@ -1661,15 +1691,27 @@ registerTool(
     },
   },
   guard(async ({ timeRange }) => {
-    const read = await me.popularCollections(timeRange);
+    const [read, osRanked] = await Promise.all([
+      me.popularCollections(timeRange),
+      // Second venue's order, never its numbers: OpenSea's trending rows carry
+      // no volume, so this is a ranked name list beside Magic Eden's figures.
+      os.openSeaAvailable().then((up) => (up ? os.rankedCollections("trending", 20) : null)).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
+    ]);
     const collections = read.collections.slice(0, 50).map((c) => {
       const { view, warning } = trendingView(c);
       return warning ? { ...view, untrustedTextWarning: warning } : view;
     });
+    const opensea =
+      osRanked === null
+        ? { note: `OpenSea not read: ${os.openSeaState().note}` }
+        : "error" in osRanked
+          ? { note: `OpenSea trending not read: ${osRanked.error}` }
+          : { rows: osRanked.rows, stale: osRanked.stale, cachedAt: osRanked.cachedAt, note: "OpenSea's own trending order for Solana by recent sales activity. Rank only; OpenSea publishes no volume on these rows, so nothing here is added to Magic Eden's figures." };
     return ok({
       timeRange,
       collections,
       count: collections.length,
+      opensea,
       readThis:
         "Each row is rebuilt from a fixed set of fields: symbol, name, description, floorPrice, volume, volumeChange, listedCount and an https image. Anything else the venue sent (social links, unlabelled extras) is dropped rather than relayed, and the price/volume unit is the venue's own - see unitNote.",
       note: read.note ?? "Ranked by Magic Eden's own volume over the range.",

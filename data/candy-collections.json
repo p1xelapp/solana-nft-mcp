@@ -1,0 +1,2002 @@
+{
+ "source": "CandyScan tracker (p1xel.app/candymigration), reconciled against the chain daily",
+ "takenAt": "2026-09-15",
+ "count": 398,
+ "categories": {
+  "MLB": 100,
+  "Other": 26,
+  "DC": 272
+ },
+ "collections": [
+  {
+   "address": "5LQ7jqaxRFYmnsk72ejFZ2cuGRABuky9Rik5bY9KGrCr",
+   "name": " 2024 MLB All-Star Commemorative Helmet",
+   "category": "MLB"
+  },
+  {
+   "address": "Csrmj9A385zj4v21XZ6Su6o4qva5Nf9vmUEfKrGnt2Ld",
+   "name": "'70s Music & Culture Collections",
+   "category": "Other"
+  },
+  {
+   "address": "BjynzkWaEpSvNYhcTBi7aFnEdJA1TX28BcWm7VJY6XW",
+   "name": "'70s Music & Culture Collections | Volume 2",
+   "category": "Other"
+  },
+  {
+   "address": "HZ3twSTyCut9dc8tdKP47o6wxiWByQF8cRYP1x9JE4i",
+   "name": "1 of 1 Player Highlights",
+   "category": "Other"
+  },
+  {
+   "address": "2TdvL2H1VpT7GsWxgisusRV4MHocKfLF65eXzGb2EhpR",
+   "name": "2021 All-Star ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "7GVaWp1SiDcV9HGLbcE9k7FqUY7vG41FbuPzvvk84YKK",
+   "name": "2021 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "6YFyzYrEJJpTgTA81n2ivqfrqmxQWcPTHAqQisXPWmCK",
+   "name": "2021 Kyle Larson Championship Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "9AbBUZwqFjL1AryeSz6T4bDrZCZTj3ivG6iWwu7vX1go",
+   "name": "2021 Play of the Day",
+   "category": "MLB"
+  },
+  {
+   "address": "D3iKJpDo4e43u8o2272cqZ9VVd4zfPe26x583EUKnEMb",
+   "name": "2021 Team Candy Jerseys",
+   "category": "MLB"
+  },
+  {
+   "address": "HkgdgPsoNSwF9TwkBA3yTqDYpzYTpyamEVoXVG8twwMi",
+   "name": "2021 Uncut Diamond ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "AArMv86Vk15p3RnnApmyW6sitpc22d3PxcsrX2oaGJFy",
+   "name": "2021 World Series Championship Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "3YDFTwDiaA5MZTCGiMMjoE6EqyyfZ3KCUePaoEJDCcge",
+   "name": "2022 All-Star ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "6K3d5q2HxZcS4vRydybu27UznWJ8NHfkTex2bVRavWeq",
+   "name": "2022 All-Star Tricons",
+   "category": "MLB"
+  },
+  {
+   "address": "9aJ8KwLHhBLrg4sM63NmVQo38GymEi7EzPvqjpim1kWz",
+   "name": "2022 Basketball ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "7MffsqeByLRzRqDVsJf9gtkAw4wYqtj2RM5nvchwuszm",
+   "name": "2022 Cal Ripken Jr. Rookie Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "7oii9s5vDNPaApf3Wd1jfSfUGyX8noNYmLRxtTXkZtXx",
+   "name": "2022 Candy Celebratory Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "ASKe7yuoDAMoGeHj2DnJRQS2bpand9z17Bpzu7vQGKS1",
+   "name": "2022 Championship Title",
+   "category": "MLB"
+  },
+  {
+   "address": "8XB1MesePR16ahrWGZgUCkyho28AP2xRCqRArPSYkj1t",
+   "name": "2022 Digi-Cast Trophies",
+   "category": "MLB"
+  },
+  {
+   "address": "5Ug99KENFADXXEV3qGK7y2PB5NXkgpBfitjLkkk8rsN7",
+   "name": "2022 Digi-Casts",
+   "category": "MLB"
+  },
+  {
+   "address": "395bWxWLo8vy8djuuRYn1n3kofdkRpbpTVZt3jmFLxax",
+   "name": "2022 Field of Dreams Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "6CDCajjHA12RzRpExQAStbDVZcA4HNywcKrrbzN4RY94",
+   "name": "2022 Football ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "HZg6KoU8n9AKB22fqkiSFpWb2cQLSWcV5tuwB3yMfRni",
+   "name": "2022 Hall of Fame ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "7PLp63WAmp1HzbVadzsmmVa3xkkdh3xQpD8b6vqyeBBT",
+   "name": "2022 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "GpoN7JUFD56uY1fZX8HMPFRAxqTLzqCxSdmQ3kFA2gLU",
+   "name": "2022 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "49LAEtJfLNmA7G2iefCaL39dP5BWXkoHqGKe3kFNGAUf",
+   "name": "2022 Jackie Robinson Day Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "46kCejJ7euGEmLAFqvV1j5yUzEumtwEvS9d65f6PbZ7g",
+   "name": "2022 Leadoff ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "4uSVfPqVdvBQDUr3A8ZeiHBnoJE3gWyJyxJhe2eWH3RB",
+   "name": "2022 Moment Boxes",
+   "category": "MLB"
+  },
+  {
+   "address": "GbgMCsv8KmWqcoawBdsYswLwdMg724QLTwpzSQd1qfCX",
+   "name": "2022 NASCAR Driver ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "FriWJ1cz2e3LKx9SDnT96iN5R6yZdwGfeJYPpxuXN2Pn",
+   "name": "2022 Opening Day Pin",
+   "category": "MLB"
+  },
+  {
+   "address": "FP2oY7FZGpvJ6zoMrX8toqqwkRYp3rJfovt9zmCR5BCV",
+   "name": "2022 Play of the Day",
+   "category": "MLB"
+  },
+  {
+   "address": "9BsVt3N59dyfML1FqPSQjwQv89qS87wPBJtrJquHyhte",
+   "name": "2022 Shawn Michaels Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "HHAgGf984ziGeFFmRG7ArGhcA8HefDrk7vVn1eMrrtxo",
+   "name": "2022 Stranger Things S4 Character Posters",
+   "category": "Other"
+  },
+  {
+   "address": "5heoJWePsoSkzzxyE4dLSMADiLiXGTCd8AQViBnUgSum",
+   "name": "2022 Stranger Things S4 Upside Down Posters",
+   "category": "Other"
+  },
+  {
+   "address": "AeXaa4cQhLULnJHtowUbr8r4UnWE9jaCJLQoQjADpYmu",
+   "name": "2022 Stranger Things Scanned Props: Series 001",
+   "category": "Other"
+  },
+  {
+   "address": "GtFeK5RW54Afeunt9qY2AxkySmKXkMBEu9uVqGaojCP6",
+   "name": "2022 Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "2BdcCQ73Hu86xPh63NZUZZyMzSmy9gighNPGBRei3ETd",
+   "name": "2022 Track Titans: Richard Petty Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "6jR3NkgHHXFhj5RbMbw8cLLEsrQbWGwU4KDkSm1wWQx3",
+   "name": "2022 Uncut Diamond ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "DX6sJh1asadrHWR89GFBSQnERErbqME8UBNtjrRebeLw",
+   "name": "2022 Undertaker Collection",
+   "category": "Other"
+  },
+  {
+   "address": "54urT68L9Pfu8v3gJwJYgRYmdbvErLrw34oVuju51yve",
+   "name": "2022 Vaulted Leadoff ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "FJj9eHr1LA5w6NgbRTMYmS3vd93wPYMt8scEyxPE47jc",
+   "name": "2022 World Series Championship Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "8wwMDhKuRe2p6Vd8FgrpiN9WNL9dyY3d82DRM1JRiEJ8",
+   "name": "2023 All-Star ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "yqu38Qsrbz7drQ1Ezf2gXEo2uWki4vsSkDzfLftFvmG",
+   "name": "2023 All-Star Tricons",
+   "category": "MLB"
+  },
+  {
+   "address": "5dmysEZwYVtDnMYBeXYvaxE7g1nwMrg5usCSr1yb4Er9",
+   "name": "2023 Base 1 ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "2bgTrMgRt4pTyzLCxWewVyvEgxnzza26MFZecexUstF7",
+   "name": "2023 Base 2 ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "2Sj5WTXSp9kD6nrAkr99b7MT84qTcrajUyHBomxq1mnN",
+   "name": "2023 Candy Celebratory Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "CuthwEPuhQCG8HPNJowBjwdzrqwQJckZBrvaCxkrGG7f",
+   "name": "2023 Candy Code Breaker ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "J3Bm2FCVbYYvRE3Q5MApfnE5RbegaaDF9DzHFC9F3Hqg",
+   "name": "2023 Candy Legends: Cal Ripken Jr.",
+   "category": "MLB"
+  },
+  {
+   "address": "BgwKJSmYHvkveAJWotJEgx5Vi951b5ESdUkMYJzN21KM",
+   "name": "2023 Darlington Commemorative Collection",
+   "category": "MLB"
+  },
+  {
+   "address": "6XWEFsJiGScfSNDs3NENGkB7ACWfpQxfsTdmJSKSWe7a",
+   "name": "2023 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "AZ4PLcBWTxaArvBzKNEcUNybDJpucW1uP7PQEZ66UVam",
+   "name": "2023 Jerseys",
+   "category": "MLB"
+  },
+  {
+   "address": "2LPAMwuB9yGSxK5F2yb6onz1rCR1NSHyVVieNpuVvm6u",
+   "name": "2023 Milestone Mark",
+   "category": "MLB"
+  },
+  {
+   "address": "XxLFYYwwvCNqr9hm581fScWuR3nsU86feUcMM2pEuxg",
+   "name": "2023 Opening Day Pin ",
+   "category": "MLB"
+  },
+  {
+   "address": "Fd74Qk9qAwJcUz1Ls7cebBCdVm2CiCh1CgzgYnmLobG7",
+   "name": "2023 Players of the Month",
+   "category": "MLB"
+  },
+  {
+   "address": "G9fztGhnjRrpjjTizvCahT4sfVSyTSyD1ivxzw9Cqv36",
+   "name": "2023 Plays of the Week",
+   "category": "MLB"
+  },
+  {
+   "address": "AJgVkvgbqfDdpxD5m2jeBhNn6hZLe5zMxPDP6pXF31ED",
+   "name": "2023 Postseason MVPs",
+   "category": "MLB"
+  },
+  {
+   "address": "9yx5HGCutpoa78rGDkrDuFcqJAYy6tSfqg1Jgcy5fvXJ",
+   "name": "2023 Rookie ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "Gc43jhiQP11qdMsJpsHhz3jyzFFmiRYQzPPRKYcaz1G2",
+   "name": "2023 Showstopper ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "zcKodbTukn1psQpkeKxeTnfxkuyEPZm4G6k387mejPY",
+   "name": "2023 Team Series ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "8oEdbtsPTMSU5RoWV8zfNJ2Pi7DTNFWxDGM4ojcSMr9o",
+   "name": "2023 This Month in Baseball",
+   "category": "MLB"
+  },
+  {
+   "address": "HscoKNpAqrpF79Bm8yBnSnUVy7VtT6n5E7LGrgJbFAFR",
+   "name": "2023 Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "34fpWWPzApWrQqSUdfxMXgM8P7JUXZfrXd27mo87ufoM",
+   "name": "2023 Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "6v4qD6U3fYfXguEyEnBqVfrBgRfJ8ctW34cACUDLoF5z",
+   "name": "2023 Wrestlemania",
+   "category": "Other"
+  },
+  {
+   "address": "GA3rbWDiAGhtuiW6f4V5qHVLTJnLQt9YBSvPkg9LaLWx",
+   "name": "2024 Candy League Rewards",
+   "category": "MLB"
+  },
+  {
+   "address": "EwNZjfyanfWEpEzLGPXvUQ424QUCY5hCtQQET6VSx5WY",
+   "name": "2024 Draft Pick Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "9STP9M8mmn6tbwuLFrTuGmpJfnDFJEYg5tTexsRvbwLs",
+   "name": "2024 Fresh Threads Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "4RJHV3DGfEicFekMEBDoUyoWBSHcUo39vUJUB7WbEexg",
+   "name": "2024 Hall of Fame Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "C33ma2pustyEPfjfpvMyidFm4bWxLFTbzPXZiqxxhAn",
+   "name": "2024 Hall of Fame ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "AQ7t8fZqiHPgyrkAMc749xPaP41ZaVw8JWmgJYaRSJhY",
+   "name": "2024 Home Run Derby Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "P5xpscmUKGEv52JEUWY9TFgF4uMXi2HFTEmuteFhKaN",
+   "name": "2024 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "6ZCBns3KwRkiBbjzLPQNMhH9qgriVSpoP51w1dkHg87L",
+   "name": "2024 Inaugural Mark",
+   "category": "MLB"
+  },
+  {
+   "address": "5V3RC7Bz313tMToHExddUYQBZFf62jpVs3dNV8KwhKne",
+   "name": "2024 Inaugural Mark - Emerald",
+   "category": "MLB"
+  },
+  {
+   "address": "6TscPbmXB3xL48xqxN8EvzycUH6sXo5Z2Ui7QZw1pqUu",
+   "name": "2024 Milestone Mark",
+   "category": "MLB"
+  },
+  {
+   "address": "4cut4uzJbchiHfFNKLZYpuHBmwKWoFRf18dPAXj6iUjk",
+   "name": "2024 MLB All-Star Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "2Y13PjdN4YWwHkJtm3A8MgjBzcbEHpSp7TMHjqdGnYep",
+   "name": "2024 MLB All-Star ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "ApagQi8m8RN9pJ72LtrQBQdV2Vxzn7yvPUWfN7TdiF6o",
+   "name": "2024 MLB Postseason Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "5ENXADdhd29JgJA1rN7Fhf3CBgLD825LdwngncJgv5ck",
+   "name": "2024 MLB Team Ball",
+   "category": "MLB"
+  },
+  {
+   "address": "C63SPFgMTZhHdBvE7ZMB8zzkJcKqMMV1Uf2xun3xKnmv",
+   "name": "2024 Opening Day Pin",
+   "category": "MLB"
+  },
+  {
+   "address": "xmUhKaWH47DMuXdgcFjTmNHXXmnA4LKanau1PmBgony",
+   "name": "2024 Season Standout Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "9VhBRKjZiQKRWTzN7LtDSzVgMx8asEZfSu6EDo9WkTHY",
+   "name": "2024 Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "D7uxWjGMhNLYV6bYWjN9sZ8S1AAbpoopHXPvi89ah5mx",
+   "name": "2024 Tickets (Standard)",
+   "category": "MLB"
+  },
+  {
+   "address": "4uWvW6E5UscFQLgwNsWBp3Gd9UUoF8wQJ5Dz2xcA2X1t",
+   "name": "2024 Uncut Diamonds Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "8BKjERGBt2juJWAAAaQwkDNUJKyrtTqi87VbXU4kBfwa",
+   "name": "2024 World Series Commemorative Baseball",
+   "category": "MLB"
+  },
+  {
+   "address": "5ax6kzfrbLzGPXtFeFmszsk8EFVp9fa8cxY7xrAvZ4Sq",
+   "name": "2025 All-Star ICONS",
+   "category": "MLB"
+  },
+  {
+   "address": "4W6T2gJnbD9D3XDWpk52kbZe6w2tUfFkaxsNyzW8MQmY",
+   "name": "2025 Candy Ambassadors",
+   "category": "MLB"
+  },
+  {
+   "address": "7mNr56rnUDiRSbb5YcyBQgSHMmsWj3mgGzVd7Q6r6xyL",
+   "name": "2025 Candy League Rewards",
+   "category": "MLB"
+  },
+  {
+   "address": "GT4c8VQqLsTwECJpCbEFUyhw5VgTTddY5xKXuE265vL2",
+   "name": "2025 Gems Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "6Wnw4tZHaRC1GSAT1BigYAPSB6ERbLYMGL1EShLiZsdK",
+   "name": "2025 Hall of Fame Gems",
+   "category": "MLB"
+  },
+  {
+   "address": "GFsjFQmS6btSVEwu6XQ5T8tzbp1Ys9AxFR5WVASA8dY9",
+   "name": "2025 ICON Chasers",
+   "category": "MLB"
+  },
+  {
+   "address": "CVCgFR499arUCUjUNahW15pLtmhbofqzEDgGsSSBNaQ7",
+   "name": "2025 Inaugural Mark",
+   "category": "MLB"
+  },
+  {
+   "address": "2KsswvuFDQcZBJxNU7sUQvzz29xBK3zRuytzUg75DzNS",
+   "name": "2025 Milestone Mark",
+   "category": "MLB"
+  },
+  {
+   "address": "6LZTR8CqzveuAypBDvnybKZmh9uci5dyej2Nm6VyAjT7",
+   "name": "2025 MLB Gems | August",
+   "category": "MLB"
+  },
+  {
+   "address": "BV2hhwqdPP8uFpf1xjQQUZYzt8hfZRLeEcKjwzRfxjLR",
+   "name": "2025 MLB Gems | July",
+   "category": "MLB"
+  },
+  {
+   "address": "5RbhoGodVRgDd2fmgr6dDHECBh7VTr6th3j53DFTkskw",
+   "name": "2025 MLB Gems | June",
+   "category": "MLB"
+  },
+  {
+   "address": "68aq9HerYRMArRePaQ6XZELkwQcFC434mduNFr7FAyH2",
+   "name": "2025 MLB Gems | March/April",
+   "category": "MLB"
+  },
+  {
+   "address": "9YvXctbg4EAbymtCzJ4EFD3kqiYiFooTNAAAKoKDBCip",
+   "name": "2025 MLB Gems | May",
+   "category": "MLB"
+  },
+  {
+   "address": "FvdDdMdFKjhLX6PzxbAPnqgkpreVNiZdEoRa8YE87aQ",
+   "name": "2025 MLB Rookie ICONS",
+   "category": "MLB"
+  },
+  {
+   "address": "GB5H1YLUhzdXzxA5NUFVn4373FJMcbDuJB8FF9QsWq3C",
+   "name": "2025 MLB Showstopper ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "FoWzvjAp9eKEUCZqbirz5sAbkq92gKLXoxk9Joy7voLo",
+   "name": "2025 MLB Speedway Classic ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "AXR21uWqVnE1MN7BGzb4soWKCgE3BE58ViVCzZsvi9wx",
+   "name": "2025 MLB Starting 9 ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "5tnrN5tgp6AXUiTfESSjSELgtzkJtoS3FTcymTue22bn",
+   "name": "2025 MLB Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "8KHabH1CNo8Y2hzpKWkqVRij8PvCgvV23M8yG7HTNwUf",
+   "name": "2025 MLB Tokyo Series ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "68RmmVKLMSNoh6vJdfTvkQBabg4m4zfCNfDP8W9nhekg",
+   "name": "2026 MLB Base Icons - Prototype 2",
+   "category": "MLB"
+  },
+  {
+   "address": "2UpCTzAYRLnH3mVHKe7RiiX2bKRQ2KYQEfEQHw4QK3NY",
+   "name": "2026 MLB Base ICONs Dutch Test",
+   "category": "MLB"
+  },
+  {
+   "address": "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
+   "name": "2026 MLB Base Series ICONs",
+   "category": "MLB"
+  },
+  {
+   "address": "2QA47Q6jKNncsdPhjR357EHUpuqfx7ko74jbg27oX58e",
+   "name": "2026 MLB Base Series ICONs Prototype",
+   "category": "MLB"
+  },
+  {
+   "address": "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
+   "name": "2026 MLB Gold Series ICONs - Candy Digital",
+   "category": "MLB"
+  },
+  {
+   "address": "EmFy7YohG4GZxgE5DEDgHuuvibqXK2jRLcXcJa3RvDRX",
+   "name": "Absolute Batman (2024-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "HGZuDxB8P8Wt3hNHG8LaK9d8JdrokypT4PS8ke3dXRe2",
+   "name": "Absolute Batman (2024-) #10",
+   "category": "DC"
+  },
+  {
+   "address": "4Ki7qa3M8JhryAripvhYaAGSE2pZpb8XrynM7qPmk3hv",
+   "name": "Absolute Batman (2024-) #11",
+   "category": "DC"
+  },
+  {
+   "address": "9FLcpA2YbGdDd681N3jYgmxSZJrd2E7xEtMHqmxwRHy7",
+   "name": "Absolute Batman (2024-) #12",
+   "category": "DC"
+  },
+  {
+   "address": "3tXXGptVW3Jc2zi9rLEYaqxAQj9pGp72WZmmivxTy5a4",
+   "name": "Absolute Batman (2024-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "3JvhMteLmaUmBDuetuU6Wi3YaBe7jYCG7Dzbo8EyegH9",
+   "name": "Absolute Batman (2024-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "FU62PJemcy7C2zw1bbNfHuKSgeu4G2daX59zR6Y5PKe8",
+   "name": "Absolute Batman (2024-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "28dMFf4kbQ59PHUrnRHxXiB9P56rGLvTezFTjcEwHmUL",
+   "name": "Absolute Batman (2024-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "F8CfvXj2QStiq9zAFdT2yg1ipNEjXhvVVCUzxV5owkbQ",
+   "name": "Absolute Batman (2024-) #6",
+   "category": "DC"
+  },
+  {
+   "address": "5j5wJHecHgepdqUXbRSGPRPrHXd5gXWyNf73HNB7AeZo",
+   "name": "Absolute Batman (2024-) #7",
+   "category": "DC"
+  },
+  {
+   "address": "EFkjs6eBbzJp3foo5xRCRdLQQs6keNe2aEwoSpHkJRdz",
+   "name": "Absolute Batman (2024-) #8",
+   "category": "DC"
+  },
+  {
+   "address": "J5HwAc3DjnMWricuf7Jb5t2NSZVCeB4DjwRam1RtKHD8",
+   "name": "Absolute Batman (2024-) #9",
+   "category": "DC"
+  },
+  {
+   "address": "ALKKm8CzCSPeWJK3EsB8HaDP8XapSt2vZzSddsCA3iv",
+   "name": "Absolute Batman: Ashcan Special Edition (2024) #1",
+   "category": "DC"
+  },
+  {
+   "address": "EumJ99osz2S76Kyp7f8yUePwW72GLhTk4GtgH8zxZfRV",
+   "name": "Absolute Flash (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "78imrDG5z9TGUPxzVpwBQdVuA8b7pSjyRnwSEeqx6oZh",
+   "name": "Absolute Flash (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "B9Af5XVd3ArKLsr4Tqn5vLVCy7YVAkUUN3QALiy746pC",
+   "name": "Absolute Flash (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "8fxFuKZee6WSZ6jMYmsCmXjxy78aVSTkHFBRuV9ypQtz",
+   "name": "Absolute Flash (2025-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "5WD7MaCLGnS3BmwArTnhhfojZy6zAX58yoGXYRcca9wk",
+   "name": "Absolute Flash (2025-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "5qriCj4avZtbqPNssjMEFzk1XDxApZgJuPZBXTQCgs3p",
+   "name": "Absolute Flash (2025-) #6",
+   "category": "DC"
+  },
+  {
+   "address": "2e2ofAvpvKzcuwq5ZR4QyPR3FwUHKsSmaTJWe8L5vs5x",
+   "name": "Absolute Green Lantern (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "4J6es3GavrCn54sayF1Lc7FCNxLXHyGAEo2j1uYmN5oA",
+   "name": "Absolute Green Lantern (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "EMQVY8PrpbT9XwNX9w4o3XNTFQZUd5UABAaseDv5CuN7",
+   "name": "Absolute Green Lantern (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "CLeVp5BvGZubXFKzsQUeh5zxNLWQeak226dfcJM9GqG7",
+   "name": "Absolute Martian Manhunter (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "DtogFnrgNkbbhi9qbNuC8sZG6NM8ea8iytK2CN9ezac8",
+   "name": "Absolute Martian Manhunter (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "CzyQ8bHnuEmKeqqm9cee1J8U73dHPNQfLMQMNS73Zuim",
+   "name": "Absolute Martian Manhunter (2025-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "Fgc1smDV3vN62Q1BnrkfNx7K3KUwFY9ze245SZQrz1yS",
+   "name": "Absolute Martian Manhunter (2025-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "35WqU79yUR57nwwkinHXWawKuGMMimRJ8AgMpFqnZVgx",
+   "name": "Absolute Martian Manhunter (2025-) #6",
+   "category": "DC"
+  },
+  {
+   "address": "A9MNiwbdiMiD4uhd7XbivJwAkwJqFk2nCXjKnqzK9ET2",
+   "name": "Absolute Martian Manhunter (2025) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Ef6zrdvFPHCgNBTF9VR4URuFwrqRcbbh8WhJB3AjzZY3",
+   "name": "Absolute Superman (2024-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "8swscrgQuaideuczXTi7d3kz66JW1Siis7XRA8bbWVYY",
+   "name": "Absolute Superman (2024-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "DrfNjsGy1QHWJkgQGpHEBRMCbcghTzCcxGxxAevTGwSz",
+   "name": "Absolute Superman (2024-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "65Ru8Mjf22A5k4SVSiuUoWCZy7XSiYoP693whaoFAGU8",
+   "name": "Absolute Superman (2024-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "8tiXLe1FjyNAv1nvXVRxY1VfRpVhkxRULtxGh3XAvqqp",
+   "name": "Absolute Superman (2024-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "G1bukdxFbQo6fEDqiSKgrU5siPe1Eab5Mytk7JfZsFJ2",
+   "name": "Absolute Superman (2024-) #6",
+   "category": "DC"
+  },
+  {
+   "address": "BCp9Y7L2x7t3D2dud97eN2H6AYhbjWZGUQkhgpsJ1c8U",
+   "name": "Absolute Wonder Woman (2024-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "3gMrEMSnsBmcdABciVZufQcvGjs2j1Dhiwp3ptT7srE3",
+   "name": "Absolute Wonder Woman (2024-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "CuvxqF78a1dT71ynNHKwv6t8e1ZcAkyWC75tUcxSRmBa",
+   "name": "Absolute Wonder Woman (2024-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "BL66r1xGXtp6XppPAG4LyKMmLyjrv1GVW2eL6f3aMgkC",
+   "name": "Absolute Wonder Woman (2024-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "DdL1aHsfKbTSKxK4zU2gPa4anJoZa6ysPYag96QK2MPW",
+   "name": "Absolute Wonder Woman (2024-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "yY21qPjqf7Qb4WZZ7gJf8xnJhZoPU16jrBPXh6MzJ8j",
+   "name": "Achievements",
+   "category": "Other"
+  },
+  {
+   "address": "6fmzH39Qwd6p6GXtT9FJ5dkBJaCRqtfwCGNwTKUYaTq7",
+   "name": "Action Comics (1938-2011) #23",
+   "category": "DC"
+  },
+  {
+   "address": "8tzYcFpopq1b9pQVF5VJJ1dkyhUERA47M2TEKFz4YrzT",
+   "name": "Action Comics (1938-2011) #242",
+   "category": "DC"
+  },
+  {
+   "address": "85tuukEuWP1czfAb1tR1LWN8MuRbSai3MhSqzbLezrcJ",
+   "name": "Action Comics (1938-2011) #93",
+   "category": "DC"
+  },
+  {
+   "address": "ByNhxUHXR8UP9GkhaQhcBPbenaMpHGiRcHVez4P9xigL",
+   "name": "Adventure Comics (1935-1983) #210",
+   "category": "DC"
+  },
+  {
+   "address": "t4G66NQAvJ9Erv5gb8B2vwzv5zcDyyQ34xDAtYhoJaA",
+   "name": "All New Collectors' Edition (1977-1980) #54",
+   "category": "DC"
+  },
+  {
+   "address": "4DZ1eXj2AkK6CRm7HV7x6U48Xk6U5cBjGmmEoy4txwzB",
+   "name": "All-American Comics (1939-1948) #16",
+   "category": "DC"
+  },
+  {
+   "address": "F5ZkUuCdJc7s7RWjnrgV2JYk2zwcK7PNkiJ9T9KvSWzn",
+   "name": "All-Star Comics (1940-1978) #3",
+   "category": "DC"
+  },
+  {
+   "address": "L5NkTUVjsRxhRRQmBkppWJpStQmksBMWTo9Yc7P19W8",
+   "name": "All-Star Superman",
+   "category": "DC"
+  },
+  {
+   "address": "9bd4hDeSE1pF3obYd26xcUxmZWNLKgYSx886weqXWtJs",
+   "name": "All-Star Superman (2005-2008) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GpWjHqJY2AWyqG47yHpaFH8A6NEkWme4vUMY8E3fTfuV",
+   "name": "All-Star Superman: Crafted Edition",
+   "category": "DC"
+  },
+  {
+   "address": "5oKw8BAHCgCKxjZKypGPW9F9LRcy5zFMgX1NzrNgnUpc",
+   "name": "Aquaman (1962-1978) #1",
+   "category": "DC"
+  },
+  {
+   "address": "7ZzR3TvZ5knXSZzjEGGywAjQRuZD1TWLyndknX5pTCbC",
+   "name": "Aquaman (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Eg1DrcwvhjX4MPtKDhuBhU49X9D4JGhuiMKxtf86ych2",
+   "name": "Aquaman (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "2f8RLJstsn5GABS7gywzFcHMcNSgryEkQAbA6f991qBv",
+   "name": "Aquaman (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "EmYqXi9TPECVjRiY56o9f8dafCTRguCwXNYD59u19YV6",
+   "name": "Aquaman #59 (Multiverse Edition)",
+   "category": "DC"
+  },
+  {
+   "address": "FkWXCpzeDQJ22s5dJP55c83MrQoLPXEaDrSweByMRi5s",
+   "name": "Bank of America",
+   "category": "Other"
+  },
+  {
+   "address": "B9bCpzeQHqudVddYYQBE8CTVRzqTJruXEqbK4F7JNvFn",
+   "name": "Bat Cowl Honorary Collection",
+   "category": "DC"
+  },
+  {
+   "address": "vydZBXB8dkZTsdkeNffNgVDfhYq963hs3UQSymxqdgt",
+   "name": "Bat Cowls: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "GDtNBecMFsQrLA3fcKf7N1R91SDbN8Hbweikw327eyhW",
+   "name": "Batman - Justice League Unlimited: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "JA8FTwQXkoAEXUc5BLb4dDZABc9TkLq29bMHcYgy4wZU",
+   "name": "Batman - One Bad Day: Penguin (2022) #1",
+   "category": "DC"
+  },
+  {
+   "address": "5Q6HpJasoZf34m1ufAy9TpYw1cw5iPKRBGT5iqPQVZm",
+   "name": "Batman (1940-2011) #1",
+   "category": "DC"
+  },
+  {
+   "address": "G5c6svnCr76wYoyxPMgdAkHzur89HLEk1VnXNVF52qhk",
+   "name": "Batman (1940-2011) #181",
+   "category": "DC"
+  },
+  {
+   "address": "H3NvjYNSN32nwskXAbegtLStNKNs3RH7A6m7vd4PcKWn",
+   "name": "Batman (1940-2011) #404",
+   "category": "DC"
+  },
+  {
+   "address": "qxitsQCSczLFzHcNxzuDk2EPJo7Ta7YvVckBviYUkiH",
+   "name": "Batman (1940-2011) #405",
+   "category": "DC"
+  },
+  {
+   "address": "4w8ysfMaKvQEUino7Xk4is4zhKQFoBcshtHMiW2kAvmc",
+   "name": "Batman (1940-2011) #406",
+   "category": "DC"
+  },
+  {
+   "address": "87GWnrxywv24HPHPfKnMwZxzgqCQqejqEaBMNaKoDn37",
+   "name": "Batman (1940-2011) #407",
+   "category": "DC"
+  },
+  {
+   "address": "Gn6Hajgpj1EuHnnpdwLwHh16d1SSV3et1qk3ZxadbyKf",
+   "name": "Batman (1940-2011) #423",
+   "category": "DC"
+  },
+  {
+   "address": "AcqqsLpw7U4xRdRYELhJUoRv8SbhA5SzmASfQa11woSz",
+   "name": "Batman (1940-2011) #428",
+   "category": "DC"
+  },
+  {
+   "address": "HjqY3B6QSBdFEQGRXoX6p61dpbWWjn1wDhEzfP3yXAn5",
+   "name": "Batman (1940-2011) #5",
+   "category": "DC"
+  },
+  {
+   "address": "8zfiEea4TtcBo6XdFTUFxhkXqksWEi2oQYFQGztDS8Jy",
+   "name": "Batman (1940-2011) #608",
+   "category": "DC"
+  },
+  {
+   "address": "6KXrSovJMzD3G6Fs6prf3dp8HpjuUcmQZZQdk7onzjzf",
+   "name": "Batman (1940-2011) #610",
+   "category": "DC"
+  },
+  {
+   "address": "GWC4o8jmLX9pYC1Mtpukxbr8go75nYpFm57MokBpRvTG",
+   "name": "Batman (1940-2011) #655",
+   "category": "DC"
+  },
+  {
+   "address": "4Dr6SdjCUW7BDZ4A7Lo5jArhryk3PWfhkdkfSFMbeMvo",
+   "name": "Batman (1940-2011) #9",
+   "category": "DC"
+  },
+  {
+   "address": "6SBVJghntcj9miyMEL2CkU54DVFL684A8pvUPgm6B9H2",
+   "name": "Batman (2011-2016) #1",
+   "category": "DC"
+  },
+  {
+   "address": "HDA2sPSUQbgBfnVuMegLkR2QntWj2fqZoxdTrNGRkedZ",
+   "name": "Batman (2011-2016) #2",
+   "category": "DC"
+  },
+  {
+   "address": "5oCbyfwuY5vRmJEjWFi8KUvM3FqR8osyWwDkni1AtdaS",
+   "name": "Batman (2011-2016) #3",
+   "category": "DC"
+  },
+  {
+   "address": "F4HM9TDqqbJs1dLBfx3CHf46aF3SofRhAsGm7rdTQvVp",
+   "name": "Batman (2011-2016) #4",
+   "category": "DC"
+  },
+  {
+   "address": "7qid8RyRSUZ7FEW58cr6AW2jG73FedchchJ68n1ueNzp",
+   "name": "Batman (2011-2016) #5",
+   "category": "DC"
+  },
+  {
+   "address": "99eBZtsjhAHGM3U8B5rPZ1jBGJV1QMBB7TX2fcYNqhtd",
+   "name": "Batman (2011-2016) #6",
+   "category": "DC"
+  },
+  {
+   "address": "2BrEgzTWkPBh8g43xu11ezxwsjvcLyotbEEFphhqG8fE",
+   "name": "Batman (2011-2016) #7",
+   "category": "DC"
+  },
+  {
+   "address": "9eZXLBzRCUMrVcy5Z1DGti5du8Dm6SFSD74xbzVAJtuP",
+   "name": "Batman (2016-) #158",
+   "category": "DC"
+  },
+  {
+   "address": "4gD5uegTPrrzEgB27nEPT17mV6aUKPh7TcgPGoNAWAAH",
+   "name": "Batman (2016-) #159",
+   "category": "DC"
+  },
+  {
+   "address": "Haf67CGCth1dxq29aq8dGNFw2vPZahBaG6j8tgbvCBFS",
+   "name": "Batman (2016-) #159: Ashcan Special Edition",
+   "category": "DC"
+  },
+  {
+   "address": "97FeDcbSPUxXdSsN89hHHRx6kWfCwcNv3EFuxgteLYby",
+   "name": "Batman (2016-) #160",
+   "category": "DC"
+  },
+  {
+   "address": "CfMAjFox1tL95MXCsxKvzZq5YGV4R4mA2zJ69P6ajxZf",
+   "name": "Batman (2016-) #161",
+   "category": "DC"
+  },
+  {
+   "address": "5AkUZPwEHCUdJaK9MxrK75yZWpg7Enpynbzsbuwf83ZD",
+   "name": "Batman (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "G1Vd5oWfcKwxdrwELjQCZP6dvMKzVguB7XJLtveCh6Px",
+   "name": "Batman (2025-) #1 : Crafted Edition",
+   "category": "DC"
+  },
+  {
+   "address": "3jrwU8xGjjWaCeWh2NukTsigNkMMtfaHg8XPvELsiZsY",
+   "name": "Batman & Dracula",
+   "category": "DC"
+  },
+  {
+   "address": "HUwuorKWKvVhpK34j9bRX9MoL64C5tan6h3hGGBed84T",
+   "name": "Batman & Dracula: Red Rain (1991)",
+   "category": "DC"
+  },
+  {
+   "address": "CDn8EAZccwUU64PRYe2S3VLALK8Ys1VorJzQq6jRzeT8",
+   "name": "Batman & The Joker: The Deadly Duo (2022-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GMyniVikFdKC5wxk1QAhJwmSe6BLQHFvjMtgeSuifroq",
+   "name": "Batman #1 SDCC 2025 Ashcan Special Edition (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "G6sq499FJmsH5XcG1WarfJ3rjUkgnV6D2xY7EFaT8qsW",
+   "name": "Batman #428: Robin Lives! (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GpsJio1cbBUQiKd8YrAz3VA9mEaHn8iw2vqZWVURafUv",
+   "name": "Batman #608 (Multiverse Edition)",
+   "category": "DC"
+  },
+  {
+   "address": "YKu9WkvQtjoNQojHqPf4nFPdssPxJNbgvHKQSTcH43o",
+   "name": "Batman Beyond (1999) #1",
+   "category": "DC"
+  },
+  {
+   "address": "BC4UZ1EFHJEUZFzaNbUZz6EMpU3J4SiR51Ww7eBEQ8pz",
+   "name": "Batman Day 2023",
+   "category": "DC"
+  },
+  {
+   "address": "GyYK1bLU4MvzxHQPPrUGtpyLQoXGQQNceybkaNobwywU",
+   "name": "Batman Vol. 1: The Court of Owls",
+   "category": "DC"
+  },
+  {
+   "address": "8GwwDqmKEoKvxvMwzXboQaYBH6Nc9aAYo27Q33UKFLpF",
+   "name": "Batman: Bloodstorm (1994)",
+   "category": "DC"
+  },
+  {
+   "address": "HapRDsvhc7To9TXTjQZARt1dijUDcWMPPxqpx3A8nKQf",
+   "name": "Batman: Crimson Mist (1998)",
+   "category": "DC"
+  },
+  {
+   "address": "C5ht3oohRDoQmhNnNErUPFDoa8kcVVXZfkYxMAzSzaqS",
+   "name": "Batman: Dark Victory Issue #0 2025 SDCC Edition (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "9LmRz37m8MB9RjrbnzcWdUb2PVABp2icYDUW2gfM6vYR",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #1",
+   "category": "DC"
+  },
+  {
+   "address": "4HufRHDid5UPVThcuVwD8oUxkwXGDFtz3M3KUrVBFf7v",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #2",
+   "category": "DC"
+  },
+  {
+   "address": "ECgyzWwJXtFjnz1wLRwwH1G7uPNq58eEqtRyeZKyL3Sf",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #3",
+   "category": "DC"
+  },
+  {
+   "address": "Hirev4xChcMb4YJJz1YSJC25TAB5HJoQk4dfrBDN6BSg",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #4",
+   "category": "DC"
+  },
+  {
+   "address": "4vU2btpA4PCLsKaXa5zxG7tSefJjJCMjEjJWbHE9LdzJ",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #5",
+   "category": "DC"
+  },
+  {
+   "address": "HTSrPXLmkGQ9oxAzcD1GUAwKkToWtPXhEJtwpVrRGpHf",
+   "name": "Batman: Gotham by Gaslight - The Kryptonian Age (2024) #6",
+   "category": "DC"
+  },
+  {
+   "address": "2epLJp8TszU5RD1hK2usZ7viNdSD3jSmBCH3NDg8rqZ5",
+   "name": "Batman: Gotham by Gaslight (1989) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GTwF9usuukuLnsxaB89MEYUazUjQeV9PhNavu9U9eFct",
+   "name": "Batman: Shadow of the Bat (1992-1999) #57",
+   "category": "DC"
+  },
+  {
+   "address": "HyqsHyYxQgSetwVhUSjibqJDMVwNCyaADUjhb4GzxZ1L",
+   "name": "Batman: The Killing Joke (1988) #1",
+   "category": "DC"
+  },
+  {
+   "address": "3rGghRv5Ra9ijCDVS2oWpmR8AvGzTy4LGtibP316CkBc",
+   "name": "Batman: The Legacy Cowl",
+   "category": "DC"
+  },
+  {
+   "address": "Gim5Vx2n6JDLgNezEsN24NRrxRj9PAUYbwZYSeFJDJnh",
+   "name": "Batman: The Legacy Cowl (2022-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "C8UgFoWM7Scgxxg2M7PrLwSRaVLhnYjVfpsX8Lg8sBum",
+   "name": "Batman: The Legacy Cowl (2022-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "H3FBeor1Xy8GD7dujnfdc6shmAJcxKKJmNiJa1Xs9myE",
+   "name": "Batman: The Legacy Cowl: The Deluxe Edition",
+   "category": "DC"
+  },
+  {
+   "address": "pUqAP37Cvdh8YEr8YssSC84hngnBWcPEaBNdqsvh4mA",
+   "name": "Batman: The Long Halloween",
+   "category": "DC"
+  },
+  {
+   "address": "BKCMiDcJAtC5hDQsTjqASauuzTqFBVnwwEXdCGPk4FJc",
+   "name": "Batman: Vengeance of Bane (1992) #1",
+   "category": "DC"
+  },
+  {
+   "address": "4PJRRfPBSMm5g38Wo1QHRKdkwB4GPC5iDPzVLR1N8LPp",
+   "name": "Batman: Year One",
+   "category": "DC"
+  },
+  {
+   "address": "HzNpVUmKQEY9W7p3w5s3aAcoZTpZXN3huX4VyENZtgMR",
+   "name": "Black Adam (2022-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "j5oHvQfW9ZKWpMFpp8NLeQLhFdmsEsKQNLaaxAAugmz",
+   "name": "Blackest Night (2009-2010) #1",
+   "category": "DC"
+  },
+  {
+   "address": "5pbj6MLnTJxNcFziC6dy2xs6KE2ZVjQopfGL426Y2GGE",
+   "name": "Blue Beetle (2006-2009) #1",
+   "category": "DC"
+  },
+  {
+   "address": "DjF6ruSn69hEdb6wV2amiBiVxHnKHECKJkCaXD9jMtEE",
+   "name": "Candy Spark Cards",
+   "category": "Other"
+  },
+  {
+   "address": "8xWLvytKJCQsJiLcQdBaUVTD8uoNrfr9xrVMDnY4ectR",
+   "name": "Catwoman: The Legacy Cowl (Convention Exclusive)",
+   "category": "DC"
+  },
+  {
+   "address": "ACCpo6cJe1gUaRoJ87V8ZLtzPNb1kuxgjZsqLvabuLY1",
+   "name": "Catwoman: The Legacy Cowl #1",
+   "category": "DC"
+  },
+  {
+   "address": "DAo93Uu3CTdeV4bbZrpD4XUbGoxFTdNQLmvFpwSnWLuL",
+   "name": "City Diaries: Visual Narratives from Around the World ",
+   "category": "Other"
+  },
+  {
+   "address": "J6nhUCK9yQhJ7DsPztmsaNHWBQrnF223jVGt9GXnz8jq",
+   "name": "Collection Authorization",
+   "category": "Other"
+  },
+  {
+   "address": "7oQHoT75zLUoNUGQYpLUayjEPTgBtMUVgCMViKoU4xwt",
+   "name": "Crisis on Infinite Earths",
+   "category": "DC"
+  },
+  {
+   "address": "FdQMY43F8mo3qGb3w71EYwjBfp82LbvZsRMbMd4YGyfP",
+   "name": "Crisis on Infinite Earths (1985-1986) #1",
+   "category": "DC"
+  },
+  {
+   "address": "DhpAA8fPqcFKgwJX74BsLPtLYapq2WFRfVkrdJ34RuFZ",
+   "name": "Daniel Sampere - Justice League Unlimited",
+   "category": "DC"
+  },
+  {
+   "address": "7Sxb83L3FDEnyFnvYXP3469qjM2q1N6HFXGdPXqaN3Sj",
+   "name": "Dark Crisis on Infinite Earths #1 (2022)",
+   "category": "DC"
+  },
+  {
+   "address": "9DEvWHGsfUx9ZCxyF4rXpfvEJtNEYhWTYhsUQQegFpsW",
+   "name": "Dark Nights: Death Metal (2020-2021) #1",
+   "category": "DC"
+  },
+  {
+   "address": "HA8tFng14DKnHzLt6B3kBiGSVXieXNZYnLxm6x63a9Qg",
+   "name": "Dawn of DC 2 Poster (2023)",
+   "category": "DC"
+  },
+  {
+   "address": "2Z9reHejpXe4M1NSq9u6HDr1v2EX2tGt1E26qCQ1LrTz",
+   "name": "Dawn of DC Epic Cover Chase Poster (2023)",
+   "category": "DC"
+  },
+  {
+   "address": "7NiEXEXvj7WA3efBgrYjRd6VX8XC5Ywqrqcf3ffQrJ6G",
+   "name": "Dawn of DC WIP Covers (2023)",
+   "category": "DC"
+  },
+  {
+   "address": "tEWw3mvtjU5Yd4PTGnzQHWgYwQkP3biQc1maNRp1X4v",
+   "name": "DC All In Special (2024) #1",
+   "category": "DC"
+  },
+  {
+   "address": "9VXzfBrJTS7LiwabHM9hmf2a9xEjArcA181sAnGXNd8Q",
+   "name": "DC Comics Presents (1978-1986) #26",
+   "category": "DC"
+  },
+  {
+   "address": "4duhrv4HPwc9V1oTXzzW7NFzxKE6tzQnbQTyV9Za7uSN",
+   "name": "DC Elseworlds 2024 Sampler",
+   "category": "DC"
+  },
+  {
+   "address": "5g1o2JGbWj4BHqJzFHy3BeHzwnJjS8hLc4h7ip6G4WUv",
+   "name": "DC FanDome 2021 Collection",
+   "category": "DC"
+  },
+  {
+   "address": "BSZKy9rwmwqGMKz1bRmZdHZwAwx2vNkZLk6UHgWZrkWt",
+   "name": "DC Merge Fuel",
+   "category": "DC"
+  },
+  {
+   "address": "6nLowrej4wHfxGr8cgXPWGpoZRyQsPc7TeXrJm99mbq3",
+   "name": "DC Overdrive Beta",
+   "category": "DC"
+  },
+  {
+   "address": "BPsSgTvXfTFHchGbX9fq14FjaHkok2oHyCrv3GbrGD2Y",
+   "name": "DC SDCC 2025 Daily Planet Newspaper #1",
+   "category": "DC"
+  },
+  {
+   "address": "J1EaQqewMeV9u3X2CmDjooTXwr67PLSkC6DEbEyxwtum",
+   "name": "DC Worlds Collide Special Edition (2025) #1",
+   "category": "DC"
+  },
+  {
+   "address": "9HoPE4YbarSDepBnRbtP5qRdXAMPW3SRNJEh6DQV9AZn",
+   "name": "DC3 Super Power Packs - Series JLA: The Nail",
+   "category": "DC"
+  },
+  {
+   "address": "29yWi6RxDx6VD7af2hH8RJemUoAaSf2Utz9caKPSXDmJ",
+   "name": "DC3 Super Power Packs: Nightwing Legacy #300",
+   "category": "DC"
+  },
+  {
+   "address": "FvYzS67hHw4sCJuB3B79eSKK9Yr79j6C4x8Qh3fQbvjR",
+   "name": "DC3 Super Power Packs: Series 1 Crisis on Infinite Earths",
+   "category": "DC"
+  },
+  {
+   "address": "FP6h7HAB4BLG477GPqH18zCe1ZbCRYuEkYftSCmbVpby",
+   "name": "DC3 Super Power Packs: Series 2 Crisis on Infinite Earths",
+   "category": "DC"
+  },
+  {
+   "address": "GGL68JcuSrrkYujC2Qz5bUzffXFtfy1YYTWVJ1Yztqj6",
+   "name": "DC3 Super Power Packs: Series 3 Crisis on Infinite Earths",
+   "category": "DC"
+  },
+  {
+   "address": "2e4JCRW33LRofPkYrPzjwx4qrUUcTdqk3w82hBb69CoT",
+   "name": "DC3 Super Power Packs: Series Absolute Power",
+   "category": "DC"
+  },
+  {
+   "address": "F2UVBHSamR5VUCYUm26feTV4cvY9qMwtCFXwHYUkHbwV",
+   "name": "DC3 Super Power Packs: Series Aquaman",
+   "category": "DC"
+  },
+  {
+   "address": "FgDcmZp6oe9i2shuGup2NwwTV7WXMsh5gcYUSkiuKKME",
+   "name": "DC3 Super Power Packs: Series Batman",
+   "category": "DC"
+  },
+  {
+   "address": "3mAsUTaY6nRrRcJ5TFEy1uuzbapHoCw7EGa5W62Duc71",
+   "name": "DC3 Super Power Packs: Series Batman: Year Two",
+   "category": "DC"
+  },
+  {
+   "address": "GspesRVushWtvvyuh9xFUZJBHTE2CtfWXk9VY4pDW2RC",
+   "name": "DC3 Super Power Packs: Series Dawn of DC",
+   "category": "DC"
+  },
+  {
+   "address": "4N94Wq8EQsDtRUgWoKQv5sbtxgscN6VJWAARYAM6MRT3",
+   "name": "DC3 Super Power Packs: Series Dawn of DC 2",
+   "category": "DC"
+  },
+  {
+   "address": "8wKhgudPkuUPn5pRMi4Z7cB6mreCzs81kP31gr9w4AiL",
+   "name": "DC3 Super Power Packs: Series Gotham City Sirens",
+   "category": "DC"
+  },
+  {
+   "address": "39B6knphZSFvwdVqxCKDcDVhgtyvf8XEZHoaTnN3geAf",
+   "name": "DC3 Super Power Packs: Series Justice League vs. Suicide Squad",
+   "category": "DC"
+  },
+  {
+   "address": "BCWHZNtgLzgibPsjTtbN8HYZqS7WXwmRmYhgerHXtNgz",
+   "name": "DC3 Super Power Packs: Series Knight Terrors",
+   "category": "DC"
+  },
+  {
+   "address": "AA2g2ri4xpHxgDVuF9cNSQnLvsRDav34t34C4bcnWaah",
+   "name": "DC3 Super Power Packs: Series Superman",
+   "category": "DC"
+  },
+  {
+   "address": "7syBv7XBTe9FBEPbLqiqosw6RMrm9zLsZBA6uqye1Hch",
+   "name": "DC3 Super Power Packs: Series Sweater Weather",
+   "category": "DC"
+  },
+  {
+   "address": "5y9yC6mG6BboTw7vG4yX5kT9KvPDeGVFDLR6RkZGJwVC",
+   "name": "DC3 Super Power Packs: Series Titans: Beast World",
+   "category": "DC"
+  },
+  {
+   "address": "CpJ6Mqs8bwHfk7NJxwMaVeyKCffKrghYv1dWRkCehJ1w",
+   "name": "DC3 Super Power Packs: Series Villains",
+   "category": "DC"
+  },
+  {
+   "address": "Hy6YCpDjLm2GbvgZxGwf5AdYiVERLVHoeYrTJfJMGJvk",
+   "name": "DCeased (2019) #1",
+   "category": "DC"
+  },
+  {
+   "address": "9pv7wwB7a7RkbQYkLMueygHBhdWhqgUtfhSThEqE8ciE",
+   "name": "Death: The High Cost of Living (1993) #1",
+   "category": "DC"
+  },
+  {
+   "address": "BsnDjw5M9RfK3rfxmEKeprwbmj8jnM46oxqXddd52YSr",
+   "name": "Detective Comics (1937-) #40",
+   "category": "DC"
+  },
+  {
+   "address": "BKxbd5TD8mDdkUzftGvmPYoor9s79Wttn6yKfwdJm3Ni",
+   "name": "Detective Comics (1937-2011) #140",
+   "category": "DC"
+  },
+  {
+   "address": "8S4NxRbENXvZf1mgYutcJ98b2dZuBRvePvPc9d5jSDzb",
+   "name": "Detective Comics (1937-2011) #31",
+   "category": "DC"
+  },
+  {
+   "address": "FgoM9CtbgyK3UMAHR3QpbvKhqS1BM7K8aNgXjaCRSKky",
+   "name": "Detective Comics (1937-2011) #38",
+   "category": "DC"
+  },
+  {
+   "address": "JKYSciHTaJsgtSMGHkUWSzTEFc49EtRLeT5Gh3J8CuX",
+   "name": "Detective Comics (1937-2011) #58",
+   "category": "DC"
+  },
+  {
+   "address": "DfjdtEfHrZLL67givpNPQ85SGexUaRVFS3L3DZYTwR48",
+   "name": "Detective Comics (2016-) #1059",
+   "category": "DC"
+  },
+  {
+   "address": "F92tPnBqvpb9DcKLRsdEGAJtTZx5vJWEpx1J9CPWCiQ2",
+   "name": "Elseworlds: Batman Vol. 2",
+   "category": "DC"
+  },
+  {
+   "address": "8frpXoiEJJkjDzzmPRB28v3NwArkBA73MGzyTcsiRbWU",
+   "name": "Flash Comics (1940-1949) #1",
+   "category": "DC"
+  },
+  {
+   "address": "BRN7XBjeevTBaFuGLKf2tdaHJD9DbHgGGyQZrAEVxMAu",
+   "name": "Flashpoint (2011) #1",
+   "category": "DC"
+  },
+  {
+   "address": "DBRj6PMrjrmGRzpuNQqGJSrtzMFRCi7wekJvDUY8LK5L",
+   "name": "For Fandom",
+   "category": "Other"
+  },
+  {
+   "address": "94jECFbPdjcApXUtCh3r2dDq32Ax4bs3jLJykrK5uTgQ",
+   "name": "From the DC Vault: Death in the Family: Robin Lives! (2024) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GmM1bKsPZRSLZguJH3qbYPQn85cmAsZDaCK34GTWpbNf",
+   "name": "From the DC Vault: Death in the Family: Robin Lives! (2024) #2",
+   "category": "DC"
+  },
+  {
+   "address": "HH3Py7Yx5pw56TapedMbN4mEy4hMVnVodNWUXaUkX8JY",
+   "name": "From the DC Vault: Death in the Family: Robin Lives! (2024) #3",
+   "category": "DC"
+  },
+  {
+   "address": "Ekwo2L3UdTFtGmxhp3ipkZd4A2qv24myzGAtGG3aWBC5",
+   "name": "From the DC Vault: Death in the Family: Robin Lives! (2024) #4",
+   "category": "DC"
+  },
+  {
+   "address": "Bk2eaCERekc9DAUCRsX81icigdcqNEPFN8FM7ToWvvr6",
+   "name": "Future State: Wonder Woman (2021) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Hk3QEyr7o5afjAj6mTKxXtYioXFizTQLiTVZADc7ypSu",
+   "name": "Future State: Wonder Woman #1 (Multiverse Edition)",
+   "category": "DC"
+  },
+  {
+   "address": "EcdSc1ChZNgy6MXe3fqsLBzE2mFcJvMVHaD2qAdYSNW8",
+   "name": "GCDK Mysteries: A Mysterious Pulse",
+   "category": "Other"
+  },
+  {
+   "address": "8Wd6c9K82xLhB4smoxSXG6sMASDkSoKjvQRoFBX18pvX",
+   "name": "GCDK Ranks",
+   "category": "Other"
+  },
+  {
+   "address": "GEED57M9MfUYNptKLfopH271WWr5B6XDhy1Yc8jF3RAH",
+   "name": "Ghost in the Machine",
+   "category": "Other"
+  },
+  {
+   "address": "DY4n95VSJUDJHkGyaxFpfuXAHzSETTPiaz2CyGk6w8Kr",
+   "name": "Gotham City District Knightwatch Sigils",
+   "category": "DC"
+  },
+  {
+   "address": "FMxAmKi9aMEG2K6dfEvnZYNHyRKkzX4mzauCTYPnX5oN",
+   "name": "Green Arrow (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "4wfukwV87hZoJvUaLqgpR7eZ8ymAKypmXaEtgwfbUd86",
+   "name": "Green Lantern (1960-1986) #59",
+   "category": "DC"
+  },
+  {
+   "address": "MbmiUhEDzzn7U5EC2YzcSqgGbu7TNCHQ465NMDK52Lj",
+   "name": "Green Lantern (1960-1986) #87",
+   "category": "DC"
+  },
+  {
+   "address": "5xRkGqe4dubQVzraxzktDeozF47eAYcq7PhqnVXYoFA9",
+   "name": "Green Lantern (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GSj4WwxyVD27A9dgGFm81XRuMSRvewVrAK25WgcD2Gs1",
+   "name": "Harleen (2019) #1",
+   "category": "DC"
+  },
+  {
+   "address": "D9UrSX1ZPCA4YozzCRS5Y1iDYhbF1N57XYiP58KuBD96",
+   "name": "Harley Quinn (2000-2004) #1",
+   "category": "DC"
+  },
+  {
+   "address": "BvBFivx8JELDN1qVEdDRRuZaWKa7YfWMz5K5zyxSAF1h",
+   "name": "Harley Quinn Crew Ranks",
+   "category": "DC"
+  },
+  {
+   "address": "HNaCkKZDdAaqyebHEf5Sm7dVTjcb6xeHBJGe1HzFUEu",
+   "name": "Hawkman (1964-1968) #4",
+   "category": "DC"
+  },
+  {
+   "address": "Ecw8Amjgwkn76cjjDCFMWDbvUpv4LBudKncJtTpG5h5J",
+   "name": "House of Mystery (1951-1983) #174",
+   "category": "DC"
+  },
+  {
+   "address": "D5E8NUMikstcxCoEg112PKn3JfpFffMZGzzDY66fSYEs",
+   "name": "House of Secrets (1956-1978) #92",
+   "category": "DC"
+  },
+  {
+   "address": "9RaR6cXbSSM45M9cMA1ZP6TR3WNRR6xg5494uMQDymQb",
+   "name": "Immortal Legend Batman (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Hd6WSZaNikXB8mxPaiC4bUuVspYREgLd5at6u1xccga2",
+   "name": "Immortal Legend Batman (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "GNCycD74nok7PbDAQ3JEQ64mLk3eY4mLDuAFnzPkfdV",
+   "name": "JLA: Another Nail (2004) #3",
+   "category": "DC"
+  },
+  {
+   "address": "8Yt51xTkxWtEcUbuk8iApFaxMFhphiGqyYxnKrHMBAC5",
+   "name": "Justice League (2011-2016) #1",
+   "category": "DC"
+  },
+  {
+   "address": "HaM3zbHaqbP9Aq2ZDsmGN1oLKfes3G2BVC29HoTcGXw5",
+   "name": "Justice League Membership Cards",
+   "category": "DC"
+  },
+  {
+   "address": "7i5uff5sF3PfwH7V8iuD6SvQ7tyqKo18Yn8Td4HbURZN",
+   "name": "Justice League of America (1960-1987) #1",
+   "category": "DC"
+  },
+  {
+   "address": "3YGd4vD1KN7gFp7PcMj2d1rFzRxGcLDSfJM8wNeCR57D",
+   "name": "Justice League Unlimited (2024-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "4GFjJzy4t7RSQqK1BBUHegAjvKgy4s4XcEYY6VHTELhS",
+   "name": "Justice League Unlimited (2024-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "BXqtR5h6dFPuuFFmbr5psTN3CyJDCJcK8nAeu51soTk8",
+   "name": "Justice League Unlimited (2024-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "8hN1E9NeYwjJiFJoB1FZGcHzDXr2FVG9whsMBNKW1ZmD",
+   "name": "Justice League Unlimited (2024-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "DxAtk4hd9MWFBRTypbmfPoP72TASX3CsicUNsqT35v7u",
+   "name": "Justice League Unlimited (2024-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "3zpigd8MXZTKfMjiDMEAUk1bCN3eckg2gZn4LUymTw36",
+   "name": "Justice League Unlimited (2024-) #6",
+   "category": "DC"
+  },
+  {
+   "address": "3AeD6XeeTgAg6gB5LknDmjXyadQop4qZ7Fymux4tPy3m",
+   "name": "Justice League Unlimited: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "2JsrRDCXCj5G2ndpwSbfp7bXHqhSUNomE6AXYZ7YoHeH",
+   "name": "Justice League: The Atom Project (2025-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "EYGo5uYfDUSxYXA2gWXAvcjkomUbwccvEX8R9EPZkV9d",
+   "name": "Justice League: The Atom Project (2025) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GBXSJhJ7spdJZVb1vLWyJzXT1Uy94rFw7FnY5PH9vKoW",
+   "name": "Justice League: The Atom Project (2025) #2",
+   "category": "DC"
+  },
+  {
+   "address": "HMPhBTWGMWQrnU6VvJe2Sd7G89XimMtPhyCBkUTtQiAo",
+   "name": "Justice League: The Atom Project (2025) #3",
+   "category": "DC"
+  },
+  {
+   "address": "Akt7jNbGtdaRXvS3Z1EnJT18pfrrXZMBitV7ZvMgB3mb",
+   "name": "Justice League: The Atom Project (2025) #4",
+   "category": "DC"
+  },
+  {
+   "address": "2ToNrmpckPbi6xTM5AtoNUiDu8UqYBk3b8vKv7UrHDXt",
+   "name": "Justice League: The Atom Project (2025) #6",
+   "category": "DC"
+  },
+  {
+   "address": "8PvBcUzhXRjYPg9JyLajd4VPcsayz9DasqVtfmreENte",
+   "name": "Kingdom Come (1996) #1",
+   "category": "DC"
+  },
+  {
+   "address": "BcXF4EoL8r2QaEnwuCmvaBY4n2chHcPsGHhX7d8xgf3g",
+   "name": "Krypto: The Last Dog of Krypton (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "E4euvm8NqMZZq2un1Gg7AVzjno6n5XFzKwJhBvUfpKBx",
+   "name": "Krypto: The Last Dog of Krypton (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "5ufYxcANueTkn8zX43KKR3oejzUGCDVKxaDE8NGWuR6G",
+   "name": "Krypto: The Last Dog of Krypton (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "EyCvmxkPrUMc8RSH8XAR8RCsjqbZGP2QKNTpPjmACk3p",
+   "name": "Krypto: The Last Dog of Krypton (2025-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "53D8iLeuK8BivbySb8BmQmJABh8VAAPGhTHNtffPnQP5",
+   "name": "Legends (1986-1987) #1",
+   "category": "DC"
+  },
+  {
+   "address": "5D3hL5sAFVFcY46VucNAK3tAsv27nf9zdGqqYqjgpmJh",
+   "name": "MAD Magazine (1952-2017) #1",
+   "category": "DC"
+  },
+  {
+   "address": "5e2ga7CDSjgKExBtahuHAcggeLEaNQsjWokqewb3C1vZ",
+   "name": "MCNY Commemorative Tickets",
+   "category": "MLB"
+  },
+  {
+   "address": "4KMoxSNjhGpCWUVxEvxGnSZzj37GyuzPcRuPgcUp5qwZ",
+   "name": "Migration to Candy Digital",
+   "category": "Other"
+  },
+  {
+   "address": "12y6m9zeUKjBzrrAFwaTcP1ZXMN2mckCNYU5ZhiRg6qC",
+   "name": "Mikel Janin - Absolute Power",
+   "category": "DC"
+  },
+  {
+   "address": "Dq2AF9bvxd4nqeURy7r49yiaKStLpg4b9EiwNmU7kyS5",
+   "name": "Military Comics (1941-1945) #1",
+   "category": "DC"
+  },
+  {
+   "address": "A5Crqy8eR62LWgtZSK6KdaUMedKk4p3GAXtxZUKxWhMj",
+   "name": "More Fun Comics (1936-1947) #73",
+   "category": "DC"
+  },
+  {
+   "address": "5wFo7djta4b7TLVzmdD6QM3YRko8pDpEi6v5fRSa4cRW",
+   "name": "New History of the DC Universe (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GKjoMWYmzqkoJivuCzHEqPqXe6knjg2DuxTV8AGGD3Ez",
+   "name": "New History of the DC Universe (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "58BZER6WANRWCvJCFXLSgWBz29dcPnR8RvSmN7LT2Mut",
+   "name": "New History of the Universe (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "EsJtKJaLcE3L7bxN8a1peUVyvbjsHB5hrwcPH1xxdUpR",
+   "name": "Nightmare Logic",
+   "category": "Other"
+  },
+  {
+   "address": "Cgud5HNWvULrXWKcisLEWxP9kXsorCVaT81CSkXeRm1o",
+   "name": "Overdrive Cells",
+   "category": "Other"
+  },
+  {
+   "address": "435FtYksaDbfu563FfDJe6zcLfRySBfNgBm4YeCnsMfp",
+   "name": "Overdrive Rewards",
+   "category": "MLB"
+  },
+  {
+   "address": "5miCvwpUw54M4g1cCLJ6ULMANcLowmPddRLxUa84bHfk",
+   "name": "Palm Garden: Epiphytes",
+   "category": "Other"
+  },
+  {
+   "address": "Cn68M9YfzJa8uAb124NL4Y3jqWX7hCCD7o17xZfmhN18",
+   "name": "Palm Garden: Inklings",
+   "category": "Other"
+  },
+  {
+   "address": "GyD4RmNX4fAsaq9axRetHT7r79eGViBM2GM9gN4F64Xz",
+   "name": "Peacemaker Tries Hard! (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "fVsZwZmnVSmDpZFEkwMmeMNm9oDm7hLyaL84VnU1M5K",
+   "name": "Peacemaker Tries Hard! (2023) #2",
+   "category": "DC"
+  },
+  {
+   "address": "FjMh4DMfqQ7ZFwqUuCojEyxjdwrbmZ6qYTCGAx1et5vj",
+   "name": "Poison Ivy (2022-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Fr42ujZwVq2PH5Pb6cDRcmmTkRrk18XyM2AHCH8aqEyY",
+   "name": "Portraits: Echoes Across the Lens of Time",
+   "category": "Other"
+  },
+  {
+   "address": "74g7gRQrSCRDnMFL1kGZsUgm3ixPZKyekezE8SWgT9Df",
+   "name": "Red Hood (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "GfeTvhVjf5vk2L8TWUEFtCuaGzGywPumeRhV9vsdfGHZ",
+   "name": "Sensation Comics (1942-1952) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Gta958Jz7QhweSCbC62WzXJMBDmccvNJc3kjJeWKh9x2",
+   "name": "SEX PISTOLS GOD SAVE THE QUEEN COLLECTION",
+   "category": "Other"
+  },
+  {
+   "address": "7996N4axwMChiDv2Yr4XdZ1BFS8at6V4Ybr6xMtc8TX5",
+   "name": "Showcase (1956-1978) #22",
+   "category": "DC"
+  },
+  {
+   "address": "6F6WFYpiB5RSBqigxcv8QGhuYCoSvUuRg9DH2GmNJMwZ",
+   "name": "Showcase (1956-1978) #4",
+   "category": "DC"
+  },
+  {
+   "address": "6fv7yGqNVFiVXeEQiUFz6exRhH4W8PKqgJiwwzRr7nGk",
+   "name": "Static (1993-1997) #1",
+   "category": "DC"
+  },
+  {
+   "address": "Ew7Eki1wJTWSFA2AWu3uKbS1kRdrMYhJepiXgAhZgpKB",
+   "name": "Summer of Superman Special (2025) #1",
+   "category": "DC"
+  },
+  {
+   "address": "HPzSaEYpSjzHpL2XfeWH76QZKGXTnpyW9oLPJk58fxQo",
+   "name": "Supergirl (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "9dTd3EMJk4CxxCjHBp79RhzeqYSfLtfrCMGt1DgsncMM",
+   "name": "Supergirl (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "GeCPeZdfPd2t7dmHESwngd5s2TzuMsGqJoATktk8cDV2",
+   "name": "Supergirl (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "BowyQcYUfmgd9FW9jkQk8DWeqnCt2Pp74DjydCsx9rpM",
+   "name": "Supergirl (2025-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "DoLM24HhaEztmtycoH6KfbqiCSqyiZi4Cq823UxY2aES",
+   "name": "Supergirl (2025-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "CzMwRKS3G1rNTpKSXUUKN53EZDyQwSU53NozeNJTynih",
+   "name": "Supergirl: Woman of Tomorrow (2021-2022) #1",
+   "category": "DC"
+  },
+  {
+   "address": "AbjnYkFzpwq7S6aQVwvTbfvkV7YtnEfJf3aaCGeXb6To",
+   "name": "Superman - Justice League Unlimited: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "C97oBk78RU69JA9GBYGdsR3RCtdzDyNsgdJuSVYSx7wR",
+   "name": "Superman (1939-1986) #7",
+   "category": "DC"
+  },
+  {
+   "address": "ApVDCHJMZL78Gjat78nSX4n6L46MKY4mwDM8U5vkmmp7",
+   "name": "Superman (1939-2011) #1",
+   "category": "DC"
+  },
+  {
+   "address": "FA3zWRxqs2bnnqPeYU7AoEpRWLRHidzvye46zcxgEayS",
+   "name": "Superman (1939-2011) #199",
+   "category": "DC"
+  },
+  {
+   "address": "GWoATNsYfZpxkZDXYTLfLPfyTL7bRRtLLpWrCoCvLPWQ",
+   "name": "Superman (1987-2006) #75",
+   "category": "DC"
+  },
+  {
+   "address": "7chErGXMoYARjjmj9ZWrv7H415Bx1F3WrQt1nVFihuEa",
+   "name": "Superman (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "H3ywKgk62FtZ4MhSFKUjhChi3z3qPPpGWitu1gkytu1N",
+   "name": "Superman #1 (Multiverse Edition)",
+   "category": "DC"
+  },
+  {
+   "address": "6RLCvpMAfuyU1vBj6CiqMjkm3eZD8eR5vpui7ss7Vg1K",
+   "name": "Superman Unlimited (2025-) #1",
+   "category": "DC"
+  },
+  {
+   "address": "2W7He1ERVcQbSthzd1xGL892rG3uiCmnJikzUKvhaa8r",
+   "name": "Superman Unlimited (2025-) #2",
+   "category": "DC"
+  },
+  {
+   "address": "A2CPNA57b9JLwjbj6qGEUhawwFhqCc4c4rUwTAiH2yK6",
+   "name": "Superman Unlimited (2025-) #3",
+   "category": "DC"
+  },
+  {
+   "address": "4A19QW42tQp3bbpnEupaBHdHtvdVDDPomygc4XsMtiAq",
+   "name": "Superman Unlimited (2025-) #4",
+   "category": "DC"
+  },
+  {
+   "address": "FWuxBWTpxWmjG3LynZqNS7gxw7qEHGnymPrbHcsxQDoj",
+   "name": "Superman Unlimited (2025-) #5",
+   "category": "DC"
+  },
+  {
+   "address": "2iuUnEz3hGs6HhyLMBTWXuTpVvkT97DUH7kuWJEC3Eyw",
+   "name": "Tales of the Teen Titans (1980-1988) #44",
+   "category": "DC"
+  },
+  {
+   "address": "7inpAYJZsGDBnz6RuYfWU83E9EcZ8YCXeycNMzo8pAo9",
+   "name": "Team Unlimited - Justice League Unlimited: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "EkEXdtJmYMMCoAgti681z1RvAA6jaqScqi9Me3dcFB3v",
+   "name": "Teen Titans (2016-2020) #12",
+   "category": "DC"
+  },
+  {
+   "address": "AGBNto9big4JNBeJbxJ8B4pkXTLesB2QE9dpFREySQqG",
+   "name": "Terry Dodson - Harley Quinn and Poison Ivy: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "3CXW7YWRMRaoNiPYMzxDrBQPg2BibvR28eYPcQRpyjFb",
+   "name": "Terry Dodson - Harley Quinn and The Joker: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "G3dbZUdAx1kCN8YoQrhRSvLHow2ArAy9SWwZKuR1Pkta",
+   "name": "Terry Dodson - Harley Quinn Classic: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "FJ4vu4fJgjHfL1dBUrRPpQ95Dhzf4CvdMDYDfF4N6Ynj",
+   "name": "Terry Dodson - Harley Quinn Modern: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "896QR1xrXhNAY3SNZq7U5k6fnrswP2BpzNFozBa7Nfpy",
+   "name": "The Bat Cowl Collection",
+   "category": "DC"
+  },
+  {
+   "address": "823k1F721XPiCVrrWp9zjqUjtwxQyrVULCkUzcbxpofv",
+   "name": "The Batman",
+   "category": "DC"
+  },
+  {
+   "address": "2QNtMw3bpPkdAXHfZrp9nvdYZaMQ6J6B4jcvo9nGKp4Y",
+   "name": "The Batman Adventures (1992-1995) #12",
+   "category": "DC"
+  },
+  {
+   "address": "AkJvpB9BskdB4R6GTdAuNrWZK2Nv6YCjkBSWMqABKrEF",
+   "name": "The Brave and the Bold (1955-1983) #28",
+   "category": "DC"
+  },
+  {
+   "address": "HPo7kz7358E7w56Yg2cj3avZchpMJj1VTRth9iRZCSWf",
+   "name": "The Brave and the Bold (1955-1983) #54",
+   "category": "DC"
+  },
+  {
+   "address": "8pRWqp8awxLmKmNsq17kGNrezqs1T2DV6tFKqVH9t4xy",
+   "name": "The Brave and the Bold (1955-1983) #57",
+   "category": "DC"
+  },
+  {
+   "address": "GLZ9zutDYwNi75ka1AZP2KeofvfUWKswH5EWGw87C4q3",
+   "name": "The Brave and the Bold (1955-1983) #67",
+   "category": "DC"
+  },
+  {
+   "address": "6kpsEnof3eVrMWfy3csLsZuc768TELA2fQrsS4NECQBw",
+   "name": "The Court of Owls Mask",
+   "category": "Other"
+  },
+  {
+   "address": "BC43qRGjhRDJ1NCKAUWPMPzHebbd93MupNFHr6wxxS4G",
+   "name": "THE DC BAT COWL COLLECTION: YEAR 1 (2023)",
+   "category": "DC"
+  },
+  {
+   "address": "2PaM1CmqhXW9ZNiriPWaqGvyLWrzySFN2e9w9jTGo83h",
+   "name": "The Demon (1972-1973) #1",
+   "category": "DC"
+  },
+  {
+   "address": "pgcd4z9gvVt7CVzVMaVpXwVtZnpvAUP9eddZ2CePsRm",
+   "name": "The Flash (1959-1985) #105",
+   "category": "DC"
+  },
+  {
+   "address": "2ANPh3UAXLGvpMd9TEEZCdH48aWgxKjJx9rTDBD9xkGJ",
+   "name": "The Flash (1959-1985) #123",
+   "category": "DC"
+  },
+  {
+   "address": "HpXCFr7cuAbDsKMQP9mUoL4XuJSBsopTLTLT3sXMtmcf",
+   "name": "The Flash #123 (Multiverse Edition)",
+   "category": "DC"
+  },
+  {
+   "address": "64AFGZkn7pGDAyJpvST4rGh4aj4Z1mDNV8cqnDUQGWki",
+   "name": "The Flash: The Fastest Man Alive (2022) #1",
+   "category": "DC"
+  },
+  {
+   "address": "96jyqd7A52kuG4g96BMwMVUUrukGWs8JHzQa8SDjZBcV",
+   "name": "The Harley Quinn Charm Offensive",
+   "category": "DC"
+  },
+  {
+   "address": "JCkz8wuibvDJiZJoaBjKVw4jJD2YWSYk2mqZJ1ubSmNY",
+   "name": "The Harley Quinn Freakin' Awesome Boxes of Mayhem",
+   "category": "DC"
+  },
+  {
+   "address": "F8dvjrnbceVGp8yshThNKSEKDUv19kJr3NPi1cDRzHcQ",
+   "name": "The Legacy Cowl Collection",
+   "category": "DC"
+  },
+  {
+   "address": "7qQav6A6rQ1S9ytoexWBGMk6zotvaapMBqDfYiXDfsSe",
+   "name": "The New Teen Titans (1980-1988) #1",
+   "category": "DC"
+  },
+  {
+   "address": "AB3RE5mPuCWS5iMojA7EEWGcothZAAUd2CywT7HNx2Mg",
+   "name": "The Spectre (1992-1998) #54",
+   "category": "DC"
+  },
+  {
+   "address": "GZiNe88ziXycCBrkCZy8GnzkRhYAJWFpDC29h4MZ8fUL",
+   "name": "The Witching Hour (1968-1978) #1",
+   "category": "DC"
+  },
+  {
+   "address": "471r7bCkL7u27bwBhtg3C9Xh2kYiTbG3uKHapDkQAe4E",
+   "name": "Titans (2023) #1",
+   "category": "DC"
+  },
+  {
+   "address": "5U3Tbyjt9KTvz3CbXJZFhnsEt8SgtGoE16jRkg4Q7Ua5",
+   "name": "Unveiling archived images in 3…2…1",
+   "category": "Other"
+  },
+  {
+   "address": "7sCymwooYPpwzrs2EAZxZmr739gRhEGW5SVbZZmDdwvF",
+   "name": "Weird War Tales (1971-1983) #93",
+   "category": "DC"
+  },
+  {
+   "address": "7UpLrT1iFcEmwxrycU6cZZcRXJ9KGQZRK4S2utsJSCo2",
+   "name": "Whiz Comics (1940-1952) #2",
+   "category": "DC"
+  },
+  {
+   "address": "5TXPpaAiiP1cca6PYNJJR8mTZDoaG2tiSMyXvE5gijmn",
+   "name": "Wonder Woman - Justice League Unlimited: Epic Artist Editions",
+   "category": "DC"
+  },
+  {
+   "address": "Dnq6ef7PXCtq1CN32H1SDqzMbdnSJKv7CzGguYcVvtPC",
+   "name": "Wonder Woman (1942-1986) #1",
+   "category": "DC"
+  },
+  {
+   "address": "CcfXawCxv1EnHqj4J12cxXtUHBgwZbxkcrCvtVe5egQq",
+   "name": "Wonder Woman (1942-1986) #204",
+   "category": "DC"
+  },
+  {
+   "address": "AVMzZsxjku8TKJHYS32PS2qLQ4LkuF6EGkLrUN7vGyGo",
+   "name": "Wonder Woman (1987-2006) #1",
+   "category": "DC"
+  }
+ ]
+}

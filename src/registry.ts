@@ -8,6 +8,8 @@
  * Metaplex Core collection address directly to the tools.
  */
 
+import { createRequire } from "node:module";
+
 export interface RegistryEntry {
   id: string;
   name: string;
@@ -98,6 +100,54 @@ export const REGISTRY: RegistryEntry[] = [
       "empty collection.",
   },
 ];
+
+// ----------------------------------------------------- Candy Digital, all of it
+// The hand-written entries above are the ones with cross-venue ids filled in
+// by hand. Every Candy Digital collection on Solana is appended from
+// data/candy-collections.json: name, category and the Metaplex Core collection
+// address, exported from the CandyScan tracker's reconciled list. The address
+// is what lets get_collection_stats, provenance and custody answer by name
+// without a Magic Eden symbol; the symbol resolves through the directory.
+interface CandyRow {
+  address: string;
+  name: string;
+  category: string;
+}
+
+function loadCandyCollections(): RegistryEntry[] {
+  let rows: CandyRow[] = [];
+  try {
+    const file = createRequire(import.meta.url)("../data/candy-collections.json") as { collections?: CandyRow[] };
+    rows = Array.isArray(file.collections) ? file.collections : [];
+  } catch {
+    return [];
+  }
+  const known = new Set(REGISTRY.map((e) => e.coreCollection).filter(Boolean));
+  const ids = new Set(REGISTRY.map((e) => e.id));
+  const out: RegistryEntry[] = [];
+  for (const r of rows) {
+    if (typeof r.address !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r.address)) continue;
+    if (typeof r.name !== "string" || !r.name.trim()) continue;
+    if (known.has(r.address)) continue;
+    const name = r.name.trim();
+    const category = typeof r.category === "string" ? r.category.trim() : "Other";
+    let id = "candy-" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+    for (let n = 2; ids.has(id); n++) id = `${id.replace(/-\d+$/, "")}-${n}`;
+    ids.add(id);
+    const tokens = name.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+    out.push({
+      id,
+      name: `Candy Digital - ${name}`,
+      platform: `Candy Digital (${category === "MLB" ? "official MLB license" : category === "DC" ? "official DC license" : category})`,
+      coreCollection: r.address,
+      keywords: [...new Set(["candy", "candy digital", category.toLowerCase(), ...tokens])],
+      notes: "From the CandyScan collection list. The Magic Eden symbol resolves by name through the directory; pass a symbol directly for listings and sales.",
+    });
+  }
+  return out;
+}
+
+REGISTRY.push(...loadCandyCollections());
 
 /** Simple scored search over names/keywords/ids. */
 export function searchRegistry(query: string): RegistryEntry[] {

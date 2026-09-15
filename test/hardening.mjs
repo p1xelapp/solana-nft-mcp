@@ -471,4 +471,55 @@ const jsonResponse = (body, headers = {}) =>
   ok("b17 OpenSea trait floors, floor history and holders parse defensively and never invent a share");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17)`);
+// ------------------------------------------------------------------ b18
+// Every Candy Digital collection is in the registry from the tracker export:
+// unique ids, valid Core addresses, findable by a plain name, and the
+// hand-written entries are not duplicated by the generated ones.
+{
+  const { REGISTRY, searchRegistry } = await import("../dist/registry.js");
+  const candy = REGISTRY.filter((e) => e.id.startsWith("candy-") && e.coreCollection);
+  assert.ok(candy.length >= 398, `expected every Candy collection, saw ${candy.length}`);
+  const ids = new Set(REGISTRY.map((e) => e.id));
+  assert.strictEqual(ids.size, REGISTRY.length, "registry ids are unique");
+  const cores = REGISTRY.map((e) => e.coreCollection).filter(Boolean);
+  assert.strictEqual(new Set(cores).size, cores.length, "no Core address appears twice");
+  for (const e of candy) assert.match(e.coreCollection, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/, `bad address on ${e.id}`);
+  const hit = searchRegistry("leadoff icons 2022");
+  assert.ok(hit.some((e) => /2022 Leadoff ICONs/.test(e.name)), "a Candy collection is found by its plain name");
+  const gold = REGISTRY.find((e) => e.coreCollection === "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K");
+  assert.strictEqual(gold.id, "candy-mlb-gold-auction-1", "the hand-written Gold entry wins over the generated one");
+  ok(`b18 the registry carries every Candy collection (${candy.length} generated, ${REGISTRY.length} total) with unique ids and addresses`);
+}
+
+// ------------------------------------------------------------------ b19
+// COLLECTOR_MCP_LOG=1 writes one JSON line per tool call to stderr, with the
+// tool name, timing, outcome and argument NAMES only. Nothing reaches stdout.
+{
+  const { spawn } = await import("node:child_process");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1", COLLECTOR_MCP_LOG: "1" };
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+  const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env, stderr: "pipe" });
+  let stderr = "";
+  const client = new Client({ name: "log-test", version: "1.0.0" });
+  await client.connect(transport);
+  transport.stderr.on("data", (b) => { stderr += String(b); });
+  await client.callTool({ name: "explain_mechanics", arguments: { topic: "escrow" } }).catch(() => undefined);
+  await client.callTool({ name: "get_asset", arguments: { mint: "1".repeat(32) } }).catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.close();
+  const lines = stderr.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
+  assert.ok(lines.length >= 2, `expected a log line per call, saw ${lines.length}: ${stderr.slice(0, 200)}`);
+  const first = lines.find((l) => l.tool === "explain_mechanics");
+  assert.ok(first, "the log names the tool that was called");
+  assert.ok(typeof first.ms === "number" && first.ms >= 0);
+  assert.deepStrictEqual(first.args, ["topic"], "argument names are logged, values are not");
+  assert.ok(!stderr.includes("1".repeat(32)), "a mint address never reaches the log");
+  const failed = lines.find((l) => l.tool === "get_asset");
+  assert.ok(failed && failed.ok === false && typeof failed.kind === "string", "a failed call logs ok:false with a kind");
+  void spawn;
+  ok("b19 COLLECTOR_MCP_LOG=1 writes one JSON line per call with the tool, timing, outcome and argument names only");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19)`);

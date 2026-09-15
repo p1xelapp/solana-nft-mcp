@@ -589,3 +589,35 @@ export async function holders(slug: string, limit = 10, totalSupply: number | nu
     source: "opensea" as const,
   };
 }
+
+interface OsRankedCollection {
+  collection?: string;
+  name?: string;
+  safelist_status?: string;
+  category?: string;
+  is_disabled?: boolean;
+}
+
+/**
+ * OpenSea's own ranked lists for Solana: "trending" (sales activity over a
+ * window) and "top" (by its stats). The venue returns names in rank order and
+ * no figures on the row itself, so this is an ORDER from a second venue, never
+ * a volume to add to Magic Eden's.
+ */
+export async function rankedCollections(kind: "trending" | "top", limit = 20) {
+  const n = Math.max(1, Math.min(50, limit));
+  const { data, stale, cachedAt } = await cached(`os:ranked:${kind}:${n}`, 300_000, () =>
+    os<{ collections?: OsRankedCollection[] }>(`/collections/${kind}?chain=solana&limit=${n}`),
+  );
+  if (!data || !Array.isArray(data.collections)) throw new Error(`OpenSea returned no ${kind} list (outage or API change)`);
+  const rows = data.collections
+    .filter((c) => typeof c.collection === "string" && !c.is_disabled)
+    .map((c, i) => ({
+      rank: i + 1,
+      slug: clean(c.collection as string).slice(0, 80),
+      name: typeof c.name === "string" ? clean(c.name).slice(0, 80) : null,
+      verified: c.safelist_status === "verified",
+      category: typeof c.category === "string" ? clean(c.category).slice(0, 32) : null,
+    }));
+  return { kind, rows, stale, cachedAt, source: "opensea" as const };
+}
