@@ -1149,7 +1149,24 @@ export interface AccountNature {
  * Never throws: an unreadable account returns nulls and says so, because a
  * failed read must not turn into a claim about who holds what.
  */
+const natureCache = new Map<string, { at: number; value: AccountNature }>();
+/**
+ * Six hours. What OWNS an account is structural: a wallet does not become a
+ * program. Without this, reading the ten largest holders of a collection cost
+ * ten gated RPC calls every time anyone asked for its stats, which is 3.5
+ * seconds of pacing for facts that had not changed since breakfast.
+ */
+const NATURE_TTL_MS = 6 * 60 * 60_000;
+
 export async function accountNature(address: string, opts: { signal?: AbortSignal } = {}): Promise<AccountNature> {
+  const hit = natureCache.get(address);
+  if (hit && Date.now() - hit.at < NATURE_TTL_MS) return hit.value;
+  const keep = (value: AccountNature): AccountNature => {
+    // A failed read is never cached: it would turn one bad minute into six
+    // hours of "unknown" for an address the chain can answer for.
+    if (value.ownerProgram !== null) natureCache.set(address, { at: Date.now(), value });
+    return value;
+  };
   try {
     const info = await rpc<{ value: { owner: string; executable?: boolean } | null }>(
       "getAccountInfo",
@@ -1169,7 +1186,7 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
     const owner = info.value.owner;
     const isWallet = owner === SYSTEM_PROGRAM;
     const named = NAMED_PROGRAMS[owner];
-    return {
+    return keep({
       address,
       ownerProgram: owner,
       looksLikeAWallet: isWallet,
@@ -1177,7 +1194,7 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
       note: isWallet
         ? "Owned by the System Program, which is what a person's wallet looks like."
         : `Owned by ${named ?? `the program ${owner}`}, so it is a program account rather than a person's wallet. Items counted here are most likely held on someone else's behalf.`,
-    };
+    });
   } catch {
     return {
       address,

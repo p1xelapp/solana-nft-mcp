@@ -591,10 +591,16 @@ const jsonResponse = (body, headers = {}) =>
     globalThis.fetch = () => reply("11111111111111111111111111111111");
     const person = await sol.accountNature("8Ew6iQXcTRHAUNNu3X9VBn1g1bJkXEZJ9gFD2AGKtdPB");
     assert.equal(person.looksLikeAWallet, true, "a System Program account is what a wallet looks like");
+    // A THIRD address: what owns an account is cached once read, so reusing one
+    // above would answer from that cache instead of exercising the failure.
     globalThis.fetch = () => Promise.reject(new Error("endpoint down"));
-    const unknown = await sol.accountNature("8Ew6iQXcTRHAUNNu3X9VBn1g1bJkXEZJ9gFD2AGKtdPB");
+    const unknown = await sol.accountNature("3SJph2jfRM41NQ4UgV73q9Q98mWW4HLwECJyUKtHSW3m");
     assert.equal(unknown.looksLikeAWallet, null, "a failed read is unknown, never 'a person'");
     assert.ok(unknown.note.length > 20, "and it says why");
+    // And a failure is never cached: the next read must be able to answer.
+    globalThis.fetch = () => reply("11111111111111111111111111111111");
+    const recovered = await sol.accountNature("3SJph2jfRM41NQ4UgV73q9Q98mWW4HLwECJyUKtHSW3m");
+    assert.equal(recovered.looksLikeAWallet, true, "a cached failure would freeze an address as unknown");
   } finally {
     globalThis.fetch = realFetch;
   }
