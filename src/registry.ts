@@ -170,12 +170,23 @@ export function searchRegistry(query: string): RegistryEntry[] {
   const q = query.toLowerCase().trim();
   if (!q) return REGISTRY;
   const terms = q.split(/\s+/).filter((t) => t.length > 1);
-  return REGISTRY.map((e) => {
-    const hay = [e.id, e.name.toLowerCase(), ...e.keywords].join(" ");
-    const score = terms.filter((t) => hay.includes(t)).length + (hay.includes(q) ? 2 : 0);
-    return { e, score };
-  })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
+  if (terms.length === 0) return [];
+  // Matching ANY one term was too generous once the registry held 400 Candy
+  // collections: "zzzz brand new collection name" matched 27 of them on the
+  // word "collection" alone, and a search for something that does not exist
+  // came back looking like a result. Half the words have to land, and only the
+  // best-scoring entries survive, so a query either identifies something or
+  // says it found nothing.
+  const needed = Math.max(1, Math.ceil(terms.length / 2));
+  const scored = REGISTRY.map((e) => {
+    const hay = [e.id, e.name.toLowerCase(), ...e.keywords, ...(e.aliases ?? []).map((a) => a.toLowerCase())].join(" ");
+    const matched = terms.filter((t) => hay.includes(t)).length;
+    return { e, matched, score: matched + (hay.includes(q) ? 2 : 0) };
+  }).filter((x) => x.matched >= needed);
+  if (scored.length === 0) return [];
+  const best = Math.max(...scored.map((x) => x.score));
+  return scored
+    .filter((x) => x.score === best)
+    .sort((a, b) => a.e.name.length - b.e.name.length)
     .map((x) => x.e);
 }

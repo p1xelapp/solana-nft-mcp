@@ -408,3 +408,22 @@ Four fixes, each one a question the server got wrong by hand first.
 - `find_in_group` returns the chain address of any collection it could not match
   to a marketplace symbol, so those stay answerable for supply and provenance
   rather than reading as skipped.
+
+## 1.10.2 - 2026-09-15
+
+Found by working through a twelve-case test pass by hand.
+
+- A search for something that does not exist comes back empty. Matching any ONE
+  word was fine with seven registry entries and wrong with four hundred:
+  "zzzz brand new collection name" matched 27 Candy collections on the word
+  "collection", so a search for nothing looked like a result. Half the words have
+  to land now, and only the best-scoring entries survive.
+- Giveaway language alone no longer marks a holding as airdrop spam. Candy ships
+  a real collectible called an Overdrive Reward Pack, and the word "reward" was
+  enough to label it. A web address, a claim, a token amount or a disguised
+  letter still decides on its own; "reward" and "prize" now need company.
+- A collection with no OpenSea slug says so. Saying nothing about a second venue
+  reads as there being only one.
+- An empty wallet answer says when the chain has no account at that address at
+  all, which is what a mistyped address looks like. Both readers returning
+  nothing used to read identically for a real empty wallet and a typo.

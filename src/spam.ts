@@ -39,9 +39,17 @@ export interface SpamCandidate {
 /** A web address in an item's name: the click the drop exists to buy. */
 const WEB_ADDRESS = /\b(?:https?:\/\/|www\.)|\b[a-z0-9-]{3,}\.(?:com|net|org|io|xyz|app|fun|site|link|live|gift|cash|club|vip|top|pro|shop)\b/i;
 
-/** Claim bait: the words a drop uses to move somebody to a website. */
-const REWARD_BAIT =
-  /\b(?:voucher|vouchers|claim|claimable|airdrop|reward|rewards|giveaway|winner|prize|bonus|free\s+mint|redeem|eligible|congratulations|you\s+won|gift)\b/i;
+/**
+ * Claim bait, in two strengths.
+ *
+ * The split exists because "reward" on its own is not evidence: Candy ships a
+ * real collectible called an Overdrive Reward Pack, and a single word got it
+ * labelled as spam. Words that only make sense when something is being claimed
+ * from a stranger decide on their own; words a real collection might use need
+ * company.
+ */
+const CLAIM_BAIT = /\b(?:voucher|vouchers|claim|claimable|airdrop|redeem|eligible|congratulations|you\s+won|verify\s+wallet|connect\s+wallet)\b/i;
+const WEAK_BAIT = /\b(?:reward|rewards|giveaway|winner|prize|bonus|gift|free\s+mint|free\s+claim)\b/i;
 
 /** A token amount in a name, with or without a currency mark: "104 SOL For You", "$1700". */
 const MONEY = /(?:[$€£]\s?\d|\b\d[\d,.]*\s*(?:sol|usdc|usdt|eth|btc|k|m)\b)/i;
@@ -68,14 +76,35 @@ function hasHomoglyphs(name: string): boolean {
 export function classifyAirdrop(item: SpamCandidate): SpamVerdict {
   const name = typeof item.name === "string" ? item.name : "";
   const signals: string[] = [];
-  if (WEB_ADDRESS.test(name)) signals.push("the name contains a web address");
-  if (REWARD_BAIT.test(name)) signals.push("the name offers a reward to claim");
-  if (MONEY.test(name)) signals.push("the name puts a token amount in front of the reader");
-  if (hasHomoglyphs(name)) signals.push("the name mixes Latin letters with lookalikes from another alphabet");
-  // A naming signal is what makes it spam. The cheap-to-mint standard and the
-  // missing collection are corroboration, added only when something already
-  // fired, so an unverified cNFT is never called spam for that alone.
-  const decided = signals.length > 0;
+  let strong = 0;
+  let weak = 0;
+  if (WEB_ADDRESS.test(name)) {
+    signals.push("the name contains a web address");
+    strong++;
+  }
+  if (CLAIM_BAIT.test(name)) {
+    signals.push("the name asks the reader to claim or redeem something");
+    strong++;
+  }
+  if (MONEY.test(name)) {
+    signals.push("the name puts a token amount in front of the reader");
+    strong++;
+  }
+  if (hasHomoglyphs(name)) {
+    signals.push("the name mixes Latin letters with lookalikes from another alphabet");
+    strong++;
+  }
+  if (WEAK_BAIT.test(name)) {
+    signals.push("the name uses giveaway language");
+    weak++;
+  }
+  // One strong signal decides; giveaway language on its own does not, because
+  // real collections ship things called reward packs. The cheap-to-mint
+  // standard and the missing collection are corroboration only, added once
+  // something has already fired, so an unverified compressed asset is never
+  // called spam for being compressed.
+  const decided = strong > 0 || weak > 1;
+  if (!decided) signals.length = 0;
   if (decided && item.compressed === true) signals.push("it is a compressed asset, which costs a fraction of a cent to mint into any wallet");
   if (decided && item.collectionVerified !== true) signals.push("it belongs to no verified collection");
   return { likelySpam: decided, signals };

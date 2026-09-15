@@ -551,7 +551,9 @@ const jsonResponse = (body, headers = {}) =>
     assert.ok(v.likelySpam, `"${name}" should be labelled`);
     assert.ok(v.signals.length > 0, "a label without a reason is an opinion");
   }
-  for (const name of ["2025 Bulbasaur CGC 10 Pristine", "Mad Lads #4201", "Jupiter JLP/USDC LP", "Absolute Batman (2024-) #1", "Batman (1940-2011) #609 222"]) {
+  // "Overdrive Reward Pack" is a real Candy collectible that one word got
+  // labelled as spam. Giveaway language on its own is not evidence.
+  for (const name of ["2025 Bulbasaur CGC 10 Pristine", "Mad Lads #4201", "Jupiter JLP/USDC LP", "Absolute Batman (2024-) #1", "Batman (1940-2011) #609 222", "Overdrive Reward Pack 1.0 2", "Bat Cowl Honorary Collection"]) {
     assert.equal(classifyAirdrop({ name, compressed: false, collectionVerified: true }).likelySpam, false, `"${name}" is a real holding`);
   }
   // Being compressed and uncollected is corroboration, never the verdict on its own.
@@ -618,4 +620,25 @@ const jsonResponse = (body, headers = {}) =>
   ok("c4 every prompt the server registers is declared in the install bundle, or it cannot be attached there");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3, c4)`);
+// c5 - a search for something that does not exist must come back empty.
+// Matching any ONE word was fine with seven registry entries and wrong with
+// four hundred: "zzzz brand new collection name" matched 27 Candy collections
+// on the word "collection", so a search for nothing looked like a result.
+{
+  const { searchRegistry } = await import("../dist/registry.js");
+  assert.equal(searchRegistry("zzzz brand new collection name").length, 0, "a nonsense query matches nothing");
+  assert.equal(searchRegistry("qqqqqqq").length, 0);
+  // An empty query is the documented "list everything" case, not a search.
+  assert.ok(searchRegistry("").length > 100, "an empty query still lists the registry");
+  // Real queries still land, and the best match leads.
+  for (const [query, id] of [["candy gold", "candy-mlb-gold-auction-1"], ["mad lads", "mad_lads"], ["collector crypt", "collector-crypt"], ["absolute batman 1", "candy-absolute-batman-2024-1"]]) {
+    const hits = searchRegistry(query);
+    assert.ok(hits.length > 0, `"${query}" should match something`);
+    assert.equal(hits[0].id, id, `"${query}" should lead with ${id}, got ${hits[0].id}`);
+  }
+  // A one-word query that genuinely matches many still returns them all.
+  assert.ok(searchRegistry("batman").length > 20, "a real word with many matches still returns them");
+  ok("c5 a search for something that does not exist returns nothing, instead of everything sharing one generic word");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3, c4, c5)`);

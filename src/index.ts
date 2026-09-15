@@ -791,6 +791,13 @@ registerTool(
         : { ...stats, floor7d, topHolders };
     } else if (slug) {
       out.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
+    } else {
+      // Silence about a second venue reads as "there is only one". Most Candy
+      // collections genuinely have no OpenSea slug, and the answer has to say
+      // that rather than simply not mentioning OpenSea at all.
+      out.openseaNote =
+        "No OpenSea slug is known for this collection, so only Magic Eden and the chain were read. " +
+        "search_collections shows whether OpenSea lists it under another name; pass openseaSlug to add the second venue.";
     }
     const osBlockAny = out.opensea;
     const osOk = osBlockAny !== null && typeof osBlockAny === "object" && !("error" in osBlockAny);
@@ -1092,6 +1099,22 @@ registerTool(
     for (const a of index?.items ?? []) byStandard[a.standard] = (byStandard[a.standard] ?? 0) + 1;
     const meCount = marketplace ? marketplace.tokens.length : null;
     const idxCount = index ? index.items.length : null;
+    // An address one character wrong is still valid base58, so both readers
+    // answer "nothing here" and a typo reads exactly like an empty wallet. The
+    // chain can tell them apart: an address that has never been used has no
+    // account at all. Only asked when the answer is empty, so it costs nothing
+    // on the normal path.
+    let addressNote: string | undefined;
+    if ((meCount ?? 0) === 0 && (idxCount ?? 0) === 0) {
+      const nature = await sol.accountNature(wallet);
+      if (nature.ownerProgram === null && nature.looksLikeAWallet === null && /no account/i.test(nature.note)) {
+        addressNote =
+          "Both readers came back empty AND the chain has no account at this address. That is what a never-used address looks like, " +
+          "and it is also what a mistyped one looks like: check the address before reporting this wallet as empty.";
+      } else if (nature.looksLikeAWallet === false) {
+        addressNote = nature.note;
+      }
+    }
     // A capped page and a truncated walk are lower bounds, not totals: two
     // readers both stopping at the caller's limit are not agreeing about the
     // wallet, they are agreeing about the limit.
@@ -1146,6 +1169,7 @@ registerTool(
         : undefined,
       comparison: comparison.note,
       countsComparable: comparison.comparable,
+      ...(addressNote ? { addressNote } : {}),
       sourceErrors: {
         ...(meRes.status === "rejected" ? { magiceden: meRes.reason instanceof Error ? meRes.reason.message : String(meRes.reason) } : {}),
         // An abandoned endpoint and dropped rows both belong here: an empty
