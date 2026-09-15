@@ -465,3 +465,31 @@ server and the README. Two bugs of the same class fell out.
   a corrupt collection list degrades to the hand-written registry, a truncated
   directory snapshot leaves the registry layer answering, no answer carries a key,
   a file path or a stack frame, and the README's tool count is the server's.
+
+## 1.10.5 - 2026-09-15
+
+Found by sweeping 37 real collections rather than the same few fixtures.
+
+- A marketplace symbol matched by NAME is now checked against the chain before
+  its numbers may stand beside a collection's supply. The registry entry "2023
+  Tickets" resolved to a venue symbol whose items belong to a different
+  collection, and the answer printed 2 minted next to 10 listed and a 0.1 SOL
+  floor as though that were one market. One listed item is read, the asset index
+  says which collection it belongs to, and a mismatch is reported as a rejected
+  symbol with the other collection's address, never as this collection's market.
+  Measured on a sample of 52 name-matched collections: 49 confirmed, 1 wrong, 2
+  unverifiable. The check is cached for six hours.
+- A name that belongs to more than one collection is ambiguous rather than a
+  pick. The issuer's own export ships two different "2023 Tickets" and two
+  "2022 ICON Chasers", each with its own chain address, and taking the first
+  match answered confidently about one of them. Both are now listed with their
+  ids and addresses.
+- An ambiguous identifier carries its own wording. It used to reach the generic
+  "Try again, or try a narrower request", which is advice to repeat a question
+  that will always have the same two answers.
+- An empty ownership history is never called complete. An account that exists was
+  minted, so it has at least one transaction; zero is an endpoint that cannot see
+  the history. Measured live: the same asset answered with seven events and then
+  with none a minute later, and the empty answer would have read as "this card has
+  never moved". The walk is retried against another endpoint, and an empty result
+  that survives says plainly that the endpoint could not see it.

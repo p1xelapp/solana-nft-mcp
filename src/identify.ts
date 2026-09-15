@@ -30,6 +30,7 @@ import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
+import { checkSymbolMatchesCollection } from "./symbol-check.js";
 
 export interface Probe {
   source: string;
@@ -143,11 +144,16 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // "mad lads" scored a hit on "Mad Magazine" too, and an id-only test called
   // the pair ambiguous - so the one collection actually named Mad Lads could
   // not be identified at all.
+  // A name can belong to two collections. The issuer's own export ships two
+  // different "2023 Tickets" and two "2022 ICON Chasers", each with its own
+  // chain address, so taking the first match silently answered about one of
+  // them. An id is unique; a name is only an answer when it is unique too.
+  const byName = REGISTRY.filter((e) => norm(e.name) === nq || (e.aliases ?? []).some((a) => norm(a) === nq));
   const exact =
     REGISTRY.find((e) => e.id === q) ??
-    REGISTRY.find((e) => norm(e.name) === nq) ??
-    REGISTRY.find((e) => (e.aliases ?? []).some((a) => norm(a) === nq)) ??
+    (byName.length === 1 ? byName[0] : undefined) ??
     REGISTRY.find((e) => e.meSymbol === q);
+  const sharedName = !exact && byName.length > 1 ? byName : null;
   const fuzzy = exact ? [exact] : searchRegistry(q);
   // A fuzzy hit is only an identification when it is the only one. "candy"
   // matches several Candy Digital drops and must come back as candidates,
@@ -161,13 +167,17 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // directory guess that landed on an Ashcan special edition.
   const whole = (hay: string) => ` ${hay} `.includes(` ${nq} `);
   const named = fuzzy.filter((e) => whole(norm(e.name)) || (e.aliases ?? []).some((a) => whole(norm(a))));
-  const entry: RegistryEntry | undefined =
-    exact ?? (fuzzy.length === 1 ? fuzzy[0] : named.length === 1 ? named[0] : undefined);
+  const entry: RegistryEntry | undefined = sharedName
+    ? undefined
+    : exact ?? (fuzzy.length === 1 ? fuzzy[0] : named.length === 1 ? named[0] : undefined);
   checked.push({
     source: "registry",
     looked_for: "a hand-verified entry matching this id or name",
-    result: entry ? "found" : fuzzy.length > 1 ? "ambiguous" : "not_found",
-    detail: entry
+    result: entry ? "found" : sharedName || fuzzy.length > 1 ? "ambiguous" : "not_found",
+    detail: sharedName
+      ? `${sharedName.length} different collections are filed under that exact name, each with its own chain address: ` +
+        `${sharedName.map((e) => `${e.id} (${e.coreCollection ?? "no address"})`).join("; ")}. Pass one of these ids.`
+      : entry
       ? `${entry.id} - ${entry.name}`
       : fuzzy.length > 1
         ? // Capped, because "candy" matches 399 entries and printing all of
@@ -195,12 +205,21 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   if (entry && !entry.meSymbol) {
     const found = [entry.name, ...(entry.aliases ?? [])].map((n) => symbolForCollectionName(n)).find(Boolean);
     if (found) {
-      symbolFromDirectory = found.symbol;
+      // Checked against the chain before it is handed over, because two
+      // collections can share a name and this identifier is the one every
+      // later market call will be made with.
+      const verdict = entry.coreCollection
+        ? await checkSymbolMatchesCollection(found.symbol, entry.coreCollection)
+        : { verdict: "unknown" as const, detail: "No chain address on this entry, so the symbol could not be checked." };
+      if (verdict.verdict !== "different") symbolFromDirectory = found.symbol;
       checked.push({
         source: "collection-directory",
         looked_for: `a Magic Eden symbol for "${entry.name}"`,
-        result: "found",
-        detail: `${found.symbol} - ${found.note}`,
+        result: verdict.verdict === "different" ? "not_found" : "found",
+        detail:
+          verdict.verdict === "different"
+            ? `${found.symbol} was rejected. ${verdict.detail}`
+            : `${found.symbol} - ${found.note} ${verdict.detail}`,
       });
     }
   }

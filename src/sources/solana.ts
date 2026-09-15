@@ -906,9 +906,21 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
   // A fresh read is a verification walk: one endpoint for the whole thing, or
   // one clean restart, or unverifiable. An ordinary read keeps the old
   // behaviour, where rotating between endpoints costs nothing but a label.
-  const { value, endpointPinned } = opts.fresh
-    ? await pinnedWalk(run)
-    : { value: await run(), endpointPinned: "not pinned (this was not a verification read)" };
+  const walkOnce = async () =>
+    opts.fresh
+      ? await pinnedWalk(run)
+      : { value: await run(), endpointPinned: "not pinned (this was not a verification read)" };
+  let { value, endpointPinned } = await walkOnce();
+  // An account that exists was minted, so it has at least one transaction.
+  // Zero is an endpoint that cannot see the history - a pruned node, or one
+  // having a bad minute - and it was measured live: the same asset answered
+  // with seven events and then with none a minute later. Rather than label
+  // that and move on, the walk is tried once more, because the endpoints
+  // rotate and the next one usually can see it.
+  if (value.okCount === 0) {
+    const retry = await walkOnce().catch(() => null);
+    if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
+  }
   const { account, events, skipped, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote } = value;
 
   return {
@@ -941,9 +953,25 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     slotFloorHonoured,
     ...(slotNote ? { slotNote } : {}),
     ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
-    /** True only when every signature was listed, every transaction was decoded (none skipped for depth), and every one was readable. */
-    historyComplete: walk.complete && unreadable === 0 && skipped === 0,
+    /**
+     * True only when every signature was listed, every transaction was decoded
+     * (none skipped for depth), and every one was readable.
+     *
+     * The extra condition is the invariant that catches a pruned or lying
+     * endpoint: an account that EXISTS was minted, so it has at least one
+     * transaction. Zero signatures for a live account is not an empty history,
+     * it is an endpoint that cannot see one, and calling that complete is how
+     * "this card has never traded" gets said about a card that has.
+     */
+    historyComplete: walk.complete && unreadable === 0 && skipped === 0 && okCount > 0,
     ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
+    ...(okCount === 0
+      ? {
+          historyNote:
+            "The endpoint listed NO transactions for an account that exists, which is impossible for an asset that was minted. " +
+            "Treat this as an endpoint that cannot see the history (a pruned node), never as an asset that has never moved.",
+        }
+      : {}),
   };
 }
 

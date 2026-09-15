@@ -34,8 +34,9 @@ import { sourceStatus } from "./status.js";
 import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter } from "./market.js";
 import { resolveName, symbolForCollectionName, collectionNameKey } from "./names.js";
 import { classifyAirdrop, summariseAirdrops } from "./spam.js";
+import { checkSymbolMatchesCollection } from "./symbol-check.js";
 import { MECHANICS, explainMechanics, mechanicsForTrust } from "./mechanics.js";
-import { NotFoundError, WrongKindError, TypedError, firstTypedFailure } from "./lib/errors.js";
+import { NotFoundError, WrongKindError, AmbiguousError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 
@@ -126,6 +127,12 @@ const ok = (data: unknown): ToolResult => {
  */
 function explain(err: unknown): { headline: string; next: string; kind: string } {
   const msg = err instanceof Error ? err.message : String(err);
+  // An ambiguous identifier carries its own headline: the list of candidates
+  // IS the answer, and a generic "try again" is advice to repeat a question
+  // that will always have the same two answers.
+  if (err instanceof AmbiguousError) {
+    return { kind: "ambiguous", headline: msg, next: "Pass one of the ids or addresses listed above." };
+  }
   // Which venue this was is OUR label, taken from the source name this server
   // passes to fetchJson, never from anything an upstream wrote.
   const venue = (): string | null => {
@@ -380,10 +387,19 @@ function resolve(idOrSymbolOrAddress: string): {
   // and an address both used to fall through to "treat the whole string as a
   // Magic Eden symbol", so asking for stats by name read a feed for a symbol
   // that does not exist and the collection came back quiet.
+  // A name that belongs to two different collections is not an identifier.
+  // The issuer ships two "2023 Tickets" with different chain addresses, and
+  // picking the first answered confidently about the wrong one.
+  const byName = REGISTRY.filter((e) => norm(e.name) === norm(q) || (e.aliases ?? []).some((a) => norm(a) === norm(q)));
+  if (byName.length > 1) {
+    throw new AmbiguousError(
+      `"${idOrSymbolOrAddress}" is the name of ${byName.length} different collections, each with its own chain address: ` +
+        `${byName.map((e) => `${e.id} (${e.coreCollection ?? "no address"})`).join("; ")}.`,
+    );
+  }
   const entry =
     REGISTRY.find((e) => e.id === q) ??
-    REGISTRY.find((e) => norm(e.name) === norm(q)) ??
-    REGISTRY.find((e) => (e.aliases ?? []).some((a) => norm(a) === norm(q))) ??
+    byName[0] ??
     (sol.isBase58Address(q) ? REGISTRY.find((e) => e.coreCollection === q) : undefined);
   if (entry) {
     if (entry.meSymbol) return entry;
@@ -702,7 +718,22 @@ registerTool(
     // floor printed under a collection's name is a claim about that
     // collection, and this is the one identifier in the answer that was
     // matched rather than verified.
-    if (r.symbolNote && r.meSymbol) out.symbolResolvedFromDirectory = { meSymbol: r.meSymbol, note: r.symbolNote };
+    // A symbol nobody typed gets checked against the chain before its numbers
+    // are allowed to stand beside this collection's supply. Two collections can
+    // share a name: "2023 Tickets" matched a venue symbol whose items belong to
+    // a different collection entirely, and the answer printed 2 minted next to
+    // 10 listed as though that were one market.
+    let symbolCheck: Awaited<ReturnType<typeof checkSymbolMatchesCollection>> | null = null;
+    if (r.symbolNote && r.meSymbol && r.coreCollection) {
+      symbolCheck = await checkSymbolMatchesCollection(r.meSymbol, r.coreCollection);
+    }
+    if (r.symbolNote && r.meSymbol) {
+      out.symbolResolvedFromDirectory = {
+        meSymbol: r.meSymbol,
+        note: r.symbolNote,
+        ...(symbolCheck ? { checkedAgainstChain: symbolCheck.verdict, checkDetail: symbolCheck.detail } : {}),
+      };
+    }
     if (r.coreCollection) {
       const acct = await sol.getCoreAccount(r.coreCollection);
       if (acct?.kind === "collection") {
@@ -719,7 +750,20 @@ registerTool(
     const sourceErrors: Record<string, string> = {};
     /** True only when Magic Eden established an ABSENCE; a failure to read is not one. */
     let meAbsent = false;
-    if (r.meSymbol) {
+    // A symbol the chain says belongs to a different collection is not this
+    // collection's market, so its numbers never appear as one. They are still
+    // returned, under a name that says what they are, because the person may
+    // well have meant the other collection and now has its address.
+    if (symbolCheck?.verdict === "different" && r.meSymbol) {
+      const wrong = await me.collectionStats(r.meSymbol).catch(() => null);
+      out.marketRejected = {
+        meSymbol: r.meSymbol,
+        why: symbolCheck.detail,
+        belongsToCollection: symbolCheck.sampledCollection ?? null,
+        theirFigures: wrong,
+        next: "Pass that collection address to get_collection_stats to read it properly, or pass the right Magic Eden symbol for this one.",
+      };
+    } else if (r.meSymbol) {
       try {
         out.market = await me.collectionStats(r.meSymbol);
       } catch (e) {

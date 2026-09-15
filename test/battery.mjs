@@ -228,6 +228,29 @@ check("C9", "assets", "a supply claim is checked against the collection account"
   return /confirmed|contradicted|unverifiable/i.test(text(r)) || `no verdict: ${text(r).slice(0, 200)}`;
 });
 
+check("C10", "assets", "an empty history is never called complete", async () => {
+  // An account that exists was minted, so it has at least one transaction.
+  // Zero is an endpoint that cannot see the history, and the same asset was
+  // measured answering with seven events and then with none a minute later.
+  const listings = await call("find_listings", { symbol: FIX.batman, limit: 4 });
+  const mints = (listings.listings ?? listings.deals ?? []).map((l) => l.tokenMint ?? l.mint).filter(Boolean).slice(0, 3);
+  if (mints.length === 0) return "no listed items to walk";
+  for (const mint of mints) {
+    const p = await call("get_asset_provenance", { mint });
+    if (has(p.ERROR)) continue;
+    if (Array.isArray(p.events) && p.events.length === 0 && p.historyComplete === true) {
+      return `${mint} came back with no events and historyComplete true`;
+    }
+  }
+  return true;
+});
+check("C11", "assets", "a symbol the chain rejects never becomes a collection's market", async () => {
+  const r = await call("get_collection_stats", { collection: "candy-2023-tickets-2" });
+  if (!r.marketRejected) return r.market ? "a known-wrong symbol was accepted as this collection's market" : true;
+  if (r.market) return "both a rejected symbol and a market block came back";
+  return /DIFFERENT/.test(r.marketRejected.why) || "the rejection does not say why";
+});
+
 // ====================================================== D. wallets
 check("D1", "wallets", "a wallet answers from two readers and names the gap between them", async () => {
   const r = await call("get_wallet_holdings", { wallet: FIX.wallet, limit: 20 });

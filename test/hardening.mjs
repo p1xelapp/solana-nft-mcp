@@ -641,4 +641,62 @@ const jsonResponse = (body, headers = {}) =>
   ok("c5 a search for something that does not exist returns nothing, instead of everything sharing one generic word");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3, c4, c5)`);
+// c6 - a name can belong to two collections. The issuer's own export ships two
+// different "2023 Tickets" and two "2022 ICON Chasers", each with its own chain
+// address. Taking the first match answered confidently about one of them, and
+// the reader had no way to know a second existed.
+{
+  const { REGISTRY } = await import("../dist/registry.js");
+  const { collectionNameKey } = await import("../dist/names.js");
+  const byName = new Map();
+  for (const e of REGISTRY) {
+    const k = collectionNameKey(e.name);
+    byName.set(k, [...(byName.get(k) ?? []), e]);
+  }
+  const shared = [...byName.values()].filter((v) => v.length > 1);
+  assert.ok(shared.length > 0, "this test needs a duplicated name in the registry to be meaningful");
+  for (const group of shared) {
+    const addresses = new Set(group.map((e) => e.coreCollection));
+    assert.equal(addresses.size, group.length, `entries sharing a name must still be distinct collections: ${group.map((e) => e.id).join(", ")}`);
+    for (const e of group) assert.ok(e.id, "each one keeps its own id, which is what a caller passes instead");
+  }
+  ok(`c6 ${shared.length} collection name(s) belong to more than one collection, and each keeps a unique id and address`);
+}
+
+// c7 - a symbol matched by name is checked against the chain before its numbers
+// stand beside a collection's supply. "2023 Tickets" matched a venue symbol
+// whose items belong to a different collection, and the answer printed 2 minted
+// next to 10 listed as one market.
+{
+  const { checkSymbolMatchesCollection } = await import("../dist/symbol-check.js");
+  const realFetch = globalThis.fetch;
+  const json = (v) => Promise.resolve(new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json" } }));
+  // A different mint per case: the asset read is cached by mint, so reusing one
+  // would hand the second case the first case's answer.
+  const stub = (assetCollection, mint) => (url) => {
+    const u = String(url);
+    if (/magiceden/.test(u)) return json([{ tokenMint: mint, price: 1 }]);
+    return json({ jsonrpc: "2.0", id: 1, result: { id: mint, interface: "MplCoreAsset", grouping: [{ group_key: "collection", group_value: assetCollection }], ownership: { owner: "9yzmxQHCz24LDhu9rkjNQhKfKZWbe79B1NJzTy9ExqyP" } } });
+  };
+  try {
+    globalThis.fetch = stub("8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K", "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n");
+    const same = await checkSymbolMatchesCollection("sym_one", "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K");
+    assert.equal(same.verdict, "matches", `expected a match, got ${same.verdict}: ${same.detail}`);
+
+    globalThis.fetch = stub("HscoKNpAqrpF79Bm8yBnSnUVy7VtT6n5E7LGrgJbFAFR", "DKmjwsTBiB6EhAJUAAEHKUsJLVBYJfY5yZ8h3vQtrQ41");
+    const other = await checkSymbolMatchesCollection("sym_two", "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K");
+    assert.equal(other.verdict, "different", `a symbol for another collection must be rejected: ${other.detail}`);
+    assert.ok(/DIFFERENT/.test(other.detail), "the rejection has to say so in words");
+
+    // A check that could not run is never a pass.
+    globalThis.fetch = () => Promise.reject(new Error("upstream down"));
+    const cannot = await checkSymbolMatchesCollection("sym_three", "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K");
+    assert.equal(cannot.verdict, "unknown", "a failed check must not read as a match");
+    assert.ok(cannot.detail.length > 30, "and it says why it could not be made");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  ok("c7 a symbol matched by name is confirmed, rejected, or left explicitly unchecked - never assumed");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3, c4, c5, c6, c7)`);

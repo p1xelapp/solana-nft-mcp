@@ -53,6 +53,20 @@ export class DasUnsupported extends TypedError {
   }
 }
 
+/**
+ * The identifier is real and matches more than one thing. Separate from
+ * bad-input because the advice is different: nothing is wrong with what the
+ * caller typed, it simply is not unique, and the answer has to list the
+ * candidates rather than tell anyone to try again.
+ *
+ * It carries its own headline, because the choice IS the message.
+ */
+export class AmbiguousError extends TypedError {
+  constructor(msg: string) {
+    super(msg, "bad-input");
+  }
+}
+
 /** What the caller passed cannot be used, decided by us rather than by an upstream body. */
 export class BadInputError extends TypedError {
   constructor(msg: string) {
