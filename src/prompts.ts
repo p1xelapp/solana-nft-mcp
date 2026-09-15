@@ -17,26 +17,40 @@
  *  2. No argument dialogs. Each prompt asks for what it needs in the
  *     conversation instead, which works in every client and cannot get out of
  *     step with a manifest.
+ *  3. Read the conversation before asking. Without this, attaching a report
+ *     right after naming a collection answers with "which collection?", which
+ *     is worse than typing the question outright. The prompt earns its place
+ *     by fixing the SHAPE of the answer - the ceiling framing, the spam split,
+ *     the section saying what could not be seen - not by collecting input.
+ *
+ * Line breaks are deliberate: a client attaches this as a text file, and one
+ * long line shows up in the chip as "1 line", looking like an empty file.
  */
 export const PROMPT_TEXTS = {
   getting_started:
-    "I just installed collector-mcp and I do not know what to ask yet. Using its own tools, not your memory: " +
-    "call get_source_status and tell me which sources are live right now and whether OpenSea is on; " +
-    "say in plain language what this server can answer, which is the history of a single card, who can freeze or burn it, " +
+    "I just installed collector-mcp and I do not know what to ask yet. Use its own tools, not your memory.\n" +
+    "Call get_source_status and tell me which sources are live right now and whether OpenSea is on.\n" +
+    "Say in plain language what this server can answer: the history of a single card, who can freeze or burn it, " +
     "what a collection is worth at floor and what actually sold, the cheapest listings and low serial numbers, " +
-    "and what any wallet holds and how it trades; say clearly what it cannot do, which is that it never moves anything, " +
-    "never signs anything, and only reads public data; then give me five questions I can copy, using real collections " +
-    "you can resolve with search_collections. Keep it short and skip the tool names.",
+    "and what any wallet holds and how it trades.\n" +
+    "Say clearly what it cannot do: it never moves anything, never signs anything, and only reads public data.\n" +
+    "Then give me five questions I can copy, using real collections you can resolve with search_collections.\n" +
+    "Keep it short and skip the tool names.",
   collection_report:
-    "Ask me which collection I mean, then build a market report for it with the collector-mcp tools: " +
-    "resolve the identifiers first, then supply and floor, then what actually sold recently with the price range and how many changed hands, " +
-    "then pick one recently traded item and show its ownership history as a short story. " +
+    "Build a market report with the collector-mcp tools.\n" +
+    "If I have already named a collection in this conversation, use that one and start now. " +
+    "Only ask me which collection I mean if I have not named one yet, and do not offer a list of guesses.\n" +
+    "Resolve the identifiers first, then supply and floor, then what actually sold recently with the price range and how many changed hands.\n" +
+    "Then pick one recently traded item and show its ownership history as a short story.\n" +
     "Close with three things a collector would want to know. Label anything stale, and never call a floor a valuation.",
   wallet_report:
-    "Ask me for the wallet address, then profile it as a collector with the collector-mcp tools: " +
-    "lead with what it collects, how much of the wallet each collection is, how old the wallet is, and the floor ceiling called a ceiling rather than a value; " +
-    "then how it trades, meaning buys against sells, net flow, hold times and the behaviour label with its reason; " +
-    "then say what the feeds could not see, including other venues, plain transfers and anything the index could not name. " +
+    "Profile a wallet as a collector with the collector-mcp tools.\n" +
+    "If I have already pasted a wallet address in this conversation, use that one and start now. " +
+    "Only ask me for an address if I have not given one yet.\n" +
+    "Lead with what it collects, how much of the wallet each collection is, how old the wallet is, " +
+    "and the floor ceiling, called a ceiling rather than a value.\n" +
+    "Then how it trades: buys against sells, net flow, hold times, and the behaviour label with its reason.\n" +
+    "Then say what the feeds could not see, including other venues, plain transfers, and anything the index could not name.\n" +
     "Flag airdrop spam separately from real holdings.",
 } as const;
 

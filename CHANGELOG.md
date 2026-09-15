@@ -546,3 +546,21 @@ features that no longer exist.
   of features that were cut.
 - Docs that still claimed a resources surface, and a publish description that
   still advertised pack pulls, say what the server actually does.
+
+## 1.11.2 - 2026-09-15
+
+A prompt should not ask for something it was just told.
+
+- Attaching the collection or wallet report right after naming a collection or
+  pasting an address answered with "which one do you mean?", which is worse
+  than typing the question outright. Both now use what the conversation already
+  carries and ask only when it carries nothing. A report prompt earns its place
+  by fixing the SHAPE of the answer - the floor ceiling called a ceiling, the
+  airdrop spam split from real holdings, the section saying what the feeds
+  could not see - not by collecting input.
+- `collection_report` no longer invites a list of guesses. Asked cold it would
+  offer collections from earlier in the chat, which is the model's memory
+  talking rather than anything read from the chain.
+- The bodies are written in lines rather than one paragraph. A client attaches
+  a prompt as a text file, and a single long line reads as "1 line" in the chip,
+  which looks like an empty attachment.
