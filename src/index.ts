@@ -45,7 +45,26 @@ const { version: VERSION } = createRequire(import.meta.url)("../package.json") a
   version: string;
 };
 
-const server = new McpServer({ name: "collector-mcp", version: VERSION });
+/**
+ * What the client tells its model about this server before anything is asked.
+ *
+ * The failure that made this necessary: asked "what is Absolute Batman (2024)
+ * #1 worth", an assistant answered about the printed comic from the open web
+ * and never called a tool at all. Every collection name here is shared with a
+ * physical object, so the domain has to be stated once, up front, rather than
+ * hinted at in twenty tool descriptions.
+ */
+const INSTRUCTIONS = [
+  "This server reads Solana digital collectibles from the chain itself and from the marketplaces that list them: Magic Eden always, OpenSea when a key is available.",
+  "",
+  "It covers licensed digital cards and comics, mainly Candy Digital's MLB and DC lines, which are around 400 separate Metaplex Core collections, plus any other Metaplex Core or Magic Eden collection on Solana.",
+  "",
+  "Collection names here are shared with physical objects. \"Absolute Batman (2024) #1\" means the digital collection of that issue on Solana, not the printed comic, and its price has nothing to do with the paper one. When a question names a collection, a card, a wallet, a trait or a serial number, call a tool instead of answering from memory or from the open web. If the person turns out to mean the physical item, say which one you answered about.",
+  "",
+  "Every figure comes back with its venue, its currency and the time it was read. Keep those when you summarise. Never add figures from two venues together, never call a floor a valuation, and never turn an empty result into \"it does not exist\": each result says what was searched and what could not be seen.",
+].join("\n");
+
+const server = new McpServer({ name: "collector-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
 
 // Counted, not hand-written. The banner said "8 tools" for two releases after
 // the ninth was added - a stale count is a small lie that erodes trust in the
@@ -1768,10 +1787,13 @@ registerTool(
     const slice = chosen.slice(startAt, startAt + batch);
     const scanned: Record<string, unknown>[] = [];
     const matches: Record<string, unknown>[] = [];
-    const noSymbol: string[] = [];
+    // A collection with no venue symbol is not a dead end: its chain address
+    // still answers supply, provenance and custody, so the address travels
+    // with the name instead of the row being dropped as "skipped".
+    const noSymbol: { collection: string; coreCollection: string | null }[] = [];
     for (const c of slice) {
       if (!c.meSymbol) {
-        noSymbol.push(c.requested ?? c.name ?? "unnamed");
+        noSymbol.push({ collection: c.name ?? c.requested ?? "unnamed", coreCollection: c.coreCollection ?? null });
         continue;
       }
       let listings: me.MeListing[] = [];
@@ -1855,7 +1877,13 @@ registerTool(
           ? `This call read ${slice.length} of ${chosen.length} collections. Call again with startAt ${nextStartAt} for the next batch; a "no match" only covers what has been read so far.`
           : `Every collection in this set has now been read.`,
         "Prices are asks on Magic Eden, not what anyone paid, and each floor is the cheapest ask in that collection's own book at the moment it was read.",
-        ...(noSymbol.length ? [`${noSymbol.length} collection(s) have no Magic Eden symbol, so nothing could be read for them: ${noSymbol.slice(0, 5).join(", ")}${noSymbol.length > 5 ? " and more" : ""}.`] : []),
+        ...(noSymbol.length
+          ? [
+              `${noSymbol.length} collection(s) are not listed on Magic Eden under a name this server could match, so no listings were read for them: ` +
+                `${noSymbol.slice(0, 5).map((n) => n.collection).join(", ")}${noSymbol.length > 5 ? " and more" : ""}. ` +
+                `Their chain addresses are in noMarketSymbol, and get_collection_stats still answers supply and provenance from those.`,
+            ]
+          : []),
       ],
       next: "find_listings goes deeper on one collection; get_collection_sales says what actually sold there.",
     });

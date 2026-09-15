@@ -399,3 +399,12 @@ Four fixes, each one a question the server got wrong by hand first.
   dead for anyone who installed the bundle, whatever the server registered. A
   test now fails if a registered prompt is missing from the manifest.
 - The bundle description reads as what it is rather than as a feature list.
+- The server now sends instructions on connect, because every collection name
+  here is shared with a physical object. Asked what Absolute Batman #1 is worth,
+  an assistant answered about the printed comic from the open web and never
+  called a tool. The instructions say what the server covers, that a name means
+  the Solana collection rather than the paper one, and that an empty result is
+  never proof a thing does not exist.
+- `find_in_group` returns the chain address of any collection it could not match
+  to a marketplace symbol, so those stay answerable for supply and provenance
+  rather than reading as skipped.
