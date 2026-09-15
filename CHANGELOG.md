@@ -466,7 +466,7 @@ server and the README. Two bugs of the same class fell out.
   directory snapshot leaves the registry layer answering, no answer carries a key,
   a file path or a stack frame, and the README's tool count is the server's.
 
-## 1.10.5 - 2026-09-15
+## 1.10.6 - 2026-09-15
 
 Found by sweeping 37 real collections rather than the same few fixtures.
 
