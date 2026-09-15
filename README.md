@@ -76,9 +76,17 @@ and the app must be fully quit and reopened, tray icon included.
 
 ### Optional: OpenSea
 
-Solana collections have traded on OpenSea since 31 Aug 2026. OpenSea adds second-venue floors,
-sales, supply and royalty per collection, plain transfers per wallet (how airdrops and gifts
-become visible), and a searchable index of every Solana collection OpenSea lists.
+Solana collections have traded on OpenSea since 31 Aug 2026, with Candy Digital among the
+launch partners. OpenSea adds second-venue floors, sales, supply and royalty per collection,
+plain transfers per wallet (how airdrops and gifts become visible), and a searchable index of
+every Solana collection OpenSea lists.
+
+You do not have to know a collection's OpenSea slug. It is found from the collection's
+on-chain address against OpenSea's own Solana index, and failing that by trying the name and
+accepting it only when OpenSea's record for that slug carries the same chain address. Pass
+`openseaSlug` yourself to override. When neither path finds one, the answer says the second
+venue was not read and why, which is a gap in what was searched rather than evidence the
+collection is absent from OpenSea.
 
 There is nothing to sign up for. The first time a question needs OpenSea, the server asks
 OpenSea for one of its free agent keys and stores it in `~/.collector-mcp/opensea-key.json` on
@@ -126,7 +134,21 @@ Nobody types a tool name. These are asked in plain words and the assistant picks
 
 A collection name, a player name, a card number or a trait is enough to start. Names resolve
 against a bundled snapshot of the Magic Eden directory (30,499 collections, refreshed in the
-background) and against OpenSea's Solana index.
+background), against OpenSea's Solana index, and - when those do not produce a single
+confident match - by asking Magic Eden about the name directly.
+
+That last step matters more than it sounds. Magic Eden refuses to page past offset 30,000, so
+the directory snapshot is a prefix of the venue rather than the whole of it, and the
+collections past that ceiling are not obscure ones. Asking it for "DeGods" used to return
+eight imitations and not DeGods. A name is now also tried as a symbol against the venue
+itself, which has no ceiling, and the answer is accepted only when the venue's own record
+confirms it. A single fuzzy match whose name is not what you asked for is offered as a
+candidate with the mismatch stated, never presented as the answer.
+
+Answers are also sized to arrive whole. Every client silently truncates a large tool result
+and the model then reads the surviving prefix as the complete list, so a long answer drops
+per-row detail before it drops rows, and says in the answer what it left out and how to get
+it back.
 
 ## What it reads
 

@@ -129,6 +129,14 @@ export async function identify(query: string): Promise<Identification> {
 }
 
 async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boolean): Promise<Identification> {
+  // `q` drives the LOOKUPS and must stay exactly as typed: a probe that
+  // silently searched for something else would be lying about what it checked.
+  // `shown` is the same text with invisible characters removed, and it is what
+  // goes into every sentence a person or a model reads. Interpolating the raw
+  // query let a zero-width space through into `summary`, where "mad<ZWSP>lads"
+  // renders identically to "madlads" - which is the whole point of the
+  // character, and exactly how one collection is made to look like another.
+  const shown = clean(q);
   const checked: Probe[] = [];
   const notChecked: string[] = [];
   const identifiers: Record<string, string> = {};
@@ -366,7 +374,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     lookalikes = findLookalikes(strong.map((m) => ({ symbol: m.symbol, name: m.name, badged: m.badged })));
     checked.push({
       source: "collection-directory",
-      looked_for: `a Magic Eden collection named "${q}"`,
+      looked_for: `a Magic Eden collection named "${shown}"`,
       result: strong.length === 1 ? "found" : strong.length > 1 ? "ambiguous" : "not_found",
       detail:
         strong.length > 0
@@ -406,7 +414,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
         // market, but the caller is told the name does not match.
         checked.push({
           source: "collection-directory",
-          looked_for: `a collection actually NAMED "${q}"`,
+          looked_for: `a collection actually NAMED "${shown}"`,
           result: "ambiguous",
           detail:
             `The closest match is "${onlyMatch.name ?? onlyMatch.symbol}" (${onlyMatch.symbol}), which is not what was asked for. ` +
@@ -416,7 +424,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       }
       checked.push({
         source: "magiceden-direct",
-        looked_for: `a Magic Eden collection whose own name is "${q}"`,
+        looked_for: `a Magic Eden collection whose own name is "${shown}"`,
         // A miss the venue refused to confirm is not a "not_found": saying so
         // would turn a rate limit into evidence that a collection is absent.
         result: direct.found ? "found" : direct.conclusive ? "not_found" : "error",
@@ -609,14 +617,14 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     // would be a confident wrong answer, which is the expensive failure here.
     kind = "ambiguous";
     summary =
-      `"${q}" matches ${nameCandidates.length} collections in the Magic Eden directory (${nameCandidates.join(", ")}). Ask which one, or pass one of those symbols.` +
+      `"${shown}" matches ${nameCandidates.length} collections in the Magic Eden directory (${nameCandidates.join(", ")}). Ask which one, or pass one of those symbols.` +
       (lookalikes.length ? ` ${LOOKALIKE_WARNING}` : "");
     confidence = "low";
     identifiers.candidateSymbols = nameCandidates.join(",");
     next.push("get_collection_stats", "search_collections");
   } else if (tradesOn.length > 0) {
     kind = "marketplace-collection";
-    summary = `"${q}" is a collection listed on ${tradesOn.join(" and ")}. No Core collection account was resolved, so on-chain supply is unavailable but market data is.`;
+    summary = `"${shown}" is a collection listed on ${tradesOn.join(" and ")}. No Core collection account was resolved, so on-chain supply is unavailable but market data is.`;
     confidence = tradesOn.length > 1 ? "high" : "medium";
     next.push("get_collection_stats", "get_recent_sales", "get_floor_prices");
   } else if (entry) {
@@ -626,17 +634,17 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     next.push("get_collection_stats");
   } else if (fuzzy.length > 1) {
     kind = "ambiguous";
-    summary = `"${q}" matches ${fuzzy.length} curated collections (${fuzzy.map((e) => e.id).join(", ")}). Ask which one, or pass one of those ids.`;
+    summary = `"${shown}" matches ${fuzzy.length} curated collections (${fuzzy.map((e) => e.id).join(", ")}). Ask which one, or pass one of those ids.`;
     confidence = "low";
     next.push("search_collections");
   } else if (looksLikeAddress(q) && checked.some((c) => c.source === "solana-rpc" && c.result === "error")) {
     kind = "unknown";
-    summary = `${q} is a valid Solana address, but the chain could not be read just now, so it could not be classified. Retry shortly.`;
+    summary = `${shown} is a valid Solana address, but the chain could not be read just now, so it could not be classified. Retry shortly.`;
     confidence = "low";
   } else if (looksLikeAddress(q)) {
     kind = "wallet-or-unknown-account";
     summary =
-      `${q} is a valid Solana address but is not a Metaplex Core asset or collection` +
+      `${shown} is a valid Solana address but is not a Metaplex Core asset or collection` +
       (dasAvailable === true
         ? ", and the chain's asset index has no record of it as an asset either. It is most likely a wallet or another program's account."
         : dasAvailable === false
@@ -645,7 +653,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     confidence = dasAvailable === true ? "medium" : "low";
     next.push("get_wallet_holdings");
   } else {
-    summary = `Nothing matched "${q}" in the sources this server can see. That is not proof it does not exist - see notChecked for the gaps, and search_collections for close names.`;
+    summary = `Nothing matched "${shown}" in the sources this server can see. That is not proof it does not exist - see notChecked for the gaps, and search_collections for close names.`;
     next.push("search_collections");
   }
 
