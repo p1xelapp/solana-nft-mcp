@@ -390,3 +390,12 @@ Four fixes, each one a question the server got wrong by hand first.
   owned by the marketplace's own program, and is named when the program is one this
   server knows. An unreadable account stays unknown rather than defaulting to a
   person.
+
+## 1.10.1 - 2026-09-15
+
+- The install bundle declares its prompts. Claude Desktop refuses to attach a
+  prompt the manifest does not list, logging "attempted undeclared prompt" while
+  the person sees only "Failed to attach prompt" - so all three prompts were
+  dead for anyone who installed the bundle, whatever the server registered. A
+  test now fails if a registered prompt is missing from the manifest.
+- The bundle description reads as what it is rather than as a feature list.

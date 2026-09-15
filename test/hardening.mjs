@@ -594,4 +594,28 @@ const jsonResponse = (body, headers = {}) =>
   ok("c3 a top holder is checked against the chain for what kind of account it is, and an unreadable one stays unknown");
 }
 
-console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3)`);
+// c4 - a bundled install refuses to attach a prompt the manifest does not
+// declare. Claude Desktop's log said "attempted undeclared prompt:
+// wallet_report" while the person saw only "Failed to attach prompt", so a
+// prompt registered on the server and missing from the bundle script is a
+// feature that silently does not exist for anyone who installed the bundle.
+{
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1" };
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+  const client = new Client({ name: "manifest-test", version: "1.0.0" });
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
+  const { prompts } = await client.listPrompts();
+  await client.close();
+  const bundleScript = readFileSync(join(here, "..", "scripts", "bundle-mcpb.mjs"), "utf8");
+  for (const p of prompts) {
+    assert.ok(bundleScript.includes(`name: "${p.name}"`), `prompt ${p.name} is registered but the bundle manifest does not declare it, so it cannot be attached after a one-click install`);
+    for (const a of p.arguments ?? []) {
+      assert.ok(bundleScript.includes(`"${a.name}"`), `prompt ${p.name} takes an argument ${a.name} the bundle manifest does not list`);
+    }
+  }
+  ok("c4 every prompt the server registers is declared in the install bundle, or it cannot be attached there");
+}
+
+console.log(`\nhardening test: ${passed} groups passed (a1, a4, a5, a10, a11, a12, a15, b1, b11, b12, b13, b14, b15, b16, b17, b18, b19, c1, c2, c3, c4)`);

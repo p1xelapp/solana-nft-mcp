@@ -42,11 +42,11 @@ const manifest = {
   version: pkg.version,
   description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No keys, read-only, runs on your machine.",
   long_description:
-    "Reads the chain and the venues (Magic Eden, OpenSea) and labels every number with where and when it came from. " +
-    "20 tools: who owned a card, who can freeze it, what sold this week, the cheapest low serial, what a wallet holds and how it trades. " +
-    "Builders get the same reads as parsed, typed results with the raw Metaplex Core and Token Metadata fields kept intact, " +
-    "so an agent or an app can use them without writing a parser first. " +
-    "Nothing is collected; only the public address or name you ask about leaves your machine.",
+    "Ask your AI about any Solana collectible and get the answer from the chain: who owned it, who can still freeze or burn it, " +
+    "what actually sold, and where the deals are. It decodes Metaplex Core ownership history byte by byte, the history mainstream " +
+    "NFT APIs hand back empty, and labels every number with its venue, its currency and the moment it was read, so nothing gets " +
+    "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
+    "without writing a parser. 20 tools, zero API keys, nothing collected, and no signing code exists in it, so it cannot touch your wallet.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/collector-mcp/",
   documentation: "https://github.com/p1xelapp/collector-mcp#readme",
@@ -67,6 +67,31 @@ const manifest = {
     { name: "get_wallet_profile", description: "What a wallet holds and how it trades" },
   ],
   tools_generated: true,
+  // Claude Desktop refuses to attach a prompt the manifest does not declare:
+  // "Extension collector-mcp attempted undeclared prompt: wallet_report", and
+  // the person only sees "Failed to attach prompt". Registering a prompt on
+  // the server is not enough for a bundled install, so each one is listed here
+  // with the arguments it accepts.
+  prompts: [
+    {
+      name: "getting_started",
+      description: "New to collector-mcp? What it can answer, and five questions to try.",
+      arguments: [],
+      text: "Show me what this server can answer and give me five questions to try, using live source status rather than memory.",
+    },
+    {
+      name: "collection_report",
+      description: "A market report for one collection: supply, floor, what sold, and one item's story.",
+      arguments: ["collection"],
+      text: "Build a market report for this collection: identifiers, supply and floor, what sold recently, and one asset's ownership story. Label anything stale.",
+    },
+    {
+      name: "wallet_report",
+      description: "Profile a wallet as a collector: what it holds, how it trades, what it is worth at floor as a ceiling.",
+      arguments: ["wallet"],
+      text: "Profile this wallet as a collector: what it collects, how it trades, and the floor ceiling called a ceiling rather than a value. Say what the feeds could not see.",
+    },
+  ],
   keywords: ["solana", "nft", "collectibles", "candy digital", "magic eden", "opensea", "metaplex core"],
   license: "MIT",
   compatibility: { platforms: ["darwin", "win32", "linux"], runtimes: { node: ">=20.0.0" } },
