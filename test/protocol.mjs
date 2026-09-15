@@ -96,20 +96,25 @@ assert.ok(entries.every((e) => e.id && e.name), "every registry row needs an id 
 assert.ok(resources.some((r) => r.uri === "collector://glossary"), "glossary resource missing");
 assert.ok(resources.some((r) => r.uri === "collector://sources"), "sources resource missing");
 assert.ok(resources.some((r) => r.uri === "collector://mechanics"), "mechanics resource missing");
-{
-  const sources = JSON.parse((await client.readResource({ uri: "collector://sources" })).contents[0].text);
-  assert.ok(Array.isArray(sources) && sources.length >= 15, "source catalog should list every source, wired or planned");
-  for (const s of sources) {
-    assert.ok([1, 2, 3, 4].includes(s.tier) && s.answers.length && s.cannotSee.length && s.officialDocs, `${s.id} needs tier, answers, cannotSee, docs`);
-  }
-  assert.ok(sources.some((s) => s.id === "das-public" && s.wired), "the public asset index should be wired");
-  const mech = JSON.parse((await client.readResource({ uri: "collector://mechanics" })).contents[0].text);
-  assert.ok(mech.length >= 40 && mech.every((m) => m.pitfall && /^https:\/\//.test(m.source)), "mechanics entries need a pitfall and a source URL");
-  assert.ok(mech.every((m) => m.verified || m.unverifiedReason), "an unverified mechanics entry must say why");
+const sourcesDoc = JSON.parse((await client.readResource({ uri: "collector://sources" })).contents[0].text);
+const sources = sourcesDoc.sources;
+assert.ok(Array.isArray(sources) && sources.length >= 15, "source catalog should list every source, wired or planned");
+for (const s of sources) {
+  assert.ok([1, 2, 3, 4].includes(s.tier) && s.answers.length && s.cannotSee.length && s.officialDocs, `${s.id} needs tier, answers, cannotSee, docs`);
 }
+assert.ok(sources.some((s) => s.id === "das-public" && s.wired), "the public asset index should be wired");
+const mechDoc = JSON.parse((await client.readResource({ uri: "collector://mechanics" })).contents[0].text);
+const mech = mechDoc.mechanics;
+assert.ok(mech.length >= 40 && mech.every((m) => m.pitfall && /^https:\/\//.test(m.source)), "mechanics entries need a pitfall and a source URL");
+assert.ok(mech.every((m) => m.verified || m.unverifiedReason), "an unverified mechanics entry must say why");
 const gloss = JSON.parse((await client.readResource({ uri: "collector://glossary" })).contents[0].text);
 assert.ok(gloss.glossary.length >= 20, "glossary should carry the domain vocabulary");
 assert.ok(gloss.presentationRules.length >= 5, "presentation rules missing");
+// Every resource has to say what it is for: a person attaches the file and
+// otherwise sees only JSON.
+for (const [uri, doc] of [["sources", sourcesDoc], ["mechanics", mechDoc], ["glossary", gloss], ["registry", registry]]) {
+  assert.ok(typeof doc.howToUse === "string" && doc.howToUse.length > 60, `collector://${uri} needs a howToUse line`);
+}
 // The entries exist to prevent specific wrong answers, so most must name one.
 assert.ok(
   gloss.glossary.filter((g) => g.pitfall).length >= gloss.glossary.length - 1,

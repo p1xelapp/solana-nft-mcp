@@ -1794,7 +1794,25 @@ server.registerResource(
   },
   (uri) =>
     Promise.resolve({
-      contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(SOURCES, null, 2) }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(
+            {
+              // Attaching a file that opens on a wall of JSON tells a person
+              // nothing. The first line says what to ask once it is attached.
+              howToUse:
+                "Attach this to ask where a number came from, why one is missing, or what this server cannot see. " +
+                "Tier 1 is the chain itself, tier 2 the venue feeds that need no key, tier 3 sources that need a key, " +
+                "tier 4 links only. get_source_status says which of them are answering right now.",
+              sources: SOURCES,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     }),
 );
 
@@ -1810,7 +1828,23 @@ server.registerResource(
   },
   (uri) =>
     Promise.resolve({
-      contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(MECHANICS, null, 2) }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(
+            {
+              howToUse:
+                "Attach this to ask how a standard or a venue actually behaves: who can freeze or burn an item, what a " +
+                "marketplace does with custody while something is listed, how royalties are enforced. Every entry names " +
+                "the pitfall it exists to prevent and links its source. explain_mechanics answers one question from the same set.",
+              mechanics: MECHANICS,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     }),
 );
 
@@ -1831,7 +1865,18 @@ server.registerResource(
         {
           uri: uri.href,
           mimeType: "application/json",
-          text: JSON.stringify({ glossary: GLOSSARY, presentationRules: PRESENTATION_RULES }, null, 2),
+          text: JSON.stringify(
+            {
+              howToUse:
+                "Attach this before reading any output from this server. It defines the words a collector uses and, for " +
+                "each one, the wrong answer it exists to prevent: a floor is an ask and not a valuation, a listed item's " +
+                "on-chain owner is the marketplace escrow and not a person, an opened Candy pack is returned and not burned.",
+              glossary: GLOSSARY,
+              presentationRules: PRESENTATION_RULES,
+            },
+            null,
+            2,
+          ),
         },
       ],
     }),
