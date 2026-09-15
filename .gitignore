@@ -41,3 +41,4 @@ docs/LAUNCH-KIT.md
 battery-report.json
 sweep-report.json
 .battery-live.txt
+.battery-*.txt
