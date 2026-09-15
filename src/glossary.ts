@@ -184,4 +184,5 @@ export const PRESENTATION_RULES: string[] = [
   "Quote serial numbers exactly as issued (29/250). Never round, average, or drop them - the serial is often most of the value.",
   "State what was NOT checked. These tools cover specific chains and standards; silence about a gap reads as coverage.",
   "Prefer counts and dates over adjectives. 'Seven transfers since July 15' beats 'frequently traded'.",
+  "Print an address in full or leave it out. A shortened one (BA56UR...ckqcnP2) cannot be pasted into an explorer, and abbreviating two addresses in the same answer has already produced one that was half an asset and half its collection - a string that looks like an identifier and belongs to nothing.",
 ];

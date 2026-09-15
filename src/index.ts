@@ -932,7 +932,7 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80),
-      limit: z.number().int().finite().min(1).max(50).default(10),
+      limit: z.number().int().finite().min(1).max(50).optional().describe("How many sales to return. Default 10."),
       openseaSlug: z
         .string()
         .trim()
@@ -941,7 +941,7 @@ registerTool(
         .optional(),
     },
   },
-  guard(async ({ collection, limit, openseaSlug }) => {
+  guard(async ({ collection, limit = 10, openseaSlug }) => {
     const r = resolve(collection);
     const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     const openseaPart =
@@ -1101,11 +1101,11 @@ registerTool(
         .finite()
         .min(1)
         .max(50)
-        .default(15)
-        .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything."),
+        .optional()
+        .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything. Default 15."),
     },
   },
-  guard(async ({ mint, depth }) => ok(await sol.getProvenance(mint, depth))),
+  guard(async ({ mint, depth = 15 }) => ok(await sol.getProvenance(mint, depth))),
 );
 
 registerTool(
@@ -1121,10 +1121,10 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      limit: z.number().int().finite().min(1).max(100).default(50),
+      limit: z.number().int().finite().min(1).max(100).optional().describe("How many items to read from the marketplace index. Default 50."),
     },
   },
-  guard(async ({ wallet, limit }) => {
+  guard(async ({ wallet, limit = 50 }) => {
     const [meRes, dasRes] = await Promise.allSettled([me.walletTokens(wallet, limit), das.getAssetsByOwner(wallet, 2000)]);
     const marketplace = meRes.status === "fulfilled" ? meRes.value : null;
     const index = dasRes.status === "fulfilled" ? dasRes.value : null;
@@ -1250,18 +1250,18 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      maxItems: z.number().int().finite().min(50).max(3000).default(1000).describe("Cap on items fetched (500 per request)"),
+      maxItems: z.number().int().finite().min(50).max(3000).optional().describe("Cap on items fetched (500 per request). Default 1000."),
       priceTop: z
         .number()
         .int()
         .min(0)
         .max(10)
-        .default(5)
-        .describe("How many of the largest collections to price at floor (one paced Magic Eden request each; registry collections add one supply read)"),
-      includeAge: z.boolean().default(true).describe("Read the wallet's first/last transaction from the chain (up to 3 RPC calls)"),
+        .optional()
+        .describe("How many of the largest collections to price at floor (one paced Magic Eden request each; registry collections add one supply read). Default 5."),
+      includeAge: z.boolean().optional().describe("Read the wallet's first/last transaction from the chain (up to 3 RPC calls). Default true."),
     },
   },
-  guard(async ({ wallet, maxItems, priceTop, includeAge }) => {
+  guard(async ({ wallet, maxItems = 1000, priceTop = 5, includeAge = true }) => {
     const held = await me.walletTokensAll(wallet, maxItems);
     const holdings = summarizeHoldings(held.tokens);
 
@@ -1366,11 +1366,11 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
-      pages: z.number().int().finite().min(1).max(5).default(3).describe("Magic Eden activity pages of 100 events, newest first"),
-      includeOpenSea: z.boolean().default(true).describe("Add OpenSea sales + transfers when OPENSEA_API_KEY is set"),
+      pages: z.number().int().finite().min(1).max(5).optional().describe("Magic Eden activity pages of 100 events, newest first. Default 3."),
+      includeOpenSea: z.boolean().optional().describe("Add OpenSea sales + transfers when OPENSEA_API_KEY is set. Default true."),
     },
   },
-  guard(async ({ wallet, pages, includeOpenSea }) => {
+  guard(async ({ wallet, pages = 3, includeOpenSea = true }) => {
     const feed = await me.walletActivities(wallet, pages);
     // Offset pagination overlaps whenever new activity lands mid-walk, and the
     // venue repeats rows across pages. A duplicated buy and sell becomes a
@@ -1459,12 +1459,12 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
-      days: z.number().int().finite().min(1).max(90).default(7).describe("Window ending now"),
+      days: z.number().int().finite().min(1).max(90).optional().describe("Window ending now. Default 7."),
       nameContains: z.string().trim().max(80).optional().describe("Keep only sales whose item name contains this text, e.g. 'Ohtani' or 'Batman'; names come from the chain's asset index"),
-      maxPages: z.number().int().finite().min(1).max(20).default(6).describe("Pages of 500 events to read; busy collections need more to cover long windows"),
+      maxPages: z.number().int().finite().min(1).max(20).optional().describe("Pages of 500 events to read; busy collections need more to cover long windows. Default 6."),
     },
   },
-  guard(async ({ symbol, days, maxPages, nameContains }) => {
+  guard(async ({ symbol, days = 7, maxPages = 6, nameContains }) => {
     // Before the feed: an unknown symbol reads an empty feed and reports
     // "0 sales", which is a fact about a collection that does not exist.
     const unknown = await refuseUnknownSymbol(symbol);
@@ -1578,8 +1578,8 @@ registerTool(
       symbol: symbolSchema.describe("Magic Eden collection symbol"),
       traits: z.array(traitSchema).max(6).optional().describe("Trait filters, combined with AND"),
       nameContains: z.string().trim().max(80).optional().describe("Keep only listings whose name contains this text, e.g. '#1390' or 'Judge'"),
-      limit: z.number().int().finite().min(1).max(100).default(20),
-      lowestSerials: z.boolean().default(false).describe("Hunt low edition numbers: read up to 1,000 listings, parse the serial from each name (#9, 12/250) and return the lowest serials with their asks against the floor"),
+      limit: z.number().int().finite().min(1).max(100).optional().describe("How many listings to return. Default 20."),
+      lowestSerials: z.boolean().optional().describe("Hunt low edition numbers: read up to 1,000 listings, parse the serial from each name (#9, 12/250) and return the lowest serials with their asks against the floor"),
       openseaSlug: z
         .string()
         .trim()
@@ -1590,7 +1590,7 @@ registerTool(
         .describe("OpenSea collection slug; adds OpenSea's per-trait floor next to Magic Eden's on every deal. Registry entries that carry one are used automatically."),
     },
   },
-  guard(async ({ symbol, traits, nameContains, limit, lowestSerials, openseaSlug }) => {
+  guard(async ({ symbol, traits, nameContains, limit = 20, lowestSerials = false, openseaSlug }) => {
     // Before the book: an unknown symbol returns an empty page, which reads as
     // "nothing is for sale" rather than "no such collection".
     const unknown = await refuseUnknownSymbol(symbol);
@@ -1826,16 +1826,16 @@ registerTool(
       serials: z
         .array(z.number().int().finite().min(1).max(1_000_000))
         .max(6)
-        .default([1, 100])
-        .describe("Edition numbers to hunt, e.g. [1, 100]. Ignored when lowestOnly is true."),
-      lowestOnly: z.boolean().default(false).describe("Return the lowest serial listed in each collection instead of specific numbers"),
+        .optional()
+        .describe("Edition numbers to hunt, e.g. [1, 100]. Ignored when lowestOnly is true. Default [1, 100]."),
+      lowestOnly: z.boolean().optional().describe("Return the lowest serial listed in each collection instead of specific numbers. Default false."),
       maxPriceSol: z.number().finite().min(0).max(1_000_000).optional().describe("Keep only asks at or below this price"),
-      startAt: z.number().int().finite().min(0).max(1000).default(0).describe("Where in the group to start; use nextStartAt from the previous call"),
-      batch: z.number().int().finite().min(1).max(20).default(8).describe("How many collections to read in this call. Each one costs a request or two, so a large batch is a long wait."),
-      pagesPerCollection: z.number().int().finite().min(1).max(5).default(2).describe("Pages of 100 listings to read per collection, cheapest first"),
+      startAt: z.number().int().finite().min(0).max(1000).optional().describe("Where in the group to start; use nextStartAt from the previous call. Default 0."),
+      batch: z.number().int().finite().min(1).max(20).optional().describe("How many collections to read in this call. Each one costs a request or two, so a large batch is a long wait."),
+      pagesPerCollection: z.number().int().finite().min(1).max(5).optional().describe("Pages of 100 listings to read per collection, cheapest first. Default 2."),
     },
   },
-  guard(async ({ group, collections, serials, lowestOnly, maxPriceSol, startAt, batch, pagesPerCollection }) => {
+  guard(async ({ group, collections, serials = [1, 100], lowestOnly = false, maxPriceSol, startAt = 0, batch = 8, pagesPerCollection = 2 }) => {
     // Either a family or an explicit list, never both silently: a caller who
     // passes both means one of them, and picking for them is how the wrong
     // set gets scanned without anybody noticing.
@@ -1991,10 +1991,10 @@ registerTool(
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol"),
-      limit: z.number().int().finite().min(1).max(50).default(10),
+      limit: z.number().int().finite().min(1).max(50).optional().describe("How many traders to return. Default 10."),
     },
   },
-  guard(async ({ symbol, limit }) => {
+  guard(async ({ symbol, limit = 10 }) => {
     // Before the leaderboard: an unknown symbol returns an empty trader list,
     // which reads as "nobody trades this" rather than "no such collection".
     const unknown = await refuseUnknownSymbol(symbol);
@@ -2013,10 +2013,10 @@ registerTool(
       "result says so rather than implying the market is quiet. Ranking is the venue's, by its own volume.",
     annotations: READ_ONLY,
     inputSchema: {
-      timeRange: z.enum(me.POPULAR_TIME_RANGES).default("1d"),
+      timeRange: z.enum(me.POPULAR_TIME_RANGES).optional().describe("Default 1d."),
     },
   },
-  guard(async ({ timeRange }) => {
+  guard(async ({ timeRange = "1d" }) => {
     const [read, osRanked] = await Promise.all([
       me.popularCollections(timeRange),
       // Second venue's order, never its numbers: OpenSea's trending rows carry

@@ -564,3 +564,22 @@ A prompt should not ask for something it was just told.
 - The bodies are written in lines rather than one paragraph. A client attaches
   a prompt as a text file, and a single long line reads as "1 line" in the chip,
   which looks like an empty attachment.
+
+## 1.11.3 - 2026-09-15
+
+A client refused every call that left a default out.
+
+- Nineteen parameters carried a schema default, which put a `default` key in
+  the published JSON Schema. Draft-07 says a field with a default and no place
+  in `required` is optional, and one shipping client disagreed: every call that
+  omitted one came back "expected nonoptional, received undefined". Being right
+  did not help the person whose question failed. No default is published now;
+  each one lives in its handler and is named in the parameter description, so
+  behaviour is identical and no client has anything to trip on.
+- A tenth robustness group holds the line: nothing in any published schema may
+  declare a default, and all 20 tools have to answer a call carrying only their
+  required arguments.
+- A presentation rule against shortened addresses. Abbreviating two of them in
+  one answer produced a mint whose head belonged to the asset and whose tail
+  belonged to its collection: a string that reads as an identifier, pastes into
+  an explorer, and finds nothing.

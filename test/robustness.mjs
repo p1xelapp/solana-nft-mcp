@@ -272,5 +272,74 @@ async function startWith(env = {}) {
   ok("r9 no answer carries a key, a file path or a stack frame");
 }
 
+// ------------------------------------------------------------------ r10
+// A parameter with a schema default was refused by a real client whenever it
+// was omitted: "expected nonoptional, received undefined". The schema was
+// correct by draft-07 and being correct did not help the person whose question
+// failed, so no default is published any more and the fallback lives in the
+// handler. This checks both halves: nothing declares a default, and every tool
+// answers a call carrying only its required arguments.
+{
+  const transport = new StdioClientTransport({ command: process.execPath, args: [join(root, "dist", "index.js")], stderr: "ignore" });
+  const c = new Client({ name: "defaults", version: "1" }, { capabilities: {} });
+  await c.connect(transport);
+  const { tools } = await c.listTools();
+
+  const declared = [];
+  const walk = (node, path, tool) => {
+    if (!node || typeof node !== "object") return;
+    if ("default" in node) declared.push(`${tool}${path}`);
+    for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`, tool);
+  };
+  for (const t of tools) walk(t.inputSchema, "", t.name);
+  assert.deepStrictEqual(declared, [], `a published schema declares a default, which a real client refuses: ${declared.join(", ")}`);
+
+  // Only the required arguments. Anything a tool needs beyond these is the bug.
+  const minimal = {
+    identify: { query: "mad lads" },
+    search_collections: { query: "batman" },
+    get_collection_stats: { collection: "mad_lads" },
+    get_floor_prices: { symbols: ["mad_lads"] },
+    get_recent_sales: { collection: "mad_lads" },
+    get_collection_sales: { symbol: "mad_lads" },
+    get_asset: { mint: "BA56URSgTmXFdh83i125szydnvVTuN8U1VSQSckqcnP2" },
+    get_asset_provenance: { mint: "BA56URSgTmXFdh83i125szydnvVTuN8U1VSQSckqcnP2" },
+    get_asset_trust: { mint: "BA56URSgTmXFdh83i125szydnvVTuN8U1VSQSckqcnP2" },
+    get_wallet_holdings: { wallet: "9yzmxQHCz24LDhu9rkjNQhKfKZWbe79B1NJzTy9ExqyP" },
+    get_wallet_activity: { wallet: "9yzmxQHCz24LDhu9rkjNQhKfKZWbe79B1NJzTy9ExqyP" },
+    get_wallet_profile: { wallet: "9yzmxQHCz24LDhu9rkjNQhKfKZWbe79B1NJzTy9ExqyP" },
+    find_listings: { symbol: "mad_lads" },
+    find_in_group: { group: "DC" },
+    get_top_traders: { symbol: "mad_lads" },
+    get_trending: {},
+    get_source_status: {},
+    explain_mechanics: { topic: "freeze" },
+    get_integration_recipe: { goal: "sales-bot" },
+    verify_claim: { claim: "supply", subject: "mad_lads", value: 10_000 },
+  };
+  const refused = [];
+  const missing = [];
+  for (const t of tools) {
+    const args = minimal[t.name];
+    if (!args) { missing.push(t.name); continue; }
+    const required = t.inputSchema?.required ?? [];
+    for (const r of required) {
+      if (!(r in args)) missing.push(`${t.name} fixture is missing the required ${r}`);
+    }
+    try {
+      await c.callTool({ name: t.name, arguments: args }, undefined, { timeout: 90_000 });
+    } catch (e) {
+      // An upstream that is down is not this test's business; a refused SHAPE is.
+      if (/validation|invalid_type|nonoptional|Required/i.test(String(e.message))) {
+        refused.push(`${t.name}: ${String(e.message).replace(/\s+/g, " ").slice(0, 120)}`);
+      }
+    }
+  }
+  await c.close();
+  assert.deepStrictEqual(missing, [], `every tool needs a minimal fixture here: ${missing.join(", ")}`);
+  assert.deepStrictEqual(refused, [], `a tool refused a call carrying only its required arguments: ${refused.join("; ")}`);
+  ok(`r10 no tool publishes a default, and all ${tools.length} answer a call with only their required arguments`);
+}
+
 if (!existsSync(join(root, "dist", "index.js"))) throw new Error("dist is missing; run npm run build");
-console.log(`\nrobustness test: ${passed} groups passed (r1-r9)`);
+console.log(`\nrobustness test: ${passed} groups passed (r1-r10)`);
