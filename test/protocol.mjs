@@ -84,8 +84,14 @@ const { resources } = await client.listResources();
 assert.ok(resources.some((r) => r.uri === "collector://registry"), "registry resource missing");
 
 const reg = await client.readResource({ uri: "collector://registry" });
-const entries = JSON.parse(reg.contents[0].text);
+const registry = JSON.parse(reg.contents[0].text);
+const entries = registry.collections;
 assert.ok(Array.isArray(entries) && entries.length >= 5, "registry should have >=5 entries");
+assert.equal(entries.length, registry.count, "registry count should match the list it ships");
+// The payload has to say what to do with it: a user attaches this file and
+// otherwise gets a wall of JSON with no instructions.
+assert.ok(typeof registry.howToUse === "string" && registry.howToUse.length > 60, "registry resource needs a howToUse line");
+assert.ok(entries.every((e) => e.id && e.name), "every registry row needs an id and a name");
 
 assert.ok(resources.some((r) => r.uri === "collector://glossary"), "glossary resource missing");
 assert.ok(resources.some((r) => r.uri === "collector://sources"), "sources resource missing");
@@ -113,6 +119,19 @@ assert.ok(
 const { prompts } = await client.listPrompts();
 assert.ok(prompts.some((p) => p.name === "collection_report"), "collection_report prompt missing");
 assert.ok(prompts.some((p) => p.name === "wallet_report"), "wallet_report prompt missing");
+assert.ok(prompts.some((p) => p.name === "getting_started"), "getting_started prompt missing");
+// Every prompt argument is optional, and every prompt has to survive a client
+// that sends an empty argument object. A required argument plus a client that
+// loses the typed value is a prompt that simply cannot be attached.
+for (const p of prompts) {
+  for (const a of p.arguments ?? []) assert.ok(!a.required, `prompt ${p.name} argument ${a.name} must not be required`);
+  const empty = await client.getPrompt({ name: p.name, arguments: {} });
+  assert.ok(empty.messages[0].content.text.length > 80, `prompt ${p.name} should work with empty arguments`);
+}
+// A prompt that takes nothing must also answer a request that carries no
+// arguments key at all, which is what a client sends for a zero-input prompt.
+const started = await client.getPrompt({ name: "getting_started" });
+assert.ok(/get_source_status/.test(started.messages[0].content.text), "getting_started should start from live source status");
 
 // Schema rejection must not require network.
 const bad = await client.callTool({ name: "get_asset", arguments: { mint: "nope" } }).catch((e) => e);
@@ -373,6 +392,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 2 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (20 tools by exact name, 4 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

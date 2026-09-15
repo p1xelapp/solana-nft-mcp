@@ -72,7 +72,7 @@ try {
   const { resources } = await client.listResources();
   report(resources.some((r) => r.uri === "collector://registry") ? "PASS" : "FAIL", "listResources");
   const reg = await client.readResource({ uri: "collector://registry" });
-  const entries = JSON.parse(reg.contents[0].text);
+  const entries = JSON.parse(reg.contents[0].text).collections;
   report(entries.length >= 5 ? "PASS" : "FAIL", "registry resource", `${entries.length} entries`);
 } catch (e) { report("FAIL", "resources", e.message); }
 

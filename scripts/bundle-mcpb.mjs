@@ -28,7 +28,7 @@ if (!existsSync(path.join(root, "dist", "index.js"))) {
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
 for (const f of ["dist", "data", "LICENSE", "README.md", "package.json"]) cpSync(path.join(root, f), path.join(stage, f), { recursive: true });
-cpSync(path.join(root, "assets", "logo-512.png"), path.join(stage, "icon.png"));
+cpSync(path.join(root, "assets", "icon-512.png"), path.join(stage, "icon.png"));
 
 // Production dependencies only, no lifecycle scripts: the bundle must carry
 // exactly what `npm install collector-mcp` would give a user, nothing else.
@@ -44,6 +44,8 @@ const manifest = {
   long_description:
     "Reads the chain and the venues (Magic Eden, OpenSea) and labels every number with where and when it came from. " +
     "20 tools: who owned a card, who can freeze it, what sold this week, the cheapest low serial, what a wallet holds and how it trades. " +
+    "Builders get the same reads as parsed, typed results with the raw Metaplex Core and Token Metadata fields kept intact, " +
+    "so an agent or an app can use them without writing a parser first. " +
     "Nothing is collected; only the public address or name you ask about leaves your machine.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/collector-mcp/",

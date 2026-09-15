@@ -178,8 +178,10 @@ Four resources give an assistant the ground rules before it calls anything:
 opened Candy pack is returned rather than burned), `collector://sources` (every source with its
 tier, fallback and blind spots), `collector://mechanics` (how each standard and venue handles
 custody, freezing and royalties) and `collector://registry` (a curated set of collections with
-their identifiers). Two prompts, `collection_report` and `wallet_report`, run the full sequence
-for a collection or a wallet in one step.
+their identifiers). Three prompts: `getting_started` says what the server answers and hands you
+five questions to try, and `collection_report` and `wallet_report` run the full sequence for a
+collection or a wallet in one step. Every prompt argument is optional, so a prompt attaches even
+when the client sends nothing and asks you for the missing piece instead.
 
 ## Trust and limits
 

@@ -1842,23 +1842,100 @@ server.registerResource(
   "collector://registry",
   {
     title: "Curated collection registry",
-    description: "Hand-verified licensed digital-collectible collections and their identifiers.",
+    description:
+      "Every collection this server can resolve by name, with the identifier each source needs. " +
+      "Attach it to ask which collections are covered; for a single lookup, search_collections is faster.",
     mimeType: "application/json",
   },
   (uri) =>
     Promise.resolve({
-      contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(REGISTRY, null, 2) }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(
+            {
+              howToUse:
+                "Names in this list can be passed to any tool that takes a collection. Entries with a meSymbol trade on " +
+                "Magic Eden; entries with a coreCollection can be read straight from the chain. A collection that is not " +
+                "listed still works: pass a Magic Eden symbol or a Metaplex Core collection address directly.",
+              count: REGISTRY.length,
+              // The full entries carry keywords and a note, and for the
+              // generated Candy rows that note is the same sentence 400 times.
+              // Attaching it whole spends a person's context on repetition, so
+              // the shared sentence is hoisted and each row keeps only what
+              // makes it findable and callable.
+              candyNote:
+                "Candy Digital rows come from the CandyScan collection list. The Magic Eden symbol resolves by name " +
+                "through the directory; pass a symbol directly for listings and sales.",
+              collections: REGISTRY.map((e) => {
+                const generated = e.notes?.startsWith("From the CandyScan collection list");
+                return {
+                  id: e.id,
+                  name: e.name,
+                  platform: e.platform,
+                  meSymbol: e.meSymbol,
+                  coreCollection: e.coreCollection,
+                  openseaSlug: e.openseaSlug,
+                  notes: generated ? undefined : e.notes,
+                };
+              }),
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     }),
 );
 
 // ---------------------------------------------------------------- prompts
+
+// First in the list on purpose: it is the one a new user should click. The
+// menu in most clients shows a title and nothing else, so someone who has
+// never used an MCP server has no idea what to type. This takes no arguments,
+// says what the server can answer, and hands over five questions to try.
+server.registerPrompt(
+  "getting_started",
+  {
+    title: "Start here: what can I ask?",
+    description: "New to collector-mcp? This explains what it can answer and gives you questions to try.",
+    // No argsSchema at all, not an empty one: an empty schema still makes the
+    // server reject a request that arrives without an `arguments` object, and
+    // some clients send none for a prompt that takes nothing.
+  },
+  () => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text:
+            `I just installed collector-mcp and I do not know what to ask yet. Using its own tools, not your memory:\n` +
+            `1. Call get_source_status and tell me which sources are live right now and whether OpenSea is on.\n` +
+            `2. In plain language, say what this server can answer: the history of a single card, who can freeze or burn it, ` +
+            `what a collection is worth at floor and what actually sold, the cheapest listings and low serial numbers, ` +
+            `and what any wallet holds and how it trades.\n` +
+            `3. Say clearly what it cannot do: it never moves anything, never signs anything, and only reads public data.\n` +
+            `4. Give me five questions I can copy, using real collections you can resolve with search_collections. ` +
+            `Make them the kind a collector actually asks, one per area above.\n` +
+            `Keep it short. No lists of tool names.`,
+        },
+      },
+    ],
+  }),
+);
 
 server.registerPrompt(
   "collection_report",
   {
     title: "Collection market report",
     description: "Build a concise market report for a collection using the collector-mcp tools.",
-    argsSchema: { collection: z.string().describe("Collection name, symbol, or address") },
+    // Optional on purpose. A required argument makes the prompt unusable in a
+    // client that cannot collect one, and a client that loses the typed value
+    // then refuses to attach the prompt at all. With nothing filled in, the
+    // prompt still works: it asks which collection first.
+    argsSchema: { collection: z.string().optional().describe("Collection name, symbol, or address") },
   },
   ({ collection }) => ({
     messages: [
@@ -1867,7 +1944,9 @@ server.registerPrompt(
         content: {
           type: "text",
           text:
-            `Build a market report for "${collection}" using collector-mcp tools:\n` +
+            (collection
+              ? `Build a market report for "${collection}" using collector-mcp tools:\n`
+              : `Ask me which collection I mean first, then build a market report for it using collector-mcp tools:\n`) +
             `1. search_collections to resolve identifiers.\n` +
             `2. get_collection_stats for supply + floor.\n` +
             `3. get_recent_sales (if it trades on Magic Eden) - summarize price range and velocity.\n` +
@@ -1885,7 +1964,8 @@ server.registerPrompt(
   {
     title: "Wallet report",
     description: "Profile a Solana wallet as a collector: what they hold, how they trade, what it is worth at floor (as a ceiling), with every number labelled.",
-    argsSchema: { wallet: z.string().describe("Wallet address") },
+    // Optional for the same reason as collection_report above.
+    argsSchema: { wallet: z.string().optional().describe("Wallet address") },
   },
   ({ wallet }) => ({
     messages: [
@@ -1894,7 +1974,9 @@ server.registerPrompt(
         content: {
           type: "text",
           text:
-            `Profile the wallet ${wallet} using collector-mcp tools:\n` +
+            (wallet
+              ? `Profile the wallet ${wallet} using collector-mcp tools:\n`
+              : `Ask me for the wallet address first, then profile it using collector-mcp tools:\n`) +
             `1. get_wallet_profile - lead with what they collect (top 3 collections, share of wallet, share of supply if known), wallet age, and the floor CEILING (call it a ceiling, never a value).\n` +
             `2. get_wallet_activity - buys vs sells, net SOL flow, the behaviour label and why, best and worst flip, venue split.\n` +
             `3. If one collection dominates, get_collection_stats on it for context.\n` +
@@ -1907,9 +1989,32 @@ server.registerPrompt(
 
 // ------------------------------------------------------------------ main
 
+/**
+ * Lets a prompt be attached by a client that sends no arguments at all.
+ *
+ * `arguments` is optional in the protocol, but the SDK validates whatever
+ * arrived against the prompt's argument schema, and an absent object fails
+ * that check even when every argument is optional. The request is then
+ * refused and the person sees only that the prompt could not be attached.
+ * Filling in an empty object costs nothing: each prompt already handles the
+ * case where the value is missing by asking for it.
+ */
+function tolerateMissingPromptArguments(transport: StdioServerTransport): void {
+  type OnMessage = NonNullable<StdioServerTransport["onmessage"]>;
+  const inner: OnMessage | undefined = transport.onmessage?.bind(transport);
+  if (!inner) return;
+  const wrapped: OnMessage = (message) => {
+    const m = message as unknown as { method?: unknown; params?: { arguments?: unknown } };
+    if (m.method === "prompts/get" && m.params && m.params.arguments === undefined) m.params.arguments = {};
+    inner(message);
+  };
+  transport.onmessage = wrapped;
+}
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  tolerateMissingPromptArguments(transport);
   // The banner reports the key situation as it stands and never REQUESTS one:
   // issuing at startup would spend a daily allowance on a client that may
   // never ask an OpenSea question at all.
