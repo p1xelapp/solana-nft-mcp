@@ -125,9 +125,23 @@ check("B2", "collections", "a marketplace collection answers a floor", async () 
   const r = await call("get_collection_stats", { collection: "mad_lads" });
   return typeof r.market?.floorPriceSol === "number" || `no floor: ${text(r.market)}`;
 });
-check("B3", "collections", "a collection with no OpenSea slug says so rather than staying silent", async () => {
+check("B3", "collections", "the second venue is either read or its absence is explained, never silent", async () => {
+  // This used to assert "no OpenSea slug is known", which was true when slugs
+  // were hand-curated and had reached 4 of 402 registry entries. Slugs are now
+  // resolved from the chain address against OpenSea's own index, so this
+  // collection has a second venue and the note is correctly gone. The rule
+  // that actually matters is unchanged and is what this checks: silence about
+  // a second venue reads as "there is only one".
   const r = await call("get_collection_stats", { collection: FIX.iconCollection });
-  return /No OpenSea slug/.test(r.openseaNote ?? "") || `openseaNote was ${r.openseaNote ?? "absent"}`;
+  const os = r.opensea;
+  const read = os && typeof os === "object" && !("error" in os);
+  if (read) {
+    // If it was read, the answer has to say where the slug came from, because
+    // a slug nobody curated is a claim that needs its own provenance.
+    const hasProvenance = typeof os.slugSource === "string" || typeof r.openseaNote === "string";
+    return hasProvenance || "OpenSea data appeared with no statement of how its slug was found";
+  }
+  return (r.openseaNote ?? "").length > 20 || `no OpenSea data and no explanation: openseaNote was ${r.openseaNote ?? "absent"}`;
 });
 check("B4", "collections", "a made-up symbol is refused, never reported as a quiet market", async () => {
   const r = await call("get_collection_stats", { collection: "definitely_not_a_collection_xyz" });
