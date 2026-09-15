@@ -52,7 +52,9 @@ const CLAIM_BAIT = /\b(?:voucher|vouchers|claim|claimable|airdrop|redeem|eligibl
 const WEAK_BAIT = /\b(?:reward|rewards|giveaway|winner|prize|bonus|gift|free\s+mint|free\s+claim)\b/i;
 
 /** A token amount in a name, with or without a currency mark: "104 SOL For You", "$1700". */
-const MONEY = /(?:[$€£]\s?\d|\b\d[\d,.]*\s*(?:sol|usdc|usdt|eth|btc|k|m)\b)/i;
+// A named currency or a currency mark only. Bare "k" and "m" used to count,
+// which would read a card called "1952 M" as a payout.
+const MONEY = /(?:[$€£]\s?\d|\b\d[\d,.]*\s*(?:sol|usdc|usdt|eth|btc)\b)/i;
 
 /**
  * Latin letters mixed with lookalikes from another script - the Cyrillic о in

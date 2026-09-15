@@ -558,6 +558,11 @@ const jsonResponse = (body, headers = {}) =>
   }
   // Being compressed and uncollected is corroboration, never the verdict on its own.
   assert.equal(classifyAirdrop({ name: "Tensorian #900", compressed: true, collectionVerified: false }).likelySpam, false, "a cheap standard is not evidence of spam by itself");
+  // "1952 M" is a card, not a payout: bare k and m used to count as currency.
+  for (const name of ["1952 Mantle #311 1m", "Series 2 K", "2026 MLB Base Series ICONs"]) {
+    assert.equal(classifyAirdrop({ name, compressed: false, collectionVerified: true }).likelySpam, false, `"${name}" is a card name, not a token amount`);
+  }
+  assert.ok(classifyAirdrop({ name: "Claim 5 USDC now", compressed: true, collectionVerified: false }).likelySpam, "a named currency with a claim still counts");
   const summary = summariseAirdrops([{ likelySpam: true, signals: ["x"] }, { likelySpam: false, signals: [] }]);
   assert.deepEqual([summary.likelySpam, summary.examined, summary.rest], [1, 2, 1]);
   assert.ok(/never removed/i.test(summary.note), "the summary must say nothing was dropped from the list");
