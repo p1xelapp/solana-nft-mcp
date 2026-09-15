@@ -182,6 +182,18 @@ five questions to try, and `collection_report` and `wallet_report` run the full 
 collection or a wallet in one step. Every prompt argument is optional, so a prompt attaches even
 when the client sends nothing and asks you for the missing piece instead.
 
+## Testing
+
+`npm test` runs the offline suites plus a live smoke pass over every tool: protocol
+surface, hardening regressions, an adversarial gauntlet, and the real endpoints.
+
+`node test/battery.mjs` is the slower one, and the one that finds things. 157 live
+checks asking what a person asks, then testing how the ANSWER behaves: that a gap is
+named rather than hidden, that two currencies are never ranked against each other,
+that an empty result is never dressed up as a fact about the world, that a failure
+says which source broke and what still works. Pass an area name to run one group
+(`node test/battery.mjs consistency`).
+
 ## Trust and limits
 
 - Buying, selling, listing and signing are absent. No code exists for them.

@@ -427,3 +427,26 @@ Found by working through a twelve-case test pass by hand.
 - An empty wallet answer says when the chain has no account at that address at
   all, which is what a mistyped address looks like. Both readers returning
   nothing used to read identically for a real empty wallet and a typo.
+
+## 1.10.3 - 2026-09-15
+
+A live behavioural battery, `node test/battery.mjs`: 157 checks across 26 areas that
+ask what a person asks and then test how the answer behaves. Its first three runs
+found six real bugs, all fixed here.
+
+- `identify` matched a collection name by substring, so "Absolute Batman (2024) #1"
+  matched issues #1, #10, #11 and #12 alike, looked ambiguous, and fell through to a
+  directory guess that landed on an Ashcan special edition. Names are compared on a
+  shared key now, punctuation and issuer stripped, and containment stops at a word
+  boundary.
+- `get_asset_trust` on a programmable NFT answered "Try again, or try a narrower
+  request", which is advice to retry something that can never work. The raw account
+  reader threw an untyped error, so the standards mismatch lost its class before the
+  wording layer saw it.
+- A wallet with listings and no completed trades was labelled "unknown" with an empty
+  reason. It now says there were no buys or sells to judge, and what to read instead.
+- A search query echoed a direction-override character straight back into the answer.
+  The echo goes through the same neutraliser as anything an upstream wrote.
+- A collection with no OpenSea slug said nothing about OpenSea at all.
+- An empty wallet answer now says when the chain has no account at that address,
+  which is what a mistyped address looks like.

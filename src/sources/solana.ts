@@ -486,7 +486,15 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
     { encoding: "base64" },
   ]);
   if (!info?.value) return null;
-  if (info.value.owner !== CORE_PROGRAM) throw new Error(`account ${address} is owned by ${info.value.owner}, not Metaplex Core`);
+  // Typed, not a plain Error. get_asset_trust reads through here, and an
+  // untyped failure lost its class on the way to the wording layer: asking for
+  // the custody rules of a programmable NFT answered "Try again, or try a
+  // narrower request", which is advice to retry something that can never work.
+  if (info.value.owner !== CORE_PROGRAM)
+    throw new WrongKindError(
+      `account ${address} is owned by ${info.value.owner}, not Metaplex Core. ` +
+        `The byte-level decode reads Metaplex Core assets only (SPL, programmable and compressed NFTs: use get_asset).`,
+    );
   return info.value.data[0];
 }
 
