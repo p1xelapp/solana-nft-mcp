@@ -9,6 +9,8 @@
  */
 
 import { inspectUntrusted } from "./untrusted.js";
+import { runWithSignal, withAmbient } from "./context.js";
+import { redactSecrets } from "./secrets.js";
 
 export interface CacheHit<T> {
   data: T;
@@ -24,9 +26,22 @@ interface CacheEntry {
 }
 
 const store = new Map<string, CacheEntry>();
+/**
+ * One shared read in progress.
+ *
+ * `waiters` is how many callers are still waiting on it. The producer is
+ * abandoned only when that reaches zero: a fetch nobody will read is spent
+ * budget, but a fetch one caller left and another still needs is not the
+ * leaver's to cancel.
+ */
+interface Inflight {
+  promise: Promise<unknown>;
+  producer: AbortController;
+  waiters: number;
+}
 // Identical keys requested while a fetch is in flight share that one fetch,
 // so ten parallel calls for the same wallet cost the upstream one request.
-const inflight = new Map<string, Promise<unknown>>();
+const inflight = new Map<string, Inflight>();
 /** How many distinct keys are in flight per origin, so one busy source cannot spend another's headroom. */
 const inflightPerOrigin = new Map<string, number>();
 /**
@@ -103,6 +118,13 @@ function commit(key: string, data: unknown) {
  * joined, so an unrelated caller lost an answer it was still waiting for. Each
  * WAITER instead races the shared promise against its own signal, so a caller's
  * deadline ends that caller's wait and nobody else's.
+ *
+ * The producer is not immortal either. Measured 2026-09-15 over real stdio: a
+ * client cancelled a sales read after the first page, and the producer went on
+ * to fetch offsets 500 and 1000 with nobody waiting. So the producer runs
+ * under its own signal as the AMBIENT deadline for everything it awaits (see
+ * lib/context.ts), and that signal fires when the last waiter leaves - never
+ * while somebody still needs the answer.
  */
 export async function cached<T>(
   key: string,
@@ -117,12 +139,25 @@ export async function cached<T>(
   if (!opts.fresh && hit && Date.now() - hit.cachedAt < ttlMs) {
     return { data: hit.data as T, stale: false, cachedAt: new Date(hit.cachedAt).toISOString() };
   }
+  // This caller's deadline: whatever was passed explicitly, plus the request
+  // it is running inside. A tool handler's cancellation has to end the wait
+  // here even when the source never threaded a signal through.
+  const waiterSignal = withAmbient(opts.signal);
+  let entry: Inflight | undefined;
+  let left = false;
+  /** This waiter is gone. If it was the last, nobody will read the producer's answer. */
+  const leave = () => {
+    if (left || !entry) return;
+    left = true;
+    entry.waiters--;
+    if (entry.waiters <= 0 && inflight.get(key) === entry) entry.producer.abort();
+  };
   try {
     // One shared promise does the fetch AND the single cache commit, so N
     // concurrent waiters cause one upstream call and one eviction pass.
     const origin = originOf(key, opts.origin);
-    let p = inflight.get(key) as Promise<T> | undefined;
-    if (!p) {
+    entry = inflight.get(key);
+    if (!entry) {
       // A new distinct key is new work. Past the ceiling it is shed, not
       // queued: a stale answer for this key is better than an unbounded
       // backlog, so an existing cached value is still served below.
@@ -133,26 +168,35 @@ export async function cached<T>(
       }
       // The producer's own controller. Nothing in it is tied to whoever asked
       // first, so one caller giving up cannot cancel a fetch others joined.
+      // It is also the ambient deadline inside the fetcher, so the caller's
+      // own signal - which may fire long before the other waiters' - is not
+      // what the fetcher's pages and gate waits see.
       const producer = new AbortController();
-      p = fetcher(producer.signal).then((data) => {
+      const promise = runWithSignal(producer.signal, () => fetcher(producer.signal)).then((data) => {
         commit(key, data);
         return data;
       });
-      inflight.set(key, p);
+      entry = { promise, producer, waiters: 0 };
+      inflight.set(key, entry);
       inflightPerOrigin.set(origin, forOrigin + 1);
-      p.finally(() => {
-        inflight.delete(key);
-        const left = (inflightPerOrigin.get(origin) ?? 1) - 1;
-        if (left > 0) inflightPerOrigin.set(origin, left);
+      const mine = entry;
+      promise.finally(() => {
+        if (inflight.get(key) === mine) inflight.delete(key);
+        const remaining = (inflightPerOrigin.get(origin) ?? 1) - 1;
+        if (remaining > 0) inflightPerOrigin.set(origin, remaining);
         else inflightPerOrigin.delete(origin);
       }).catch(() => undefined);
     }
-    const data = await raceSignal(p, opts.signal, "the caller's deadline passed while waiting for a shared read of this data");
+    entry.waiters++;
+    const data = await raceSignal(entry.promise as Promise<T>, waiterSignal, "the caller's deadline passed while waiting for a shared read of this data");
     return { data, stale: false, cachedAt: new Date().toISOString() };
   } catch (err) {
     // An abort is the caller leaving, not the upstream failing: it must not be
     // dressed up as a stale answer from a source that is perfectly healthy.
-    if (err instanceof AbortedError) throw err;
+    if (err instanceof AbortedError) {
+      leave();
+      throw err;
+    }
     if (hit && !opts.fresh) {
       return { data: hit.data as T, stale: true, cachedAt: new Date(hit.cachedAt).toISOString() };
     }
@@ -470,6 +514,11 @@ export async function fetchRetry(
   { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate, signal, background = false }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: (signal?: AbortSignal, opts?: GateOptions) => Promise<void>; signal?: AbortSignal; background?: boolean } = {},
 ): Promise<Response> {
   assertOnline(url);
+  // The request this fetch is serving may have been cancelled by the client
+  // without any source threading that signal here. The ambient one is joined
+  // to whatever was passed, so a cancelled question stops at the next gate
+  // wait, retry sleep or fetch whichever module is doing the asking.
+  signal = withAmbient(signal);
   if (signal?.aborted) throw new AbortedError("the caller's deadline had already passed before this request was sent");
   let lastErr: unknown;
   for (let i = 0; i <= retries; i++) {
@@ -502,8 +551,10 @@ export async function fetchRetry(
         await res.body?.cancel().catch(() => undefined);
         const wait = retryAfterMs(res.headers.get("retry-after"));
         // A server asking for more than 30s is telling us to go away, not to
-        // retry: stop rather than hammer it early.
-        if (wait > 30_000) throw new StopError(`HTTP 429 (rate limited; server asked for a ${Math.round(wait / 1000)}s pause)`);
+        // retry: stop rather than hammer it early. The pause it asked for
+        // travels with the error, so a caller with its own cooldown (the key
+        // issuer) can honour it instead of guessing.
+        if (wait > 30_000) throw new StopError(`HTTP 429 (rate limited; server asked for a ${Math.round(wait / 1000)}s pause)`, wait);
         throw new RetryableError(`HTTP 429 (rate limited)`, true, wait);
       }
       if (res.status >= 500) {
@@ -512,7 +563,7 @@ export async function fetchRetry(
       }
       return res;
     } catch (e) {
-      if (e instanceof StopError) throw new Error(e.message);
+      if (e instanceof StopError) throw new HttpError(e.message, 429, "rate limited", e.retryAfterMs);
       // Shed load and oversized bodies are both final answers: retrying adds
       // another queued caller, or downloads the same gigabyte again.
       if (e instanceof BusyError || e instanceof OversizedBodyError || e instanceof AbortedError) throw e;
@@ -530,11 +581,18 @@ export async function fetchRetry(
       }
     }
   }
+  // A 429 or 5xx that outlived every retry is an HTTP answer, and is thrown
+  // as one: a caller checking `status === 429` used to get a private error
+  // class instead and had to grep the message for the number.
+  if (lastErr instanceof RetryableError) {
+    const status = lastErr.slow ? 429 : Number(/HTTP (\d{3})/.exec(lastErr.message)?.[1] ?? 502);
+    throw new HttpError(lastErr.message, status, lastErr.slow ? "rate limited" : "upstream error", lastErr.retryAfterMs || undefined);
+  }
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 /** Sleep that ends early when the caller gives up, and throws so the retry loop stops rather than continuing. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) return reject(new AbortedError("the caller's deadline passed before this retry's backoff finished"));
     const t = setTimeout(() => {
@@ -559,7 +617,11 @@ function retryAfterMs(h: string | null): number {
 }
 
 /** Thrown to leave the retry loop immediately. */
-class StopError extends Error {}
+class StopError extends Error {
+  constructor(msg: string, public retryAfterMs = 0) {
+    super(msg);
+  }
+}
 
 /** The caller's own deadline passed. Not an upstream failure and never retried. */
 export class AbortedError extends Error {
@@ -576,7 +638,7 @@ export class AbortedError extends Error {
  * `AbortSignal.any` would do this in one line but landed in Node 20.3, and
  * the engine floor is 20.0 - so the two are combined by hand.
  */
-function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
+export function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   if (!caller) return timeout;
   const controller = new AbortController();
@@ -619,9 +681,11 @@ async function upstreamReason(res: Response, source: string): Promise<string> {
   } catch {
     /* not JSON - fall through to the raw snippet */
   }
-  // Never let a key we sent bounce back into an error string.
-  const key = process.env.OPENSEA_API_KEY;
-  if (key && key.length > 6) msg = msg.split(key).join("[REDACTED]");
+  // Never let a key we sent bounce back into an error string. EVERY key this
+  // process has sent, not the one in the environment: the self-issued key
+  // lives in memory and on disk, and reading only the environment let a mocked
+  // OpenSea 400 carry it into a normal status answer.
+  msg = redactSecrets(msg);
   // An error body is attacker-authored text that ends up in model context and
   // in logs: it goes through the same neutralising pass as any minted name,
   // and is capped short enough that it cannot crowd out the real answer.
@@ -654,7 +718,13 @@ export async function fetchJson<T>(
 
 /** Carries the upstream status + reason so callers can special-case them. */
 export class HttpError extends Error {
-  constructor(msg: string, public status: number, public reason: string) {
+  constructor(
+    msg: string,
+    public status: number,
+    public reason: string,
+    /** How long the upstream asked us to stay away, when it said. */
+    public retryAfterMs?: number,
+  ) {
     super(msg);
     this.name = "HttpError";
   }

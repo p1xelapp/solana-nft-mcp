@@ -16,6 +16,11 @@
 
 import type { MeCollectionActivity, MeListing, TraitFloor, MeCollectionIndexEntry } from "./sources/magiceden.js";
 import { clean } from "./lib/untrusted.js";
+import { usableBlockTime, isoFromBlockTime } from "./lib/time.js";
+
+// Re-exported so existing callers and tests keep one import path; the guard
+// itself lives in lib/time.ts because every source now shares it.
+export { usableBlockTime };
 
 /**
  * Rounding at lamport resolution (1e-9 SOL), not the 3 decimals a wallet
@@ -40,35 +45,7 @@ const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
  * the chain, and the upper bound is a day into the future to allow for clock
  * skew at the venue. Anything outside that is not a time, whatever its type.
  */
-/**
- * JavaScript Date spans +/-8.64e15 MILLISECONDS from the epoch, and
- * `toISOString` throws outside that. In seconds, that is the bound below.
- */
-const MAX_DATE_SECONDS = 8_640_000_000_000;
-
-export function usableBlockTime(v: unknown): number | null {
-  if (typeof v !== "number" || !Number.isFinite(v)) return null;
-  // Only representability. An early attempt at this also rejected anything
-  // before Solana's genesis as implausible, which threw away real data to
-  // solve a problem it did not have: 150 is a daft block time but it renders
-  // as 1970 without complaint, and deleting rows we CAN read is a worse bug
-  // than printing an odd date. Plausibility is a labelling question; this
-  // function exists only to stop a RangeError destroying a whole report.
-  if (Math.abs(v) > MAX_DATE_SECONDS) return null;
-  return v;
-}
-
-const iso = (t: number | null | undefined) => {
-  const at = usableBlockTime(t);
-  if (at === null) return null;
-  try {
-    return new Date(at * 1000).toISOString();
-  } catch {
-    // Belt and braces: the range check above should make this unreachable, and
-    // an unreachable throw here would still cost a whole report.
-    return null;
-  }
-};
+const iso = isoFromBlockTime;
 /** The UTC calendar day a block time falls in, for bucketing a series. */
 const utcDay = (t: number): string | null => iso(t)?.slice(0, 10) ?? null;
 
@@ -111,12 +88,21 @@ export interface IdentifiableEvent {
  * They are compared instead: a repeat that disagrees is reported, not counted.
  * A row with no signature cannot be identified at all and is kept, because
  * dropping a real sale to protect a counter is the worse error.
+ *
+ * ALL THREE parts have to be present. Encoding a missing mint or type as an
+ * empty string gave two sparse fills in one transaction the same identity:
+ * the second was dropped as a duplicate and the first marked unsettled, so a
+ * real sale vanished and another lost its price. A missing discriminator is
+ * not proof that two rows are the same fill. A row without one has no
+ * identity here and falls through to the fallback, which demands even more.
  */
 export function eventIdentity(e: IdentifiableEvent | null | undefined): string | null {
   const sig = typeof e?.signature === "string" && e.signature ? e.signature : null;
   if (!sig) return null;
-  const part = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v) : "");
-  return [sig, part(e?.tokenMint), part(e?.type)].join("\u0000");
+  const mint = typeof e?.tokenMint === "string" ? e.tokenMint.trim() : "";
+  const type = typeof e?.type === "string" ? e.type.trim() : "";
+  if (!mint || !type) return null;
+  return [sig, mint, type].join("\u0000");
 }
 
 /**

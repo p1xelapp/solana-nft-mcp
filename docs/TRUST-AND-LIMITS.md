@@ -103,7 +103,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 5. Cached values are served labelled stale rather than shown as fresh or hidden behind an error.
 6. Unverifiable is a real verdict here, alongside confirmed and contradicted.
 7. Read-only by construction. There is no signing code in the repository, so there is nothing to misuse.
-8. Runs on your machine, reads public data, keeps nothing. No account, no sign-in, no keys required.
+8. Runs on your machine, reads public data, keeps nothing of yours. No account, no sign-in, no key to go and get: the one free key it uses, it requests for you, and you can turn that off.
 
 ---
 

@@ -109,6 +109,37 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.ok(s.coverage.oldestSeen !== null, "coverage spans what was read, not what was counted");
 }
 
+// -- the window's edges, and what a sale is --------------------------------
+// Three mutants survived this file in an outside review: counting `list`
+// rows as sales, and making either window boundary exclusive. Each is a
+// wrong number a reader would never see coming, so each gets an assertion
+// that fails the moment the boundary moves by one second or the sale set
+// grows by one type.
+{
+  const t = 1_700_000_000;
+  const row = (type, blockTime, n) => ({ type, signature: `edge-${type}-${n}`, tokenMint: `mint-${n}`, price: 1, blockTime, buyer: "b", seller: "s" });
+  const feed = [
+    row("buyNow", t, 1), // exactly at the start: in
+    row("buyNow", t + 100, 2), // exactly at the end: in
+    row("buyNow", t - 1, 3), // one second before the start: out
+    row("buyNow", t + 101, 4), // one second after the end: out
+    row("list", t + 50, 5), // a listing is an ask, never a sale
+    row("bid", t + 50, 6),
+    row("cancelBid", t + 50, 7),
+    row("delist", t + 50, 8),
+  ];
+  const s = summarizeSales(feed, { windowStartUnix: t, windowEndUnix: t + 100 });
+  assert.strictEqual(s.sales, 2, "both boundaries are inclusive and only fills count");
+  assert.strictEqual(s.volumeSol, 2, "a listed, bid or delisted item adds nothing to volume");
+  const only = (type) => summarizeSales([row(type, t + 50, 9)], { windowStartUnix: t, windowEndUnix: t + 100 }).sales;
+  for (const type of ["list", "bid", "cancelBid", "delist"]) assert.strictEqual(only(type), 0, `a ${type} row is not a sale`);
+  assert.strictEqual(only("buyNow"), 1);
+  assert.strictEqual(only("buy"), 1, "Magic Eden's other fill type counts");
+  assert.strictEqual(summarizeSales([row("buyNow", t, 10)], { windowStartUnix: t, windowEndUnix: t + 100 }).sales, 1, "a sale at the exact start second is inside the window");
+  assert.strictEqual(summarizeSales([row("buyNow", t + 100, 11)], { windowStartUnix: t, windowEndUnix: t + 100 }).sales, 1, "a sale at the exact end second is inside the window");
+  console.log("window edges + sale types OK");
+}
+
 // -- a single sale --------------------------------------------------------
 {
   const one = [activities[0]];

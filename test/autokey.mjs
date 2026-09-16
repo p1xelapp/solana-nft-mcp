@@ -145,8 +145,11 @@ const DAY = 24 * 60 * 60_000;
   const state = os.openSeaState();
   assert.strictEqual(state.enabled, false);
   assert.strictEqual(state.source, "none");
+  // The cap by name, and the wait as a real time rather than a figure of
+  // speech: the refusal is now remembered for a cooldown, and the note says
+  // when the next attempt may go out.
   assert.ok(
-    state.note.includes("unavailable (OpenSea's key limit; retry after a day)"),
+    state.note.includes("OpenSea's key limit") && /not asked again before \d{4}-\d{2}-\d{2}T/.test(state.note),
     `the note must name the cap and the wait, got: ${state.note}`,
   );
   assert.strictEqual(os.openSeaEnabled(), false, "every OpenSea-backed field stays absent, as it always could be");

@@ -55,24 +55,50 @@ export interface DirectSymbolHit {
   symbol: string;
   /** The venue's own name for it, which is what was matched against. */
   venueName: string;
+  /**
+   * True when the symbol is the exact slugification of the name but nothing
+   * is listed under it, so the venue's own name could not be read. A hit on
+   * the strength of the slug alone; the caller reports it as such.
+   */
+  provisional?: boolean;
   note: string;
+}
+
+/** The venue has the symbol this name slugifies to, and calls it something else. */
+export interface DirectConflict {
+  symbol: string;
+  venueName: string;
 }
 
 export interface DirectSymbolMiss {
   found: false;
   /**
-   * True only when every candidate was answered with a definite 404. False
-   * when a candidate failed for any other reason, because a rate limit is not
+   * True only when every candidate was answered with a definite 404, or with
+   * a collection whose own name proves it is not this one. False when a
+   * candidate failed for any other reason, because a rate limit is not
    * evidence about the world.
    */
   conclusive: boolean;
+  /**
+   * Set when the exact slug exists under a DIFFERENT name. Not a hit: the
+   * caller is told both names and decides, because "solana_monkey_business"
+   * being called "SMB Gen2" is a rebrand and "audit_crown" being called
+   * "Entirely Different" is a different collection, and this code cannot
+   * tell those apart. Guessing picked the wrong one at 223x the price once.
+   */
+  conflict?: DirectConflict;
   note: string;
 }
 
 export type DirectSymbolOutcome = DirectSymbolHit | DirectSymbolMiss;
 
-const misses = new Map<string, number>();
+const misses = new Map<string, { at: number; conflict?: DirectConflict }>();
 const MISS_TTL_MS = 10 * 60_000;
+
+const conflictNote = (name: string, c: DirectConflict): string =>
+  `Magic Eden has a collection under the symbol "${c.symbol}", which is exactly what "${name}" slugifies to, but the venue calls it ` +
+  `"${c.venueName}". That is either a rebrand or a different collection wearing the symbol, and this server will not choose for you: ` +
+  `if "${c.venueName}" is the one you meant, pass the symbol "${c.symbol}" directly.`;
 
 /**
  * Find the Magic Eden symbol for a collection NAME by asking the venue.
@@ -105,12 +131,15 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
   const wanted = collectionNameKey(name);
   if (!wanted) return { found: false, conclusive: true, note: "the name has no letters or digits to turn into a symbol" };
   const cachedMiss = misses.get(wanted);
-  if (cachedMiss !== undefined && Date.now() - cachedMiss < MISS_TTL_MS) {
-    return { found: false, conclusive: true, note: "asked the venue for this name recently and every spelling answered 404" };
+  if (cachedMiss !== undefined && Date.now() - cachedMiss.at < MISS_TTL_MS) {
+    return cachedMiss.conflict
+      ? { found: false, conclusive: true, conflict: cachedMiss.conflict, note: conflictNote(name, cachedMiss.conflict) }
+      : { found: false, conclusive: true, note: "asked the venue for this name recently and every spelling answered 404" };
   }
 
   const tried: string[] = [];
   const unreadable: string[] = [];
+  let conflict: DirectConflict | undefined;
   for (const symbol of symbolCandidates(name)) {
     if (opts.signal?.aborted || outOfTime()) {
       return {
@@ -157,39 +186,45 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
       unreadable.push(`${symbol} listings (${e instanceof Error ? e.message.slice(0, 70) : String(e)})`);
       continue;
     }
-    // A collection can be rebranded without its symbol changing: the venue
-    // calls `solana_monkey_business` "SMB Gen2" now. So an exact slugification
-    // of what was asked for is its own proof - not a substring, not a variant
-    // spelling, the whole query turned into the whole symbol. Only the first
-    // candidate qualifies, and every other spelling still has to be confirmed
-    // by name.
+    // The venue's own name is the proof, and the only proof. An exact
+    // slugification of the query used to override a DIFFERENT venue name on
+    // the theory that collections get rebranded without their symbol
+    // changing (`solana_monkey_business` is "SMB Gen2" now). True, and also
+    // exactly how "Audit Crown" resolved to a collection called "Entirely
+    // Different" with found: true, after which identify() attached that
+    // collection's floor and sales to the name that was asked for. A rebrand
+    // and an impostor look identical from here, so a conflict is reported as
+    // one, never resolved.
     const canonical = symbol === symbolCandidates(name)[0];
     const nameMatches = venueName !== null && collectionNameKey(venueName) === wanted;
-    if (!nameMatches && !canonical) continue;
-    if (!nameMatches && canonical && venueName === null) {
-      // Nothing listed, so nothing to read the name from. The symbol is still
-      // an exact slugification, which is why this is accepted rather than
-      // dropped, and the note says the name was never confirmed.
+    if (nameMatches) {
       return {
         found: true,
         symbol,
-        venueName: name,
+        venueName: venueName as string,
         note:
-          `Magic Eden has a collection under the symbol "${symbol}", which is exactly what this name slugifies to. ` +
-          `Nothing is listed under it, so the venue's own name for it could not be read and was not confirmed.`,
+          `Magic Eden symbol found by asking the venue for "${symbol}" directly, because the bundled directory ` +
+          `stops at the venue's paging ceiling of 30,000 collections. An item listed under it is named ` +
+          `"${venueName}", which matches what was asked for and is why it was accepted.`,
       };
     }
+    if (!canonical) continue;
+    if (venueName !== null) {
+      conflict ??= { symbol, venueName };
+      continue;
+    }
+    // Nothing listed, so nothing to read the name from. The symbol is still
+    // an exact slugification, which is why this is accepted rather than
+    // dropped - as provisional, and the note says the name was never
+    // confirmed.
     return {
       found: true,
+      provisional: true,
       symbol,
-      venueName: venueName ?? name,
-      note: nameMatches
-        ? `Magic Eden symbol found by asking the venue for "${symbol}" directly, because the bundled directory ` +
-          `stops at the venue's paging ceiling of 30,000 collections. An item listed under it is named ` +
-          `"${venueName}", which matches what was asked for and is why it was accepted.`
-        : `Magic Eden symbol found by asking the venue for "${symbol}" directly, which is exactly what this name ` +
-          `slugifies to. The venue currently calls it "${venueName}" rather than "${name}" - collections get ` +
-          `rebranded without their symbol changing, so check that is the one you meant.`,
+      venueName: name,
+      note:
+        `Magic Eden has a collection under the symbol "${symbol}", which is exactly what this name slugifies to. ` +
+        `Nothing is listed under it, so the venue's own name for it could not be read and was not confirmed; treat this as provisional.`,
     };
   }
 
@@ -197,10 +232,14 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
     return {
       found: false,
       conclusive: false,
-      note: `the venue would not answer for ${unreadable.join("; ")}, so this check proves nothing about whether the collection exists`,
+      ...(conflict ? { conflict } : {}),
+      note:
+        `the venue would not answer for ${unreadable.join("; ")}, so this check proves nothing about whether the collection exists` +
+        (conflict ? `. ${conflictNote(name, conflict)}` : ""),
     };
   }
-  misses.set(wanted, Date.now());
+  misses.set(wanted, { at: Date.now(), ...(conflict ? { conflict } : {}) });
+  if (conflict) return { found: false, conclusive: true, conflict, note: conflictNote(name, conflict) };
   return { found: false, conclusive: true, note: `no collection at the venue under any spelling tried: ${tried.join(", ")}` };
 }
 

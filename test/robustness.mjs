@@ -280,9 +280,11 @@ async function startWith(env = {}) {
 // handler. This checks both halves: nothing declares a default, and every tool
 // answers a call carrying only its required arguments.
 {
-  const transport = new StdioClientTransport({ command: process.execPath, args: [join(root, "dist", "index.js")], stderr: "ignore" });
-  const c = new Client({ name: "defaults", version: "1" }, { capabilities: {} });
-  await c.connect(transport);
+  // Offline like every other child in this file. This one used to inherit the
+  // parent's environment, so an offline suite made twenty live calls, and its
+  // loop swallowed every error that was not a schema refusal, so "every tool
+  // answers" was true of a test that had measured nothing.
+  const c = await startWith();
   const { tools } = await c.listTools();
 
   const declared = [];
@@ -319,6 +321,11 @@ async function startWith(env = {}) {
   };
   const refused = [];
   const missing = [];
+  // Four outcomes, counted apart. A schema refusal fails the test; a thrown
+  // protocol error that is not a refusal fails it too; an answer and an
+  // "offline, cannot reach the source" result are both the shape being
+  // accepted, which is all this test can know without a network.
+  const outcome = { answered: 0, sourceUnavailable: 0, otherError: [] };
   for (const t of tools) {
     const args = minimal[t.name];
     if (!args) { missing.push(t.name); continue; }
@@ -327,18 +334,24 @@ async function startWith(env = {}) {
       if (!(r in args)) missing.push(`${t.name} fixture is missing the required ${r}`);
     }
     try {
-      await c.callTool({ name: t.name, arguments: args }, undefined, { timeout: 90_000 });
+      const r = await c.callTool({ name: t.name, arguments: args }, undefined, { timeout: 30_000 });
+      if (!r.isError) outcome.answered++;
+      else if (/offline mode|COLLECTOR_MCP_OFFLINE|not reached|refused to contact/i.test(r.content?.[0]?.text ?? "")) outcome.sourceUnavailable++;
+      else outcome.otherError.push(`${t.name}: ${(r.content?.[0]?.text ?? "").replace(/\s+/g, " ").slice(0, 100)}`);
     } catch (e) {
-      // An upstream that is down is not this test's business; a refused SHAPE is.
       if (/validation|invalid_type|nonoptional|Required/i.test(String(e.message))) {
         refused.push(`${t.name}: ${String(e.message).replace(/\s+/g, " ").slice(0, 120)}`);
+      } else {
+        outcome.otherError.push(`${t.name} threw: ${String(e.message).replace(/\s+/g, " ").slice(0, 100)}`);
       }
     }
   }
   await c.close();
   assert.deepStrictEqual(missing, [], `every tool needs a minimal fixture here: ${missing.join(", ")}`);
   assert.deepStrictEqual(refused, [], `a tool refused a call carrying only its required arguments: ${refused.join("; ")}`);
-  ok(`r10 no tool publishes a default, and all ${tools.length} answer a call with only their required arguments`);
+  assert.deepStrictEqual(outcome.otherError, [], `a tool failed offline for a reason other than being offline: ${outcome.otherError.join("; ")}`);
+  assert.strictEqual(outcome.answered + outcome.sourceUnavailable, tools.length, "every tool was classified");
+  ok(`r10 no tool publishes a default; all ${tools.length} accept their required arguments offline (${outcome.answered} answered from local data, ${outcome.sourceUnavailable} named the source as unreachable)`);
 }
 
 // ------------------------------------------------------------------ r11

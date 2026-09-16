@@ -427,7 +427,17 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
         looked_for: `a Magic Eden collection whose own name is "${shown}"`,
         // A miss the venue refused to confirm is not a "not_found": saying so
         // would turn a rate limit into evidence that a collection is absent.
-        result: direct.found ? "found" : direct.conclusive ? "not_found" : "error",
+        // A symbol the venue HAS but calls something else is not a "found"
+        // either: that is the one outcome a reader must not act on unchecked.
+        result: direct.found
+          ? direct.provisional
+            ? "ambiguous"
+            : "found"
+          : direct.conflict
+            ? "ambiguous"
+            : direct.conclusive
+              ? "not_found"
+              : "error",
         detail: direct.note,
       });
     }

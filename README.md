@@ -4,12 +4,12 @@
 
 # collector-mcp
 
-**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no API keys, nothing collected, runs on your machine.
+**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE)
-[![Keys required](https://img.shields.io/badge/API%20keys-0-f59e0b)](#what-it-reads)
+[![Sign-up](https://img.shields.io/badge/sign--up-none-f59e0b)](#what-it-reads)
 
 </div>
 
@@ -176,8 +176,12 @@ Precisely what leaves the machine, and nothing else:
   `COLLECTOR_MCP_NO_AUTO_KEYS=1`.
 
 One file is written on your machine: `~/.collector-mcp/opensea-key.json`, holding that self-issued
-key at permissions 600. It is never logged and never printed into an answer. Nothing else is
-stored, and no question you ask is written anywhere.
+key at permissions 600. It is never logged and never printed into an answer: every key this
+process has sent is registered, and every result is scrubbed against that registry before it
+leaves, so even an upstream that echoes the request header back cannot carry it into a reply.
+Nothing else is written to disk. An in-memory cache of recent answers lives for the process and is
+gone when it exits, and no question you ask is written anywhere. Your AI client and its model
+provider have their own data practices, which this server cannot speak for.
 
 ## Tools
 

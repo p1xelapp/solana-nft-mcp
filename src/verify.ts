@@ -253,12 +253,31 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     // "Never" needs the whole history, readable. Anything skipped or unread
     // makes this unverifiable, not confirmed.
     if (!prov.historyComplete || prov.skippedTransactions > 0) {
+      const why =
+        prov.unreadableTransactions > 0
+          ? `${prov.unreadableTransactions} transaction(s) touching this asset could not be classified - a Core instruction with no decodable data and no corroborating log is a hole in the evidence, not an absence of events`
+          : "the history was not read in full";
       return {
         ...base,
         verdict: "unverifiable",
-        explanation: `No transfer appears in the ${prov.events.length} transaction(s) read, but the history was not read in full, so "never" cannot be confirmed.`,
+        explanation: `No transfer appears in the ${prov.events.length} transaction(s) read, but ${why}, so "never" cannot be confirmed.`,
         evidence,
         caveats,
+      };
+    }
+    // A complete walk still has to have SEEN the beginning. Reaching the end
+    // of the signature list proves the endpoint had nothing older to give,
+    // not that the oldest thing it gave was the mint: a pruned node hands
+    // back a short, complete-looking list that starts mid-history.
+    if (!prov.mintObserved) {
+      return {
+        ...base,
+        verdict: "unverifiable",
+        explanation:
+          `No transfer appears in the ${prov.events.length} transaction(s) read and the signature list was walked to its end, ` +
+          `but no mint instruction was decoded at the start of it, so the beginning of this asset's history was not recognised and "never" cannot be confirmed.`,
+        evidence,
+        caveats: [...caveats, "The endpoint may hold less history than the asset has (a pruned node). Try again against an archival endpoint via SOLANA_RPC_URL."],
       };
     }
     return {

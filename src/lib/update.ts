@@ -12,6 +12,8 @@
  * COLLECTOR_MCP_NO_UPDATE_CHECK=1 (someone who does not want the request made).
  */
 
+import { readBoundedJson } from "./http.js";
+
 export interface UpdateInfo {
   /** The version this process is running. */
   current: string;
@@ -72,8 +74,13 @@ async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> 
       headers: { accept: "application/json", "user-agent": `collector-mcp/${current}` },
       signal: AbortSignal.timeout(2500),
     });
-    if (!res.ok) return { ...base, checked: true, reason: `registry answered HTTP ${res.status}` };
-    const body = (await res.json()) as { version?: unknown };
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ...base, checked: true, reason: `registry answered HTTP ${res.status}` };
+    }
+    // Bounded like every other body. The registry is a fixed, trusted host,
+    // but a proxy or a captive portal in front of it is not.
+    const body = await readBoundedJson<{ version?: unknown }>(res, "the npm registry");
     const latest = typeof body.version === "string" ? body.version : null;
     if (!latest) return { ...base, checked: true, reason: "registry answer carried no version" };
     const behind = compareVersions(latest, current) > 0;

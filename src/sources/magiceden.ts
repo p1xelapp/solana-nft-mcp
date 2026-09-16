@@ -11,6 +11,8 @@ import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
+import { isoFromBlockTime } from "../lib/time.js";
+import { isBase58Address } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -229,10 +231,19 @@ export async function recentSales(symbol: string, limit: number) {
     return { collected, scanned };
   });
   if (!Array.isArray(data.collected)) throw new Error(`Magic Eden returned no activity for "${symbol}"`);
+  // One row with a block time Date cannot represent (1e20 has been served)
+  // used to throw out of `toISOString` and take the other nine sales with it.
+  // The guard answers null and the row is counted, not lost.
+  let unusableTimestamps = 0;
   const sales = data.collected
     .slice(0, limit)
-    .map((a) => ({
-      time: a.blockTime ? new Date(a.blockTime * 1000).toISOString() : null,
+    .map((a) => {
+      const time = isoFromBlockTime(a.blockTime);
+      if (time === null && a.blockTime !== undefined && a.blockTime !== null) unusableTimestamps++;
+      return { time, a };
+    })
+    .map(({ time, a }) => ({
+      time,
       priceSol: a.price ?? null,
       tokenMint: a.tokenMint ?? null,
       buyer: a.buyer ?? null,
@@ -254,6 +265,12 @@ export async function recentSales(symbol: string, limit: number) {
           ? `only ${sales.length} sales in the last ${data.scanned} activity events - a quiet or listing-heavy market, not an error`
           : `Magic Eden's activity feed returned no events at all for "${symbol}" - that is the feed being empty, which is not the same as the market being quiet. Confirm the symbol with search_collections.`
         : undefined,
+    ...(unusableTimestamps > 0
+      ? {
+          unusableTimestamps,
+          timestampNote: `${unusableTimestamps} sale(s) carried a block time that cannot be represented as a date; the sale is kept with time: null rather than dropped.`,
+        }
+      : {}),
     stale,
     cachedAt,
     source: "magiceden",
@@ -390,10 +407,21 @@ export interface MeWalletToken {
 /**
  * Every collectible Magic Eden indexes for a wallet, paged 500 at a time up
  * to `max`. Escrow/program accounts are refused by ME (see walletTokens).
+ *
+ * Offset pages OVERLAP when the wallet changes mid-walk: an item that arrives
+ * during the read pushes the last row of one page onto the start of the next.
+ * Reproduced 2026-09-15 with two shifting pages: 150 rows for 149 distinct
+ * mints, reported as a complete count. So rows are deduplicated on a validated
+ * mint, the overlap is counted, and the caller is told that a walk which
+ * overlapped can have SKIPPED an item by the same shift - deduplication fixes
+ * the inflation, it cannot recover the omission.
  */
 export async function walletTokensAll(wallet: string, max: number) {
-  const { data, stale, cachedAt } = await cached(`me:wall:${wallet}:${max}`, 120_000, async () => {
-    const all: MeWalletToken[] = [];
+  const { data, stale, cachedAt } = await cached(`me:wall:v2:${wallet}:${max}`, 120_000, async () => {
+    const tokens: MeWalletToken[] = [];
+    const seen = new Set<string>();
+    let rawRows = 0;
+    let overlap = 0;
     let offset = 0;
     while (offset < max) {
       let batch: MeWalletToken[];
@@ -412,16 +440,38 @@ export async function walletTokensAll(wallet: string, max: number) {
       }
       assertPageSize("Magic Eden", "wallet tokens", batch, Math.min(500, max - offset));
       if (batch.length === 0) break;
-      appendAll(all, batch);
+      rawRows += batch.length;
+      for (const t of batch) {
+        // Only a mint that IS a mint can identify a row. A row without one is
+        // kept as its own item, because dropping it would hide a holding.
+        const mint = typeof t.mintAddress === "string" && isBase58Address(t.mintAddress) ? t.mintAddress : null;
+        if (mint !== null) {
+          if (seen.has(mint)) {
+            overlap++;
+            continue;
+          }
+          seen.add(mint);
+        }
+        tokens.push(t);
+      }
       // A page under 100 is the end whether ME honoured limit=500 or silently
       // capped at 100; anything else means keep walking, so a cap can never
       // truncate a wallet while reporting capped:false.
       if (batch.length < 100) break;
       offset += batch.length;
     }
-    return all;
+    return { tokens, rawRows, overlap };
   });
-  return { tokens: data, capped: data.length >= max, stale, cachedAt };
+  return {
+    tokens: data.tokens,
+    // The cap is judged on what the venue SENT, not on what survived
+    // deduplication, so an overlapping walk that hit the ceiling still says so.
+    capped: data.rawRows >= max,
+    /** Rows the venue repeated across pages, removed here. Non-zero means the wallet moved during the read. */
+    overlap: data.overlap,
+    stale,
+    cachedAt,
+  };
 }
 
 // ------------------------------------------- collection market intelligence

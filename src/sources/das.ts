@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 
 import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
+import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
@@ -69,6 +70,9 @@ function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
 }
 
 async function call<T>(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ result: T; endpoint: string }> {
+  // The request this read serves may be cancelled without anyone passing the
+  // signal down; the ambient one is joined so the gate wait below ends too.
+  signal = withAmbient(signal);
   let last = "";
   // A -32601 from one endpoint is that endpoint's answer, not the method's
   // fate: a plain RPC set as DAS_RPC_URL would otherwise take the built-in
@@ -79,7 +83,9 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     assertOnline(ep.url);
     // A caller whose deadline has passed gets no further requests spent on it.
     if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
-    await gateFor(ep.url)();
+    // The signal goes INTO the gate. Checking it only after the turn arrived
+    // meant a caller who had already left still waited out the whole queue.
+    await gateFor(ep.url)(signal);
     if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
     let j: { result?: T; error?: RpcError } | null = null;
     try {

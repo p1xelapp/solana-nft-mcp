@@ -42,6 +42,8 @@ import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { fitRows, omit } from "./lib/fit.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
+import { runWithSignal } from "./lib/context.js";
+import { containsSecret, redactSecrets } from "./lib/secrets.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -66,6 +68,8 @@ const INSTRUCTIONS = [
   "Collection names here are shared with physical objects. \"Absolute Batman (2024) #1\" means the digital collection of that issue on Solana, not the printed comic, and its price has nothing to do with the paper one. When a question names a collection, a card, a wallet, a trait or a serial number, call a tool instead of answering from memory or from the open web. If the person turns out to mean the physical item, say which one you answered about.",
   "",
   "Every figure comes back with its venue, its currency and the time it was read. Keep those when you summarise. Never add figures from two venues together, never call a floor a valuation, and never turn an empty result into \"it does not exist\": each result says what was searched and what could not be seen.",
+  "",
+  "Every tool is read-only against the chain and the venues: nothing here can sign, buy, sell, list or transfer. Two things do leave a trace on the machine it runs on, and both can be turned off: the first question that needs OpenSea may create a free OpenSea API key and store it in the user's home folder (COLLECTOR_MCP_NO_AUTO_KEYS=1 prevents that), and startup asks npm once whether a newer version exists (COLLECTOR_MCP_NO_UPDATE_CHECK=1 prevents that).",
 ].join("\n");
 
 const server = new McpServer({ name: "collector-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
@@ -98,8 +102,18 @@ type ToolResult = {
   isError?: boolean;
 };
 
-// Every tool reads public data and mutates nothing; declare it so MCP clients
-// (and their users) can see the safety contract in the protocol itself.
+// Every tool reads public data and changes nothing a user owns: no chain
+// state, no venue state, no wallet. Declared so MCP clients (and their users)
+// can see that contract in the protocol itself.
+//
+// What the hint does NOT promise, and the server instructions and README say
+// so in words: the first OpenSea question may create a free OpenSea key and
+// cache it under the user's home folder, and startup asks npm for the latest
+// version. Both are this server's own housekeeping, both are opt-out, and
+// neither touches anything the tool's subject matter is about. An outside
+// review (2026-09-15) called that a disclosure gap rather than a wrong hint;
+// the disclosure is the fix chosen, because splitting key setup into its own
+// tool would make the one selling point - it works with no setup - a setup.
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
 
 /**
@@ -118,6 +132,21 @@ const ok = (data: unknown): ToolResult => {
       : { result: data };
   return { content: [{ type: "text", text }], structuredContent: structured };
 };
+
+/**
+ * The last gate before a result leaves the process.
+ *
+ * Every credential this server has sent is registered (lib/secrets.ts) and
+ * scrubbed at the source that could reflect it. This is the belt to that
+ * brace: whatever path a string took to get here, a registered secret in the
+ * serialised result is replaced before either copy of it goes out. Cheap when
+ * nothing matches, which is every call but the one this exists for.
+ */
+function scrubbed(result: ToolResult): ToolResult {
+  const serialised = JSON.stringify(result);
+  if (!containsSecret(serialised)) return result;
+  return JSON.parse(redactSecrets(serialised)) as ToolResult;
+}
 
 /**
  * Uniform error surface, written for the person who will read it.
@@ -219,29 +248,36 @@ const guard =
   async (...args: A): Promise<ToolResult> => {
     const tool = currentTool;
     const started = performance.now();
-    try {
-      const result = await fn(...args);
-      const errKind = result.structuredContent?.error;
-      logCall(tool, args[0], Math.round(performance.now() - started), result.isError ? { ok: false, kind: typeof errKind === "string" ? errKind : "error" } : { ok: true });
-      return result;
-    } catch (err) {
-      const e0 = explain(err);
-      logCall(tool, args[0], Math.round(performance.now() - started), { ok: false, kind: e0.kind });
-      // An upstream error message is attacker-influenced text that this layer
-      // serialises TWICE - once as prose, once as structured content. A 50 MB
-      // message therefore cost two 50 MB allocations and an oversized protocol
-      // response; embedded newlines and instruction text reached the model
-      // unchanged. It is neutralised and capped before either copy is built.
-      const raw = err instanceof Error ? err.message : String(err);
-      const detail = inspectUntrusted(raw.replace(/\s+/g, " ").trim().slice(0, 300)).value;
-      const e = explain(err);
-      return {
-        content: [{ type: "text", text: `${e.headline} ${e.next}
+    // The SDK hands every handler a per-request signal that fires when the
+    // client cancels. It used to stop here: the handler had it, nothing the
+    // handler awaited did, and a cancelled sales read went on paging. It is
+    // now the ambient deadline for everything this call awaits.
+    const extra = args.find((a) => a !== null && typeof a === "object" && (a as { signal?: unknown }).signal instanceof AbortSignal) as { signal?: AbortSignal } | undefined;
+    return runWithSignal(extra?.signal, async () => {
+      try {
+        const result = await fn(...args);
+        const errKind = result.structuredContent?.error;
+        logCall(tool, args[0], Math.round(performance.now() - started), result.isError ? { ok: false, kind: typeof errKind === "string" ? errKind : "error" } : { ok: true });
+        return scrubbed(result);
+      } catch (err) {
+        const e0 = explain(err);
+        logCall(tool, args[0], Math.round(performance.now() - started), { ok: false, kind: e0.kind });
+        // An upstream error message is attacker-influenced text that this layer
+        // serialises TWICE - once as prose, once as structured content. A 50 MB
+        // message therefore cost two 50 MB allocations and an oversized protocol
+        // response; embedded newlines and instruction text reached the model
+        // unchanged. It is neutralised and capped before either copy is built.
+        const raw = err instanceof Error ? err.message : String(err);
+        const detail = inspectUntrusted(redactSecrets(raw).replace(/\s+/g, " ").trim().slice(0, 300)).value;
+        const e = explain(err);
+        return scrubbed({
+          content: [{ type: "text", text: `${e.headline} ${e.next}
 (detail: ${detail})` }],
-        structuredContent: { error: e.kind, message: e.headline, next: e.next, detail },
-        isError: true,
-      };
-    }
+          structuredContent: { error: e.kind, message: e.headline, next: e.next, detail },
+          isError: true,
+        });
+      }
+    });
   };
 
 // A refinement enforces the address at runtime but does NOT survive into the
@@ -1426,6 +1462,14 @@ registerTool(
         capped: held.capped,
         stale: held.stale,
         source: "magiceden (indexed collections only)",
+        ...(held.overlap > 0
+          ? {
+              pagesOverlapped: held.overlap,
+              overlapNote:
+                `Magic Eden's pages overlapped while this wallet was read: ${held.overlap} repeated row(s) were removed. That happens when the wallet ` +
+                `changes mid-walk, and the same shift can skip an item, so treat every count here as close rather than exact and read again for a settled figure.`,
+            }
+          : {}),
       },
       // Share of supply is count / total. With a capped walk the count is a
       // lower bound over what was read, so the percentage is one too.
@@ -1434,7 +1478,9 @@ registerTool(
         ? "lower bound: the holdings walk stopped at maxItems, so each count - and therefore each percentage - covers only the items read"
         : held.stale
           ? `last-known: the holdings came from cache after a failed refresh${held.cachedAt ? ` (read ${held.cachedAt})` : ""}, so these shares describe an earlier moment`
-          : "counts and percentages are from a complete, current read of what Magic Eden indexes",
+          : held.overlap > 0
+            ? `close, not exact: the venue's pages overlapped during the read (${held.overlap} repeated row(s) removed), which means the wallet changed mid-walk and an item can have been skipped the same way`
+            : "counts and percentages are from a complete, current read of what Magic Eden indexes",
       supplyShareNote:
         supplyShare.length === 0
           ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (set OPENSEA_API_KEY). None of the priced collections had one."

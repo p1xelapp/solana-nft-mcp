@@ -18,7 +18,8 @@
  * Digital auction: 36/36 packs traced to their winners, 0 untraced.
  */
 
-import { cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
+import { cached, originGate, readBoundedJson, OversizedBodyError, sleep } from "../lib/http.js";
+import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 import { NotFoundError, WrongKindError } from "../lib/errors.js";
@@ -177,6 +178,10 @@ export async function pinnedWalk<T>(run: (pin: EndpointPin) => Promise<T>): Prom
  * more times and cost the user ten seconds.
  */
 async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?: EndpointPin, signal?: AbortSignal): Promise<T> {
+  // The request this read serves may be cancelled without anyone passing the
+  // signal down; the ambient one is joined so the gate wait and the retry
+  // sleep below end too, not just the fetch.
+  signal = withAmbient(signal);
   const all = endpoints();
   const now = Date.now();
   const isCooling = (ep: RpcEndpoint) => (cooldown.get(ep.id) ?? 0) >= now;
@@ -202,8 +207,12 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       // A caller that has already given up gets no further requests spent on
       // its behalf, and none of the source's rate budget either.
       if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
-      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
-      await gateFor(ep.url)();
+      // Both waits take the signal. Measured 2026-09-15: a read aborted 10 ms
+      // in still settled at 356 ms, because the gate wait ignored the signal
+      // and only the check AFTER it looked. A deadline consulted after the
+      // waiting is not a deadline.
+      if (attempt > 0) await sleep(1500 * attempt, signal);
+      await gateFor(ep.url)(signal);
       if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
       try {
         const res = await fetch(ep.url, {
@@ -347,7 +356,22 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
         out.push({ endpoint: label(ep), ok: false, latencyMs, slot: null, note: `refused with HTTP ${res.status}` });
         continue;
       }
-      const body = (await res.json()) as unknown;
+      // Bounded like every other body. This is the one path a user-configured
+      // endpoint reaches from the status tool, and an unbounded `res.json()`
+      // here accepted a 4.2 MB health answer that the shared reader refuses.
+      let body: unknown;
+      try {
+        body = await readBoundedJson<unknown>(res, label(ep));
+      } catch (e) {
+        out.push({
+          endpoint: label(ep),
+          ok: false,
+          latencyMs,
+          slot: null,
+          note: e instanceof OversizedBodyError ? "answered a two-method health batch with a body over the 4 MB ceiling; refused unread" : "answered, but not with JSON",
+        });
+        continue;
+      }
       // A batch answer is an array. Anything else is a shape change or a proxy
       // page, not "unhealthy" - say which, rather than guessing.
       if (!Array.isArray(body)) {
@@ -612,12 +636,13 @@ interface ParsedInstruction {
 }
 
 // mpl-core instruction discriminators (first data byte), from the generated
-// client: CreateV1 0, TransferV1 14, BurnV1 12. TransferV1's account list is
-// fixed: asset, collection, payer, authority, new_owner, system_program,
-// log_wrapper - omitted optionals are filled with the program id, so
-// new_owner is always index 4.
+// client: CreateV1 0, TransferV1 14, BurnV1 12, CreateV2 20. TransferV1's
+// account list is fixed: asset, collection, payer, authority, new_owner,
+// system_program, log_wrapper - omitted optionals are filled with the program
+// id, so new_owner is always index 4.
 const IX_TRANSFER_V1 = 14;
 const IX_CREATE_V1 = 0;
+const IX_CREATE_V2 = 20;
 const IX_BURN_V1 = 12;
 const TRANSFER_NEW_OWNER_INDEX = 4;
 
@@ -790,7 +815,10 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
       const decodable = coreIxs.filter((i) => discriminator(i.data) !== null);
       const transferIx = coreIxs.find((i) => discriminator(i.data) === IX_TRANSFER_V1);
-      const createIx = coreIxs.find((i) => discriminator(i.data) === IX_CREATE_V1);
+      const createIx = coreIxs.find((i) => {
+        const d = discriminator(i.data);
+        return d === IX_CREATE_V1 || d === IX_CREATE_V2;
+      });
       const burnIx = coreIxs.find((i) => discriminator(i.data) === IX_BURN_V1);
 
       // A transaction we can read neither way is a hole, not an absence of
@@ -801,6 +829,14 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       const logSaysTransfer = logs.some((l) => typeof l === "string" && l.includes("Instruction: Transfer"));
       const logSaysCreate = logs.some((l) => typeof l === "string" && l.includes("Instruction: Create"));
       const logSaysBurn = logs.some((l) => typeof l === "string" && l.includes("Instruction: Burn"));
+
+      // A Core instruction on THIS asset that neither its data nor the logs
+      // can classify is the same hole, whatever else the transaction carried.
+      // An empty log array used to count as "logs present", so a Core
+      // instruction with no data and `logMessages: []` fell through to "other"
+      // and a never-traded claim was CONFIRMED on evidence nobody had read.
+      const unclassified = coreIxs.length > 0 && decodable.length === 0 && !logSaysTransfer && !logSaysCreate && !logSaysBurn;
+      if (unclassified) { unreadable++; continue; }
 
       const marketplace = all
         .map((i) => MARKETPLACE_PROGRAMS[i.programId])
@@ -964,6 +1000,13 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
      * "this card has never traded" gets said about a card that has.
      */
     historyComplete: walk.complete && unreadable === 0 && skipped === 0 && okCount > 0,
+    /**
+     * True when a Core Create instruction for this asset was decoded, or its
+     * log line seen: the BEGINNING of the history was recognised, not merely
+     * reached. A complete walk from a pruned endpoint ends where that node's
+     * memory does, which can be after the mint.
+     */
+    mintObserved: events.some((e) => e.event === "minted"),
     ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
     ...(okCount === 0
       ? {

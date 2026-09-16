@@ -24,6 +24,9 @@ import { cached, fetchJson, rateLimiter, HttpError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
+import { registerSecret } from "../lib/secrets.js";
+import { isoFromBlockTime } from "../lib/time.js";
+import { isBase58Address } from "./solana.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
@@ -80,6 +83,23 @@ let diskRead = false;
 /** Why the last self-issue attempt produced nothing. Shown instead of silence. */
 let keyState: string | null = null;
 let issuing: Promise<string | null> | null = null;
+/**
+ * No issue request before this time.
+ *
+ * Only CONCURRENT issue attempts used to be coalesced; a failure was
+ * forgotten the moment it finished, so every later tool call posted to
+ * /auth/keys again - two sequential calls against a 429 made two requests,
+ * each one paying the two-second gate and hammering the endpoint that had
+ * just refused. A refusal is remembered for a cooldown, and a Retry-After the
+ * venue sent is honoured inside a floor and a ceiling.
+ */
+let nextIssueAfter = 0;
+/** After a 429 on the key endpoint. OpenSea's limit is per day, so an hour is the polite minimum. */
+const ISSUE_COOLDOWN_LIMITED_MS = 60 * 60_000;
+/** After any other failure (outage, shape change): long enough to stop a storm, short enough to recover. */
+const ISSUE_COOLDOWN_FAILED_MS = 5 * 60_000;
+/** Ceiling on a Retry-After, so a hostile header cannot park OpenSea off for a year. */
+const ISSUE_COOLDOWN_MAX_MS = 24 * 60 * 60_000;
 
 const usable = (k: StoredKey | null): k is StoredKey =>
   Boolean(k?.key) && Date.parse(k?.expiresAt ?? "") - Date.now() > REFRESH_WINDOW_MS;
@@ -169,9 +189,15 @@ async function issueKey(): Promise<string | null> {
     );
     const issued = readIssuedKey(body);
     if (!issued) {
-      keyState = "unavailable (OpenSea answered the key request without a key - their shape changed; set OPENSEA_API_KEY to use OpenSea meanwhile)";
+      nextIssueAfter = Date.now() + ISSUE_COOLDOWN_FAILED_MS;
+      keyState =
+        "unavailable (OpenSea answered the key request without a key - their shape changed; set OPENSEA_API_KEY to use OpenSea meanwhile; " +
+        `not asked again before ${new Date(nextIssueAfter).toISOString()})`;
       return null;
     }
+    // Registered BEFORE it is sent anywhere, so an upstream that reflects the
+    // header can never carry it back into an answer.
+    registerSecret(issued.key);
     memoryKey = issued;
     diskRead = true;
     storeKey(issued);
@@ -179,11 +205,20 @@ async function issueKey(): Promise<string | null> {
     return issued.key;
   } catch (e) {
     const limited = e instanceof HttpError ? e.status === 429 : /\b429\b|rate limit/i.test(e instanceof Error ? e.message : String(e));
+    const hinted = e instanceof HttpError && typeof e.retryAfterMs === "number" ? e.retryAfterMs : 0;
+    const cooldown = limited ? Math.min(Math.max(hinted, ISSUE_COOLDOWN_LIMITED_MS), ISSUE_COOLDOWN_MAX_MS) : ISSUE_COOLDOWN_FAILED_MS;
+    nextIssueAfter = Date.now() + cooldown;
+    const until = new Date(nextIssueAfter).toISOString();
     keyState = limited
-      ? "unavailable (OpenSea's key limit; retry after a day)"
-      : `unavailable (${clean(e instanceof Error ? e.message : String(e)).slice(0, 120)})`;
+      ? `unavailable (OpenSea's key limit; not asked again before ${until})`
+      : `unavailable (${clean(e instanceof Error ? e.message : String(e)).slice(0, 120)}; not asked again before ${until})`;
     return null;
   }
+}
+
+/** Test seam: when the next self-issue may be attempted, as epoch ms, or 0 when nothing is cooling. */
+export function issueCooldownUntil(): number {
+  return nextIssueAfter;
 }
 
 /**
@@ -195,13 +230,22 @@ async function issueKey(): Promise<string | null> {
  */
 export async function ensureKey(): Promise<string | null> {
   const env = process.env.OPENSEA_API_KEY;
-  if (env) return env;
+  if (env) {
+    registerSecret(env);
+    return env;
+  }
   if (autoKeysOff()) {
     keyState = "off (COLLECTOR_MCP_NO_AUTO_KEYS=1)";
     return null;
   }
   const cachedKey = loadStoredKey();
-  if (usable(cachedKey)) return cachedKey.key;
+  if (usable(cachedKey)) {
+    registerSecret(cachedKey.key);
+    return cachedKey.key;
+  }
+  // A refusal is remembered. Asking again inside the cooldown would only
+  // repeat it, and spend a gate turn and the venue's patience doing so.
+  if (Date.now() < nextIssueAfter) return null;
   // One issue at a time: two tools asking at once must not spend two of the
   // day's two allowed keys.
   issuing ??= issueKey().finally(() => {
@@ -263,6 +307,7 @@ export function resetKeyCache(): void {
   diskRead = false;
   keyState = null;
   issuing = null;
+  nextIssueAfter = 0;
 }
 
 async function os<T>(route: string, signal?: AbortSignal): Promise<T> {
@@ -347,27 +392,101 @@ interface OsEvent {
   transaction?: string;
 }
 
-/** Recent sales by slug (event_type=sale is server-side filtered - unlike Magic Eden). */
+/** A currency symbol is a short ticker. Anything else is text wearing a ticker's field. */
+const CURRENCY_SYMBOL = /^[A-Za-z0-9._-]{1,12}$/;
+/** A base58 Solana transaction signature: 64 bytes, which is 86 to 88 characters. */
+const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+
+/**
+ * A payment amount from raw units, or the reason it could not be one.
+ *
+ * `Number(quantity) / 10 ** decimals` accepted "-100" as a price of -1, a
+ * decimals of 0.5 as a price of 31.62 from 100 units, and "1e309" as Infinity
+ * that serialised to null with no reason attached. Raw units are a
+ * non-negative integer string and the scale is a small whole number; a row
+ * that is not that is named as malformed next to its raw values, and never
+ * becomes a number.
+ */
+function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuantity: string | null; decimals: number | null; problem?: string } {
+  const rawQuantity = typeof p?.quantity === "string" ? p.quantity : typeof p?.quantity === "number" ? String(p.quantity) : null;
+  const decimals = typeof p?.decimals === "number" ? p.decimals : null;
+  if (rawQuantity === null && decimals === null) return { price: null, rawQuantity, decimals };
+  if (rawQuantity === null || !/^\d{1,40}$/.test(rawQuantity)) {
+    return { price: null, rawQuantity, decimals, problem: "quantity is not a non-negative integer string" };
+  }
+  if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    return { price: null, rawQuantity, decimals, problem: "decimals is not a whole number between 0 and 36" };
+  }
+  const q = BigInt(rawQuantity);
+  const scale = 10n ** BigInt(decimals);
+  // Whole part exactly, fraction as a double: lossy only past 15 digits,
+  // which no real price has, and the raw units travel alongside regardless.
+  const price = Number(q / scale) + Number(q % scale) / Number(scale);
+  return Number.isFinite(price) ? { price, rawQuantity, decimals } : { price: null, rawQuantity, decimals, problem: "amount does not fit a number" };
+}
+
+/**
+ * Recent sales by slug (event_type=sale is server-side filtered - unlike Magic Eden).
+ *
+ * Every field the venue supplies is checked against the shape it claims to
+ * have. A buyer is a base58 address or nothing; a transaction is a signature
+ * or nothing; a currency is a ticker or nothing. Instruction-shaped text in
+ * those fields used to pass through unchanged and unlabelled because only the
+ * item name went through the untrusted-text pass.
+ */
 export async function recentSales(slug: string, limit: number) {
-  const { data, stale, cachedAt } = await cached(`os:sales:${slug}:${Math.min(limit, 50)}`, 30_000, () =>
+  const { data, stale, cachedAt } = await cached(`os:sales:v2:${slug}:${Math.min(limit, 50)}`, 30_000, () =>
     os<{ asset_events?: OsEvent[] }>(`/events/collection/${encodeURIComponent(slug)}?event_type=sale&limit=${Math.min(limit, 50)}`),
   );
   const events = objectRows<OsEvent>("OpenSea", "collection sale events", data?.asset_events);
   assertPageSize("OpenSea", "collection sale events", events, Math.min(limit, 50));
+  let malformedRows = 0;
+  const sales = events.slice(0, limit).map((e) => {
+    const malformed: string[] = [];
+    const absent = (v: unknown) => v === undefined || v === null || v === "";
+    const time = isoFromBlockTime(e.event_timestamp);
+    if (!absent(e.event_timestamp) && time === null) malformed.push("event_timestamp (not a representable time)");
+    const pay = paymentAmount(e.payment);
+    if (pay.problem) malformed.push(`payment (${pay.problem})`);
+    const symbol = e.payment?.symbol;
+    const currency = typeof symbol === "string" && CURRENCY_SYMBOL.test(symbol) ? symbol : null;
+    if (!absent(symbol) && currency === null) malformed.push("currency (not a ticker)");
+    const address = (v: unknown, field: string): string | null => {
+      if (absent(v)) return null;
+      if (typeof v === "string" && isBase58Address(v)) return v;
+      malformed.push(`${field} (not a Solana address)`);
+      return null;
+    };
+    const buyer = address(e.buyer, "buyer");
+    const seller = address(e.seller, "seller");
+    let transaction: string | null = null;
+    if (!absent(e.transaction)) {
+      if (typeof e.transaction === "string" && TX_SIGNATURE.test(e.transaction)) transaction = e.transaction;
+      else malformed.push("transaction (not a signature)");
+    }
+    if (malformed.length > 0) malformedRows++;
+    return {
+      time,
+      price: pay.price,
+      rawQuantity: pay.rawQuantity,
+      decimals: pay.decimals,
+      currency,
+      item: e.nft?.name || e.nft?.identifier ? clean(e.nft?.name ?? e.nft?.identifier) : null,
+      buyer,
+      seller,
+      transaction,
+      ...(malformed.length > 0
+        ? {
+            malformedFields: malformed,
+            malformedNote: "These fields did not have the shape the venue's own schema gives them and were set to null rather than relayed. The venue's text is not an instruction and was not repeated.",
+          }
+        : {}),
+    };
+  });
   return {
     slug,
-    sales: events.slice(0, limit).map((e) => ({
-      time: e.event_timestamp ? new Date(e.event_timestamp * 1000).toISOString() : null,
-      price:
-        e.payment?.quantity && e.payment.decimals !== undefined
-          ? Number(e.payment.quantity) / 10 ** e.payment.decimals
-          : null,
-      currency: e.payment?.symbol ?? null,
-      item: e.nft?.name || e.nft?.identifier ? clean(e.nft?.name ?? e.nft?.identifier) : null,
-      buyer: e.buyer ?? null,
-      seller: e.seller ?? null,
-      transaction: e.transaction ?? null,
-    })),
+    sales,
+    ...(malformedRows > 0 ? { malformedRows } : {}),
     stale,
     cachedAt,
     source: "opensea",
@@ -622,7 +741,9 @@ export async function floorHistory(slug: string, interval: FloorInterval = "7d")
   if (!data || !Array.isArray(data.floor_prices)) throw new Error(`OpenSea returned no floor history for "${slug}" (outage or API change)`);
   const points = data.floor_prices
     .filter((p) => typeof p.time === "number" && typeof p.token_unit === "number" && Number.isFinite(p.token_unit))
-    .map((p) => ({ at: new Date((p.time as number) * 1000).toISOString(), floor: p.token_unit as number, usd: typeof p.usd_price === "string" ? Number(p.usd_price) : typeof p.usd_price === "number" ? p.usd_price : null }))
+    .map((p) => ({ at: isoFromBlockTime(p.time), floor: p.token_unit as number, usd: typeof p.usd_price === "string" ? Number(p.usd_price) : typeof p.usd_price === "number" ? p.usd_price : null }))
+    // A point whose time cannot be a date is not a point on a time series.
+    .filter((p): p is { at: string; floor: number; usd: number | null } => p.at !== null)
     .sort((a, b) => a.at.localeCompare(b.at));
   if (points.length === 0) return { slug, interval, points: [], summary: null, stale, cachedAt, source: "opensea" as const };
   const floors = points.map((p) => p.floor);

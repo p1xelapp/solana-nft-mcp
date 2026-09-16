@@ -704,3 +704,118 @@ The queue serves the person first.
   settled. A timer is only ever scheduled while the queue has someone in it, so
   it cannot hold the process open idle, and it is no longer unref'd. The
   regression covers this along with priority, pace and starvation.
+
+## 1.14.0 - 2026-09-15
+
+An outside audit of 1.13.0 found thirteen defects with synthetic upstreams and a
+real stdio client. All thirteen are fixed here, each with a regression that
+asserts the correct behaviour on the fixture that reproduced it
+(`test/credentials-and-cancellation.mjs`, fourteen groups, in `npm test`).
+
+Credentials and bodies:
+
+- **A self-issued OpenSea key could reach an answer.** Redaction read only
+  `OPENSEA_API_KEY` from the environment; the key this server issues itself
+  lives in memory and on disk. A mocked OpenSea 400 that echoed the request
+  header carried that key into a normal `get_source_status` result over real
+  stdio. Every credential the process sends is now registered the moment it is
+  obtained (`src/lib/secrets.ts`), upstream error bodies are scrubbed against
+  the registry, and the tool boundary scrubs the whole serialised result as a
+  last gate. Proven at the source and over stdio with a canary.
+- **Two response paths read bodies unbounded.** `rpcHealth` parsed a 4.2 MB
+  health batch with its own `res.json()`, past the shared 4 MB reader; the npm
+  update check did the same. Both use the bounded reader now, and an oversized
+  health answer reports the endpoint as unhealthy with the reason.
+- **A refused key issue was asked again on every call.** Only concurrent
+  attempts were coalesced; two sequential calls against a 429 posted to the key
+  endpoint twice. A refusal is remembered: an hour after a 429, five minutes
+  after anything else, a `Retry-After` honoured inside a 24-hour ceiling, and
+  the status note says when the next attempt may go out. A 429 or 5xx that
+  outlives every retry is now thrown as an `HttpError` carrying the status and
+  the venue's `Retry-After`, where callers used to get a private class and a
+  message to grep.
+
+Cancellation:
+
+- **A cancelled request kept working.** The SDK's per-request signal reached
+  the handler and stopped there: a client that cancelled a sales read after
+  the first page watched the server fetch offsets 500 and 1000 with nobody
+  waiting, and an RPC read aborted 10 ms in settled at 356 ms because the gate
+  wait ignored the signal. The signal now travels as ambient context
+  (`src/lib/context.ts`) that every gate wait, retry sleep, fetch and page
+  loop reads, in every source, without a parameter threaded through fifty
+  call sites. A read shared by several callers runs under its own signal and
+  is abandoned only when the last waiter leaves, so one caller giving up
+  cannot cancel an answer another still needs. Measured: the 356 ms settle is
+  22 ms, and the cancelled paged read requests no further page.
+
+Evidence and identity:
+
+- **A name resolved to a collection the venue calls something else.** The
+  direct venue probe accepted an exact slugification of the query even when
+  the venue's own name for that symbol conflicted, on the theory that
+  collections get rebranded. "Audit Crown" therefore resolved to a collection
+  named "Entirely Different" with `found: true`, and `identify` attached its
+  floor and sales to the name asked for. A conflict is now reported as one:
+  both names, the symbol to pass if that is the one you meant, and no choice
+  made for you. A symbol with nothing listed under it, whose name cannot be
+  read, is accepted as provisional and labelled so.
+- **"Never traded" could be confirmed on evidence nobody read.** A Core
+  instruction touching the asset with no instruction data and `logMessages:
+  []` fell through to "other", because an empty log array counted as logs
+  being present. A Core instruction that neither its data nor a log line can
+  classify now counts as unreadable, which makes the verdict unverifiable. A
+  confirmed "never" also needs the mint itself to have been decoded
+  (`mintObserved`): a complete walk from a pruned endpoint ends where that
+  node's memory does, not where the history starts. `CreateV2` is decoded
+  alongside `CreateV1`. Verified against a real Core asset on the public RPC:
+  mint observed, history complete, three transfers, correctly contradicted.
+- **Two sparse fills in one transaction collapsed into one.** The event
+  identity encoded a missing mint or type as an empty string, so two rows
+  sharing a signature and a type but lacking a mint were "the same fill": one
+  vanished as a duplicate and the other lost its price as contested. All
+  three parts are required now; a row without them has no identity, is kept
+  whole, and is counted as unidentifiable.
+- **Overlapping wallet pages inflated a "complete" count.** Two shifting
+  pages produced 150 rows for 149 mints and the answer called it a complete
+  read. Rows are deduplicated on a validated mint, the overlap is counted in
+  the answer, and the basis line says the count is close rather than exact,
+  because the same shift that repeats an item can skip one.
+- **One bad block time destroyed `get_recent_sales`.** The older sales path
+  called `toISOString` unguarded; `blockTime: 1e20` threw and took every other
+  sale with it, while `get_collection_sales` had a guard. One guard now lives
+  in `src/lib/time.ts` and every source uses it; a row with an unrepresentable
+  time keeps its price with `time: null` and the answer counts such rows.
+- **OpenSea amounts were divided without being checked.** `"-100"` became a
+  price of -1, decimals `0.5` became 31.62 from 100 units, and `"1e309"`
+  became Infinity that serialised to null with no reason. Raw units must be a
+  non-negative integer string and the scale a whole number up to 36; the
+  division is exact on the whole part; the raw values travel with the price;
+  and a malformed row says which field failed and why.
+- **Instruction-shaped text passed through OpenSea's typed fields.** Only the
+  item name went through the untrusted-text pass; `currency`, `buyer`,
+  `seller` and `transaction` were relayed raw. Each is now validated against
+  the shape it claims (a ticker, a base58 address, a 64-byte signature) and
+  set to null with a reason when it fails. The venue's text is never repeated.
+
+Disclosure and tests:
+
+- The read-only hint stays. It describes what the tools do to the chain, the
+  venues and your wallet, which is nothing. What it does not describe - the
+  first OpenSea question may create a free key and store it in your home
+  folder, and startup asks npm for the latest version - is now said in the
+  server's own instructions, which every client's model reads, and in
+  SECURITY.md, which used to claim the server holds no keys. Both are opt-out.
+- `test/robustness.mjs` r10 launched its child server without the offline
+  environment every other block uses, and its loop swallowed every error that
+  was not a schema refusal, so "every tool answers" was true of a test that
+  had measured nothing. It runs offline now and classifies four outcomes
+  apart: 12 tools answer from local data, 8 name the source as unreachable, 0
+  refuse their required arguments, 0 fail for any other reason.
+- `test/hardening.mjs` b16 stubbed fetch with a bare object carrying only
+  `json()`. The registry body now goes through the bounded reader, so the
+  stand-in is a real `Response`.
+
+Not changed, on purpose: the `>=20` engine floor. Node 20 is end of life and
+this release was tested on 24. Narrowing the floor would refuse installs that
+work today, which is a maintainer's decision rather than a patch.

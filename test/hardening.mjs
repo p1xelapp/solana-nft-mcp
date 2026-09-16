@@ -362,7 +362,10 @@ const jsonResponse = (body, headers = {}) =>
   assert.strictEqual(compareVersions("v2.0.0", "2.0.0"), 0);
   assert.strictEqual(compareVersions("garbage", "1.0.0"), 0, "an unreadable version compares as equal, never as newer");
 
-  const stub = (version, status = 200) => async () => ({ ok: status === 200, status, json: async () => ({ version }) });
+  // A real Response, not a bare object with a json(): the registry body now
+  // goes through the same bounded reader as every other body, and a stand-in
+  // that only knew json() was asserting against a fetch that does not exist.
+  const stub = (version, status = 200) => async () => new Response(JSON.stringify({ version }), { status, headers: { "content-type": "application/json" } });
   const saved = process.env.COLLECTOR_MCP_OFFLINE;
 
   process.env.COLLECTOR_MCP_OFFLINE = "1";
