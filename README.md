@@ -62,10 +62,13 @@ Quit the app fully and reopen it.
 
 ### Every other MCP client
 
-Cursor, Windsurf, Codex CLI, Gemini CLI, Zed, Cline and VS Code take the same `command` /
-`args` pair in their own MCP config. The server speaks stdio and holds no client-specific
-code, so anything that can launch a local process will run it. ChatGPT on the web and Grok
-cannot: they have nowhere to run a local server.
+Tested hosts, with the version each was tested on: Claude Desktop (the `.mcpb` bundle), Claude
+Code, and Codex CLI 0.153.4 (`codex exec -c 'mcp_servers.collector.command="node"' -c
+'mcp_servers.collector.args=["/absolute/path/to/dist/index.js"]'`). Cursor, Windsurf, Gemini CLI,
+Zed, Cline and VS Code take the same `command` / `args` pair in their own MCP config and should
+run it, because the server speaks plain stdio and holds no client-specific code, but they have
+not been tested here and each host's config syntax differs. ChatGPT on the web and Grok cannot
+run it: they have nowhere to launch a local process.
 
 ### Did it work?
 
