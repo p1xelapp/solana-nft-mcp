@@ -853,3 +853,52 @@ attached, against live venues:
 - `get_asset_provenance` says it returns ownership events only and points
   at `get_asset` and `get_asset_trust` for traits, after a real host read
   its empty trait picture as "no traits".
+
+## 1.14.3 - 2026-09-16
+
+A third outside review, scoped to the 1.14.x diff, found nine defects. All
+nine are fixed, each with a regression that fails on 1.14.2.
+
+- **A key containing a quote walked through the result boundary.** The
+  boundary serialised first and searched second, and JSON escaping had
+  changed the spelling. Every registered secret is now looked for raw,
+  JSON-escaped and URL-encoded, and string leaves are redacted BEFORE
+  anything is serialised (`redactDeep`), with the serialised search kept as
+  the last check. A key shorter than eight characters is refused at
+  registration rather than silently unprotected. Proven over stdio on a
+  normal successful answer, not only an error.
+- **Three more routes to a false "never traded".** A decoded CreateV2 beside
+  an undecodable Core instruction on the same asset counted as complete; a
+  transaction-wide "Instruction: CreateV2" log written by another asset was
+  taken as this one's mint; and a CreateV2 that created another asset while
+  naming this one in its optional owner slot was read as this asset's
+  creation. Now every undecodable Core instruction on the asset is a hole,
+  logs may add a transfer but never a mint, and an instruction is about an
+  asset only when that asset sits in slot 0. A normal inner CreateV2 CPI
+  still confirms; the real Batman asset still decodes as minted plus three
+  transfers.
+- **A late caller could join an abandoned cache producer** and inherit its
+  AbortedError without ever fetching. An entry whose producer is already
+  aborted is replaced.
+- **The status tool kept probing RPC endpoints after cancellation.** The
+  health loop now reads the ambient signal.
+- **Signal combiners left listeners on surviving parents** (twenty per
+  twenty combinations). Both use `AbortSignal.any`, which holds parents
+  weakly; the Node 22 floor allows it.
+- **Raw RPC reads bypassed offline mode.** An offline suite still sent chain
+  reads; the refusal now happens by name before any gate, the health check
+  reports it per endpoint, and the tool boundary gives offline mode its own
+  headline instead of "try again".
+- **The day a truncated feed was cut in read as a whole day.** It is marked
+  `partial: true`; its count is a floor.
+- **The direct-symbol negative cache was keyed by name, not by the spellings
+  tried.** "Candy Digital - Audit Crown" answered for "Audit Crown" without
+  ever asking about `audit_crown`.
+- **`rawQuantity` relayed a malformed value verbatim,** which put
+  instruction-shaped text back into a normal answer. It is relayed only when
+  it has the shape of a bounded integer.
+
+Tests: the cooldown recovery moves a fake clock across the boundary instead
+of resetting state; persona cases that only cite another test report
+REFERENCE rather than PASS, and the runner refuses to start without
+`PERSONA_LIVE=1` and an explicit `PERSONA_CASES` path.

@@ -130,7 +130,12 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
   const outOfTime = () => Date.now() > deadline;
   const wanted = collectionNameKey(name);
   if (!wanted) return { found: false, conclusive: true, note: "the name has no letters or digits to turn into a symbol" };
-  const cachedMiss = misses.get(wanted);
+  // The negative cache is keyed by the SPELLINGS that were tried, not the
+  // name. "Candy Digital - Audit Crown" and "Audit Crown" share a name key
+  // but try different symbols, and the first's all-404 used to answer the
+  // second without ever asking the venue about `audit_crown`.
+  const cacheKey = symbolCandidates(name).join("|") || wanted;
+  const cachedMiss = misses.get(cacheKey);
   if (cachedMiss !== undefined && Date.now() - cachedMiss.at < MISS_TTL_MS) {
     return cachedMiss.conflict
       ? { found: false, conclusive: true, conflict: cachedMiss.conflict, note: conflictNote(name, cachedMiss.conflict) }
@@ -238,7 +243,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
         (conflict ? `. ${conflictNote(name, conflict)}` : ""),
     };
   }
-  misses.set(wanted, { at: Date.now(), ...(conflict ? { conflict } : {}) });
+  misses.set(cacheKey, { at: Date.now(), ...(conflict ? { conflict } : {}) });
   if (conflict) return { found: false, conclusive: true, conflict, note: conflictNote(name, conflict) };
   return { found: false, conclusive: true, note: `no collection at the venue under any spelling tried: ${tried.join(", ")}` };
 }

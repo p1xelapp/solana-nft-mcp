@@ -18,7 +18,7 @@
  * Digital auction: 36/36 packs traced to their winners, 0 untraced.
  */
 
-import { cached, originGate, readBoundedJson, OversizedBodyError, sleep } from "../lib/http.js";
+import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
@@ -212,6 +212,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       // and only the check AFTER it looked. A deadline consulted after the
       // waiting is not a deadline.
       if (attempt > 0) await sleep(1500 * attempt, signal);
+      // The raw RPC path bypasses fetchRetry, so the offline stop has to be
+      // here too. Without it an offline suite still sent chain reads and the
+      // error that came back read as an outage rather than a refusal.
+      assertOnline(ep.url);
       await gateFor(ep.url)(signal);
       if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
       try {
@@ -290,23 +294,6 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
 /** This endpoint is not answering: retry it, then move to the next one. */
 class EndpointError extends Error {}
 
-/**
- * One signal firing on either the request timeout or the caller's own
- * deadline. `AbortSignal.any` landed in Node 20.3 and this package supports
- * the engine floor is 20.0, so the two are combined by hand.
- */
-function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  if (!caller) return timeout;
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  if (caller.aborted || timeout.aborted) stop();
-  else {
-    caller.addEventListener("abort", stop, { once: true });
-    timeout.addEventListener("abort", stop, { once: true });
-  }
-  return controller.signal;
-}
 
 /** The chain answered, and the answer was an error. Every endpoint would say the same. */
 class ChainError extends Error {}
@@ -329,8 +316,18 @@ export interface RpcEndpointHealth {
  * would hide exactly what is being asked about. Never throws.
  */
 export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promise<RpcEndpointHealth[]> {
+  // The status tool's cancellation reaches this loop through the ambient
+  // signal; without joining it, a cancelled status check went on to probe
+  // every remaining endpoint (three health requests after the abort).
+  signal = withAmbient(signal);
   const out: RpcEndpointHealth[] = [];
   for (const ep of endpoints()) {
+    try {
+      assertOnline(ep.url);
+    } catch (e) {
+      out.push({ endpoint: label(ep), ok: false, latencyMs: null, slot: null, note: e instanceof Error ? e.message : String(e) });
+      continue;
+    }
     const started = Date.now();
     // The caller's deadline governs this check too. Without it the status
     // tool's shared budget could be spent entirely here, and every marketplace
@@ -814,12 +811,16 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       const logsMissing = !Array.isArray(tx.meta.logMessages);
       const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
       const decodable = coreIxs.filter((i) => discriminator(i.data) !== null);
-      const transferIx = coreIxs.find((i) => discriminator(i.data) === IX_TRANSFER_V1);
-      const createIx = coreIxs.find((i) => {
-        const d = discriminator(i.data);
-        return d === IX_CREATE_V1 || d === IX_CREATE_V2;
-      });
-      const burnIx = coreIxs.find((i) => discriminator(i.data) === IX_BURN_V1);
+      const undecodable = coreIxs.filter((i) => discriminator(i.data) === null);
+      // The asset an instruction is ABOUT sits in slot 0 for CreateV1/V2,
+      // TransferV1 and BurnV1 alike. Membership anywhere in the account list
+      // is not the same thing: a CreateV2 for another asset can name this one
+      // in its optional owner slot, and reading that as this asset's mint let
+      // a never-traded claim be confirmed on somebody else's creation.
+      const about = (i: ParsedInstruction, ...discs: number[]) => discs.includes(discriminator(i.data) ?? -1) && i.accounts?.[0] === mint;
+      const transferIx = coreIxs.find((i) => about(i, IX_TRANSFER_V1));
+      const createIx = coreIxs.find((i) => about(i, IX_CREATE_V1, IX_CREATE_V2));
+      const burnIx = coreIxs.find((i) => about(i, IX_BURN_V1));
 
       // A transaction we can read neither way is a hole, not an absence of
       // events: no logs AND no decodable Core instruction means we cannot say
@@ -827,16 +828,19 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
       if (logsMissing && decodable.length === 0) { unreadable++; continue; }
 
       const logSaysTransfer = logs.some((l) => typeof l === "string" && l.includes("Instruction: Transfer"));
-      const logSaysCreate = logs.some((l) => typeof l === "string" && l.includes("Instruction: Create"));
-      const logSaysBurn = logs.some((l) => typeof l === "string" && l.includes("Instruction: Burn"));
 
-      // A Core instruction on THIS asset that neither its data nor the logs
-      // can classify is the same hole, whatever else the transaction carried.
-      // An empty log array used to count as "logs present", so a Core
-      // instruction with no data and `logMessages: []` fell through to "other"
-      // and a never-traded claim was CONFIRMED on evidence nobody had read.
-      const unclassified = coreIxs.length > 0 && decodable.length === 0 && !logSaysTransfer && !logSaysCreate && !logSaysBurn;
-      if (unclassified) { unreadable++; continue; }
+      // EVERY Core instruction on this asset that cannot be decoded is a hole,
+      // whatever else the transaction carried. Requiring all of them to be
+      // undecodable before counting one let a decoded CreateV2 beside an
+      // unreadable sibling declare the history complete. Logs are a
+      // transaction-wide text stream and cannot be attributed to one
+      // instruction or one asset, so they may only ADD a transfer (the safe
+      // direction: it weakens "never traded"), never establish a mint. An
+      // unreadable instruction stays counted even when a log names a transfer.
+      if (undecodable.length > 0) {
+        unreadable += undecodable.length;
+        if (!logSaysTransfer) continue;
+      }
 
       const marketplace = all
         .map((i) => MARKETPLACE_PROGRAMS[i.programId])
@@ -899,9 +903,11 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
         // person's wallet an escrow.
         if (isMeEscrow(newOwner)) recipientIsMeAccount.add(row);
         events.push(row);
-      } else if (burnIx || (logSaysBurn && coreIxs.length > 0)) {
+      } else if (burnIx) {
         events.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
-      } else if (createIx || (logSaysCreate && coreIxs.length > 0)) {
+      } else if (createIx) {
+        // Decoded, and about this asset. A log line saying "Instruction:
+        // CreateV2" used to be enough, and it was another asset's.
         events.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
       } else if (marketplace) {
         // Listing/delisting/escrow motion on a marketplace - no ownership change.

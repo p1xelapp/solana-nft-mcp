@@ -43,7 +43,7 @@ import { fitRows, omit } from "./lib/fit.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
 import { runWithSignal } from "./lib/context.js";
-import { containsSecret, redactSecrets } from "./lib/secrets.js";
+import { containsSecret, redactSecrets, redactDeep } from "./lib/secrets.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
 // and the published package can never disagree about what version this is.
@@ -124,7 +124,11 @@ const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
  * pull out of prose. `content` keeps the pretty-printed JSON so older clients
  * and plain transcripts still work, which the spec explicitly asks for.
  */
-const ok = (data: unknown): ToolResult => {
+const ok = (raw: unknown): ToolResult => {
+  // Leaves first, then serialise: a registered key containing a quote used to
+  // survive because the search ran on the escaped JSON, where `"` had become
+  // `\"` and the raw string was no longer there to find.
+  const data = redactDeep(raw);
   const text = JSON.stringify(data, null, 2);
   const structured =
     data !== null && typeof data === "object" && !Array.isArray(data)
@@ -143,8 +147,9 @@ const ok = (data: unknown): ToolResult => {
  * nothing matches, which is every call but the one this exists for.
  */
 function scrubbed(result: ToolResult): ToolResult {
-  const serialised = JSON.stringify(result);
-  if (!containsSecret(serialised)) return result;
+  const walked = redactDeep(result);
+  const serialised = JSON.stringify(walked);
+  if (!containsSecret(serialised)) return walked;
   return JSON.parse(redactSecrets(serialised)) as ToolResult;
 }
 
@@ -164,6 +169,18 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   // that will always have the same two answers.
   if (err instanceof AmbiguousError) {
     return { kind: "ambiguous", headline: msg, next: "Pass one of the ids or addresses listed above." };
+  }
+  // Offline mode is a configuration this server was started with, not an
+  // outage and not the person's mistake. It used to surface under "could not
+  // be completed, try again", which is advice to repeat a request the setting
+  // will refuse again.
+  if (/offline mode \(COLLECTOR_MCP_OFFLINE=1\)/.test(msg)) {
+    const host = /refused to contact (\S+)/.exec(msg)?.[1];
+    return {
+      kind: "offline",
+      headline: `This server is running in offline mode (COLLECTOR_MCP_OFFLINE=1) and did not contact ${host ?? "the source"}.`,
+      next: "Nothing was read. Start the server without COLLECTOR_MCP_OFFLINE to ask live sources.",
+    };
   }
   // Which venue this was is OUR label, taken from the source name this server
   // passes to fetchJson, never from anything an upstream wrote.

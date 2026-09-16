@@ -27,6 +27,11 @@ globalThis.fetch = async (url, init = {}) => {
     return json({ api_key: canary, expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() });
   }
   if (target.includes("api.opensea.io")) {
+    // The stats route answers 200 with the key reflected in a field a normal
+    // answer prints (the floor currency), so the SUCCESS path is exercised as
+    // well as the error path. A second review found the success path leaked a
+    // key containing a quote because the boundary searched escaped JSON.
+    if (target.includes("/stats")) return json({ total: { floor_price: 1, floor_price_symbol: canary, num_owners: 2 } });
     return json({ message: `bad request; header x-api-key was ${canary}` }, 400);
   }
   if (target.includes("magiceden.dev")) {

@@ -297,6 +297,11 @@ export interface DailyPoint {
    * draws an absent day as zero tells a lie; this field is how it knows.
    */
   covered?: false;
+  /**
+   * True on the oldest day the feed reached when it was cut mid-day: the
+   * sales counted for it are what was read, a floor rather than the day.
+   */
+  partial?: true;
   /** Every sale that day, priced or not. */
   sales: number;
   /** Volume of the priced ones only; `pricedSales` says how many that was. */
@@ -563,6 +568,10 @@ export function summarizeSales(
         if (!date || byDate.has(date) || date > (utcDay(windowEndUnix) ?? date)) continue;
         byDate.set(date, oldestDay !== null && date < oldestDay ? { date, covered: false, sales: 0, volumeSol: 0, pricedSales: 0 } : { date, sales: 0, volumeSol: 0, pricedSales: 0 });
       }
+      // The day the cut fell in was read from noon onwards, say: its row
+      // exists, so the loop above left it alone, and it read as a whole day.
+      const boundary = oldestDay !== null ? byDate.get(oldestDay) : undefined;
+      if (boundary && oldestDay !== null && oldestDay >= (utcDay(windowStartUnix) ?? oldestDay)) byDate.set(oldestDay, { ...boundary, partial: true });
       return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
     })(),
     venues: [...venues.entries()]

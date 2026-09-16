@@ -40,12 +40,10 @@ export function withAmbient(explicit?: AbortSignal): AbortSignal | undefined {
   const ambient = ambientSignal();
   if (!ambient) return explicit;
   if (!explicit || explicit === ambient) return ambient;
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  if (explicit.aborted || ambient.aborted) stop();
-  else {
-    explicit.addEventListener("abort", stop, { once: true });
-    ambient.addEventListener("abort", stop, { once: true });
-  }
-  return controller.signal;
+  // AbortSignal.any holds its parents weakly, so a combination that finishes
+  // leaves nothing behind on the parent that outlived it. The handwritten
+  // combiner it replaced added a listener to each parent and removed neither:
+  // measured 2026-09-16, twenty combinations against one long-lived request
+  // signal left twenty listeners on it for as long as the request ran.
+  return AbortSignal.any([explicit, ambient]);
 }

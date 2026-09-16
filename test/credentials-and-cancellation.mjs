@@ -131,7 +131,10 @@ const serverEnvBase = () => {
   // The same through a real server over stdio, which is where the audit saw it.
   const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-audit2-home-"));
   homes.push(home);
-  const canary = "AUTO-KEY-END-TO-END-CANARY-9z8y7x6w";
+  // Short enough to survive the status note's 16-character currency cap
+  // whole, and carrying a quote so JSON escaping changes its spelling: the
+  // boundary used to search the escaped text for the raw string and miss.
+  const canary = 'AK"QUOTED"CANARY';
   const preload = pathToFileURL(path.join(here, "helpers", "reflect-key-preload.mjs")).href;
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -143,6 +146,7 @@ const serverEnvBase = () => {
   await c.connect(transport);
   const leaks = [];
   let redactedSeen = false;
+  let successPathSeen = false;
   for (const [name, args] of [
     ["get_source_status", {}],
     ["get_collection_stats", { collection: "mad_lads", openseaSlug: "mad-lads" }],
@@ -150,9 +154,12 @@ const serverEnvBase = () => {
   ]) {
     const r = await c.callTool({ name, arguments: args }, undefined, { timeout: 30_000 });
     const text = JSON.stringify(r);
-    if (text.includes(canary)) leaks.push(name);
+    // Raw, JSON-escaped and URL-encoded spellings are all leaks.
+    for (const form of [canary, JSON.stringify(canary).slice(1, -1), encodeURIComponent(canary)]) if (text.includes(form)) leaks.push(`${name} (${form === canary ? "raw" : "encoded"})`);
     if (text.includes("[REDACTED]")) redactedSeen = true;
+    if (name === "get_source_status" && !r.isError && /opensea[\s\S]*\[REDACTED\]/i.test(text)) successPathSeen = true;
   }
+  assert.ok(successPathSeen, "the SUCCESSFUL status answer carried the reflected currency and it was redacted there, not only in an error");
   // SEC-04: the side effect the read-only hint does not cover is disclosed in
   // the server's own instructions, where every client's model reads it.
   const instructions = c.getInstructions() ?? "";
@@ -163,7 +170,25 @@ const serverEnvBase = () => {
   assert.ok(redactedSeen, "at least one answer carried the redaction marker, so the reflecting path was really exercised");
   const keyFile = path.join(home, ".collector-mcp", "opensea-key.json");
   assert.ok(fs.existsSync(keyFile), "the key was stored under the TEST home, proving the real home folder was never in play");
-  ok("SEC-01 over real stdio, no tool answer carries the self-issued key; SEC-04 the key and update side effects are disclosed in the instructions");
+  ok("SEC-01 over real stdio, no tool answer carries the self-issued key in any spelling, including a normal answer; SEC-04 the key and update side effects are disclosed in the instructions");
+}
+
+{
+  // F01 at the unit level: every spelling, before serialisation.
+  resetSecrets();
+  const { redactDeep } = await import("../dist/lib/secrets.js");
+  const key = 'LOCAL"KEY\\123-abcdef';
+  assert.strictEqual(registerSecret(key), true);
+  assert.strictEqual(registerSecret("short"), false, "a key too short to protect is refused, not silently accepted");
+  const escaped = JSON.stringify(key).slice(1, -1);
+  const encoded = encodeURIComponent(key);
+  assert.strictEqual(redactSecrets(`a ${key} b`), "a [REDACTED] b");
+  assert.strictEqual(redactSecrets(`{"m":"${escaped}"}`), '{"m":"[REDACTED]"}', "the JSON-escaped spelling is redacted");
+  assert.strictEqual(redactSecrets(`https://x/?k=${encoded}`), "https://x/?k=[REDACTED]", "the URL-encoded spelling is redacted");
+  const deep = redactDeep({ note: `floor 1 ${key}`, nested: [{ [key]: key }], n: 3 });
+  assert.deepStrictEqual(deep, { note: "floor 1 [REDACTED]", nested: [{ "[REDACTED]": "[REDACTED]" }], n: 3 }, "leaves and keys are redacted before anything is serialised");
+  resetSecrets();
+  ok("F01 a registered key is redacted raw, JSON-escaped and URL-encoded, on leaves before serialisation");
 }
 
 // ================================================================ SEC-02
@@ -233,20 +258,24 @@ const serverEnvBase = () => {
   assert.ok(os.issueCooldownUntil() - Date.now() <= 24 * 60 * 60_000 + 1000, "a hostile 30-day Retry-After is capped at a day");
 
   // Recovery: the cooldown expiring lets one more attempt through, and that
-  // one succeeding clears the failure state.
+  // one succeeding clears the failure state. The clock MOVES; resetting state
+  // would pass even if the expiry arithmetic were wrong.
   os.resetKeyCache();
+  let clock = 1_800_000_000_000;
+  os.setClockForTests(() => clock);
   let attempt = 0;
   globalThis.fetch = async () => {
     attempt++;
     return attempt === 1 ? json({ message: "outage" }, 503) : json({ api_key: "RECOVERED-KEY-0123456789", expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString() });
   };
   assert.strictEqual(await os.ensureKey(), null, "the outage is a miss");
-  assert.strictEqual(await os.ensureKey(), null, "and is not retried inside its cooldown");
+  clock += 4 * 60_000;
+  assert.strictEqual(await os.ensureKey(), null, "four minutes later it is still inside the five-minute cooldown");
   assert.strictEqual(attempt, 1);
-  os.resetKeyCache(); // stands in for the cooldown expiring; the clock is not stubbed
-  attempt = 1;
-  assert.strictEqual(await os.ensureKey(), "RECOVERED-KEY-0123456789", "after the cooldown the next attempt goes out and wins");
+  clock += 61_000;
+  assert.strictEqual(await os.ensureKey(), "RECOVERED-KEY-0123456789", "past the cooldown the next attempt goes out and wins");
   assert.strictEqual(os.openSeaState().enabled, true);
+  os.setClockForTests();
   os.resetKeyCache();
   globalThis.fetch = denied;
   ok("SEC-03 a failed key issue is negatively cached with a bounded Retry-After, and recovers");
@@ -306,7 +335,8 @@ const serverEnvBase = () => {
   assert.strictEqual(producerAborted, true, "the last waiter leaving does");
 
   // The ambient signal inside the producer is the PRODUCER's, not the first
-  // caller's: a fetcher that reads it sees a signal that outlives caller A.
+  // caller's: the caller aborting after the read must not have aborted what
+  // the producer was running under.
   let seenInside = null;
   const outer = new AbortController();
   await runWithSignal(outer.signal, () =>
@@ -315,8 +345,93 @@ const serverEnvBase = () => {
       return 1;
     }),
   );
-  assert.ok(seenInside && seenInside !== outer.signal, "the producer runs under its own signal, detached from the caller's");
-  ok("SEC-05 a shared cache producer is abandoned only when its last waiter leaves");
+  outer.abort();
+  assert.ok(seenInside && !seenInside.aborted, "the caller aborting does not abort the signal the producer ran under");
+
+  // F03: a fresh caller must not join a producer whose last waiter already
+  // left. It used to inherit that producer's AbortedError and never fetch.
+  let starts = 0;
+  let rejectOld;
+  const slow = (signal) =>
+    new Promise((resolve, reject) => {
+      starts++;
+      rejectOld ??= reject;
+      signal.addEventListener("abort", () => reject(new AbortedError("old producer abandoned")), { once: true });
+      if (starts === 2) resolve("fresh");
+    });
+  const first = new AbortController();
+  const p1 = cached("audit2:late-join", 1_000, slow, { signal: first.signal });
+  first.abort();
+  await assert.rejects(p1, AbortedError);
+  const p2 = cached("audit2:late-join", 1_000, slow);
+  const late = await p2;
+  assert.strictEqual(starts, 2, "the late caller got a producer of its own");
+  assert.strictEqual(late.data, "fresh");
+  ok("SEC-05 a shared cache producer is abandoned only when its last waiter leaves, and a late caller never joins an abandoned one");
+}
+
+{
+  // F05: a finished combination leaves nothing behind on the parent that
+  // outlived it. Twenty combinations used to leave twenty listeners on a
+  // long-lived request signal.
+  const { getEventListeners } = await import("node:events");
+  const { combineSignals } = await import("../dist/lib/http.js");
+  const { withAmbient } = await import("../dist/lib/context.js");
+  const request = new AbortController();
+  for (let i = 0; i < 20; i++) combineSignals(5, request.signal);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.strictEqual(getEventListeners(request.signal, "abort").length, 0, "timeouts that fired left no listener on the caller's signal");
+  const explicit = new AbortController();
+  runWithSignal(request.signal, () => {
+    for (let i = 0; i < 20; i++) withAmbient(explicit.signal);
+  });
+  explicit.abort();
+  assert.strictEqual(getEventListeners(request.signal, "abort").length, 0, "combinations whose other parent aborted left no listener on the survivor");
+  ok("F05 signal combinations hold their parents weakly and leave no listeners behind");
+}
+
+{
+  // F04: the status tool's RPC health loop stops at the first endpoint after
+  // the request is cancelled; it used to probe every remaining one.
+  process.env.SOLANA_RPC_URL = "https://health-cancel.invalid/rpc";
+  let starts = 0;
+  globalThis.fetch = async (_url, init) => {
+    starts++;
+    await new Promise((r) => setTimeout(r, 15));
+    if (init?.signal?.aborted) throw new Error("aborted");
+    return json([{ id: 1, result: "ok" }, { id: 2, result: 123 }]);
+  };
+  const request = new AbortController();
+  const pending = runWithSignal(request.signal, () => sol.rpcHealth(500));
+  await new Promise((r) => setTimeout(r, 3));
+  request.abort();
+  const health = await pending;
+  assert.strictEqual(starts, 1, `only the endpoint already in flight was contacted (got ${starts})`);
+  assert.ok(health.filter((h) => h.ok).length <= 1);
+  assert.ok(health.some((h) => /budget ran out|not checked/i.test(h.note)), "the skipped endpoints say they were skipped");
+  delete process.env.SOLANA_RPC_URL;
+  globalThis.fetch = denied;
+  ok("F04 a cancelled status check contacts no further RPC endpoints");
+}
+
+{
+  // F06: the raw RPC path refuses in offline mode by name, before any gate or
+  // fetch. An offline suite used to send real chain reads and report the
+  // answer as an outage.
+  process.env.COLLECTOR_MCP_OFFLINE = "1";
+  let fetched = 0;
+  globalThis.fetch = async () => {
+    fetched++;
+    throw new Error("must not be reached");
+  };
+  await assert.rejects(sol.getCoreAccount(address("offline-probe")), /offline mode \(COLLECTOR_MCP_OFFLINE=1\)/, "a raw chain read refuses by name");
+  assert.strictEqual(fetched, 0, "nothing was sent");
+  const health = await sol.rpcHealth(200);
+  assert.ok(health.length > 0 && health.every((h) => !h.ok && /offline/i.test(h.note)), "every health row says offline, none was contacted");
+  assert.strictEqual(fetched, 0);
+  delete process.env.COLLECTOR_MCP_OFFLINE;
+  globalThis.fetch = denied;
+  ok("F06 raw RPC reads and the health check refuse by name in offline mode");
 }
 
 {
@@ -389,6 +504,20 @@ const serverEnvBase = () => {
   const r = await os.recentSales("untrusted-fields", 2);
   const text = JSON.stringify(r);
   assert.ok(!text.includes(payload), "the instruction text is not relayed from any field");
+  // F09: the quantity field too. The diagnostic rawQuantity used to relay a
+  // malformed value verbatim, which put instruction text back into a normal
+  // answer through the field added to explain the refusal.
+  globalThis.fetch = async () => json({ asset_events: [{ event_type: "sale", payment: { quantity: payload, decimals: 9, symbol: "SOL" }, nft: { name: "x" }, event_timestamp: 1_700_000_000 }] });
+  const q = await os.recentSales("untrusted-quantity", 1);
+  assert.ok(!JSON.stringify(q).includes(payload), "a malformed quantity is not relayed");
+  assert.strictEqual(q.sales[0].rawQuantity, null);
+  assert.strictEqual(q.sales[0].price, null);
+  assert.match(q.sales[0].malformedFields[0], /quantity/);
+  const long = await (async () => {
+    globalThis.fetch = async () => json({ asset_events: [{ event_type: "sale", payment: { quantity: "9".repeat(5000), decimals: 9, symbol: "SOL" }, nft: { name: "x" }, event_timestamp: 1_700_000_000 }] });
+    return os.recentSales("untrusted-quantity-long", 1);
+  })();
+  assert.strictEqual(long.sales[0].rawQuantity, null, "a 5,000-digit quantity is not relayed either");
   const [bad, good] = r.sales;
   assert.strictEqual(bad.currency, null);
   assert.strictEqual(bad.buyer, null);
@@ -472,19 +601,27 @@ const serverEnvBase = () => {
   // The conflict survives the negative cache.
   const again = await findSymbolByName("Audit Crown");
   assert.deepStrictEqual(again.conflict, r.conflict);
-  // Control: the venue's own name matching is still a hit. A different symbol,
-  // because the conflict case's stats and listing are now in the shared cache.
+  // F08: the negative cache is keyed by the spellings tried, not the name.
+  // "Candy Digital - Audit Crown" tries different symbols from "Audit Crown",
+  // and its all-404 used to answer for the shorter name unasked.
   resetDirectSymbolCache();
+  const asked = [];
   globalThis.fetch = async (url) => {
     const p = new URL(String(url)).pathname;
+    asked.push(p);
     if (p === "/v2/collections/audit_tiara/stats") return json({ symbol: "audit_tiara", floorPrice: 1_000_000_000, listedCount: 1, volumeAll: 1 });
-    if (p === "/v2/collections/audit_tiara/listings") return json([{ tokenMint: address("l2"), price: 1, token: { collectionName: "Audit Tiara" } }]);
-    throw new Error(`unexpected ${p}`);
+    if (p === "/v2/collections/audit_tiara/listings") return json([{ tokenMint: address("l3"), price: 1, token: { collectionName: "Audit Tiara" } }]);
+    return json({ message: "not found" }, 404);
   };
-  const hit = await findSymbolByName("Audit Tiara");
-  assert.strictEqual(hit.found, true, `a matching venue name is still a hit: ${hit.note}`);
-  assert.strictEqual(hit.symbol, "audit_tiara");
-  assert.strictEqual(hit.provisional, undefined);
+  const longMiss = await findSymbolByName("Candy Digital - Audit Tiara");
+  assert.strictEqual(longMiss.found, false);
+  const shortHit = await findSymbolByName("Audit Tiara");
+  assert.strictEqual(shortHit.found, true, `the shorter name's own spellings were tried: ${asked.join(", ")}`);
+  assert.ok(asked.includes("/v2/collections/audit_tiara/stats"));
+  // Control: the venue's own name matching is still a hit (the Audit Tiara
+  // lookup above), and it is not provisional.
+  assert.strictEqual(shortHit.symbol, "audit_tiara");
+  assert.strictEqual(shortHit.provisional, undefined);
   resetDirectSymbolCache();
   globalThis.fetch = denied;
   ok("DATA-3 an exact slug whose venue name conflicts is reported as a conflict, never adopted");
@@ -565,6 +702,34 @@ const serverEnvBase = () => {
   ]);
   const r4 = await verifyClaim({ claim: "never-traded", subject: mint });
   assert.strictEqual(r4.verdict, "contradicted");
+
+  // F02, three more routes to a false "confirmed", each its own regression.
+  // Data "M" is byte 20: CreateV2.
+  const other = address("some-other-asset");
+  const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [] } } });
+  // (a) A decoded CreateV2 for this asset beside an undecodable Core
+  // instruction on it. The undecodable one could be the transfer.
+  globalThis.fetch = rpcFor([{ signature: signature("mixed"), tx: txMulti([{ programId: CORE, accounts, data: "M" }, { programId: CORE, accounts }], []) }]);
+  const m1 = await verifyClaim({ claim: "never-traded", subject: mint });
+  assert.strictEqual(m1.verdict, "unverifiable", `an undecodable sibling instruction is a hole even next to a decoded mint: ${m1.explanation}`);
+  assert.match(m1.evidence[0].observed, /1 unreadable/);
+  // (b) The target's instruction is undecodable; another asset's CreateV2 in
+  // the same transaction writes "Instruction: CreateV2" to the shared log.
+  const otherAccounts = [other, ...accounts.slice(1)];
+  globalThis.fetch = rpcFor([{ signature: signature("foreign-log"), tx: txMulti([{ programId: CORE, accounts }, { programId: CORE, accounts: otherAccounts, data: "M" }], [`Program ${CORE} invoke [1]`, "Program log: Instruction: CreateV2", `Program ${CORE} success`]) }]);
+  const m2 = await verifyClaim({ claim: "never-traded", subject: mint });
+  assert.strictEqual(m2.verdict, "unverifiable", `another asset's log line is not this asset's mint: ${m2.explanation}`);
+  // (c) A decoded CreateV2 that creates ANOTHER asset and names this one only
+  // in its optional owner slot (index 4).
+  const ownerSlot = [other, accounts[1], accounts[2], accounts[3], mint, accounts[5], accounts[6]];
+  globalThis.fetch = rpcFor([{ signature: signature("owner-slot"), tx: txMulti([{ programId: CORE, accounts: ownerSlot, data: "M" }], []) }]);
+  const m3 = await verifyClaim({ claim: "never-traded", subject: mint });
+  assert.strictEqual(m3.verdict, "unverifiable", `a CreateV2 whose asset slot is another address is not this asset's mint: ${m3.explanation}`);
+  assert.match(m3.explanation, /no mint instruction/);
+  // Positive control: a normal inner CreateV2 CPI with this asset in slot 0.
+  globalThis.fetch = rpcFor([{ signature: signature("cpi-create"), tx: txMulti([{ programId: CORE, accounts, data: "M" }], []) }]);
+  const m4 = await verifyClaim({ claim: "never-traded", subject: mint });
+  assert.strictEqual(m4.verdict, "confirmed", `an ordinary CreateV2 CPI still confirms: ${m4.explanation}`);
   delete process.env.SOLANA_RPC_URL;
   globalThis.fetch = denied;
   ok("DATA-5 never-traded needs every Core instruction classified and the mint observed; anything less is unverifiable");

@@ -168,13 +168,14 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.ok(full.daily.every((d) => d.covered === undefined), "a feed that covered the window has no unread days");
   // The feed was cut and its oldest row is day 2: days 0 and 1 were never read.
   const cut = summarizeSales([row(2, t0 + 2 * day + 100)], { windowStartUnix: t0, windowEndUnix: t0 + 5 * day - 1, truncated: true });
-  assert.deepStrictEqual(cut.daily.map((d) => [d.date.slice(-2), d.sales, d.covered === false]), [
-    [full.daily[0].date.slice(-2), 0, true],
-    [full.daily[1].date.slice(-2), 0, true],
-    [full.daily[2].date.slice(-2), 1, false],
-    [full.daily[3].date.slice(-2), 0, false],
-    [full.daily[4].date.slice(-2), 0, false],
-  ], "days before the oldest row read are marked not covered; days after it with no sales are real zeroes");
+  assert.deepStrictEqual(cut.daily.map((d) => [d.date.slice(-2), d.sales, d.covered === false, d.partial === true]), [
+    [full.daily[0].date.slice(-2), 0, true, false],
+    [full.daily[1].date.slice(-2), 0, true, false],
+    [full.daily[2].date.slice(-2), 1, false, true],
+    [full.daily[3].date.slice(-2), 0, false, false],
+    [full.daily[4].date.slice(-2), 0, false, false],
+  ], "days before the oldest row read are not covered; the day the cut fell in is partial (its count is a floor); later empty days are real zeroes");
+  assert.ok(full.daily.every((d) => d.partial === undefined), "an untruncated feed has no partial day");
   assert.deepStrictEqual(summarizeSales([], { windowStartUnix: t0, windowEndUnix: t0 + 5 * day }).daily, [], "an empty feed is still an empty series");
   console.log("daily zero vs not-read OK");
 }

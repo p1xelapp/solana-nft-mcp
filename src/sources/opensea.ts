@@ -94,6 +94,12 @@ let issuing: Promise<string | null> | null = null;
  * venue sent is honoured inside a floor and a ceiling.
  */
 let nextIssueAfter = 0;
+/** The clock the cooldown reads. A test seam: an expiry that is wrong can only be caught by moving time, not by resetting state. */
+let now: () => number = () => Date.now();
+/** Test seam: replace the cooldown clock, or restore it with no argument. */
+export function setClockForTests(fn?: () => number): void {
+  now = fn ?? (() => Date.now());
+}
 /** After a 429 on the key endpoint. OpenSea's limit is per day, so an hour is the polite minimum. */
 const ISSUE_COOLDOWN_LIMITED_MS = 60 * 60_000;
 /** After any other failure (outage, shape change): long enough to stop a storm, short enough to recover. */
@@ -189,7 +195,7 @@ async function issueKey(): Promise<string | null> {
     );
     const issued = readIssuedKey(body);
     if (!issued) {
-      nextIssueAfter = Date.now() + ISSUE_COOLDOWN_FAILED_MS;
+      nextIssueAfter = now() + ISSUE_COOLDOWN_FAILED_MS;
       keyState =
         "unavailable (OpenSea answered the key request without a key - their shape changed; set OPENSEA_API_KEY to use OpenSea meanwhile; " +
         `not asked again before ${new Date(nextIssueAfter).toISOString()})`;
@@ -207,7 +213,7 @@ async function issueKey(): Promise<string | null> {
     const limited = e instanceof HttpError ? e.status === 429 : /\b429\b|rate limit/i.test(e instanceof Error ? e.message : String(e));
     const hinted = e instanceof HttpError && typeof e.retryAfterMs === "number" ? e.retryAfterMs : 0;
     const cooldown = limited ? Math.min(Math.max(hinted, ISSUE_COOLDOWN_LIMITED_MS), ISSUE_COOLDOWN_MAX_MS) : ISSUE_COOLDOWN_FAILED_MS;
-    nextIssueAfter = Date.now() + cooldown;
+    nextIssueAfter = now() + cooldown;
     const until = new Date(nextIssueAfter).toISOString();
     keyState = limited
       ? `unavailable (OpenSea's key limit; not asked again before ${until})`
@@ -245,7 +251,7 @@ export async function ensureKey(): Promise<string | null> {
   }
   // A refusal is remembered. Asking again inside the cooldown would only
   // repeat it, and spend a gate turn and the venue's patience doing so.
-  if (Date.now() < nextIssueAfter) return null;
+  if (now() < nextIssueAfter) return null;
   // One issue at a time: two tools asking at once must not spend two of the
   // day's two allowed keys.
   issuing ??= issueKey().finally(() => {
@@ -408,11 +414,17 @@ const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
  * becomes a number.
  */
 function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuantity: string | null; decimals: number | null; problem?: string } {
-  const rawQuantity = typeof p?.quantity === "string" ? p.quantity : typeof p?.quantity === "number" ? String(p.quantity) : null;
+  const given = typeof p?.quantity === "string" ? p.quantity : typeof p?.quantity === "number" ? String(p.quantity) : null;
+  // The raw value is relayed only when it has the shape of a number. A
+  // malformed one is venue text, and relaying it "for diagnostics" put an
+  // instruction-shaped quantity into a normal answer through the very field
+  // added to explain a refusal. A sign is kept so a negative amount can be
+  // seen for what it is; nothing else survives.
+  const rawQuantity = given !== null && /^-?\d{1,40}$/.test(given) ? given : null;
   const decimals = typeof p?.decimals === "number" ? p.decimals : null;
-  if (rawQuantity === null && decimals === null) return { price: null, rawQuantity, decimals };
-  if (rawQuantity === null || !/^\d{1,40}$/.test(rawQuantity)) {
-    return { price: null, rawQuantity, decimals, problem: "quantity is not a non-negative integer string" };
+  if (given === null && decimals === null) return { price: null, rawQuantity, decimals };
+  if (rawQuantity === null || rawQuantity.startsWith("-")) {
+    return { price: null, rawQuantity, decimals, problem: given === null ? "quantity is missing" : rawQuantity === null ? "quantity is not a bounded integer string and was not relayed" : "quantity is negative" };
   }
   if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
     return { price: null, rawQuantity, decimals, problem: "decimals is not a whole number between 0 and 36" };

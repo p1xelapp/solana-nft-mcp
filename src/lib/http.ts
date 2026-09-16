@@ -157,6 +157,12 @@ export async function cached<T>(
     // concurrent waiters cause one upstream call and one eviction pass.
     const origin = originOf(key, opts.origin);
     entry = inflight.get(key);
+    // A producer whose last waiter has already left is on its way out, not
+    // work to join: a fresh caller that joined one inherited its AbortedError
+    // and never got a fetch of its own (reproduced 2026-09-16). It is replaced;
+    // its own cleanup below only deletes the entry it created, so the
+    // replacement survives the old one finally settling.
+    if (entry && entry.producer.signal.aborted) entry = undefined;
     if (!entry) {
       // A new distinct key is new work. Past the ceiling it is shed, not
       // queued: a stale answer for this key is better than an unbounded
@@ -635,20 +641,15 @@ export class AbortedError extends Error {
  * One signal that fires on either the per-attempt timeout or the caller's own
  * deadline.
  *
- * `AbortSignal.any` would do this in one line but landed in Node 20.3, and
- * the engine floor is 20.0 - so the two are combined by hand.
+ * `AbortSignal.any` holds its parents weakly, so a timeout that fires or an
+ * attempt that finishes leaves no listener on the caller's signal. The
+ * handwritten combiner it replaced (written for a Node 20.0 floor that is now
+ * 22) never removed the listener it added to the caller, so every retry and
+ * every page of a long read left one more behind for the life of the request.
  */
 export function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
-  if (!caller) return timeout;
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  if (caller.aborted || timeout.aborted) stop();
-  else {
-    caller.addEventListener("abort", stop, { once: true });
-    timeout.addEventListener("abort", stop, { once: true });
-  }
-  return controller.signal;
+  return caller ? AbortSignal.any([timeout, caller]) : timeout;
 }
 
 class RetryableError extends Error {
