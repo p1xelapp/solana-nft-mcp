@@ -344,7 +344,9 @@ export async function walletTokens(wallet: string, limit: number) {
       name: t.name ? clean(t.name) : null,
       collection: t.collection ?? null,
       collectionName: t.collectionName ? clean(t.collectionName) : null,
-      image: t.image ?? null,
+      // A link is venue text like any other. Only https survives: a
+      // javascript: or private-network URL in a gallery is an injection.
+      image: typeof t.image === "string" && /^https:\/\//.test(t.image) ? t.image : null,
       listed: t.listStatus === "listed",
     })),
     stale,

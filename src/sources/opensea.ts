@@ -629,7 +629,7 @@ export async function collectionDetail(slug: string) {
     onchainCollection: data.contracts?.find((c) => c.chain === "solana")?.address ?? null,
     creatorRoyaltyPct: royalty === null ? null : royalty.reduce((s, f) => s + (f.fee ?? 0), 0),
     listedOn: data.created_date ?? null,
-    url: data.opensea_url ?? null,
+    url: typeof data.opensea_url === "string" && /^https:\/\/opensea\.io\//.test(data.opensea_url) ? data.opensea_url : null,
     stale,
     cachedAt,
     source: "opensea",

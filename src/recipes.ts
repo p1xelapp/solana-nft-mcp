@@ -33,7 +33,8 @@ const ME_SOURCE = {
   name: "Magic Eden public v2",
   use: "Floors, listings, recent sale activity for any Solana collection.",
   auth: "None. Keyless.",
-  rateLimit: "~2 requests/second. Pace at one request per 600ms and cache; a keyless API stays usable only while its callers stay polite.",
+  rateLimit:
+    "~2 requests/second PER IP ADDRESS, not per process. Pace at one request per 600ms and cache; five bots on one office IP share one allowance and need one shared limiter, not five. A keyless API stays usable only while its callers stay polite.",
 };
 
 const RPC_SOURCE = {
@@ -83,15 +84,20 @@ export const RECIPES: Record<string, Recipe> = {
     ],
     costNote:
       "Keyless sources: $0. The cost risk is your own hosting and any database writes. A two-minute cron rewriting a table 720 times a day cost $180 in a month on a project nobody was even using - price the steady state, not one run, and give any scheduled job a review date.",
-    skeleton: `// Poll → diff against a persisted cursor → post → persist.
-// The cursor is the whole design; everything else is presentation.
-let cursor = await loadCursor();            // survives restarts
+    skeleton: `// Poll → identify each fill → skip the ones already posted → post → persist.
+// The identity is the whole design; everything else is presentation.
+// A signature is a TRANSACTION, not a sale: one transaction can buy two items,
+// so the key is signature + mint + type. A timestamp cursor is not enough
+// either: two fills share a second, and a restart replays the boundary.
+const seen = await loadSeen();              // Set of identities, survives restarts
 const sales = await getRecentSales(symbol, 50);
-const fresh = sales.filter(s => s.time > cursor);
-for (const s of fresh.reverse()) {          // oldest first, so order reads true
-  await post(s);
-  cursor = s.time;
-  await saveCursor(cursor);                 // save per item, not per batch:
+for (const s of [...sales].reverse()) {     // oldest first, so order reads true
+  const id = \`\${s.signature}:\${s.tokenMint}:buyNow\`;
+  if (!s.signature || !s.tokenMint) { log("unidentifiable row, held back", s); continue; }
+  if (seen.has(id)) continue;
+  await post(s);                            // at-least-once: a crash here re-posts
+  seen.add(id);
+  await saveSeen(seen);                     // save per item, not per batch:
 }                                            // a crash mid-batch must not skip`,
     beforeShipping: [
       "Kill the process mid-batch and restart it. No sale should be double-posted or skipped.",

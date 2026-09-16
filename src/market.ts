@@ -291,6 +291,12 @@ export interface SaleRef {
 export interface DailyPoint {
   /** UTC calendar day, YYYY-MM-DD. */
   date: string;
+  /**
+   * False when the feed did not reach this day (the page budget ran out
+   * before it), so its zero is "not read", not "nothing sold". A chart that
+   * draws an absent day as zero tells a lie; this field is how it knows.
+   */
+  covered?: false;
   /** Every sale that day, priced or not. */
   sales: number;
   /** Volume of the priced ones only; `pricedSales` says how many that was. */
@@ -540,9 +546,25 @@ export function summarizeSales(
     uniqueSellers: sellers.size,
     topBuyers: rank(buyers).map(([wallet, v]) => ({ wallet, sales: v.sales, spentSol: round(v.sol) })),
     topSellers: rank(sellers).map(([wallet, v]) => ({ wallet, sales: v.sales, receivedSol: round(v.sol) })),
-    daily: [...days.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({ date, sales: v.sales, volumeSol: round(v.sol), pricedSales: v.priced })),
+    // Every UTC day in the window is present, so a day with no sales is an
+    // explicit zero and a day the feed never reached is marked, rather than
+    // both being an absent row a chart would draw the same way.
+    daily: ((): DailyPoint[] => {
+      const sparse: DailyPoint[] = [...days.entries()].map(([date, v]) => ({ date, sales: v.sales, volumeSol: round(v.sol), pricedSales: v.priced }));
+      // Filling is for a chart window (the tool caps at 90 days). An empty
+      // feed stays empty, and a window wider than a year stays sparse rather
+      // than becoming thousands of zero rows.
+      const spanDays = (windowEndUnix - windowStartUnix) / 86_400;
+      if (sparse.length === 0 || !Number.isFinite(spanDays) || spanDays > 400) return sparse.sort((a, b) => a.date.localeCompare(b.date));
+      const byDate = new Map<string, DailyPoint>(sparse.map((d) => [d.date, d]));
+      const oldestDay = truncated && oldestSeen !== null ? utcDay(oldestSeen) : null;
+      for (let t = windowStartUnix; t <= windowEndUnix + 86_399; t += 86_400) {
+        const date = utcDay(t);
+        if (!date || byDate.has(date) || date > (utcDay(windowEndUnix) ?? date)) continue;
+        byDate.set(date, oldestDay !== null && date < oldestDay ? { date, covered: false, sales: 0, volumeSol: 0, pricedSales: 0 } : { date, sales: 0, volumeSol: 0, pricedSales: 0 });
+      }
+      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    })(),
     venues: [...venues.entries()]
       .sort((a, b) => b[1].sales - a[1].sales)
       .map(([venue, v]) => ({ venue, sales: v.sales, volumeSol: round(v.sol) })),

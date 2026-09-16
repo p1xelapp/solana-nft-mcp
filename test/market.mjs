@@ -150,7 +150,33 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(s.highest.signature, one[0].signature);
   assert.strictEqual(s.lowest.signature, one[0].signature, "one sale is both the highest and the lowest");
   assert.strictEqual(s.uniqueBuyers, 1);
-  assert.strictEqual(s.daily.length, 1);
+  assert.strictEqual(s.daily.length, 1, "a wide window stays sparse rather than becoming thousands of zero rows");
+}
+
+// -- a chart window says zero and says not-read, and never confuses them ----
+// A day with no sales used to be simply absent from the series, exactly like
+// a day the feed never reached. A chart drew both as nothing.
+{
+  const day = 86_400;
+  const t0 = 1_700_000_000 - (1_700_000_000 % day); // a UTC midnight
+  const row = (n, at) => ({ type: "buyNow", signature: `d${n}`, tokenMint: `m${n}`, price: 1, blockTime: at, buyer: "b", seller: "s" });
+  // Sales on day 0 and day 2 of a five-day window; days 1, 3, 4 sold nothing.
+  const feed = [row(1, t0 + 100), row(2, t0 + 2 * day + 100)];
+  const full = summarizeSales(feed, { windowStartUnix: t0, windowEndUnix: t0 + 5 * day - 1 });
+  assert.strictEqual(full.daily.length, 5, "every UTC day in the window is present");
+  assert.deepStrictEqual(full.daily.map((d) => d.sales), [1, 0, 1, 0, 0]);
+  assert.ok(full.daily.every((d) => d.covered === undefined), "a feed that covered the window has no unread days");
+  // The feed was cut and its oldest row is day 2: days 0 and 1 were never read.
+  const cut = summarizeSales([row(2, t0 + 2 * day + 100)], { windowStartUnix: t0, windowEndUnix: t0 + 5 * day - 1, truncated: true });
+  assert.deepStrictEqual(cut.daily.map((d) => [d.date.slice(-2), d.sales, d.covered === false]), [
+    [full.daily[0].date.slice(-2), 0, true],
+    [full.daily[1].date.slice(-2), 0, true],
+    [full.daily[2].date.slice(-2), 1, false],
+    [full.daily[3].date.slice(-2), 0, false],
+    [full.daily[4].date.slice(-2), 0, false],
+  ], "days before the oldest row read are marked not covered; days after it with no sales are real zeroes");
+  assert.deepStrictEqual(summarizeSales([], { windowStartUnix: t0, windowEndUnix: t0 + 5 * day }).daily, [], "an empty feed is still an empty series");
+  console.log("daily zero vs not-read OK");
 }
 
 // -- an even count takes the mean of the middle two ----------------------

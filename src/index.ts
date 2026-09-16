@@ -1217,7 +1217,8 @@ registerTool(
       "EMPTY for on Core assets. Ideal for Candy Digital cards and any Core collectible. " +
       "This decodes at most `depth` transactions, so on a heavily traded asset the earliest ownership can " +
       "be outside the result: ALWAYS read `historyComplete` before describing the trail as the whole story, " +
-      "and `skippedTransactions` for how much was left out. Raise `depth` to cover more.",
+      "and `skippedTransactions` for how much was left out. Raise `depth` to cover more. " +
+      "Ownership events only: traits live in get_asset (marketplace attributes) and get_asset_trust (the on-chain Attributes plugin), so an empty trait picture here means nothing.",
     annotations: READ_ONLY,
     inputSchema: {
       mint: addressSchema.describe("Core asset mint address"),

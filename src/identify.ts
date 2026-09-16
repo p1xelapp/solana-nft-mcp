@@ -557,6 +557,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   }
   notChecked.push(
     "Non-Solana chains. This server is Solana-only by design; an Ethereum or Base collection will not be found here even if it exists.",
+    "Devnet and testnet. Every read here is Solana mainnet-beta; an address that exists on another cluster is a different account with no mainnet price, and nothing is invented for it.",
   );
   if (timedOut()) {
     notChecked.push(

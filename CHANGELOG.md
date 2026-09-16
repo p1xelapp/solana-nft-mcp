@@ -832,3 +832,24 @@ with a clear engines message rather than served an untested build.
 48-case persona campaign against a real server over stdio (26 cases carry a
 server oracle; 22 judge model conduct and are listed with their prompts).
 Not part of `npm test`: it reads live venues.
+
+## 1.14.2 - 2026-09-15
+
+Five gaps found by running the persona campaign as the model, with the tools
+attached, against live venues:
+
+- `get_collection_sales` daily series now carries every UTC day in the
+  window. A day with no sales is an explicit zero, and a day the feed never
+  reached (page budget ran out) is marked `covered: false`. Both used to be
+  an absent row, which a chart drew identically.
+- Relayed image and OpenSea links are https-only; anything else is null. The
+  wallet holdings image field was the one path still passing venue text
+  through unchecked.
+- The sales-bot recipe skeleton keys on signature + mint + type with a
+  persisted seen-set instead of a timestamp cursor, holds back rows it cannot
+  identify, and names the at-least-once trade-off. Its rate-limit line says
+  the venue allowance is per IP, not per process.
+- `identify` lists devnet and testnet under what was not checked.
+- `get_asset_provenance` says it returns ownership events only and points
+  at `get_asset` and `get_asset_trust` for traits, after a real host read
+  its empty trait picture as "no traits".
