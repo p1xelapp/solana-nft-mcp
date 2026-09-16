@@ -60,7 +60,7 @@ Settings -> Developer -> Edit Config, then add:
 
 Quit the app fully and reopen it.
 
-### Every other MCP client
+### Other MCP clients
 
 Tested hosts, with the version each was tested on: Claude Desktop (the `.mcpb` bundle), Claude
 Code, and Codex CLI 0.153.4 (`codex exec -c 'mcp_servers.collector.command="node"' -c
