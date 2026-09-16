@@ -80,7 +80,7 @@ const manifest = {
   prompts: PROMPT_LIST.map(([name, , description]) => ({ name, description, arguments: [], text: PROMPT_TEXTS[name] })),
   keywords: ["solana", "nft", "collectibles", "candy digital", "magic eden", "opensea", "metaplex core"],
   license: "MIT",
-  compatibility: { platforms: ["darwin", "win32", "linux"], runtimes: { node: ">=20.0.0" } },
+  compatibility: { platforms: ["darwin", "win32", "linux"], runtimes: { node: ">=22.0.0" } },
 };
 writeFileSync(path.join(stage, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 

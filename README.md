@@ -30,7 +30,7 @@ source could not see.
 
 ## Install
 
-Requires Node 20 or newer. Build once:
+Requires Node 22 or newer (tested on 22 and 24; Node 20 is end of life). Build once:
 
 ```bash
 git clone https://github.com/p1xelapp/collector-mcp.git

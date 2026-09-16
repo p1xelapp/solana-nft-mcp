@@ -819,3 +819,16 @@ Disclosure and tests:
 Not changed, on purpose: the `>=20` engine floor. Node 20 is end of life and
 this release was tested on 24. Narrowing the floor would refuse installs that
 work today, which is a maintainer's decision rather than a patch.
+
+## 1.14.1 - 2026-09-15
+
+Node floor raised from 20 to 22, in `engines`, the bundle manifest and the
+README. Node 20 reached end of life in April 2026 and nothing here was ever
+tested on it; CI now runs the whole offline suite on 22 and 24 so the floor
+promises only what has run. Anyone still on Node 20 is refused at install
+with a clear engines message rather than served an untested build.
+
+`test/persona-server.mjs` runs the server-side half of the outside audit's
+48-case persona campaign against a real server over stdio (26 cases carry a
+server oracle; 22 judge model conduct and are listed with their prompts).
+Not part of `npm test`: it reads live venues.
