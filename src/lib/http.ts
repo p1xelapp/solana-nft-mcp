@@ -249,7 +249,10 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
     // The queue still advances at its own pace - the turn is what keeps this
     // source's budget honest. What the signal ends is THIS caller's wait, so a
     // 25 s deadline is not silently extended by a 38 s queue tail.
-    return raceSignal(turn, signal, `the caller's deadline passed while waiting for a turn against ${label}'s rate limit`);
+    // Deliberately does not say WHOSE deadline. The signal handed in here can
+    // be the caller's, or this attempt's own timeout, and naming the wrong one
+    // sends a reader looking in the wrong place.
+    return raceSignal(turn, signal, `a deadline passed while waiting for a turn against ${label}'s rate limit`);
   } as Gate;
   gate.raiseTo = (ms: number) => {
     if (Number.isFinite(ms) && ms > interval) interval = ms;
@@ -398,14 +401,26 @@ export async function fetchRetry(
     try {
       // The source's rate gate runs before EVERY attempt, so a retry can never
       // land closer to the previous request than the advertised pace.
-      // The caller's signal goes INTO the gate: a deadline that only gets
-      // checked after the queue tail has been waited out is not a deadline.
-      if (gate) await gate(signal);
-      // A caller that gave up while we were queued must not have its request
-      // sent anyway: the point of an abort is that the work stops.
+      //
+      // The ATTEMPT's own deadline goes into the gate, not just the caller's.
+      // Passing only the caller's signal meant timeoutMs never bounded the
+      // queue wait: measured 2026-09-15, a 10 ms timeout against a 100 ms gate
+      // took ~103 ms to reject, because the clock was only consulted after the
+      // queue tail had already been waited out. A deadline checked after the
+      // waiting is not a deadline.
+      const attemptDeadline = combineSignals(timeoutMs, signal);
+      if (gate) await gate(attemptDeadline);
+      // Which deadline passed changes what the caller should do, so the two
+      // are reported differently: the caller giving up is not the same event as
+      // this attempt running out of its own budget.
       if (signal?.aborted) throw new AbortedError("the caller's deadline passed while this request waited for a turn against the source's rate limit");
       const remaining = timeoutMs - (Date.now() - attemptStarted);
-      if (remaining <= 0) throw new Error(`waited longer than ${Math.round(timeoutMs / 1000)}s for a turn against this source's rate limit; the request was abandoned rather than sent late`);
+      if (attemptDeadline.aborted || remaining <= 0) {
+        throw new Error(
+          `waited longer than ${Math.round(timeoutMs / 1000)}s for a turn against this source's rate limit; ` +
+            `the request was abandoned rather than sent late`,
+        );
+      }
       const res = await fetch(url, { ...opts, signal: combineSignals(remaining, signal) });
       if (res.status === 429) {
         await res.body?.cancel().catch(() => undefined);

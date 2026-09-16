@@ -180,24 +180,58 @@ const { prompts } = await client.listPrompts();
   // returns. Anything above this is not "a big answer", it is an answer the
   // client will cut without telling anyone.
   const CEILING = 55_000;
-  const sizes = [];
+  // This check used to be able to pass having measured NOTHING. Every call
+  // could throw, `over` would stay empty, and the green line still announced
+  // that every widest-case answer was inside the limit. An error RESULT was
+  // worse: a two-line failure message is a very small answer, and it counted
+  // as one. A test that cannot tell "all small" from "all broken" is not
+  // evidence, so successes are now counted and a shortage of them fails.
+  const measured = [];
+  const unmeasured = [];
   const over = [];
   for (const [name, args] of wide) {
-    let body = "";
+    let r;
     try {
-      const r = await client.callTool({ name, arguments: args }, undefined, { timeout: 180_000 });
-      body = (r.content ?? []).map((c) => c.text ?? "").join("");
+      r = await client.callTool({ name, arguments: args }, undefined, { timeout: 180_000 });
     } catch (e) {
-      // An upstream that is down does not make the answer too big.
-      sizes.push([`${name}`, `upstream: ${String(e.message).slice(0, 40)}`]);
+      unmeasured.push(`${name}: threw (${String(e.message).slice(0, 60)})`);
       continue;
     }
-    sizes.push([name, `${(body.length / 1000).toFixed(1)} KB`]);
+    const body = (r.content ?? []).map((c) => c.text ?? "").join("");
+    if (r.isError === true) {
+      // A refusal is not a measurement of a large answer's size.
+      unmeasured.push(`${name}: error result (${body.slice(0, 60)})`);
+      continue;
+    }
+    // A refusal wearing a success. Asking for a collection that does not exist
+    // returns a perfectly valid 0.6 KB body saying so, and counting that as a
+    // measured "widest read" is the same lie by a quieter route.
+    // Narrow on purpose: a loose "no collection" alternative matched a perfectly
+    // good trending answer that happens to use the phrase, and wrongly threw
+    // away a real measurement.
+    if (/"symbolKnown"\s*:\s*false|does not match anything the sources can see/i.test(body)) {
+      unmeasured.push(`${name}: answered "unknown identifier", which is not a wide read`);
+      continue;
+    }
+    measured.push([name, body.length]);
     if (body.length > CEILING) over.push(`${name} returned ${body.length} characters`);
   }
-  console.log(`        widest reads: ${sizes.map(([n, s]) => `${n} ${s}`).join(", ")}`);
+  const shown = [
+    ...measured.map(([n, b]) => `${n} ${(b / 1000).toFixed(1)} KB`),
+    ...unmeasured.map((u) => `${u.split(":")[0]} UNMEASURED`),
+  ];
+  console.log(`        widest reads: ${shown.join(", ")}`);
+  if (unmeasured.length > 0) console.log(`        unmeasured: ${unmeasured.join(" | ")}`);
   assert.deepStrictEqual(over, [], `an answer big enough to be truncated by a client, which the model then reads as complete: ${over.join("; ")}`);
-  ok(`x7 every widest-case answer stays under ${CEILING / 1000} KB, well inside the 25,000-token client ceiling`);
+  // Two thirds is the bar: upstreams do fall over, and a suite that fails on a
+  // single busy venue teaches everyone to ignore it. Measuring almost nothing
+  // is a different thing entirely, and it must not read as success.
+  const need = Math.ceil(wide.length * 0.66);
+  assert.ok(
+    measured.length >= need,
+    `only ${measured.length} of ${wide.length} widest reads produced a real answer, which is too few to claim anything about size. Unmeasured: ${unmeasured.join("; ")}`,
+  );
+  ok(`x7 ${measured.length} of ${wide.length} widest-case answers measured, all under ${CEILING / 1000} KB, well inside the 25,000-token client ceiling`);
 }
 
 // ------------------------------------------------- x8 no instruction reliance

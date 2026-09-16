@@ -1,8 +1,15 @@
 # Trust language: how it talks when it cannot give you a clean answer
 
-The voice rule underneath all of this: name the upstream, never blame the tool, never apologise
-twice, always end with the next step. Say what failed, what is still available, and what
-to try next.
+The voice rule underneath all of this: attribute a failure to whatever actually caused it, never
+apologise twice, always end with the next step. Say what failed, what is still available, and
+what to try next.
+
+Attribution is evidence, not a default. A provider outage, a local queue giving up on a deadline,
+a bug in our own adapter and an invalid identifier are four different events and need four
+different sentences. This file used to say "name the upstream, never blame the tool", which reads
+as a rule to point elsewhere whatever happened - it would have had us blame Magic Eden for a
+timestamp our own code could not parse, and for a deadline our own gate enforced. If the cause is
+ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ---
 

@@ -159,10 +159,25 @@ it back.
 | Magic Eden v2 | floors, listings, sales, activity, top traders, trending | none |
 | OpenSea v2 | second-venue floors, sales, supply, royalty, wallet transfers | self-issued |
 
-No account, no sign-in, no telemetry, no log leaves the machine. The only thing that goes
-anywhere is the public address or name being asked about, sent to the public source that can
-answer it. There is no signing code in the repository, so transacting was never written rather
-than merely disabled, and every tool declares `readOnlyHint` in the protocol.
+No account, no sign-in, no telemetry, no analytics, no log of your questions. There is no signing
+code in the repository, so transacting was never written rather than merely disabled, and every
+tool declares `readOnlyHint` in the protocol.
+
+Precisely what leaves the machine, and nothing else:
+
+- The public address, symbol or name you asked about, sent to the public source that can answer
+  it: Solana RPC, the asset index, Magic Eden, and OpenSea when it is on.
+- One request to `registry.npmjs.org` at startup to see whether a newer version exists. It sends
+  the package name and the version you are running as a user-agent, and nothing about you or your
+  question. Turn it off with `COLLECTOR_MCP_NO_UPDATE_CHECK=1`, or `COLLECTOR_MCP_OFFLINE=1` to
+  stop every background request.
+- One request to OpenSea to issue a free agent key, made only the first time a question actually
+  needs OpenSea, and not at all if you set `OPENSEA_API_KEY` yourself or
+  `COLLECTOR_MCP_NO_AUTO_KEYS=1`.
+
+One file is written on your machine: `~/.collector-mcp/opensea-key.json`, holding that self-issued
+key at permissions 600. It is never logged and never printed into an answer. Nothing else is
+stored, and no question you ask is written anywhere.
 
 ## Tools
 

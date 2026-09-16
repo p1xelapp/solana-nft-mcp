@@ -26,9 +26,51 @@ import { clean } from "./lib/untrusted.js";
  * while still absorbing the float noise a long sum accumulates.
  */
 const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
-const iso = (t: number | null | undefined) => (typeof t === "number" && Number.isFinite(t) ? new Date(t * 1000).toISOString() : null);
+/**
+ * A block time we are willing to turn into a date.
+ *
+ * Finite is not enough. `blockTime: 1e20` is a finite number and JavaScript's
+ * Date cannot represent it, so `new Date(t * 1000).toISOString()` throws
+ * RangeError. Reproduced 2026-09-15: three good sales plus ONE unrelated
+ * listing row carrying 1e20 threw out of summarizeSales and destroyed the
+ * whole report. One malformed upstream record must never remove an answer
+ * that is otherwise correct.
+ *
+ * The lower bound is Solana's genesis, because a Solana block cannot predate
+ * the chain, and the upper bound is a day into the future to allow for clock
+ * skew at the venue. Anything outside that is not a time, whatever its type.
+ */
+/**
+ * JavaScript Date spans +/-8.64e15 MILLISECONDS from the epoch, and
+ * `toISOString` throws outside that. In seconds, that is the bound below.
+ */
+const MAX_DATE_SECONDS = 8_640_000_000_000;
+
+export function usableBlockTime(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  // Only representability. An early attempt at this also rejected anything
+  // before Solana's genesis as implausible, which threw away real data to
+  // solve a problem it did not have: 150 is a daft block time but it renders
+  // as 1970 without complaint, and deleting rows we CAN read is a worse bug
+  // than printing an odd date. Plausibility is a labelling question; this
+  // function exists only to stop a RangeError destroying a whole report.
+  if (Math.abs(v) > MAX_DATE_SECONDS) return null;
+  return v;
+}
+
+const iso = (t: number | null | undefined) => {
+  const at = usableBlockTime(t);
+  if (at === null) return null;
+  try {
+    return new Date(at * 1000).toISOString();
+  } catch {
+    // Belt and braces: the range check above should make this unreachable, and
+    // an unreachable throw here would still cost a whole report.
+    return null;
+  }
+};
 /** The UTC calendar day a block time falls in, for bucketing a series. */
-const utcDay = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+const utcDay = (t: number): string | null => iso(t)?.slice(0, 10) ?? null;
 
 /**
  * A price we will do arithmetic on. Magic Eden has been observed returning
@@ -102,7 +144,7 @@ export function fallbackIdentity(e: IdentifiableEvent | null | undefined): strin
   const type = typeof e.type === "string" ? e.type.trim() : "";
   const price = usablePrice(e.price);
   const blockTime = (e as { blockTime?: unknown }).blockTime;
-  const at = typeof blockTime === "number" && Number.isFinite(blockTime) ? blockTime : null;
+  const at = usableBlockTime(blockTime);
   if (!mint || !type || price === null || at === null) return null;
   const fields = [mint, type, part(e.buyer), part(e.seller), String(price), String(at), part((e as { source?: unknown }).source)];
   return `~ ${fields.join(" ")}`;
@@ -301,6 +343,7 @@ export interface SalesSummary {
     truncated: boolean;
     eventsRead: number;
     /** Sale-shaped rows carrying no usable price. Counted as sales, never folded into volume. */
+    unusableTimestamps: number;
     unpricedSales: number;
     /** Repeated EVENTS (same signature, mint and type) counted once. */
     duplicateEvents: number;
@@ -350,8 +393,12 @@ export function summarizeSales(
   // away, and a fill whose copies disagree is marked unsettled rather than
   // silently counted from whichever copy came first.
   const inWindow: MeCollectionActivity[] = [];
+  // Rows whose block time is not a time. Counted rather than dropped in
+  // silence, because a feed that starts serving nonsense is worth knowing about.
+  let unusableTimestamps = 0;
   for (const e of Array.isArray(events) ? events : []) {
-    const bt = typeof e?.blockTime === "number" && Number.isFinite(e.blockTime) ? e.blockTime : null;
+    const bt = usableBlockTime(e?.blockTime);
+    if (bt === null && e?.blockTime !== undefined && e?.blockTime !== null) unusableTimestamps++;
     if (bt !== null) {
       if (oldestSeen === null || bt < oldestSeen) oldestSeen = bt;
       if (newestSeen === null || bt > newestSeen) newestSeen = bt;
@@ -371,7 +418,7 @@ export function summarizeSales(
   /** Every completed sale in the window. `price` is null when we could not price it. */
   const sales: { price: number | null; e: MeCollectionActivity; at: number | null }[] = [];
   for (const e of deduped.events) {
-    const bt = typeof e.blockTime === "number" && Number.isFinite(e.blockTime) ? e.blockTime : null;
+    const bt = usableBlockTime(e.blockTime);
     // A price is only money when it is a finite number above zero. A negative
     // or non-finite one is a malformed row, counted and named, never folded
     // into a total where it would subtract from volume or poison it with NaN.
@@ -432,7 +479,8 @@ export function summarizeSales(
   for (const s of sales) {
     if (typeof s.e.buyer === "string" && s.e.buyer) bump(buyers, s.e.buyer, s.price);
     if (typeof s.e.seller === "string" && s.e.seller) bump(sellers, s.e.seller, s.price);
-    if (s.at !== null) bump(days, utcDay(s.at), s.price);
+    const day = s.at !== null ? utcDay(s.at) : null;
+    if (day !== null) bump(days, day, s.price);
     bump(venues, clean(s.e.source ?? "") || "unknown", s.price);
   }
 
@@ -517,6 +565,11 @@ export function summarizeSales(
       newestSeen: iso(newestSeen),
       truncated,
       eventsRead: Array.isArray(events) ? events.length : 0,
+      // Rows the feed served with something in the blockTime field that is not
+      // a time. Reported rather than dropped in silence: a feed that starts
+      // serving nonsense is worth knowing about, and this used to throw the
+      // whole report away instead of counting.
+      unusableTimestamps,
       unpricedSales,
       duplicateEvents,
       conflictingDuplicates,

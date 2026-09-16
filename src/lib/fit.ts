@@ -39,7 +39,19 @@ export interface Fitted<T> {
   note?: string;
 }
 
-const size = (v: unknown): number => JSON.stringify(v)?.length ?? 0;
+/**
+ * UTF-8 bytes, not string length.
+ *
+ * `JSON.stringify(v).length` counts UTF-16 code units, and the budget is named
+ * in bytes. Measured 2026-09-15: thirty CJK characters are 43 code units and
+ * 103 UTF-8 bytes, so a 60-byte budget accepted a 103-byte payload. Any
+ * collection with a non-Latin name defeated the guarantee this helper exists
+ * to provide, and the venues carry plenty of them.
+ */
+const size = (v: unknown): number => {
+  const json = JSON.stringify(v);
+  return json === undefined ? 0 : Buffer.byteLength(json, "utf8");
+};
 
 /**
  * Fit rows into a byte budget without ever returning half a row.
@@ -91,7 +103,26 @@ export function fitRows<T>(
     if (size(working.slice(0, mid)) <= budget) lo = mid;
     else hi = mid - 1;
   }
-  const kept = working.slice(0, Math.max(lo, 1));
+  // `Math.max(lo, 1)` used to keep one row even when that row alone was over
+  // the budget: a 1,000-character name against a 100-byte budget returned 1,013
+  // bytes and reported nothing omitted. Preserving one row by breaking the
+  // guarantee is the one thing this helper must not do, because the caller has
+  // been told the answer fits and a client will cut it without saying so.
+  const kept = working.slice(0, lo);
+  if (kept.length === 0) {
+    const firstBytes = size(working[0]);
+    return {
+      rows: [],
+      omitted: rows.length,
+      slimmed,
+      note:
+        `No rows are here. The smallest row on its own is ${firstBytes} bytes against a ${budget}-byte budget, so returning ` +
+        `even one would produce an answer a client silently cuts off - which reads as a complete list rather than a truncated one. ` +
+        `This is a size limit, not an empty result.` +
+        (opts.moreHint ? ` ${opts.moreHint}` : "") +
+        (opts.detailHint ? ` ${opts.detailHint}` : ""),
+    };
+  }
   const omitted = rows.length - kept.length;
   return {
     rows: kept,

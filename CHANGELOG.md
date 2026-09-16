@@ -632,3 +632,44 @@ The directory was never the catalogue, and the answers were too big to arrive.
   the 30 real spellings a person might use: 15 resolve, 15 leave a usable next
   step, none dead-end, and none resolve to the wrong collection.
 - Docs called `get_source_status` by a name it has never had.
+
+## 1.12.1 - 2026-09-15
+
+An outside review found three defects and one test that could lie. All four are fixed.
+
+- **One malformed record destroyed a whole valid report.** `blockTime: 1e20` is
+  a finite number that JavaScript's Date cannot hold, so `toISOString` threw
+  RangeError out of `summarizeSales`. Three good sales plus one unrelated
+  listing row carrying it returned nothing at all. Timestamps are now checked
+  for representability before any date is built, unreadable ones are counted in
+  `coverage.unusableTimestamps` rather than silently swallowed, and a merely odd
+  time is kept and rendered rather than deleted.
+- **The answer-size budget did not enforce itself.** It measured UTF-16 code
+  units while calling them bytes, so thirty CJK characters passed a 60-byte
+  budget at 103 actual bytes; any non-Latin name defeated the guarantee. And it
+  kept one row even when that row alone was over the limit, returning 1,013
+  bytes against a budget of 100 while reporting nothing omitted. Measurement is
+  now UTF-8 bytes, and a row that cannot fit is omitted and said so, because
+  preserving a row by breaking the promise hands back an answer the client cuts
+  without telling anyone.
+- **A declared timeout did not bound the queue wait.** The clock was only read
+  after the rate gate returned, so a 10 ms budget against a 100 ms gate took
+  103 ms to reject. The attempt's own deadline now goes into the gate: measured
+  at 26 ms, with no request sent. The gate's message no longer blames "the
+  caller's deadline" for a deadline the caller never set.
+- **The size compatibility check could pass having measured nothing.** If every
+  call threw, the oversized list stayed empty and the green line still claimed
+  every widest-case answer was inside the limit. An error result was worse: a
+  short failure message counted as a small answer, as did a valid "unknown
+  identifier" body. Successes are now counted, refusals of both kinds are
+  excluded, and too few real measurements fails the check. Proven by running it
+  against calls engineered to fail: it now reports "only 0 of 3 widest reads
+  produced a real answer" where it used to print a pass.
+- The README privacy statement said the only thing leaving the machine was the
+  address being asked about. It also makes a version check to the npm registry
+  and can ask OpenSea for a free key, and it writes one local file. All three
+  are now named, with the switch that turns each off.
+- `docs/TRUST-AND-LIMITS.md` said "name the upstream, never blame the tool".
+  That reads as a rule to point elsewhere whatever happened, and it would have
+  had us blame Magic Eden for a timestamp our own code could not parse.
+  Attribution is now evidence-based.

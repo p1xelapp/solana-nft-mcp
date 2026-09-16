@@ -341,5 +341,123 @@ async function startWith(env = {}) {
   ok(`r10 no tool publishes a default, and all ${tools.length} answer a call with only their required arguments`);
 }
 
+// ------------------------------------------------------------------ r11
+// One malformed record must never remove a report that is otherwise correct.
+// Reproduced 2026-09-15: three good sales plus ONE unrelated listing row
+// carrying blockTime 1e20 threw RangeError out of summarizeSales, because a
+// finite number can still be outside the range a JavaScript Date can hold.
+{
+  const { summarizeSales } = await import("../dist/market.js");
+  const good = [1, 2, 3].map((i) => ({
+    type: "buyNow",
+    blockTime: 1_757_900_000 + i,
+    price: 2,
+    tokenMint: `M${i}`,
+    signature: `S${i}`,
+    buyer: `B${i}`,
+    seller: `L${i}`,
+  }));
+  const control = summarizeSales(good, {});
+  assert.equal(control.sales, 3, "the control dataset should be three sales");
+  assert.equal(control.volumeSol, 6, "the control dataset should be 6 SOL");
+  assert.equal(control.coverage.unusableTimestamps, 0, "clean data has no unusable timestamps");
+
+  // Every shape of "not a time" a feed can put in a numeric field. `counted`
+  // marks the ones that are genuinely unrenderable: a value Date cannot hold,
+  // or not a number at all. A merely ODD time - 150, or a negative - renders
+  // fine as 1970, and deleting rows we can actually read would be a worse bug
+  // than printing a strange date, so those are kept rather than counted.
+  const poisons = [
+    ["a finite number past Date's range", 1e20, true],
+    ["a negative time", -5, false],
+    ["a tiny synthetic time", 150, false],
+    ["a string", "nope", true],
+    ["null", null, false],
+    ["NaN", Number.NaN, true],
+    ["Infinity", Number.POSITIVE_INFINITY, true],
+  ];
+  for (const [label, blockTime, counted] of poisons) {
+    let out;
+    try {
+      out = summarizeSales([...good, { type: "list", blockTime, price: 1, tokenMint: "MX", signature: "SX" }], {});
+    } catch (e) {
+      assert.fail(`${label} threw ${e instanceof Error ? e.constructor.name : "?"} and destroyed a valid three-sale report: ${e?.message}`);
+    }
+    assert.equal(out.sales, 3, `${label} changed the sale count`);
+    assert.equal(out.volumeSol, 6, `${label} changed the volume`);
+    // An unrenderable value is counted, not silently swallowed: a feed that
+    // starts serving nonsense is worth knowing about.
+    if (counted) {
+      assert.ok(out.coverage.unusableTimestamps >= 1, `${label} was dropped without being counted`);
+    } else {
+      assert.equal(out.coverage.unusableTimestamps, 0, `${label} is readable and must not be counted as unusable`);
+    }
+  }
+  ok(`r11 ${poisons.length} malformed timestamps each leave a valid sales report intact and are counted, not swallowed`);
+}
+
+// ------------------------------------------------------------------ r12
+// The answer-size helper has to actually enforce the budget it advertises. It
+// did not: it measured UTF-16 code units while calling them bytes, and it kept
+// one row even when that row alone was over the limit.
+{
+  const { fitRows } = await import("../dist/lib/fit.js");
+  const bytes = (v) => Buffer.byteLength(JSON.stringify(v), "utf8");
+
+  // A single row far larger than the budget. Keeping it "so there is at least
+  // one" hands back an answer the client cuts without telling anyone.
+  const huge = fitRows([{ name: "x".repeat(1000) }], { budget: 100 });
+  assert.ok(bytes(huge.rows) <= 100, `one oversized row came back at ${bytes(huge.rows)} bytes against a 100-byte budget`);
+  assert.equal(huge.omitted, 1, "the row that could not fit has to be reported as omitted");
+  assert.ok(/size limit, not an empty result/.test(huge.note ?? ""), "an empty result needs to say it is a size limit");
+
+  // Non-Latin text: 30 CJK characters are 43 code units and 103 UTF-8 bytes,
+  // so counting length accepted a payload nearly twice the budget.
+  const cjk = fitRows([{ name: "漢".repeat(30) }], { budget: 60 });
+  assert.ok(bytes(cjk.rows) <= 60, `a CJK row came back at ${bytes(cjk.rows)} bytes against a 60-byte budget`);
+
+  // And the ordinary path still keeps whole rows and accounts for the rest.
+  const many = fitRows(Array.from({ length: 10 }, (_, i) => ({ id: i, n: "abc" })), { budget: 200 });
+  assert.ok(bytes(many.rows) <= 200, `the ordinary case came back at ${bytes(many.rows)} bytes against 200`);
+  assert.equal(many.rows.length + many.omitted, 10, "every row is either returned or counted as omitted");
+  ok("r12 the answer-size budget is enforced in UTF-8 bytes, and never broken to preserve a single row");
+}
+
+// ------------------------------------------------------------------ r13
+// A declared timeout has to bound the WHOLE wait, including the queue. It did
+// not: the clock was only consulted after the rate gate returned, so a 10 ms
+// timeout against a 100 ms gate took ~103 ms to reject. That is not a slow
+// request, it is a deadline that does not mean anything.
+{
+  const { rateLimiter, fetchJson } = await import("../dist/lib/http.js");
+  const gate = rateLimiter(300, "deadline-proof");
+  // Take the gate's turn so the next caller has to queue behind the spacing.
+  await gate();
+
+  const realFetch = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = () => {
+    fetched = true;
+    throw new Error("a request past its deadline must never be sent");
+  };
+  const started = Date.now();
+  let message = "";
+  try {
+    await fetchJson("deadline-proof", "https://example.invalid/x", {}, { gate, retries: 0, timeoutMs: 20 });
+    assert.fail("a 20 ms request against a 300 ms gate should not have succeeded");
+  } catch (e) {
+    message = e instanceof Error ? e.message : String(e);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const took = Date.now() - started;
+  assert.ok(!fetched, "the request was sent even though its deadline had passed");
+  // Generous tolerance for scheduling; the defect was 15x the budget, not 2x.
+  assert.ok(took < 150, `a 20 ms deadline took ${took} ms to reject, so the queue wait is still unbounded`);
+  // And it must not blame the caller for a deadline the caller never set.
+  assert.ok(!/caller's deadline/.test(message), `the failure blamed the caller for this attempt's own budget: ${message}`);
+  ok(`r13 a declared timeout bounds the queue wait too (rejected in ${took} ms, no request sent)`);
+}
+
 if (!existsSync(join(root, "dist", "index.js"))) throw new Error("dist is missing; run npm run build");
-console.log(`\nrobustness test: ${passed} groups passed (r1-r10)`);
+console.log(`\nrobustness test: ${passed} groups passed (r1-r13)`);
