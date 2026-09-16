@@ -459,5 +459,61 @@ async function startWith(env = {}) {
   ok(`r13 a declared timeout bounds the queue wait too (rejected in ${took} ms, no request sent)`);
 }
 
+// ------------------------------------------------------------------ r14
+// The rate gate is what keeps a keyless server welcome, so changing its ORDER
+// must never change its PACE. The background directory refresh puts 61 pages
+// into the queue at once; before this, a question a person had just asked
+// queued behind all of them. Measured at a 200 ms interval, a foreground call
+// waited 4,138 ms behind twenty background turns.
+{
+  const { rateLimiter } = await import("../dist/lib/http.js");
+
+  // 1. Foreground goes first.
+  {
+    const gate = rateLimiter(200, "r14-priority");
+    const background = Array.from({ length: 20 }, () => gate(undefined, { background: true }));
+    const started = Date.now();
+    await gate();
+    const waited = Date.now() - started;
+    // One interval is the floor: the turn still has to be paced.
+    assert.ok(waited < 1000, `a foreground caller waited ${waited} ms behind twenty background turns`);
+    await Promise.all(background);
+  }
+
+  // 2. The pace is untouched. This is the part that earns 429s if it is wrong.
+  {
+    const gate = rateLimiter(100, "r14-pace");
+    const stamps = [];
+    await Promise.all(Array.from({ length: 10 }, async () => { await gate(); stamps.push(Date.now()); }));
+    stamps.sort((a, b) => a - b);
+    let smallest = Infinity;
+    for (let i = 1; i < stamps.length; i++) smallest = Math.min(smallest, stamps[i] - stamps[i - 1]);
+    assert.ok(smallest >= 90, `two turns were released ${smallest} ms apart against a 100 ms interval, which is a faster rate than we promise the venue`);
+  }
+
+  // 3. Background is not starved: yielding is politeness, not surrender.
+  {
+    const gate = rateLimiter(50, "r14-starvation");
+    let granted = false;
+    gate(undefined, { background: true }).then(() => { granted = true; });
+    const started = Date.now();
+    while (Date.now() - started < 1200) await gate();
+    assert.ok(granted, "a background turn never came through during constant foreground pressure");
+  }
+
+  // 4. A turn nobody can be granted must still settle: an unref'd timer let
+  // Node exit before granting one, and the caller's promise never resolved.
+  {
+    const gate = rateLimiter(120, "r14-settles");
+    await gate();
+    const second = await Promise.race([
+      gate().then(() => "granted"),
+      new Promise((r) => setTimeout(() => r("never settled"), 3000)),
+    ]);
+    assert.equal(second, "granted", "a queued turn never settled");
+  }
+  ok("r14 the gate prioritises foreground work without changing its pace, starving background, or dropping a turn");
+}
+
 if (!existsSync(join(root, "dist", "index.js"))) throw new Error("dist is missing; run npm run build");
-console.log(`\nrobustness test: ${passed} groups passed (r1-r13)`);
+console.log(`\nrobustness test: ${passed} groups passed (r1-r14)`);

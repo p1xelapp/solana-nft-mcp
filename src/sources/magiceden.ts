@@ -21,8 +21,8 @@ const HEADERS = {
 // 600ms between calls ≈ 1.6 req/s, under ME's ~2/s public allowance.
 const gate = rateLimiter(600, "Magic Eden");
 
-async function me<T>(path: string, signal?: AbortSignal): Promise<T> {
-  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal });
+async function me<T>(path: string, signal?: AbortSignal, opts: { background?: boolean } = {}): Promise<T> {
+  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal, background: opts.background });
 }
 
 /**
@@ -894,7 +894,10 @@ export async function collectionsIndex(maxPages: number): Promise<CollectionsInd
       try {
         batch = page<MeCollectionIndexEntry>(
           "collection index",
-          await me<unknown>(`/collections?offset=${p * INDEX_PAGE}&limit=${INDEX_PAGE}`),
+          // The directory walk is 61 pages nobody is waiting on. It yields its
+          // turn to any question a person actually asked, which is what stops a
+          // cold start putting 36 seconds of queue in front of the first one.
+          await me<unknown>(`/collections?offset=${p * INDEX_PAGE}&limit=${INDEX_PAGE}`, undefined, { background: true }),
         );
       } catch (e) {
         if (isPagingCeiling(e) && collections.length > 0) {

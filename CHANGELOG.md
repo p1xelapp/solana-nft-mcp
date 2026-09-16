@@ -673,3 +673,34 @@ An outside review found three defects and one test that could lie. All four are 
   That reads as a rule to point elsewhere whatever happened, and it would have
   had us blame Magic Eden for a timestamp our own code could not parse.
   Attribution is now evidence-based.
+
+## 1.13.0 - 2026-09-15
+
+The queue serves the person first.
+
+- **A question queued behind the whole directory refresh.** The rate gate was a
+  strictly FIFO promise chain, and the background walk that refreshes the
+  Magic Eden directory puts 61 pages into it at once. Anyone asking a question
+  during that wait went to the back. Measured at a 200 ms interval, a
+  foreground caller waited 4,138 ms behind twenty background turns; at the real
+  600 ms pace and 61 pages that is around 36 seconds of somebody watching a
+  spinner right after installing.
+- The gate is now a priority queue: the directory walk declares itself
+  background and yields to anything a person is waiting on. The same foreground
+  caller now waits 211 ms, which is one interval and therefore the floor.
+- **The pace did not change, and that is the point.** At most one turn is still
+  released per interval, proven at the real 600 ms setting with foreground and
+  background mixed: smallest gap between releases 601 ms, average 608 ms. The
+  order changed; the rate a venue sees did not, because that rate is what keeps
+  a keyless server welcome.
+- Background work is not starved. It yields, but after 20 seconds of waiting it
+  stops yielding, and in practice it fills the gaps between questions: a
+  background turn still came through during constant foreground pressure.
+- Cold-start latency, same questions as before this change: "candy" 4.9s to
+  2.9s, a name nothing carries 9.5s to 4.7s, "DeGods" 2.6s to 1.4s, "Okay
+  Bears" 2.3s to 1.0s.
+- Found while building it: the new scheduler's timer was unref'd, so Node could
+  exit before granting a turn somebody was awaiting and the promise simply never
+  settled. A timer is only ever scheduled while the queue has someone in it, so
+  it cannot hold the process open idle, and it is no longer unref'd. The
+  regression covers this along with priority, pace and starvation.

@@ -195,9 +195,19 @@ export function raceSignal<T>(p: Promise<T>, signal: AbortSignal | undefined, wh
   });
 }
 
+export interface GateOptions {
+  /**
+   * Work nobody is waiting on, which yields its turn to work somebody is.
+   *
+   * The only user of this is the background directory refresh. Everything else
+   * is a question a person asked, and defaults to the front.
+   */
+  background?: boolean;
+}
+
 export interface Gate {
   /** Wait for a turn. A caller's signal ends ITS wait; the queue itself still advances. */
-  (signal?: AbortSignal): Promise<void>;
+  (signal?: AbortSignal, opts?: GateOptions): Promise<void>;
   /** Slow the gate down to at least this interval. Never speeds it up. */
   raiseTo(minIntervalMs: number): void;
   /** How many callers are currently waiting their turn. */
@@ -220,32 +230,98 @@ const MAX_GATE_QUEUE = 64;
  * being a polite client is what keeps a keyless server viable.
  */
 export function rateLimiter(minIntervalMs: number, label = "this source"): Gate {
-  let chain: Promise<void> = Promise.resolve();
-  let last = Number.NEGATIVE_INFINITY;
   let interval = minIntervalMs;
-  let waiting = 0;
-  // Monotonic, never wall-clock. A clock that jumps - an NTP correction, a
-  // suspended laptop, a test stubbing Date.now - would otherwise park every
-  // caller behind a deadline in the moved clock's future.
-  const gate = function gate(signal?: AbortSignal) {
-    // Refuse BEFORE joining the chain. Joining and then throwing would still
+
+  /**
+   * One waiter for a turn.
+   *
+   * The queue used to be a promise chain, which made it strictly FIFO. That
+   * was fine until the background directory refresh started putting 61 pages
+   * into it at once: a question a person had just asked then queued behind all
+   * of them. Measured 2026-09-15 at a 200 ms interval, a foreground call
+   * waited 4.1 s behind twenty background turns; at the real 600 ms pace and
+   * 61 pages that is about 36 seconds of somebody staring at a spinner.
+   *
+   * So the order changed and the PACE did not. At most one turn is still
+   * released per `interval`, which is the part that keeps a keyless server
+   * welcome; what changed is only who gets the next one.
+   */
+  interface Waiter {
+    release: () => void;
+    background: boolean;
+    queuedAt: number;
+    /** A caller who gave up must not spend a turn the others are waiting for. */
+    gone: () => boolean;
+  }
+
+  const queue: Waiter[] = [];
+  let last = Number.NEGATIVE_INFINITY;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * How long background work will yield before it insists.
+   *
+   * Without this, a session asking questions without pause could hold the
+   * refresh off forever, and the directory it maintains is exactly what stops
+   * us answering from a stale snapshot. Yielding is politeness, not surrender.
+   */
+  const BACKGROUND_PATIENCE_MS = 20_000;
+
+  /** Which waiter gets the next turn. */
+  function pick(): Waiter | undefined {
+    // Anyone who gave up leaves first, wherever they are in the queue: a dead
+    // waiter at the head used to make everybody behind it wait for a request
+    // that was never going to be sent.
+    for (let i = queue.length - 1; i >= 0; i--) if (queue[i]!.gone()) queue.splice(i, 1);
+    if (queue.length === 0) return undefined;
+    const now = performance.now();
+    const bg = queue.findIndex((w) => w.background);
+    // Background that has waited too long stops yielding.
+    if (bg >= 0 && now - queue[bg]!.queuedAt >= BACKGROUND_PATIENCE_MS) return queue.splice(bg, 1)[0];
+    const fg = queue.findIndex((w) => !w.background);
+    if (fg >= 0) return queue.splice(fg, 1)[0];
+    return bg >= 0 ? queue.splice(bg, 1)[0] : undefined;
+  }
+
+  function pump(): void {
+    if (timer !== null || queue.length === 0) return;
+    // Monotonic, never wall-clock. A clock that jumps - an NTP correction, a
+    // suspended laptop, a test stubbing Date.now - would otherwise park every
+    // caller behind a deadline in the moved clock's future.
+    const wait = last + interval - performance.now();
+    if (wait > 0) {
+      timer = setTimeout(() => {
+        timer = null;
+        pump();
+      }, wait);
+      // Deliberately NOT unref'd. Somebody is awaiting this turn, so it is
+      // work: unref'ing let Node exit before granting it, and the caller's
+      // promise simply never settled. A timer is only ever scheduled while the
+      // queue has someone in it, so this cannot hold the process open idle.
+      return;
+    }
+    const next = pick();
+    if (!next) return;
+    last = performance.now();
+    next.release();
+    // Schedule whoever is behind them, one interval from now.
+    pump();
+  }
+
+  const gate = function gate(signal?: AbortSignal, opts?: GateOptions) {
+    // Refuse BEFORE joining the queue. Joining and then throwing would still
     // have spent a turn, and the queue would keep growing.
     if (signal?.aborted) return Promise.reject(new AbortedError(`the caller's deadline had already passed before it queued for a turn against ${label}'s rate limit`));
-    if (waiting >= MAX_GATE_QUEUE) return Promise.reject(new BusyError(label));
-    waiting++;
-    chain = chain.then(async () => {
-      // A caller whose deadline passed while it queued has already been told
-      // so and has gone. Spending its turn anyway would make every caller
-      // behind it wait for a request that will never be sent, so a sibling
-      // reader sharing this origin could time out behind a dead backlog.
-      if (signal?.aborted) return;
-      const wait = last + interval - performance.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      last = performance.now();
+    if (queue.length >= MAX_GATE_QUEUE) return Promise.reject(new BusyError(label));
+    const turn = new Promise<void>((resolve) => {
+      queue.push({
+        release: resolve,
+        background: opts?.background === true,
+        queuedAt: performance.now(),
+        gone: () => signal?.aborted === true,
+      });
     });
-    const turn = chain.finally(() => {
-      waiting--;
-    });
+    pump();
     // The queue still advances at its own pace - the turn is what keeps this
     // source's budget honest. What the signal ends is THIS caller's wait, so a
     // 25 s deadline is not silently extended by a 38 s queue tail.
@@ -257,7 +333,7 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
   gate.raiseTo = (ms: number) => {
     if (Number.isFinite(ms) && ms > interval) interval = ms;
   };
-  Object.defineProperty(gate, "waiting", { get: () => waiting });
+  Object.defineProperty(gate, "waiting", { get: () => queue.length });
   return gate;
 }
 
@@ -391,7 +467,7 @@ export async function readBoundedJson<T>(res: Response, source: string): Promise
 export async function fetchRetry(
   url: string,
   opts: RequestInit = {},
-  { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate, signal }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal } = {},
+  { retries = 2, timeoutMs = 15_000, backoffMs = 800, gate, signal, background = false }: { retries?: number; timeoutMs?: number; backoffMs?: number; gate?: (signal?: AbortSignal, opts?: GateOptions) => Promise<void>; signal?: AbortSignal; background?: boolean } = {},
 ): Promise<Response> {
   assertOnline(url);
   if (signal?.aborted) throw new AbortedError("the caller's deadline had already passed before this request was sent");
@@ -409,7 +485,7 @@ export async function fetchRetry(
       // queue tail had already been waited out. A deadline checked after the
       // waiting is not a deadline.
       const attemptDeadline = combineSignals(timeoutMs, signal);
-      if (gate) await gate(attemptDeadline);
+      if (gate) await gate(attemptDeadline, { background });
       // Which deadline passed changes what the caller should do, so the two
       // are reported differently: the caller giving up is not the same event as
       // this attempt running out of its own budget.
@@ -557,7 +633,7 @@ export async function fetchJson<T>(
   source: string,
   url: string,
   opts: RequestInit = {},
-  retryOpts?: { retries?: number; timeoutMs?: number; gate?: (signal?: AbortSignal) => Promise<void>; signal?: AbortSignal },
+  retryOpts?: { retries?: number; timeoutMs?: number; gate?: (signal?: AbortSignal, opts?: GateOptions) => Promise<void>; signal?: AbortSignal; background?: boolean },
 ): Promise<T> {
   const res = await fetchRetry(url, opts, retryOpts);
   if (!res.ok) {
