@@ -283,14 +283,33 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 - [What can change under this server, and what happens when it does](docs/MAINTENANCE.md)
 - [Contributing](CONTRIBUTING.md) and [Security policy](SECURITY.md)
 
+## Why I built this
+
+I was tracing a 36-pack Candy Digital auction, trying to work out which wallets actually won
+the cards. Every NFT API I asked handed back an empty history. Not an error and not a warning:
+an empty array, which anything reading it takes to mean the card has never traded. Those cards
+had changed hands six times. The transfers had been on chain the whole time, sitting in
+Metaplex Core account bytes that none of those APIs decode.
+
+What bothered me was not the missing data. It was that the wrong answer arrived with exactly
+as much confidence as a right one, and an assistant reading it would repeat that with no idea
+anything was wrong.
+
+So I wrote the decoder. Then I started seeing the same shape of error everywhere: a SOL floor
+put beside a USDC floor and called 170x. A floor multiplied by an item count and called a
+portfolio. A fuzzy name match on a different collection, answered as though it were the one you
+asked about. Every one of them confident, every one of them wrong.
+
+collector-mcp is that decoder plus the rules I had to learn the hard way. Chain first. Label
+the venue. Say what you could not see. Refuse to guess.
+
 ## Running on the same decoding
 
 <a href="https://candyscan.p1xel.app"><img src="assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
 
 **[CandyScan](https://candyscan.p1xel.app)** tracks the Candy Digital collections on Solana:
-supply, holders, migrations and sales, kept current. The Core byte decoding at the centre of
-this server was written for it first, to trace a 36-pack auction to the wallets that won it.
-This repository is the keyless half of that pipeline.
+supply, holders, migrations and sales, kept current. It is where the Core decoding was written
+first, and this repository is the keyless half of that pipeline.
 
 Shipped something on top of collector-mcp? Open an issue and it goes here.
 
