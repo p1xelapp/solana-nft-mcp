@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/og.png" alt="collector-mcp" width="100%" />
+<img src="assets/banner.png" alt="collector-mcp" width="100%" />
 
 # collector-mcp
 
@@ -283,13 +283,21 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 - [What can change under this server, and what happens when it does](docs/MAINTENANCE.md)
 - [Contributing](CONTRIBUTING.md) and [Security policy](SECURITY.md)
 
+## Running on the same decoding
+
+<a href="https://candyscan.p1xel.app"><img src="assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
+
+**[CandyScan](https://candyscan.p1xel.app)** tracks the Candy Digital collections on Solana:
+supply, holders, migrations and sales, kept current. The Core byte decoding at the centre of
+this server was written for it first, to trace a 36-pack auction to the wallets that won it.
+This repository is the keyless half of that pipeline.
+
+Shipped something on top of collector-mcp? Open an issue and it goes here.
+
 ## About
 
-collector-mcp is built and maintained by P1xel ([p1xel.app](https://p1xel.app),
-[@P1xelCollector](https://x.com/P1xelCollector)). The Core decoding at its centre came out of
-[CandyScan](https://candyscan.p1xel.app), the Candy Digital tracker P1xel built, which needed it
-to trace a 36-pack auction to its winners. This repository is the keyless part of that pipeline,
-open-sourced.
+Built and maintained by P1xel ([p1xel.app](https://p1xel.app),
+[@P1xelCollector](https://x.com/P1xelCollector)).
 
 ## License
 

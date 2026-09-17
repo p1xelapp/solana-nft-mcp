@@ -44,13 +44,13 @@ const manifest = {
   name: "collector-mcp",
   display_name: "collector-mcp",
   version: pkg.version,
-  description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No keys, read-only, runs on your machine.",
+  description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No sign-up, read-only, runs on your machine.",
   long_description:
     "Ask your AI about any Solana collectible and get the answer from the chain: who owned it, who can still freeze or burn it, " +
     "what actually sold, and where the deals are. It decodes Metaplex Core ownership history byte by byte, the history mainstream " +
     "NFT APIs hand back empty, and labels every number with its venue, its currency and the moment it was read, so nothing gets " +
     "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
-    "without writing a parser. 20 tools, zero API keys, nothing collected, and no signing code exists in it, so it cannot touch your wallet.",
+    "without writing a parser. 20 tools, no sign-up, nothing collected, and no signing code exists in it, so it cannot touch your wallet.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/collector-mcp/",
   documentation: "https://github.com/p1xelapp/collector-mcp#readme",
