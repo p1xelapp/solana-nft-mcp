@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * collector-mcp - zero-key MCP server for Solana digital collectibles.
+ * collector-mcp - no-sign-up MCP server for Solana digital collectibles.
  *
- * Runs over stdio. No API keys, no wallet, no config: every data source is a
- * public, keyless endpoint (Magic Eden v2, the public Solana RPC and its asset
- * index), and the server is read-only by design: it cannot sign, send, or spend anything.
+ * Runs over stdio. Nothing to sign up for and no wallet: the default sources are
+ * public and keyless (Magic Eden v2, the public Solana RPC and its asset index),
+ * and OpenSea is reached with a free key the server issues itself and keeps on
+ * the user's machine. Read-only by design: it cannot sign, send, or spend anything.
  *
  * IMPORTANT for contributors: never write to stdout (console.log) - stdout IS
  * the MCP protocol channel. Diagnostics go to stderr (console.error).

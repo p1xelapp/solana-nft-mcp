@@ -62,7 +62,7 @@ you can paste to someone who does not trust either of you.
 Use both if you like. OpenSea's server is OpenSea's view: its listings, its sales, its
 portfolio numbers, behind its key and login. collector-mcp is nobody's view. It reads
 the chain directly for supply, provenance, custody rules and wallet age; reads Magic Eden
-keylessly; adds OpenSea when you give it a key; and then reconciles them and refuses to
+keylessly; adds OpenSea through a free key it issues itself; and then reconciles them and refuses to
 rank a SOL floor against a USDC floor. It also does things no marketplace server does:
 decode Metaplex Core plugins into "who can freeze, move or burn this", verify a claim
 and hand back a receipt, and label a wallet's behaviour from its history.
@@ -144,7 +144,7 @@ empty list.
 **Why Solana only?**
 Because the answer had to be honest. Keyless indexed NFT data on other chains went away
 with Reservoir and SimpleHash. Adding "multi-chain" with a paid key behind every tool
-would make the zero-key promise a lie.
+would make the no-sign-up promise a lie.
 
 **How accurate is it?**
 As accurate as the source, with the source named. On-chain reads are authoritative.

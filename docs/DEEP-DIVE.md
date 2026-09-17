@@ -6,7 +6,7 @@ Start with the layer diagram below to see where a tool call actually goes.
 
 ## 1. What it is, in one paragraph
 
-collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, requires **zero API keys, zero wallets, and zero configuration**, and is read-only by design. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
+collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, asks you for **no account, no wallet and no configuration**, and is read-only by design. The default sources need no key at all; OpenSea is reached with a free key the server issues itself and keeps on your machine. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
 
 ## 2. The problem it solves
 
@@ -86,7 +86,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 ## 6. Pros and cons, honestly
 
 **Pros**
-- Zero keys, zero config - working in under a minute, nothing to leak
+- No sign-up, no config - working in under a minute, nothing of yours to leak
 - Read-only by construction - no private key ever touches the process
 - Provenance data almost nothing else surfaces (Core TransferV1 decoding)
 - Domain registry: speaks collector, not just protocol
