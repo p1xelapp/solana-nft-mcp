@@ -340,6 +340,38 @@ const addr = (v: unknown): string | null => (typeof v === "string" && isBase58Ad
 const https = (v: unknown): string | null => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length ? clean(v) : null);
 
+/**
+ * Traits an index served, reduced to the pairs that are safe to show.
+ *
+ * A trait needs a name to be a trait, and a value that arrived as an object or
+ * an array is DROPPED rather than stringified: String({}) is "[object Object]",
+ * and a row reading "Item Type = [object Object]" is a fact this server would
+ * be inventing. Exported so the rule has a test of its own.
+ */
+export function normaliseAttributes(raw: unknown): { trait: string; value: string }[] {
+  return (Array.isArray(raw) ? raw : [])
+    .slice(0, 64)
+    .map((t: { trait_type?: unknown; value?: unknown } | null | undefined) => ({
+      trait: traitText(t?.trait_type),
+      value: traitText(t?.value),
+    }))
+    .filter((t) => t.trait.length > 0 && t.value.length > 0);
+}
+
+/**
+ * One trait name or value, from an index, on its way to a model.
+ *
+ * Only a primitive is text. A number and a boolean are rendered, an object or
+ * an array becomes the empty string so the caller drops the row, because the
+ * alternative is presenting "[object Object]" as somebody's trait.
+ */
+function traitText(v: unknown): string {
+  if (typeof v === "string") return clean(v).slice(0, 128);
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return String(v);
+  return "";
+}
+
 function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   const iface = typeof a.interface === "string" && KNOWN_INTERFACES.has(a.interface) ? a.interface : "unknown";
   const compressed = a.compression?.compressed === true;
@@ -360,13 +392,7 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     name: str(a.content?.metadata?.name),
     symbol: str(a.content?.metadata?.symbol),
     image: https(a.content?.links?.image),
-    attributes: (Array.isArray(a.content?.metadata?.attributes) ? a.content.metadata.attributes : [])
-      .slice(0, 64)
-      .map((t) => ({
-        trait: clean(String(t?.trait_type ?? "")).slice(0, 64),
-        value: clean(String(t?.value ?? "")).slice(0, 128),
-      }))
-      .filter((t) => t.trait.length > 0),
+    attributes: normaliseAttributes(a.content?.metadata?.attributes),
     collection: addr(collection?.group_value),
     // An absent `verified` is "the index did not say", not "verified". Reading
     // a missing field as true is how an unverified grouping gets presented as

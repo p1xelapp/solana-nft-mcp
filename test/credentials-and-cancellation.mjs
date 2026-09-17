@@ -27,6 +27,7 @@ import { summarizeHoldings } from "../dist/wallet.js";
 import * as me from "../dist/sources/magiceden.js";
 import * as os from "../dist/sources/opensea.js";
 import * as sol from "../dist/sources/solana.js";
+import { normaliseAttributes } from "../dist/sources/das.js";
 import { findSymbolByName, resetDirectSymbolCache } from "../dist/direct-symbol.js";
 import { verifyClaim } from "../dist/verify.js";
 
@@ -862,6 +863,35 @@ const serverEnvBase = () => {
   globalThis.fetch = denied;
   delete process.env.SOLANA_RPC_URL;
   ok("DATA-7 a bounded or abandoned provenance walk shows the hole in place, so no reader joins across it");
+}
+
+// ================================================================ DATA-8
+// A trait value is index-supplied and typed unknown. String() on an object
+// yields "[object Object]", so a collection whose metadata carried a nested
+// value would have handed a model "Item Type = [object Object]" as a fact.
+// eslint caught this one before it shipped; this is what keeps it caught.
+{
+  const rows = normaliseAttributes([
+    { trait_type: "Item Type", value: "Pack" },
+    { trait_type: "Nested", value: { a: 1 } },
+    { trait_type: "List", value: [1, 2] },
+    { trait_type: "Serial", value: 31 },
+    { trait_type: "Flag", value: true },
+    { trait_type: "", value: "no name" },
+    { trait_type: "Empty", value: null },
+    null,
+  ]);
+  const map = Object.fromEntries(rows.map((r) => [r.trait, r.value]));
+  assert.strictEqual(map["Item Type"], "Pack");
+  assert.strictEqual(map.Serial, "31", "a number is text a reader can use");
+  assert.strictEqual(map.Flag, "true");
+  assert.ok(!("Nested" in map), "an object value is dropped, never stringified");
+  assert.ok(!("List" in map), "an array value is dropped too");
+  assert.ok(!("" in map), "a trait with no name is not a trait");
+  assert.ok(!("Empty" in map), "a null value carries nothing");
+  for (const r of rows) assert.ok(!r.value.includes("[object "), `no row may carry a default stringification: ${r.value}`);
+  assert.strictEqual(normaliseAttributes("not an array").length, 0, "a non-array attributes field is no traits, not a crash");
+  ok("DATA-8 an index trait value is a primitive or it is dropped, never [object Object]");
 }
 
 globalThis.fetch = realFetch;
