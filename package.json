@@ -30,14 +30,15 @@
     "pack-check": "node scripts/pack-check.mjs",
     "prepublishOnly": "node scripts/pack-check.mjs",
     "start": "node dist/index.js",
-    "test": "npm run build && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/release-checks.mjs && node test/robustness.mjs",
+    "test": "npm run build && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
     "test:smoke": "npm run build && node test/smoke.mjs",
     "test:live": "npm run build && node test/live.mjs",
     "docs:sources": "npm run build && node scripts/sources-md.mjs",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "snapshot": "node scripts/snapshot-collections.mjs",
     "bundle": "node scripts/bundle-mcpb.mjs && node scripts/verify-bundle.mjs",
-    "verify-bundle": "node scripts/verify-bundle.mjs"
+    "verify-bundle": "node scripts/verify-bundle.mjs",
+    "docs:architecture": "npm run build && node scripts/build-architecture.mjs"
   },
   "keywords": [
     "mcp",

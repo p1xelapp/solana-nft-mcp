@@ -28,6 +28,15 @@ ownership, provenance and custody rules, Magic Eden without a key, and OpenSea
 through a free key the server issues itself. Each number comes back with its venue, its currency, its read time, and what the
 source could not see.
 
+## How it fits together
+
+<img src="assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
+
+The server runs on your machine and your AI app starts it. Nothing here is a hosted
+service, and there is no account between you and the data. This picture is generated
+from the running server, so the counts and the source list cannot drift away from the
+code: `npm test` fails if they do.
+
 ## Install
 
 Requires Node 22 or newer (tested on 22 and 24; Node 20 is end of life). Build once:
