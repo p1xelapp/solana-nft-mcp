@@ -21,6 +21,7 @@ secrets.env
 LAUNCH-PLAYBOOK.html
 HANDOFF.md
 CHECKLIST.md
+PRE-LAUNCH-TESTS.md
 GOAL.md
 LAUNCH-NOTES.md
 .audit-receipt.json
