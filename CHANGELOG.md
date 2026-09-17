@@ -877,6 +877,26 @@ going to change that.
   find who handed it over. Reading an escrow as a holder is how one address ends
   up looking like it bought a whole drop.
 
+The same session exposed two faults in the provenance walk, both of them the
+house failure mode: an answer that is confidently incomplete.
+
+- A bounded walk keeps the newest transactions and the mint and drops the
+  middle, and on a freshly minted asset the middle is where the sale is. Asked
+  at depth 6 who bought pack 31 of 36, it returned the mint and five listing
+  events, and the transfer to the buyer was not in the list. `skippedTransactions`
+  said three were dropped; nothing said where, so the surviving rows read as one
+  continuous trail. Every hole is now an `unread_gap` row sitting in its place in
+  the order, carrying its own count and what to do about it. Escrow custody,
+  which can only be read in order, is forgotten across a hole rather than carried
+  over it.
+- The decode loop had no wall-clock ceiling. Fifteen transactions, paced 350ms
+  apart and retried three times at a 15s timeout, is 726 seconds in the worst
+  case, against clients that give up at four minutes, and when it blew through it
+  returned nothing at all: not the events already decoded, not a count, not a
+  reason. There is a 90 second budget now, and a walk that spends it returns what
+  it has with `abandonedTransactions` set and a closing gap row. `historyComplete`
+  accounts for both.
+
 ## 1.14.3 - 2026-09-16
 
 A third outside review, scoped to the 1.14.x diff, found nine defects. All

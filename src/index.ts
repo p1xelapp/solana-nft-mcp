@@ -1236,6 +1236,10 @@ registerTool(
       "This decodes at most `depth` transactions, so on a heavily traded asset the earliest ownership can " +
       "be outside the result: ALWAYS read `historyComplete` before describing the trail as the whole story, " +
       "and `skippedTransactions` for how much was left out. Raise `depth` to cover more. " +
+      "A bounded walk keeps the newest transactions and the mint and drops the middle, which is where a " +
+      "recently minted asset's sale usually sits: any hole appears in `events` as an `unread_gap` row IN ITS " +
+      "PLACE in the order, so never read across one as though the trail were continuous. Lowering `depth` to " +
+      "save time is how a 'who bought it' question gets the wrong answer. " +
       "Ownership events only: traits live in get_asset (marketplace attributes) and get_asset_trust (the on-chain Attributes plugin), so an empty trait picture here means nothing.",
     annotations: READ_ONLY,
     inputSchema: {
@@ -1247,7 +1251,7 @@ registerTool(
         .min(1)
         .max(50)
         .optional()
-        .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything. Default 15."),
+        .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything, and an unread_gap row in events shows where anything was left out. Lower it only to go faster, never to answer who owned something. Default 15."),
     },
   },
   guard(async ({ mint, depth = 15 }) => ok(await sol.getProvenance(mint, depth))),

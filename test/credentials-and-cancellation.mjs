@@ -773,6 +773,97 @@ const serverEnvBase = () => {
   ok("DATA-6 OpenSea amounts are validated as integer raw units with a whole-number scale; malformed rows say so");
 }
 
+// ================================================================ DATA-7
+// A bounded walk kept the newest transactions and the mint and dropped the
+// middle, and the middle is where a freshly minted asset's sale sits. The
+// surviving rows read as one continuous trail: asked who bought pack 31 of a
+// 36-pack drop, a depth of 6 returned a mint and five listing events, and the
+// transfer to the buyer was simply not there. The count said 3 were skipped;
+// nothing said WHERE, so nothing stopped a reader joining the two ends.
+{
+  const CORE = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
+  const SYSTEM = "11111111111111111111111111111111";
+  const mint = "BA56URSgTmXFdh83i125szydnvVTuN8U1VSQSckqcnP2";
+  const collection = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n";
+  const buyer = address("the-buyer");
+  const fixture = fs.readFileSync(path.join(here, "fixtures", "core-asset.b64"), "utf8").trim();
+  const accounts = [mint, collection, address("payer"), address("authority"), buyer, SYSTEM];
+  process.env.SOLANA_RPC_URL = "https://provenance-gap.invalid";
+
+  // Newest first, the order the RPC returns. Nine transactions: five recent
+  // ones that change nothing, the transfer that answers the question, and the
+  // mint at the far end.
+  const tx = (data, logs) => ({
+    blockTime: 1_700_000_000,
+    meta: { err: null, logMessages: logs, innerInstructions: [] },
+    transaction: { message: { accountKeys: [], instructions: [{ programId: CORE, accounts, data }] } },
+  });
+  const noise = (n) => ({ signature: signature(`noise-${n}`), tx: tx("3", ["Program log: Instruction: AddPlugin"]) });
+  const txs = [
+    noise(1), noise(2), noise(3), noise(4), noise(5),
+    { signature: signature("the-sale"), tx: tx("F", ["Program log: Instruction: Transfer"]) },
+    noise(6), noise(7),
+    { signature: signature("the-mint"), tx: tx("11", ["Program log: Instruction: Create"]) },
+  ];
+
+  let served = 0;
+  globalThis.fetch = async (url, init = {}) => {
+    if (!String(url).startsWith("https://provenance-gap.invalid")) throw new Error(`unexpected ${url}`);
+    const body = JSON.parse(String(init.body));
+    let result;
+    if (body.method === "getAccountInfo") result = { context: { slot: 123 }, value: { owner: CORE, data: [fixture, "base64"] } };
+    else if (body.method === "getSignaturesForAddress") result = txs.map((t) => ({ signature: t.signature, blockTime: 1_700_000_000, err: null }));
+    else if (body.method === "getTransaction") { served++; result = txs.find((t) => t.signature === body.params[0])?.tx ?? null; }
+    else throw new Error(`unexpected method ${body.method}`);
+    return json({ jsonrpc: "2.0", id: body.id, result });
+  };
+
+  // Depth 6 of 9: the transfer is inside the dropped window.
+  const bounded = await sol.getProvenance(mint, 6, { fresh: true });
+  assert.strictEqual(bounded.skippedTransactions, 3, "three transactions were dropped for depth");
+  assert.strictEqual(bounded.historyComplete, false);
+  assert.ok(
+    !bounded.events.some((e) => e.event === "transferred"),
+    "the scenario is only meaningful if the transfer really is outside the bounded walk",
+  );
+
+  const gaps = bounded.events.filter((e) => e.event === "unread_gap");
+  assert.strictEqual(gaps.length, 1, "the hole is announced exactly once");
+  assert.strictEqual(gaps[0].unreadTransactions, 3, "the gap row carries the count, not just the top-level total");
+  assert.match(gaps[0].label, /not read/i);
+
+  // Position is the whole point: a gap at the end would still let a reader
+  // join the mint to the next row as though nothing happened between them.
+  const at = bounded.events.findIndex((e) => e.event === "unread_gap");
+  assert.ok(at > 0, "the gap sits after the mint, not before the story starts");
+  assert.strictEqual(bounded.events[at - 1].event, "minted", "the hole opens immediately after the oldest kept event");
+  assert.ok(at < bounded.events.length - 1, "and closes before the newest kept events");
+
+  // Control: with room for every transaction there is no hole, and the buyer
+  // is visible. Same fixtures, same server, one argument different.
+  const whole = await sol.getProvenance(mint, 15, { fresh: true });
+  assert.strictEqual(whole.skippedTransactions, 0);
+  assert.strictEqual(whole.historyComplete, true);
+  assert.ok(!whole.events.some((e) => e.event === "unread_gap"), "a complete walk announces no hole");
+  assert.ok(whole.events.some((e) => e.event === "transferred" && e.newOwner === buyer), "the buyer is in the complete trail");
+
+  // A budget that cannot be met returns what was decoded, not an exception and
+  // not an empty list. Four minutes of silence is worse than a short answer
+  // that says where it stopped.
+  served = 0;
+  const starved = await sol.getProvenance(mint, 15, { fresh: true, budgetMs: 0 });
+  assert.ok(starved.abandonedTransactions > 0, "the walk reports what it never reached");
+  assert.strictEqual(starved.historyComplete, false, "an abandoned walk is never complete");
+  assert.strictEqual(served, 0, "a spent budget stops before the first transaction read, it does not decode then discard");
+  const tail = starved.events.filter((e) => e.event === "unread_gap");
+  assert.ok(tail.length >= 1, "the abandoned remainder is announced in the story too");
+  assert.match(tail[tail.length - 1].label, /budget/i);
+
+  globalThis.fetch = denied;
+  delete process.env.SOLANA_RPC_URL;
+  ok("DATA-7 a bounded or abandoned provenance walk shows the hole in place, so no reader joins across it");
+}
+
 globalThis.fetch = realFetch;
 resetSecrets();
 for (const dir of homes) {

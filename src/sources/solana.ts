@@ -603,7 +603,17 @@ export async function getCoreAccount(
 export interface ProvenanceEvent {
   signature: string;
   time: string | null;
-  event: "minted" | "transferred" | "burned" | "marketplace_activity" | "other";
+  event: "minted" | "transferred" | "burned" | "marketplace_activity" | "other" | "unread_gap";
+  /**
+   * On an `unread_gap` row: how many transactions sit in this hole, unread.
+   *
+   * A bounded walk keeps the newest transactions and the mint and drops the
+   * middle, which is exactly where an ownership change lives on a recently
+   * minted asset. Reported at the top of the result as `skippedTransactions`,
+   * the count said nothing about WHERE the hole was, so the surviving rows read
+   * as one continuous story. This row is that hole, in its place in the order.
+   */
+  unreadTransactions?: number;
   newOwner?: string;
   /**
    * The marketplace PROGRAM this transaction touched, recognised by its
@@ -677,7 +687,20 @@ interface ParsedTx {
  * `depth` caps how many transactions we decode (each is one RPC call, paced);
  * Core assets are cheap here - even a heavily traded card is ~5-15 signatures.
  */
-export async function getProvenance(mint: string, depth = 15, opts: { fresh?: boolean } = {}) {
+export async function getProvenance(
+  mint: string,
+  depth = 15,
+  opts: { fresh?: boolean; budgetMs?: number } = {},
+) {
+  // A wall-clock ceiling for the decode loop.
+  //
+  // depth 15, each transaction paced 350ms apart and retried up to three times
+  // at a 15s timeout, is 726 seconds in the worst case. Clients give up around
+  // four minutes, and when they did this returned NOTHING: not the events it
+  // had already decoded, not a count, not a reason. A partial trail that says
+  // where it stopped is worth more than four minutes of silence.
+  const budgetMs = opts.budgetMs ?? 90_000;
+  const startedAt = Date.now();
   // Which endpoint actually served this history is part of the evidence: a
   // reader checking the result by hand needs to know whose node they are
   // disagreeing with. A `fresh` read is a verification walk and is pinned to
@@ -761,10 +784,16 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     // recent `depth - 1`; announce anything we skipped rather than hiding it.
     let selected = ok;
     let skipped = 0;
+    // The signature the hole sits directly AFTER in chronological order. The
+    // oldest kept row is the mint, and everything dropped is newer than it.
+    let gapAfterSignature: string | null = null;
     if (ok.length > depth) {
       selected = [...ok.slice(0, depth - 1), ok[ok.length - 1]!];
       skipped = ok.length - selected.length;
+      gapAfterSignature = ok[ok.length - 1]!.signature;
     }
+    /** Transactions the budget ran out on, never reached. Counted apart from the ones depth dropped. */
+    let abandoned = 0;
 
     const events: ProvenanceEvent[] = [];
     /** Transfers whose recipient is an account Magic Eden's own programs brought into the transaction. */
@@ -777,7 +806,14 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     // whether a transfer happened. The INSTRUCTIONS win; the count is reported
     // so a reader knows the log text could not corroborate them.
     let logsDisagreed = 0;
-    for (const sig of selected) {
+    for (const [i, sig] of selected.entries()) {
+      // Out of time. Everything decoded so far is kept and the remainder is
+      // counted, so the caller gets a trail with a named end rather than an
+      // error with nothing in it.
+      if (Date.now() - startedAt > budgetMs) {
+        abandoned = selected.length - i;
+        break;
+      }
       // Confirmed transactions are immutable, so a cached one is the same bytes
       // whichever node served it; only the reads that actually go out are
       // pinned.
@@ -919,6 +955,34 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
 
     events.reverse(); // oldest first - reads as a story
 
+    // Put the hole in the story.
+    //
+    // Without this the list read as one continuous trail, and a depth that
+    // dropped the middle dropped the transfer to the buyer: a "who bought it"
+    // question is answered by the events most likely to be cut. The row sits
+    // after the oldest kept event, which is where the dropped window begins.
+    if (skipped > 0) {
+      const at = gapAfterSignature ? events.findIndex((e) => e.signature === gapAfterSignature) : -1;
+      events.splice(at >= 0 ? at + 1 : 0, 0, {
+        signature: "",
+        time: null,
+        event: "unread_gap",
+        unreadTransactions: skipped,
+        readFrom: "the Solana chain",
+        label: `${skipped} transaction(s) here were not read, because depth was ${depth} and this asset has ${ok.length}. Any ownership change among them is missing from this list. Raise depth to close the hole.`,
+      });
+    }
+    if (abandoned > 0) {
+      events.push({
+        signature: "",
+        time: null,
+        event: "unread_gap",
+        unreadTransactions: abandoned,
+        readFrom: "the Solana chain",
+        label: `${abandoned} transaction(s) after this point were not read: the walk ran out of its ${Math.round(budgetMs / 1000)}s budget. What is above is decoded and true; what follows it is unknown.`,
+      });
+    }
+
     // Escrow custody has a direction, and it can only be read in order.
     //
     // The instruction list names the recipient, never the sender. So a move
@@ -931,6 +995,10 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     // somebody's wallet.
     let heldInEscrow = false;
     for (const e of events) {
+      // Custody direction is read in order, so an unread hole breaks the chain:
+      // an item could have left escrow inside it. Forgetting the state is the
+      // honest move; carrying it across would label the next transfer wrongly.
+      if (e.event === "unread_gap") { heldInEscrow = false; continue; }
       if (e.event !== "transferred") continue;
       if (heldInEscrow) {
         e.magicEdenEscrow = true;
@@ -942,7 +1010,7 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
         heldInEscrow = true;
       }
     }
-    return { account, events, skipped, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
+    return { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -963,7 +1031,7 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
     const retry = await walkOnce().catch(() => null);
     if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
   }
-  const { account, events, skipped, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote } = value;
+  const { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote } = value;
 
   return {
     mint,
@@ -1005,7 +1073,9 @@ export async function getProvenance(mint: string, depth = 15, opts: { fresh?: bo
      * it is an endpoint that cannot see one, and calling that complete is how
      * "this card has never traded" gets said about a card that has.
      */
-    historyComplete: walk.complete && unreadable === 0 && skipped === 0 && okCount > 0,
+    /** Transactions the wall-clock budget ran out on. Above zero means the newest end of the trail is unknown. */
+    abandonedTransactions: abandoned,
+    historyComplete: walk.complete && unreadable === 0 && skipped === 0 && abandoned === 0 && okCount > 0,
     /**
      * True when a Core Create instruction for this asset was decoded, or its
      * log line seen: the BEGINNING of the history was recognised, not merely
