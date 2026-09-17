@@ -47,6 +47,7 @@ const TOOL_MANIFEST = [
   "get_asset",
   "get_asset_provenance",
   "get_asset_trust",
+  "get_collection_holders",
   "get_collection_sales",
   "get_collection_stats",
   "get_floor_prices",
@@ -464,6 +465,6 @@ assert.strictEqual(reconcileFloors([]).comparable, false);
 assert.ok(same.caveats.some((c) => /lowest current ASK/.test(c)), "floor caveat missing");
 
 console.log(
-  "protocol test: all assertions passed (20 tools by exact name, 0 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
+  "protocol test: all assertions passed (21 tools by exact name, 0 resources, 3 prompts, validation, reconciliation, recipes, wallet intelligence, injection defence, structuredContent)",
 );
 await client.close();

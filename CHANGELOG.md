@@ -854,6 +854,29 @@ attached, against live venues:
   at `get_asset` and `get_asset_trust` for traits, after a real host read
   its empty trait picture as "no traits".
 
+## 1.15.0 - 2026-09-17
+
+A real question broke the server's cover: which wallets won the 36 packs of the
+Candy Digital Aces auction. Every collection-wide tool here read a marketplace's
+listing book, so the only packs it could see were the handful somebody had put
+up for sale. The other thirty-odd were invisible, and no amount of retrying was
+going to change that.
+
+- `get_collection_holders` is the census read that was missing. Every asset
+  grouped under a Core collection with its current owner, filterable by trait
+  (`Item Type = Pack`) or by name prefix, plus a holder count per address.
+  1,048 assets read in 2 seconds, 36 matched, 11 distinct holders.
+- `das.getAssetsByGroup` underneath it. The page size is fixed at 1000 and not
+  exposed: the public endpoint answers 1000 rows in about a second and times out
+  at 25 seconds on a page of 3, twice running, against the same collection. A
+  small page takes a query plan the index will not serve.
+- The asset index read now carries an asset's traits, so a census can be
+  narrowed without a second call per row.
+- The result says out loud that an item listed for sale reports the
+  marketplace's escrow as its owner, and points at `get_asset_provenance` to
+  find who handed it over. Reading an escrow as a holder is how one address ends
+  up looking like it bought a whole drop.
+
 ## 1.14.3 - 2026-09-16
 
 A third outside review, scoped to the 1.14.x diff, found nine defects. All

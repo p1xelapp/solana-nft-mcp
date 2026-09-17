@@ -50,7 +50,7 @@ const manifest = {
     "what actually sold, and where the deals are. It decodes Metaplex Core ownership history byte by byte, the history mainstream " +
     "NFT APIs hand back empty, and labels every number with its venue, its currency and the moment it was read, so nothing gets " +
     "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
-    "without writing a parser. 20 tools, no sign-up, nothing collected, and no signing code exists in it, so it cannot touch your wallet.",
+    "without writing a parser. 21 tools, no sign-up, nothing collected, and no signing code exists in it, so it cannot touch your wallet.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/collector-mcp/",
   documentation: "https://github.com/p1xelapp/collector-mcp#readme",
@@ -68,6 +68,7 @@ const manifest = {
     { name: "find_listings", description: "Cheapest listings, deals, low serials, trait floors" },
     { name: "find_in_group", description: "Hunt one edition number across a whole family of collections" },
     { name: "get_collection_sales", description: "What sold, for how much, by name" },
+    { name: "get_collection_holders", description: "Every item in a collection and who holds it, listed or not" },
     { name: "get_wallet_profile", description: "What a wallet holds and how it trades" },
   ],
   tools_generated: true,

@@ -24,7 +24,7 @@ Claude / MCP client
    ▼
 ┌─────────────────────────────────────────────────┐
 │ MCP layer (official TypeScript SDK)             │
-│  20 tools · 3 prompts · 0 resources             │
+│  21 tools · 3 prompts · 0 resources             │
 │  zod validation on every input                  │
 ├─────────────────────────────────────────────────┤
 │ Domain layer                                    │
@@ -91,7 +91,7 @@ The output is a story: `minted → listed (Magic Eden) → transferred → curre
 - Provenance data almost nothing else surfaces (Core TransferV1 decoding)
 - Domain registry: speaks collector, not just protocol
 - Production-grade plumbing: rate-gated, retried, cached, never-blank
-- Full MCP surface (20 tools + 3 prompts), official SDK, strict TS
+- Full MCP surface (21 tools + 3 prompts), official SDK, strict TS
 - Live test suite proving every tool against real endpoints, plus a 160-check behavioural battery that tests how each ANSWER behaves and a robustness suite that feeds every reader broken upstreams
 
 **Cons / limitations (by design or by v1)**

@@ -224,7 +224,7 @@ interface RawAsset {
   id?: string;
   interface?: string;
   burnt?: boolean;
-  content?: { metadata?: { name?: string; symbol?: string }; links?: { image?: string }; json_uri?: string };
+  content?: { metadata?: { name?: string; symbol?: string; attributes?: { trait_type?: string; value?: unknown }[] }; links?: { image?: string }; json_uri?: string };
   grouping?: { group_key?: string; group_value?: string; verified?: boolean }[];
   ownership?: { owner?: string; frozen?: boolean; delegated?: boolean; delegate?: string | null; ownership_model?: string };
   royalty?: { percent?: number; basis_points?: number; primary_sale_happened?: boolean; locked?: boolean };
@@ -250,6 +250,12 @@ export interface DasAsset {
   name: string | null;
   symbol: string | null;
   image: string | null;
+  /**
+   * Traits as the index reports them. Index-supplied text on its way into a
+   * model, so both halves are neutralised and bounded, and a row missing a
+   * trait name is dropped rather than keyed on "".
+   */
+  attributes: { trait: string; value: string }[];
   collection: string | null;
   collectionVerified: boolean | null;
   owner: string | null;
@@ -354,6 +360,13 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     name: str(a.content?.metadata?.name),
     symbol: str(a.content?.metadata?.symbol),
     image: https(a.content?.links?.image),
+    attributes: (Array.isArray(a.content?.metadata?.attributes) ? a.content.metadata.attributes : [])
+      .slice(0, 64)
+      .map((t) => ({
+        trait: clean(String(t?.trait_type ?? "")).slice(0, 64),
+        value: clean(String(t?.value ?? "")).slice(0, 128),
+      }))
+      .filter((t) => t.trait.length > 0),
     collection: addr(collection?.group_value),
     // An absent `verified` is "the index did not say", not "verified". Reading
     // a missing field as true is how an unverified grouping gets presented as
@@ -510,6 +523,94 @@ export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal
     // A short page is short of the PAGE SIZE the endpoint was asked for, so
     // dropped rows are added back before deciding whether the walk is over -
     // otherwise a page of 1,000 rows with one bad row reads as the last page.
+    if (data.items.length + data.rejected < limit) break;
+    if (items.length >= max) {
+      truncated = true;
+      break;
+    }
+    page++;
+  }
+  return { items: items.slice(0, max), pagesRead: page, truncated, rowsRejected, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
+}
+
+export interface DasGroupPage {
+  items: DasAsset[];
+  pagesRead: number;
+  truncated: boolean;
+  rowsRejected: number;
+  readFrom: string;
+  stale: boolean;
+  cachedAt: string;
+}
+
+/**
+ * Every asset grouped under a collection address, with its current owner.
+ *
+ * This is the census read. Without it the only collection-wide view was the
+ * marketplace listing book, so anything nobody had put up for sale was
+ * invisible: asked which wallets held all 36 packs of a drop, the server could
+ * only answer for the handful that happened to be listed.
+ *
+ * PAGE SIZE IS NOT A PREFERENCE. The public endpoint answers a limit of 1000
+ * in about a second and times out at 25s on a limit of 3, twice in a row, on
+ * the same collection. A small page appears to take a query plan the index
+ * cannot serve, so the size is fixed here rather than exposed to a caller who
+ * would reasonably ask for a few rows to start with.
+ *
+ * Not every endpoint carries the index: a plain RPC without DAS answers -32601
+ * and capability() turns that into a refusal by name rather than an empty list.
+ */
+export async function getAssetsByGroup(
+  collection: string,
+  max = 2000,
+  opts: { signal?: AbortSignal } = {},
+): Promise<DasGroupPage> {
+  const deadline = combineSignals(READ_DEADLINE_MS, opts.signal);
+  const cap = await capability({ signal: deadline });
+  refuseIfWithdrawn(cap);
+  const limit = 1000;
+  const items: DasAsset[] = [];
+  let page = 1;
+  let truncated = false;
+  let rowsRejected = 0;
+  let readFrom = cap.endpoint ?? PUBLIC_DAS;
+  let stale = false;
+  let cachedAt = new Date().toISOString();
+  for (;;) {
+    if (deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`);
+    let hit;
+    try {
+      hit = await cached<{ items: RawAsset[]; rejected: number; endpoint: string }>(
+        `das:group:${collection}:${page}:${limit}`,
+        60_000,
+        async (producer) => {
+          const { result, endpoint } = await call<{ items?: unknown }>(
+            "getAssetsByGroup",
+            { groupKey: "collection", groupValue: collection, page, limit, displayOptions: { showFungible: false } },
+            combineSignals(READ_DEADLINE_MS, producer),
+          );
+          const rows = objectRows<RawAsset>(SOURCE, "getAssetsByGroup items", result.items);
+          if (rows.length > limit) {
+            throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
+          }
+          const usable = rows.filter((r) => typeof r.id === "string" && isBase58Address(r.id));
+          if (rows.length > 0 && usable.length === 0) {
+            throw new Error(`${SOURCE} returned ${rows.length} row(s) for getAssetsByGroup and not one carried a usable id (outage or API change) - the page was refused rather than counted`);
+          }
+          return { items: usable, rejected: rows.length - usable.length, endpoint };
+        },
+        { signal: deadline },
+      );
+    } catch (e) {
+      if (e instanceof AbortedError || deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`);
+      throw e;
+    }
+    const data = hit.data;
+    readFrom = data.endpoint;
+    stale = stale || hit.stale;
+    rowsRejected += data.rejected;
+    if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
+    for (const raw of data.items) items.push(normalise(raw, data.endpoint, hit.cachedAt));
     if (data.items.length + data.rejected < limit) break;
     if (items.length >= max) {
       truncated = true;

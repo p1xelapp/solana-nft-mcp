@@ -82,7 +82,7 @@ run it: they have nowhere to launch a local process.
 ### Did it work?
 
 Most apps list the tools under a small icon near the message box; Claude Code shows them with
-`/mcp`. You should see 20 tools, starting with `identify`. If you see none: the path in the
+`/mcp`. You should see 21 tools, starting with `identify`. If you see none: the path in the
 config must be absolute and must point at `dist/index.js`, `npm run build` must have been run,
 and the app must be fully quit and reopened, tray icon included.
 
@@ -197,7 +197,7 @@ provider have their own data practices, which this server cannot speak for.
 
 ## Tools
 
-20 tools. Names are frozen: agents reference them in prompts, and a rename breaks integrations
+21 tools. Names are frozen: agents reference them in prompts, and a rename breaks integrations
 without raising an error.
 
 | Tool | Back |
@@ -208,6 +208,7 @@ without raising an error.
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
 | `get_collection_stats` | chain supply, floors per venue, and a reconciliation that refuses to rank SOL against USDC |
+| `get_collection_holders` | every asset in a Core collection and who holds it, listed or not, filterable by trait or name, with a holder count per address |
 | `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-venue floors live in `get_collection_stats`) |
 | `get_recent_sales` | latest completed fills with buyer, seller, price and signature |
 | `get_asset` | three readers for one item: the venue, a byte-level decode, and the chain's asset index, with owner agreement reported |

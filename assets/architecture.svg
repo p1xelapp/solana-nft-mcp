@@ -10,7 +10,7 @@
   </defs>
 
   <rect width="1180" height="432" fill="#04050a"/>
-  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">collector-mcp 1.14.3</text>
+  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">collector-mcp 1.15.0</text>
   <text x="24" y="52" font-size="11.5" fill="#5f6883">what runs where, and what it is allowed to do</text>
 
   <!-- the client -->
@@ -29,8 +29,8 @@
   <rect x="320" y="86" width="340" height="188" rx="14" fill="#070b16" stroke="url(#mcp)" stroke-width="1.6"/>
   <text x="344" y="110" font-size="10.5" letter-spacing="1.4" fill="#a78bfa" font-family="'IBM Plex Mono',ui-monospace,monospace">COLLECTOR-MCP</text>
   <text x="344" y="134" font-size="14.5" font-weight="600" fill="#f2f4fb">Runs on your machine</text>
-  <text x="344" y="158" font-size="12.5" fill="#dfe4f2" font-family="'IBM Plex Mono',ui-monospace,monospace">20 tools · 3 prompts · 0 resources</text>
-  <text x="344" y="180" font-size="12" fill="#14f195">20 of 20 declare readOnlyHint</text>
+  <text x="344" y="158" font-size="12.5" fill="#dfe4f2" font-family="'IBM Plex Mono',ui-monospace,monospace">21 tools · 3 prompts · 0 resources</text>
+  <text x="344" y="180" font-size="12" fill="#14f195">21 of 21 declare readOnlyHint</text>
   <text x="344" y="204" font-size="11.5" fill="#96a0bb">No signing code exists in it, so it cannot</text>
   <text x="344" y="222" font-size="11.5" fill="#96a0bb">buy, sell, list, transfer or touch a wallet.</text>
   <text x="344" y="248" font-size="11" fill="#5f6883">Answers carry the venue, the currency and the read time.</text>

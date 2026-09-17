@@ -301,6 +301,7 @@ async function startWith(env = {}) {
     identify: { query: "mad lads" },
     search_collections: { query: "batman" },
     get_collection_stats: { collection: "mad_lads" },
+    get_collection_holders: { collection: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K" },
     get_floor_prices: { symbols: ["mad_lads"] },
     get_recent_sales: { collection: "mad_lads" },
     get_collection_sales: { symbol: "mad_lads" },

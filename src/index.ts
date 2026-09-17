@@ -1404,6 +1404,108 @@ registerTool(
 );
 
 registerTool(
+  "get_collection_holders",
+  {
+    title: "Who holds every item in a collection",
+    description:
+      "CENSUS of a Core collection: every asset grouped under it, with its current owner, straight from the " +
+      "chain's asset index. This is the only tool that sees items NOBODY HAS LISTED - every other " +
+      "collection-wide tool reads a marketplace's listing book, so an unsold item is invisible to them. " +
+      "Answers 'who won the 36 packs from that drop', 'is one wallet holding half the supply', 'how many " +
+      "are still with the issuer', 'which wallets hold this set'. Filter to part of a collection with " +
+      "`trait`/`value` (e.g. Item Type = Pack) or `namePrefix` (e.g. 'Gold Series - Aces'). Returns the " +
+      "rows plus a holder count per address, largest first. " +
+      "An item currently listed for sale shows the MARKETPLACE'S ESCROW as its owner, not the seller: " +
+      "call get_asset_provenance on that mint to see who handed it over.",
+    annotations: READ_ONLY,
+    inputSchema: {
+      collection: addressSchema.describe("Core collection ADDRESS. Use identify or search_collections to turn a name into one."),
+      trait: z.string().trim().min(1).max(64).optional().describe("Trait name to filter on, e.g. 'Item Type'. Case-insensitive. Needs `value` too."),
+      value: z.string().trim().min(1).max(128).optional().describe("Trait value to keep, e.g. 'Pack'. Case-insensitive."),
+      namePrefix: z.string().trim().min(1).max(120).optional().describe("Keep only assets whose name starts with this, e.g. 'Gold Series - Aces'. Case-insensitive."),
+      max: z.number().int().finite().min(1).max(5000).optional().describe("Most assets to read from the index before truncating. Default 2000."),
+    },
+  },
+  guard(async ({ collection, trait, value, namePrefix, max = 2000 }) => {
+    const page = await das.getAssetsByGroup(collection, max);
+    const lower = (v: string) => v.toLocaleLowerCase();
+    const wantTrait = trait ? lower(trait) : null;
+    const wantValue = value ? lower(value) : null;
+    const wantName = namePrefix ? lower(namePrefix) : null;
+
+    // A trait filter with only half the pair is a caller error that would
+    // otherwise silently return the whole collection as though it matched.
+    if ((wantTrait && !wantValue) || (wantValue && !wantTrait)) {
+      throw new Error("trait and value go together: pass both, or neither.");
+    }
+
+    const rows = page.items.filter((a) => {
+      if (wantName && !lower(a.name ?? "").startsWith(wantName)) return false;
+      if (wantTrait) {
+        const hit = a.attributes.find((t) => lower(t.trait) === wantTrait);
+        if (!hit || lower(hit.value) !== wantValue) return false;
+      }
+      return true;
+    });
+
+    const byOwner = new Map<string, number>();
+    let unknownOwner = 0;
+    for (const a of rows) {
+      if (!a.owner) {
+        unknownOwner++;
+        continue;
+      }
+      byOwner.set(a.owner, (byOwner.get(a.owner) ?? 0) + 1);
+    }
+    const holders = [...byOwner.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([owner, held]) => ({
+        owner,
+        held,
+        shareOfMatchedPct: rows.length > 0 ? Number(((held / rows.length) * 100).toFixed(1)) : 0,
+        explorer: `https://solscan.io/account/${owner}`,
+      }));
+
+    return ok({
+      collection,
+      filter: {
+        trait: trait ?? null,
+        value: value ?? null,
+        namePrefix: namePrefix ?? null,
+        applied: Boolean(wantTrait || wantName),
+      },
+      assetsInCollection: page.items.length,
+      matched: rows.length,
+      distinctHolders: byOwner.size,
+      assetsWithNoOwnerReported: unknownOwner,
+      holders,
+      assets: rows.map((a) => ({
+        mint: a.id,
+        name: a.name,
+        owner: a.owner,
+        standard: a.standard,
+        burnt: a.burnt,
+        explorer: `https://solscan.io/token/${a.id}`,
+      })),
+      truncated: page.truncated,
+      pagesRead: page.pagesRead,
+      rowsRejected: page.rowsRejected,
+      readFrom: page.readFrom,
+      stale: page.stale,
+      readAt: page.cachedAt,
+      readThis: [
+        "Owners come from the chain's asset index, which is a database somebody else maintains: it can lag a transfer it has not picked up yet. get_asset settles one owner byte-for-byte from the chain.",
+        "An item listed for sale reports the marketplace's escrow account as its owner, not the seller. A holder row with an implausible share is usually an escrow or a custodial account, not a collector: get_asset_provenance on one of its mints names the escrow and shows who handed it over.",
+        "A custodial platform holds a buyer's item in its own address, so one address holding many does not settle whether one person bought them.",
+        page.truncated
+          ? `Truncated at ${max} assets: raise max or narrow the filter, because the holder counts below cover only what was read.`
+          : "Every asset the index reports for this collection was read.",
+      ],
+    });
+  }),
+);
+
+registerTool(
   "get_wallet_profile",
   {
     title: "Wallet profile",
