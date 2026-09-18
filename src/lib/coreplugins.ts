@@ -67,6 +67,8 @@ export interface DecodedPlugin {
   authority: string;
   /** True when the registry lists the plugin but its data could not be decoded: present, not absent. */
   unreadable?: boolean;
+  /** True when the plugin type is newer than this reader: present, and what it permits is unknown. */
+  unsupported?: boolean;
   /** Decoded fields for the plugin types that carry data an owner should know. */
   data?: Record<string, unknown>;
   /** Set when the plugin lives on the collection and applies to this asset by inheritance. */
@@ -225,7 +227,16 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
 
     const failures: string[] = [];
     for (const rec of records) {
-      const name = PLUGIN_NAMES[rec.type] ?? `unknown plugin type ${rec.type}`;
+      const known = rec.type < PLUGIN_NAMES.length;
+      const name = known ? PLUGIN_NAMES[rec.type]! : `unknown plugin type ${rec.type}`;
+      // A type this reader does not know is not "no extra permission": it
+      // was being skipped in silence and the picture called complete
+      // (2026-09-18).
+      if (!known) {
+        failures.push(`${name}: not decoded by this version, so what it permits is unknown`);
+        out.plugins.push({ type: name, authority: rec.auth, unreadable: true, unsupported: true });
+        continue;
+      }
       let data: Record<string, unknown> | undefined;
       let unreadable = false;
       try {
@@ -281,14 +292,21 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   for (const p of plugins) {
     if (p.unreadable && /Freeze/.test(p.type)) out.warnings.push(`${p.type} is present but its frozen state could not be decoded: the asset may be frozen.`);
   }
+  // A freeze blocks the HOLDER. A permanent transfer delegate's transfer is
+  // force-approved by the program, frozen or not, so an absolute "cannot be
+  // transferred" beside that delegate was false reassurance (2026-09-18; Metaplex Core docs, permanent transfer delegate).
+  const forceApproved = ptd && heldByOther(ptd) ? ` The permanent transfer delegate (${ptd.authority}) is the exception: its transfers are force-approved by the program even while the asset is frozen.` : "";
+  for (const p of plugins) {
+    if (p.unsupported) out.warnings.push(`${p.type} is attached (authority: ${p.authority}) and this version cannot read it: it may grant a control over transfers, freezes or burns that the picture below does not show.`);
+  }
   const pfd = has("PermanentFreezeDelegate");
   if (pfd) {
-    if (pfd.data?.frozen === true) { out.frozen = true; out.warnings.push(`FROZEN by a permanent freeze delegate (${pfd.authority})${where(pfd)}: it cannot be transferred or listed until that party thaws it.`); }
+    if (pfd.data?.frozen === true) { out.frozen = true; out.warnings.push(`FROZEN by a permanent freeze delegate (${pfd.authority})${where(pfd)}: the holder cannot transfer or list it until that party thaws it.${forceApproved}`); }
     else if (heldByOther(pfd)) out.warnings.push(`Permanent freeze delegate held by ${pfd.authority}${where(pfd)}: that party can lock this asset in place at any time.`);
     if (heldByOther(pfd)) out.ownerIsNotSoleController = true;
   }
   const fd = has("FreezeDelegate");
-  if (fd?.data?.frozen === true) { out.frozen = true; out.warnings.push(`Frozen (owner-approved freeze delegate: ${fd.authority}). Usually staking or an active listing; it cannot move until thawed.`); }
+  if (fd?.data?.frozen === true) { out.frozen = true; out.warnings.push(`Frozen (owner-approved freeze delegate: ${fd.authority}). Usually staking or an active listing; the holder cannot move it until thawed.${forceApproved}`); }
   if (heldByOther(fd)) out.ownerIsNotSoleController = true;
   const td = has("TransferDelegate");
   if (heldByOther(td)) { out.warnings.push(`Transfer delegate approved to ${td!.authority}: they can transfer it once. Normal while listed on a marketplace; check it is revoked after delisting.`); out.ownerIsNotSoleController = true; }

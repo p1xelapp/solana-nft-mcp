@@ -36,6 +36,12 @@ for (const c of list) {
     failed++;
   }
 }
+// An outage must not replace the last good table with an empty one that
+// carries a fresh date. Nothing is written unless nearly every collection
+// was read; a partial table would drop keys that are still real.
+const total = list.length;
+if (read === 0) throw new Error(`issuers.json NOT written: none of the ${total} collections could be read (${failed} failed); the last good table stays in place`);
+if (read < Math.ceil(total * 0.9)) throw new Error(`issuers.json NOT written: only ${read} of ${total} collections were read; retry when the endpoint is healthy, the last good table stays in place`);
 const issuers = [...byAuthority.values()]
   .sort((a, b) => b.collections - a.collections)
   .map((e) => ({

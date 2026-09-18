@@ -127,7 +127,10 @@ OpenSea stays off and every answer names it as the missing half.
   `OPENSEA_API_KEY` yourself.
 
 `SOLANA_RPC_URL` and `DAS_RPC_URL` swap in a private endpoint if one is available, and neither
-is required.
+is required. A key in that URL is registered and redacted from every answer: the userinfo, any
+query field named like a credential, and any path segment of eight or more characters that is
+not a route word. A path key shorter than eight characters is the one shape not covered; put it
+in a query field or the userinfo instead.
 
 ## Ask it anything
 

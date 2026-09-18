@@ -325,8 +325,19 @@ const NOT_ADVICE = "Figures, sources and gaps; not financial advice.";
  * follows reads differently once that is known.
  */
 function walletRole(wallet: string): { walletRole?: string; walletRoleNote?: string } {
-  const r = roleOf(wallet, null);
-  return r.role === "wallet" ? {} : { walletRole: r.role, walletRoleNote: r.note ?? undefined };
+  // An identity for the address, not a role on any one collection: the
+  // collection-scoped role lives in get_collection_holders, which reads the
+  // authority live. The table's name is a dated hint.
+  const venue = sol.knownVenueAccount(wallet);
+  if (venue) return { walletRole: "venue-escrow", walletRoleNote: venue };
+  const k = knownIssuer(wallet);
+  if (k) {
+    return {
+      walletRole: "issuer-key",
+      walletRoleNote: `${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry as of ${k.derivedAt.slice(0, 10)}. An identity from a dated table, not a claim about how anything here was acquired; get_collection_holders reads each collection's authority live`,
+    };
+  }
+  return {};
 }
 
 const symbolSchema = z
@@ -1447,8 +1458,9 @@ registerTool(
       "are still with the issuer', 'which wallets hold this set'. Filter to part of a collection with " +
       "`trait`/`value` (e.g. Item Type = Pack) or `namePrefix` (e.g. 'Gold Series - Aces'). Returns the " +
       "rows plus a holder count per address, largest first. " +
-      "Every holder row carries a ROLE: issuer (the collection's update authority, read from the chain; " +
-      "not a collector, items there are unsold, held back or returned after opening), venue-escrow (listed), or wallet. " +
+      "Every holder row carries a ROLE: issuer (the collection's update authority, read from the chain: the issuer's " +
+      "key, which says nothing about how an item got there), venue-escrow (listed), wallet, or unknown (the collection " +
+      "account could not be read, so nobody could be checked against the issuer's key). " +
       "An item currently listed for sale shows the MARKETPLACE'S ESCROW as its owner, not the seller: " +
       "call get_asset_provenance on that mint to see who handed it over.",
     annotations: READ_ONLY,
@@ -1478,8 +1490,16 @@ registerTool(
     // The collection account names its update authority: the issuer's own
     // key. Without it the issuer's wallet led the holder list with no role,
     // and a reader called it a whale that had bought eleven packs.
-    const collectionAccount = await sol.getCoreAccount(collection).catch(() => null);
-    const updateAuthority = collectionAccount?.kind === "collection" ? collectionAccount.updateAuthority : null;
+    // The read is kept WITH its outcome and its age. Swallowing the failure
+    // turned an unreadable collection into "one collector", and a cached
+    // authority was presented as live (2026-09-18).
+    const authorityRead = await sol.getCoreAccountWithMeta(collection).then(
+      (r) => ({ status: "ok" as const, account: r.account, cachedAt: r.cachedAt, stale: r.stale, contextSlot: r.contextSlot, reason: null }),
+      (e: unknown) => ({ status: "unavailable" as const, account: null, cachedAt: null, stale: null, contextSlot: null, reason: (e instanceof Error ? e.message : String(e)).slice(0, 160) }),
+    );
+    const updateAuthority = authorityRead.account?.kind === "collection" ? authorityRead.account.updateAuthority : null;
+    const issuerReadStatus: "ok" | "unavailable" | "not-applicable" =
+      authorityRead.status === "unavailable" ? "unavailable" : updateAuthority ? "ok" : "not-applicable";
     const issuerName = updateAuthority ? knownIssuer(updateAuthority)?.issuer ?? null : null;
 
     // A row either MATCHES the filter, or does not, or cannot be decided:
@@ -1521,7 +1541,7 @@ registerTool(
     const holders = [...byOwner.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([owner, count]) => {
-        const r = roleOf(owner, updateAuthority);
+        const r = roleOf(owner, updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
         return {
           owner,
           held: count,
@@ -1534,6 +1554,10 @@ registerTool(
       });
     const issuerHeld = holders.filter((h) => h.role === "issuer").reduce((s, h) => s + h.held, 0);
     const escrowHeld = holders.filter((h) => h.role === "venue-escrow").reduce((s, h) => s + h.held, 0);
+    const unknownRoleHeld = holders.filter((h) => h.role === "unknown").reduce((s, h) => s + h.held, 0);
+    // Over the rows whose OWNER IS KNOWN, never over every non-burned row: a
+    // row with no owner reported was being counted as a collector's.
+    const otherOwnersHeld = ownerKnown - issuerHeld - escrowHeld - unknownRoleHeld;
 
     // The COUNTS above cover every row read. The two lists are bounded
     // separately so the whole answer stays inside what a client carries:
@@ -1562,7 +1586,12 @@ registerTool(
     ];
     if (issuerHeld > 0) {
       readThis.unshift(
-        `${issuerHeld} of the ${held.length} matched item(s) sit in the ISSUER's own wallet (${updateAuthority}, the collection's update authority${issuerName ? `, ${issuerName}` : ""}). That wallet is not a collector and did not buy them: an item there is unsold, held back, or RETURNED after a collector opened or redeemed it (Candy gold packs go back to this wallet on open; base packs burn). get_asset_provenance on one of them shows which: a trail that reads mint > collector > issuer is an opened pack. ${escrowHeld > 0 ? `Another ${escrowHeld} sit in a marketplace escrow, listed for sale. ` : ""}Collectors hold ${held.length - issuerHeld - escrowHeld} outright.`,
+        `${issuerHeld} of the ${held.length} matched item(s) sit in the collection's update authority (${updateAuthority}${issuerName ? `, ${issuerName}'s key` : ""}), read from the collection account. That is the issuer's key, and the address alone does not say how an item got there: unsold, held back, or returned after a collector opened or redeemed it (Candy gold packs return to the issuer on open; base packs burn). get_asset_provenance on one of them shows which. ${escrowHeld > 0 ? `Another ${escrowHeld} sit in a marketplace escrow, listed for sale. ` : ""}${otherOwnersHeld} sit with other known owners.`,
+      );
+    }
+    if (issuerReadStatus === "unavailable") {
+      readThis.unshift(
+        `The collection account could not be read (${authorityRead.reason}), so no holder could be checked against the issuer's key: every ordinary holder's role is "unknown", heldByCollectors counts nobody, and rolesIncomplete is true. The asset rows and the holder counts are still good. Retry for the roles.`,
       );
     }
     const coverage: string[] = [];
@@ -1598,11 +1627,27 @@ registerTool(
         incomplete: undecided > 0,
       },
       issuer: updateAuthority
-        ? { updateAuthority, name: issuerName, readFrom: "the collection account on chain (Metaplex Core CollectionV1, decoded locally)" }
+        ? {
+            updateAuthority,
+            name: issuerName,
+            readFrom: "the collection account on chain (Metaplex Core CollectionV1, decoded locally)",
+            /** When that account was read; a cached value carries the time of the read it came from. */
+            cachedAt: authorityRead.cachedAt,
+            /** True when the value is a cached copy kept alive by a failed refresh. */
+            stale: authorityRead.stale,
+            contextSlot: authorityRead.contextSlot,
+          }
         : null,
+      /** Whether the collection account was read: ok, unavailable (with the reason), or not-applicable (not a Core collection). */
+      issuerRead: { status: issuerReadStatus, ...(authorityRead.reason ? { reason: authorityRead.reason } : {}) },
+      /** True when the authority could not be read, so no role below could be settled. */
+      rolesIncomplete: issuerReadStatus === "unavailable",
       heldByIssuer: issuerHeld,
       heldInVenueEscrow: escrowHeld,
-      heldByCollectors: held.length - issuerHeld - escrowHeld,
+      /** Known-owner rows that are neither the update authority nor a known escrow. "Collector" is the ordinary reading, not a proven identity. Rows with no owner reported are NOT in this number; see assetsWithNoOwnerReported. */
+      heldByCollectors: otherOwnersHeld,
+      /** Known-owner rows whose role could not be settled because the collection account was unreadable. */
+      heldByUnknownRole: unknownRoleHeld,
       assetsInCollection: page.items.length,
       matched: rows.length,
       /** Matched rows that are not burned. Not "held by a person": an escrow or a custodian counts, and a row with no owner reported is in this number too. */

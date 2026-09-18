@@ -658,7 +658,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   } else if (looksLikeAddress(q) && knownIssuer(q)) {
     const k = knownIssuer(q)!;
     kind = "issuer-key";
-    summary = `${shown} is ${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry (derived from the chain on ${k.derivedAt.slice(0, 10)}), which signs their metadata and their mints. Items held here were kept back or not yet distributed, not bought: it is the issuer, not a collector. get_collection_holders on any of its collections shows what it still holds.`;
+    summary = `${shown} is ${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry (derived from the chain on ${k.derivedAt.slice(0, 10)}), which signs their metadata and their mints. That is the issuer's key, an identity from a dated table: what it holds, and how each item got there, is a per-collection question, so use get_collection_holders on any of its collections (it reads the authority live) and get_asset_provenance on an item.`;
     confidence = "high";
     next.push("get_collection_holders", "get_wallet_holdings");
   } else if (looksLikeAddress(q) && sol.knownVenueAccount(q)) {

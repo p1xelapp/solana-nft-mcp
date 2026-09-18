@@ -1110,6 +1110,59 @@ by its old name.
   view. An outgoing transfer beside an itemless sale is uncertain, as the
   incoming one already was. A self-fill is no longer the first purchase.
 
+## 1.15.3 - 2026-09-18
+
+Round seven of outside review: 14 findings, one of them a blocker, all fixed
+and pinned by `test/roles-and-holes.mjs`. The theme was interpretation: a fact read
+from the chain was being turned into a story the chain does not tell.
+
+- Credentials: a key in the PATH of a configured RPC URL is registered
+  whatever it looks like. The old rule kept only a twelve-character mix of
+  letters and digits, so a letters-only, digits-only or eight-character key
+  was echoed by an upstream error into a successful answer. Route words and
+  version tags are still left alone; a path key under eight characters is
+  documented as the one uncovered shape.
+- The issuer role is the observed relationship and nothing more. Matching
+  the collection's update authority no longer claims the key holds a
+  permanent delegate, that nothing there was bought, or that a person or a
+  company is behind it (a program-derived address can hold it). A transfer
+  to that key is labelled as what it is, a transfer to the current
+  authority, with no story about opening, returns or sales.
+- The dated issuer table is a hint, never a role: a key known from other
+  collections is an ordinary holder of a collection whose live authority
+  is a different address.
+- A collection-account read that fails is reported, not swallowed:
+  `issuerRead` on holders and provenance says ok, unavailable (with the
+  reason) or not applicable; holders then carry role `unknown`,
+  `rolesIncomplete` is true, and the `issuer` block carries `cachedAt`,
+  `stale` and `contextSlot`. The provenance walk reads the authority under
+  its own fresh and pinned options, so a rotation shows in the receipt.
+- `heldByCollectors` counts known-owner rows only; a row with no owner
+  reported is never a collector's, and the word "outright" is gone.
+- Provenance holes: a log-inferred transfer keeps a gap row in its place;
+  "final custody" is never claimed across a hole or an unestablished order;
+  an orphan inner group with no outer list is not complete; and a Core
+  instruction above the program's last discriminator (41) is a named hole,
+  so `never-traded` cannot be confirmed across it.
+- Census duplicates: a copy turned away for naming another collection now
+  contradicts a later copy that claims this one, in either order; the item
+  name is part of the comparison; a clipped trait value carries a digest of
+  the full value, so two values that print the same are still two.
+- Plugins: a plugin type newer than this reader is listed as unsupported
+  and keeps the custody picture incomplete. A frozen asset that also has a
+  permanent transfer delegate names the exception: that delegate's transfer
+  is force-approved even while frozen.
+- `scripts/issuers.mjs` refuses to write when fewer than 90% of the
+  collections could be read, so an outage cannot replace the table with an
+  empty one carrying a fresh date.
+- `searchRegistry("SMB Gen 2")` ranks Gen2 first: the one-character
+  generation token is kept and "Gen 2" equals "Gen2".
+
+Not changed, on purpose: `firstOwner` stays absent when the Create
+instruction omitted the owner account. Filling it from the processor's
+default is an enrichment, not a correction, and needs the fixture pinned to
+a reviewed program version first.
+
 ## 1.15.2 - 2026-09-18
 
 The issuer is a role, read from the chain.

@@ -111,21 +111,41 @@ export function registerUrlCredentials(url: string | null | undefined): number {
     const value = eq < 0 ? "" : pair.slice(eq + 1);
     if (value && CREDENTIAL_FIELD.test(decodeURIComponent(key.replace(/\+/g, " ")))) reg(value);
   }
-  // Path segments: a token, not a route word. A token mixes letters and
-  // digits (or is hex) and is at least twelve characters; `solana-mainnet-beta`
-  // has no digit and `v2` is short, so neither is registered.
-  for (const seg of u.pathname.split("/")) if (looksLikeToken(seg)) reg(seg);
+  // Path segments: on a configured endpoint, every segment that is not a
+  // route word is a credential. The earlier rule kept only a segment that
+  // LOOKED like a token (twelve or more characters mixing letters and
+  // digits), and a provider key made of letters only, of digits only, or of
+  // eight characters was never registered: an upstream error that echoed the
+  // URL then put it in a successful result (2026-09-18).
+  // A route word is a known path component or a version tag; the rest is
+  // registered in its raw and decoded spellings.
+  for (const seg of u.pathname.split("/")) if (isPathCredential(seg)) reg(seg);
   return n;
 }
 
 /** Query field names that carry a credential, across the RPC providers seen. */
 const CREDENTIAL_FIELD = /key|token|secret|auth|pass|access|credential|sig/i;
 
-/** A path segment that is a token rather than a route word: twelve or more characters mixing letters and digits, or hex. */
-function looksLikeToken(seg: string): boolean {
-  const s = seg.replace(/[-_.~%]/g, "");
-  if (s.length < 12) return false;
-  return /^[0-9a-f]+$/i.test(s) ? /[0-9]/.test(s) && /[a-f]/i.test(s) : /[0-9]/.test(s) && /[a-z]/i.test(s);
+/** Path components RPC providers use as routes, never as credentials. Compared lower-case. */
+const ROUTE_WORDS = new Set([
+  "rpc", "api", "solana", "mainnet", "mainnet-beta", "solana-mainnet", "solana-mainnet-beta", "devnet", "testnet", "beta",
+  "json", "jsonrpc", "json-rpc", "http", "https", "ws", "wss", "das", "node", "nodes", "public", "private", "endpoint",
+  "endpoints", "sol", "health", "proxy", "rpc-proxy", "main", "net", "chain", "blockchain", "index", "query",
+]);
+
+/**
+ * A path segment that carries a credential: anything on a configured
+ * endpoint that is not a route word or a version tag and is at least eight
+ * characters once separators are dropped. The length floor is what keeps a
+ * short route word such as `main` from being redacted out of `mainnet` in
+ * every answer; a shorter key on a path is the one shape still not covered,
+ * and the README says so.
+ */
+function isPathCredential(seg: string): boolean {
+  if (!seg) return false;
+  const lower = seg.toLowerCase();
+  if (ROUTE_WORDS.has(lower) || /^v\d{1,3}$/.test(lower)) return false;
+  return seg.replace(/[-_.~%]/g, "").length >= 8;
 }
 
 /** Replace every registered credential, in any of its spellings, with a marker. Cheap when nothing is registered. */

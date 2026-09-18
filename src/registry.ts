@@ -347,9 +347,13 @@ REGISTRY.push(...loadCandyCollections());
 
 /** Simple scored search over names/keywords/ids. */
 export function searchRegistry(query: string): RegistryEntry[] {
-  const q = query.toLowerCase().trim();
+  // "Gen 2" and "Gen2" are one token, and a one-character token that is a
+  // number is kept: dropping it ranked SMB Gen3 first for "SMB Gen 2"
+  // (2026-09-18).
+  const norm = (s: string) => s.toLowerCase().replace(/\bgen\s+(\d+)\b/g, "gen$1");
+  const q = norm(query).trim();
   if (!q) return REGISTRY;
-  const terms = q.split(/\s+/).filter((t) => t.length > 1);
+  const terms = q.split(/\s+/).filter((t) => t.length > 1 || /\d/.test(t));
   if (terms.length === 0) return [];
   // Matching ANY one term was too generous once the registry held 400 Candy
   // collections: "zzzz brand new collection name" matched 27 of them on the
@@ -359,7 +363,7 @@ export function searchRegistry(query: string): RegistryEntry[] {
   // says it found nothing.
   const needed = Math.max(1, Math.ceil(terms.length / 2));
   const scored = REGISTRY.map((e) => {
-    const hay = [e.id, e.name.toLowerCase(), ...e.keywords, ...(e.aliases ?? []).map((a) => a.toLowerCase())].join(" ");
+    const hay = norm([e.id, e.name, ...e.keywords, ...(e.aliases ?? [])].join(" "));
     const matched = terms.filter((t) => hay.includes(t)).length;
     // An exact name or alias beats a name that merely contains the query:
     // "Solana Monkey Business" is SMB Gen2's alias and a substring of Gen3's,

@@ -2,11 +2,17 @@
  * Who issued a collection, read from the chain rather than remembered.
  *
  * A Metaplex Core collection's update authority is the key that signs its
- * metadata and, in practice, pays for and signs its mints. A wallet holding
- * that key is the issuer: items sitting in it were never sold, they were
- * kept back or not yet distributed. Asked who held the 36 packs of a drop,
+ * metadata and, on the collections read for the table, its mints. A wallet
+ * holding that key is the issuer's. Asked who held the 36 packs of a drop,
  * the server listed the issuer's own wallet as the top holder with no role
  * on it, and a reader called it a whale that had bought eleven packs.
+ *
+ * The role is a RELATIONSHIP read from the chain, and only that. Matching
+ * the authority does not say the key holds a permanent delegate (that is a
+ * separate plugin), does not say how an item came to sit there (unsold,
+ * returned, bought back and refunded all look the same), and does not say
+ * the key is a person or a company (a program-derived address can hold it).
+ * The first version said all three from the match alone (2026-09-18); each is now left to the evidence that can carry it.
  *
  * Two readers, in this order:
  *  1. The collection in front of the tool: its update authority is decoded
@@ -42,29 +48,40 @@ export function knownIssuer(address: string): (IssuerRow & { derivedAt: string }
   return row ? { ...row, derivedAt: table.derivedAt } : null;
 }
 
-export type HolderRole = "issuer" | "venue-escrow" | "wallet";
+export type HolderRole = "issuer" | "venue-escrow" | "wallet" | "unknown";
 
 /**
- * What an address IS in the context of one collection. `updateAuthority` is
- * that collection's, decoded live; the table is the fallback for a key seen
- * on other collections of the same issuer.
+ * What an address IS in the context of one collection.
+ *
+ * `updateAuthority` is that collection's, decoded live. `authorityRead` says
+ * whether that read happened: when the collection account could not be read,
+ * nobody can be cleared of the issuer role, so an ordinary address is
+ * `unknown`, not `wallet`. The dated table never decides a role: a key that
+ * is the authority of other collections is an ordinary holder of THIS one,
+ * and the table's name for it travels as a hint in the note.
  */
-export function roleOf(address: string, updateAuthority: string | null): { role: HolderRole; note: string | null } {
-  if (updateAuthority && address === updateAuthority) {
-    const known = knownIssuer(address);
-    return {
-      role: "issuer",
-      note: `the collection's update authority (the key that signs its metadata and mints)${known ? `, known as ${known.issuer}` : ""}: not a collector. An item here is unsold, held back, or RETURNED after a collector opened or redeemed it (this key holds the permanent transfer delegate); get_asset_provenance on the item shows which, and "bought by" is never the right reading`,
-    };
-  }
+export function roleOf(
+  address: string,
+  updateAuthority: string | null,
+  authorityRead: "ok" | "unavailable" = updateAuthority ? "ok" : "unavailable",
+): { role: HolderRole; note: string | null } {
   const known = knownIssuer(address);
-  if (known) {
+  if (updateAuthority && address === updateAuthority) {
     return {
       role: "issuer",
-      note: `${known.issuer}'s key: the update authority of ${known.collections} collection(s) in the bundled registry as of ${known.derivedAt.slice(0, 10)}, and the permanent transfer, burn and freeze delegate on them. Not a collector: an item here is unsold, held back, or returned after being opened or redeemed; get_asset_provenance shows which`,
+      note: `the collection's update authority, read from the collection account (the key that signs its metadata)${known ? `, known as ${known.issuer}'s key` : ""}. A relationship, not a purchase history: how each item came to sit here (unsold, held back, returned) is shown by get_asset_provenance on the item`,
     };
   }
   const venue = knownVenueAccount(address);
   if (venue) return { role: "venue-escrow", note: venue };
-  return { role: "wallet", note: null };
+  const hint = known
+    ? `known as ${known.issuer}'s key (the update authority of ${known.collections} collection(s) in the bundled registry as of ${known.derivedAt.slice(0, 10)})`
+    : null;
+  if (authorityRead === "unavailable") {
+    return {
+      role: "unknown",
+      note: `this collection's update authority could not be read, so whether this address is its issuer is unresolved${hint ? `; ${hint}` : ""}`,
+    };
+  }
+  return { role: "wallet", note: hint ? `${hint}, but not this collection's update authority: an ordinary holder here` : null };
 }

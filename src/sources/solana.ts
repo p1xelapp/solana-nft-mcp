@@ -688,8 +688,18 @@ export interface ProvenanceEvent {
   mintedBy?: string;
   /** On a `minted` row: the owner the asset was created for (Create accounts, slot 4). */
   firstOwner?: string;
-  /** On a `transferred` row whose recipient is the collection's update authority: the issuer took it back or never let it go. */
+  /** On a `transferred` row whose recipient is the collection's update authority AT THE TIME OF THIS READ. The address says who received it, not why. */
   toIssuer?: true;
+}
+
+/** Outcome of the collection-authority read a provenance walk makes for its `toIssuer` labels. */
+export interface IssuerRead {
+  status: "ok" | "unavailable" | "not-applicable";
+  updateAuthority?: string;
+  cachedAt?: string;
+  stale?: boolean;
+  contextSlot?: number | null;
+  reason?: string;
 }
 
 interface ParsedInstruction {
@@ -709,6 +719,17 @@ const IX_CREATE_V1 = 0;
 const IX_CREATE_V2 = 20;
 const IX_BURN_V1 = 12;
 const TRANSFER_NEW_OWNER_INDEX = 4;
+/**
+ * The highest instruction the program defines (UpdateGroupV1), from the
+ * MplAssetInstruction enum in programs/mpl-core/src/instruction.rs on main,
+ * read 2026-09-18. Every value up to it that is not a create, transfer or
+ * burn is a plugin, update, compress, execute or group instruction, none of
+ * which changes the owner. A value ABOVE it is an instruction this version
+ * does not know, and what it did to custody is unknown: it was being
+ * dropped on the floor, and a never-traded claim confirmed across it
+ * (2026-09-18).
+ */
+const IX_KNOWN_MAX = 41;
 
 /** First byte of a base58 instruction payload, or null when it is not decodable. */
 function discriminator(data: string | undefined): number | null {
@@ -922,8 +943,11 @@ export async function getProvenance(
       // transaction into "nothing happened". They go last, and because their
       // place is NOT known, the transaction's order is marked unreadable: a
       // row appended here must not be called the final custody.
+      // An orphan group with NO outer instructions at all is malformed
+      // evidence too, not a complete transaction: the outer.length guard
+      // that exempted it let such a response read as complete.
       const orphaned = [...inner.keys()].sort((a, b) => a - b);
-      const orderUnknown = orphaned.length > 0 && outer.length > 0;
+      const orderUnknown = orphaned.length > 0;
       for (const idx of orphaned) for (const child of inner.get(idx) ?? []) all.push(child);
       const usable = all.filter((i): i is ParsedInstruction => Boolean(i) && typeof i.programId === "string");
 
@@ -1019,11 +1043,21 @@ export async function getProvenance(
         if (disc === null) {
           if (undecodableTransfer && !inferredUsed) {
             inferredUsed = true;
-            // Recorded as a transfer below, with the owner inferred.
+            // Recorded as a transfer, with the owner inferred from the
+            // account list, AND as a hole in its place: the log line adds
+            // the transfer, it does not make the instruction readable, and
+            // the row alone was hiding that.
             rows.push(inferredTransfer(ix));
+            rows.push(hole(sig.signature, time, "unreadable", 1, "the transfer above was inferred from a log line over an instruction that could not be decoded; what else that instruction did, and the custody after it, is unknown"));
             continue;
           }
           rows.push(hole(sig.signature, time, "unreadable", 1, "a Core instruction on this asset in this transaction could not be decoded; what it did, and the custody after it, is unknown"));
+          continue;
+        }
+        if (disc > IX_KNOWN_MAX) {
+          // Parsing the first byte is not understanding the instruction.
+          unreadable++;
+          rows.push(hole(sig.signature, time, "unreadable", 1, `a Core instruction on this asset carries discriminator ${disc}, which this version does not know (the program defines 0 to ${IX_KNOWN_MAX}); what it did to custody is unknown`));
           continue;
         }
         if (disc === IX_TRANSFER_V1) rows.push(decodedTransfer(ix));
@@ -1052,7 +1086,10 @@ export async function getProvenance(
         );
       }
       const transfersHere = rows.filter((r) => r.event === "transferred");
-      if (transfersHere.length > 1) {
+      // "Final custody" is a claim about everything AFTER the row, so a hole
+      // anywhere in this transaction, or an order the endpoint could not
+      // establish, withdraws it.
+      if (transfersHere.length > 1 && !orderUnknown && !rows.some((r) => r.event === "unread_gap")) {
         const last = transfersHere[transfersHere.length - 1]!;
         last.note = `${last.note ? last.note + "; " : ""}this transaction moved the asset ${transfersHere.length} times; the rows are in execution order and this one is the final custody`;
       }
@@ -1172,16 +1209,29 @@ export async function getProvenance(
     // The collection's update authority is the issuer's key. A transfer to
     // it is the issuer keeping or taking an item back, and a reader who sees
     // that wallet at the top of a holder list needs the role, not a guess.
-    const issuerKey = account.collection
-      ? await getCoreAccount(account.collection)
-          .then((c) => (c && c.kind === "collection" ? c.updateAuthority : null))
-          .catch(() => null)
-      : null;
+    // Read under the walk's own options, so a fresh walk does not classify
+    // a recipient against a cached authority, and a rotation shows in the
+    // receipt. The outcome travels with the result: a failed read used to
+    // vanish into "no issuer" (2026-09-18).
+    let issuerKey: string | null = null;
+    let issuerRead: IssuerRead;
+    if (!account.collection) issuerRead = { status: "not-applicable", reason: "the asset is not in a collection" };
+    else {
+      try {
+        const c = await getCoreAccountWithMeta(account.collection, { fresh: opts.fresh, trace, pin });
+        if (c.account?.kind === "collection") {
+          issuerKey = c.account.updateAuthority;
+          issuerRead = { status: "ok", updateAuthority: issuerKey, cachedAt: c.cachedAt, stale: c.stale, contextSlot: c.contextSlot };
+        } else issuerRead = { status: "not-applicable", reason: "the collection address does not decode as a Core collection" };
+      } catch (e) {
+        issuerRead = { status: "unavailable", reason: (e instanceof Error ? e.message : String(e)).slice(0, 160) };
+      }
+    }
     let custody: "wallet" | "escrow" | "unknown" = "wallet";
     for (const e of events) {
       if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {
         e.toIssuer = true;
-        e.label = "transfer to the collection's update authority, the issuer's own key (chain read): the issuer took it back, which on a Candy pack is the pack being opened. Not a sale to a collector";
+        e.label = "transfer to the address that is the collection's update authority at the time of this read (chain read). The address says who received it, not why: a return, a buyback, a refund and a pack opening all look the same here, and whether anything was paid is not in this row";
       }
       if (e.event === "unread_gap") { custody = "unknown"; continue; }
       if (e.event === "minted") { custody = "wallet"; continue; }
@@ -1212,7 +1262,7 @@ export async function getProvenance(
         e.label = "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
       }
     }
-    return { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
+    return { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -1233,7 +1283,7 @@ export async function getProvenance(
     const retry = await walkOnce().catch(() => null);
     if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
   }
-  const { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote } = value;
+  const { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead } = value;
 
   return {
     mint,
@@ -1259,6 +1309,8 @@ export async function getProvenance(
     rpcEndpointsUsed: trace.endpoints ?? [],
     /** For a verification walk, the ONE endpoint every read in it was pinned to. */
     endpointPinned,
+    /** The collection-authority read behind every `toIssuer` label: ok with its age, unavailable with the reason, or not applicable. */
+    issuerRead,
     /** The slot the account read described; every later read in this walk asked for a state at least this recent. */
     contextSlot: anchorSlot,
     /** True when the endpoint accepted that floor. False means the pin alone carried the consistency guarantee. */

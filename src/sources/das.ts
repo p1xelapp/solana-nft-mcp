@@ -382,6 +382,12 @@ export interface DasTrait {
    * are different values that print the same.
    */
   clipped?: true;
+  /**
+   * Present with `clipped`: a short digest of the FULL value, so two values
+   * that print the same after the cut can still be told apart when two
+   * copies of an asset are compared.
+   */
+  rawDigest?: string;
 }
 
 /** Display bound on a trait name or value. */
@@ -407,7 +413,11 @@ export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: numb
       const trait = traitText(t?.trait_type);
       const value = traitText(t?.value);
       return trait.text.length > 0 && value.text.length > 0
-        ? ({ trait: trait.text, value: value.text, ...(value.clipped || trait.clipped ? { clipped: true as const } : {}) } satisfies DasTrait)
+        ? ({
+            trait: trait.text,
+            value: value.text,
+            ...(value.clipped || trait.clipped ? { clipped: true as const, rawDigest: (trait.digest ?? "") + (value.digest ?? "") } : {}),
+          } satisfies DasTrait)
         : null;
     })
     .filter((t): t is DasTrait => t !== null);
@@ -421,10 +431,11 @@ export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: numb
  * an array becomes the empty string so the caller drops the row, because the
  * alternative is presenting "[object Object]" as somebody's trait.
  */
-function traitText(v: unknown): { text: string; clipped: boolean } {
+function traitText(v: unknown): { text: string; clipped: boolean; digest?: string } {
   if (typeof v === "string") {
     const c = clean(v);
-    return { text: c.slice(0, TRAIT_TEXT_MAX), clipped: c.length > TRAIT_TEXT_MAX };
+    const clipped = c.length > TRAIT_TEXT_MAX;
+    return { text: c.slice(0, TRAIT_TEXT_MAX), clipped, ...(clipped ? { digest: createHash("sha256").update(c).digest("hex").slice(0, 16) } : {}) };
   }
   if (typeof v === "number" && Number.isFinite(v)) return { text: String(v), clipped: false };
   if (typeof v === "boolean") return { text: String(v), clipped: false };
@@ -664,7 +675,8 @@ export interface DasGroupPage {
  * and capability() turns that into a refusal by name rather than an empty list.
  */
 /** The traits of a row as one comparable string, for the duplicate check. */
-const traitKey = (a: DasAsset): string => JSON.stringify(a.attributes.map((t) => [t.trait, t.value]));
+const traitKey = (a: DasAsset): string =>
+  JSON.stringify([a.attributesOmitted, a.attributes.map((t) => [t.trait, t.value, t.clipped ? t.rawDigest ?? "clipped" : ""])]);
 
 export async function getAssetsByGroup(
   collection: string,
@@ -679,6 +691,8 @@ export async function getAssetsByGroup(
   /** Position in `items` by id, for the duplicate check. */
   const seen = new Map<string, number>();
   const dropped = new Set<string>();
+  /** Mints a copy was REJECTED for (foreign group, unverified): a later positive copy contradicts it. */
+  const rejected = new Map<string, "foreign" | "unverified">();
   let page = 1;
   let truncated = false;
   let indexExhausted = false;
@@ -735,6 +749,17 @@ export async function getAssetsByGroup(
       const foreign = a.collection !== null && a.collection !== collection;
       const unverified = a.collectionVerified === false;
       if (dropped.has(a.id)) continue;
+      // A copy already turned away for naming another collection, followed
+      // by a copy that claims this one, is the same contradiction as the
+      // reverse order, which was already caught. The first version forgot
+      // the rejected copy and let the second one count (2026-09-18).
+      if (rejected.has(a.id)) {
+        duplicateRows++;
+        conflictingRows++;
+        rejected.delete(a.id);
+        dropped.add(a.id);
+        continue;
+      }
       const at = seen.get(a.id);
       if (at !== undefined) {
         duplicateRows++;
@@ -742,7 +767,9 @@ export async function getAssetsByGroup(
         // A second copy that names another collection, or is unverified, or
         // carries different traits, contradicts the first: it used to be
         // dropped BEFORE this comparison, and the first copy won in silence.
-        if (foreign || unverified || prev.owner !== a.owner || prev.burnt !== a.burnt || traitKey(prev) !== traitKey(a)) {
+        // The NAME is part of the comparison: a filter runs on it, and two
+        // copies named "Old ..." and "Migrated ..." were a confident no-match.
+        if (foreign || unverified || prev.owner !== a.owner || prev.burnt !== a.burnt || prev.name !== a.name || traitKey(prev) !== traitKey(a)) {
           // Two copies that disagree: neither is the truth. Out, and counted.
           conflictingRows++;
           items.splice(at, 1);
@@ -752,8 +779,8 @@ export async function getAssetsByGroup(
         }
         continue;
       }
-      if (foreign) { foreignGroupRows++; continue; }
-      if (unverified) { unverifiedRows++; continue; }
+      if (foreign) { foreignGroupRows++; rejected.set(a.id, "foreign"); continue; }
+      if (unverified) { unverifiedRows++; rejected.set(a.id, "unverified"); continue; }
       seen.set(a.id, items.length);
       items.push(a);
     }

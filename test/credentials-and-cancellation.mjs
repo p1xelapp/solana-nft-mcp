@@ -707,7 +707,10 @@ const serverEnvBase = () => {
   // F02, three more routes to a false "confirmed", each its own regression.
   // Data "M" is byte 20: CreateV2.
   const other = address("some-other-asset");
-  const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [] } } });
+  // The inner group hangs off a real outer instruction: an inner group with
+  // no parent in the outer list is malformed evidence and a hole of its own
+  // (round seven, 2026-09-18), which is not what these cases test.
+  const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [{ programId: "11111111111111111111111111111111", accounts: [] }] } } });
   // (a) A decoded CreateV2 for this asset beside an undecodable Core
   // instruction on it. The undecodable one could be the transfer.
   globalThis.fetch = rpcFor([{ signature: signature("mixed"), tx: txMulti([{ programId: CORE, accounts, data: "M" }, { programId: CORE, accounts }], []) }]);

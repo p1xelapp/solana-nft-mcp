@@ -1,6 +1,6 @@
 {
   "name": "collector-mcp",
-  "version": "1.15.2",
+  "version": "1.15.3",
   "description": "Zero-key MCP server for Solana collectibles: wallet profiles and behaviour, Metaplex Core ownership history most NFT APIs return empty, who can freeze or burn an asset, cross-venue floors that refuse bad comparisons. Read-only, runs on your machine.",
   "homepage": "https://p1xel.app/collector-mcp/",
   "bugs": {
@@ -30,7 +30,7 @@
     "pack-check": "node scripts/pack-check.mjs",
     "prepublishOnly": "node scripts/pack-check.mjs",
     "start": "node dist/index.js",
-    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
+    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/roles-and-holes.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
     "test:smoke": "npm run build && node test/smoke.mjs",
     "test:live": "npm run build && node test/live.mjs",
     "docs:sources": "npm run build && node scripts/sources-md.mjs",
