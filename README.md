@@ -25,7 +25,7 @@ item count and call the result a portfolio value.
 
 collector-mcp hands the same assistant live, labelled data instead: the chain for supply,
 ownership, provenance and custody rules, Magic Eden without a key, and OpenSea
-through a free key the server issues itself. Each number comes back with its venue, its currency, its read time, and what the
+through a free key the server issues itself. Each number comes back with its marketplace, its currency, its read time, and what the
 source could not see.
 
 ## How it fits together
@@ -89,7 +89,7 @@ and the app must be fully quit and reopened, tray icon included.
 ### Optional: OpenSea
 
 Solana collections have traded on OpenSea since 31 Aug 2026, with Candy Digital among the
-launch partners. OpenSea adds second-venue floors, sales, supply and royalty per collection,
+launch partners. OpenSea adds second-marketplace floors, sales, supply and royalty per collection,
 plain transfers per wallet (how airdrops and gifts become visible), and a searchable index of
 every Solana collection OpenSea lists.
 
@@ -97,7 +97,7 @@ You do not have to know a collection's OpenSea slug. It is found from the collec
 on-chain address against OpenSea's own Solana index, and failing that by trying the name and
 accepting it only when OpenSea's record for that slug carries the same chain address. Pass
 `openseaSlug` yourself to override. When neither path finds one, the answer says the second
-venue was not read and why, which is a gap in what was searched rather than evidence the
+marketplace was not read and why, which is a gap in what was searched rather than evidence the
 collection is absent from OpenSea.
 
 There is nothing to sign up for. The first time a question needs OpenSea, the server asks
@@ -150,10 +150,10 @@ background), against OpenSea's Solana index, and - when those do not produce a s
 confident match - by asking Magic Eden about the name directly.
 
 That last step matters more than it sounds. Magic Eden refuses to page past offset 30,000, so
-the directory snapshot is a prefix of the venue rather than the whole of it, and the
+the directory snapshot is a prefix of the marketplace rather than the whole of it, and the
 collections past that ceiling are not obscure ones. Asking it for "DeGods" used to return
-eight imitations and not DeGods. A name is now also tried as a symbol against the venue
-itself, which has no ceiling, and the answer is accepted only when the venue's own record
+eight imitations and not DeGods. A name is now also tried as a symbol against the marketplace
+itself, which has no ceiling, and the answer is accepted only when the marketplace's own record
 confirms it. A single fuzzy match whose name is not what you asked for is offered as a
 candidate with the mismatch stated, never presented as the answer.
 
@@ -169,7 +169,7 @@ it back.
 | Solana RPC (three public endpoints, rotated) | supply, current owner from decoded Core account bytes, transfer history, wallet age | none |
 | Asset index (DAS) on the public RPC | a second, independent opinion on ownership and wallet contents | none |
 | Magic Eden v2 | floors, listings, sales, activity, top traders, trending | none |
-| OpenSea v2 | second-venue floors, sales, supply, royalty, wallet transfers | self-issued |
+| OpenSea v2 | second-marketplace floors, sales, supply, royalty, wallet transfers | self-issued |
 
 No account, no sign-in, no telemetry, no analytics, no log of your questions. There is no signing
 code in the repository, so transacting was never written rather than merely disabled, and every
@@ -207,21 +207,21 @@ without raising an error.
 | `get_asset_trust` | Core plugins decoded from bytes: delegates, frozen state, enforced vs advisory royalties, mutable metadata, editions |
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
-| `get_collection_stats` | chain supply, floors per venue, and a reconciliation that refuses to rank SOL against USDC |
-| `get_collection_holders` | census of a Core collection from the chain's asset index: each asset and its last-indexed owner, listed or not, filterable by trait or name, holders ranked by count with a role on each (issuer, venue escrow, or wallet, the issuer read from the collection's update authority on chain), capped at 2,000 rows by default and saying so when the cap is hit |
-| `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-venue floors live in `get_collection_stats`) |
+| `get_collection_stats` | chain supply, floors per marketplace, and a reconciliation that refuses to rank SOL against USDC |
+| `get_collection_holders` | census of a Core collection from the chain's asset index: each asset and its last-indexed owner, listed or not, filterable by trait or name, holders ranked by count with a role on each (issuer, marketplace escrow as `venue-escrow`, or wallet, the issuer read from the collection's update authority on chain), capped at 2,000 rows by default and saying so when the cap is hit |
+| `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-marketplace floors live in `get_collection_stats`) |
 | `get_recent_sales` | latest completed fills with buyer, seller, price and signature |
-| `get_asset` | three readers for one item: the venue, a byte-level decode, and the chain's asset index, with owner agreement reported |
+| `get_asset` | three readers for one item: the marketplace, a byte-level decode, and the chain's asset index, with owner agreement reported |
 | `get_asset_provenance` | bounded ownership history of a Core asset, dated, marketplaces named, every unread hole marked in place - `historyComplete` says every transaction was read, `mintObserved` says the mint itself was decoded |
 | `get_wallet_holdings` | holdings from two independent readers, with the gap between them named |
 | `get_wallet_profile` | holdings by collection, share of wallet and of supply, listed and compressed counts, floor ceiling with assumptions, wallet age |
-| `get_wallet_activity` | buys and sells, net flow, venue split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
+| `get_wallet_activity` | buys and sells, net flow, marketplace split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
 | `get_collection_sales` | sales over a window: count, volume, top and bottom sale, median, buyers, sellers, per-day series, a per-name breakdown (which player or character sold most), a name filter, how far back the feed was read |
 | `find_in_group` | one edition number hunted across a whole family of collections, each match against that collection's own floor, with a cursor for the rest |
 | `find_listings` | cheapest-first listings, trait filters combined with AND, name filter, a lowest-serials mode for #1 and #100 hunters, each ask against its trait floor |
 | `get_top_traders` | the largest wallets in a collection by Magic Eden volume, all time |
-| `get_trending` | Magic Eden's trending list, with an explicit note when the venue publishes nothing |
-| `explain_mechanics` | escrow, freezing, delegates, royalties, wash trades and migrations, per standard and venue, each entry citing its source |
+| `get_trending` | Magic Eden's trending list, with an explicit note when the marketplace publishes nothing |
+| `explain_mechanics` | escrow, freezing, delegates, royalties, wash trades and migrations, per standard and marketplace, each entry citing its source |
 | `get_source_status` | every source pinged live: tier, fallback, what it cannot see, which need a key |
 
 ## Prompts
@@ -234,7 +234,7 @@ actually sold, and one item's story.
 There are deliberately no MCP resources. A client shows those to you as files to attach beside
 your message, and nobody wants to attach a glossary to ask what a card is worth. Everything they
 used to carry is reachable by a tool the assistant calls on its own: `explain_mechanics` for how
-a standard or a venue behaves and for the vocabulary (ask it for "glossary" to get all of it
+a standard or a marketplace behaves and for the vocabulary (ask it for "glossary" to get all of it
 with the rules for presenting this data), `get_source_status` for the source catalog, and
 `search_collections` for the collection registry.
 
@@ -243,7 +243,7 @@ with the rules for presenting this data), `get_source_status` for the source cat
 - Buying, selling, listing and signing are absent. No code exists for them.
 - Provenance and trust decoding cover Metaplex Core only. Legacy SPL and compressed NFTs are
   reported as named gaps, never as empty lists. Holdings and activity cover both.
-- Magic Eden and OpenSea only, for venue data. Tensor has no self-serve API keys. Rarible's
+- Magic Eden and OpenSea only, for marketplace data. Tensor has no self-serve API keys. Rarible's
   Solana API needs a key on a 100-request-a-month free tier and cannot say that a fill happened
   on Magic Eden, which is the mislabelling this server exists to avoid. Both sit in the source
   catalog as planned, with the condition that would add them.
@@ -251,7 +251,7 @@ with the rules for presenting this data), `get_source_status` for the source cat
 - No valuations and no currency conversion. A floor-times-count figure is returned as a ceiling
   with its assumptions attached, because a stale price feed is wrong with the same confidence as
   a good one.
-- Sales history reaches as far as the venue keeps it, and the result says how far it got.
+- Sales history reaches as far as the marketplace keeps it, and the result says how far it got.
   Ownership history for Core assets comes from the chain and is bounded by `depth`: the result
   carries `historyComplete` and `skippedTransactions`, so a partial trail is never presented as
   the whole story.
@@ -311,7 +311,7 @@ portfolio. A fuzzy name match on a different collection, answered as though it w
 asked about. Every one of them confident, every one of them wrong.
 
 collector-mcp is that decoder plus the rules I had to learn the hard way. Chain first. Label
-the venue. Say what you could not see. Refuse to guess.
+the marketplace. Say what you could not see. Refuse to guess.
 
 ## Running on the same decoding
 
