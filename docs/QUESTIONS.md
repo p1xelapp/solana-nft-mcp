@@ -21,9 +21,9 @@ collection name or address.
 | "is the floor real or is it one guy" | Floor plus listed count plus last ten sales; a thin book gets called thin | ANSWERS NOW |
 | "what are people actually paying, not asking" | Recent sales only counts completed buys, never listings | ANSWERS NOW |
 | "did the floor move this week" | Daily series over the window shows the shape; single-point floor is live only | ANSWERS NOW |
-| "which venue is cheaper for this collection" | Reconciliation block; when the currencies differ it shows both and refuses to rank | PARTIAL (ranks only when currencies match, by design) |
+| "which marketplace is cheaper for this collection" | Reconciliation block; when the currencies differ it shows both and refuses to rank | PARTIAL (ranks only when currencies match, by design) |
 | "how many are listed vs how many exist" | Listed count from the marketplace, existing supply from the chain, both labelled | ANSWERS NOW |
-| "what's the biggest sale this collection has ever had" | Window-based highest sale only; all-time needs history older than the venue keeps | PARTIAL (window covered, all-time not) |
+| "what's the biggest sale this collection has ever had" | Window-based highest sale only; all-time needs history older than the marketplace keeps | PARTIAL (window covered, all-time not) |
 | "give me the floor for these 8 collections at once" | Batch floor lookup, up to ten in one call, sequenced through one rate gate | ANSWERS NOW |
 | "how does this month compare to last month" | Two windows of collection sales, compared side by side | ANSWERS NOW |
 | "what's the average sale price right now" | Derived from recent sales in the window, labelled as derived and as a window average | ANSWERS NOW |
@@ -81,11 +81,11 @@ collection name or address.
 | "how much has this wallet made" | Realized flips paired with hold time and profit, plus net SOL flow, with fees and royalties excluded and said so | PARTIAL (realized only, fees excluded) |
 | "is this a fresh wallet" | First and last transaction from the chain, transaction count, holdings count | ANSWERS NOW |
 | "was this airdropped or did they buy it" | With an OpenSea key, plain transfers show as received without a recorded sale, from a named address | PARTIAL (needs the optional key) |
-| "do I have anything listed that I forgot about" | Listed items surfaced first in the wallet profile, with venue | ANSWERS NOW |
+| "do I have anything listed that I forgot about" | Listed items surfaced first in the wallet profile, with marketplace | ANSWERS NOW |
 | "are these two wallets the same person" | Shared counterparties and transfer patterns can be described; identity linkage is not something the chain proves | NOT YET (no address clustering, and on-chain evidence cannot establish identity) |
 | "what percent of the supply does this wallet hold" | Holdings count against chain supply, or OpenSea supply with a key | ANSWERS NOW |
-| "list everything I bought and sold this year" | Paged wallet activity, dated and priced, with the missing venues named | PARTIAL (Magic Eden by default, OpenSea with a key, not Tensor) |
-| "where do they trade, order book or pools" | Venue split in the activity breakdown | ANSWERS NOW |
+| "list everything I bought and sold this year" | Paged wallet activity, dated and priced, with the missing marketplaces named | PARTIAL (Magic Eden by default, OpenSea with a key, not Tensor) |
+| "where do they trade, order book or pools" | Marketplace split in the activity breakdown | ANSWERS NOW |
 | "this wallet has 400 items, did you see all of them" | The page cap is disclosed in the result rather than the total being quietly short | ANSWERS NOW |
 | "what was their best flip" | Flip list sorted by profit, each with hold time | ANSWERS NOW |
 | "have they been buying or selling lately" | Net SOL flow over the activity window, direction stated | ANSWERS NOW |
@@ -104,7 +104,7 @@ collection name or address.
 | "can the team still mint more" | Update authority and collection state from the chain; mint authority behaviour is read from the collection account | PARTIAL (authority visible, future intent is not) |
 | "did they burn the supply they said they burned" | Collection account reports minted versus current size, which exposes burns | ANSWERS NOW |
 | "is the royalty they advertise real" | Royalty plugin decode, enforced versus advisory | ANSWERS NOW (Core only) |
-| "are they listed on both marketplaces" | Collection stats reports presence per venue, plus the OpenSea Solana index with a key | ANSWERS NOW |
+| "are they listed on both marketplaces" | Collection stats reports presence per marketplace, plus the OpenSea Solana index with a key | ANSWERS NOW |
 | "what happened to the floor after the announcement" | Daily series over the window around the date | ANSWERS NOW |
 | "how many unique buyers this month" | Top buyers and window sales give the buyer side; unique-buyer count is derived from the same window | ANSWERS NOW |
 | "is this collection even real or did someone fake the name" | Identify plus the curated registry plus chain supply; a name alone proves nothing and the answer says so | ANSWERS NOW |
@@ -122,10 +122,10 @@ collection name or address.
 | "this seller says never traded, prove it" | Claim verification returns contradicted with a transfer count, then the dated history | ANSWERS NOW (Core only) |
 | "are they selling to themselves" | Buyer and seller addresses are in the sales rows; you can see repeats | PARTIAL (raw pattern, no clustering) |
 | "is this a fake collection with a copied name" | Chain address versus registry versus marketplace symbol; matching names with different addresses are named as different things | ANSWERS NOW |
-| "did the team dump on holders" | Wallet activity for a named address, with venues covered stated | PARTIAL (needs the address; team wallets are not identified for you) |
+| "did the team dump on holders" | Wallet activity for a named address, with marketplaces covered stated | PARTIAL (needs the address; team wallets are not identified for you) |
 | "why does this item keep moving between two wallets" | The provenance timeline shows the hops, dated, with escrow transfers labelled so relists are not mistaken for sales | ANSWERS NOW |
 | "is that a real screenshot" (pastes an image) | Images cannot be read; the assistant asks for the item name, mint or address instead | NOT YET (no image reading; ask for the identifier) |
-| "this sale shows on OpenSea but not Magic Eden, who is lying" | Both feeds reported separately with venue labels; one venue has been seen reporting another's fills as its own | ANSWERS NOW |
+| "this sale shows on OpenSea but not Magic Eden, who is lying" | Both feeds reported separately with marketplace labels; one marketplace has been seen reporting another's fills as its own | ANSWERS NOW |
 
 ---
 
@@ -136,7 +136,7 @@ collection name or address.
 | "what does owning this actually mean" | Custody decode translated into plain sentences about freeze, transfer, burn and edit rights | ANSWERS NOW (Core only) |
 | "why is the owner a marketplace address" | Glossary plus escrow detection: listing moves the asset into escrow, the seller is the wallet that sent it in | ANSWERS NOW |
 | "what is a floor, exactly" | Glossary: a floor is the lowest current ask, not a value and not a sale | ANSWERS NOW |
-| "can I sell on Magic Eden something I bought on OpenSea" | Glossary: the asset is the same on chain, venues are storefronts | ANSWERS NOW |
+| "can I sell on Magic Eden something I bought on OpenSea" | Glossary: the asset is the same on chain, marketplaces are storefronts | ANSWERS NOW |
 | "what happens to a pack when I open it" | Glossary plus custody decode: some issuers burn the pack, one returns it to a treasury, and supply math differs | ANSWERS NOW |
 | "why does a pack have a burn delegate" | The opening program needs to consume it; expected on a pack, a flag on a card meant to be kept | ANSWERS NOW |
 | "what is a compressed NFT and do I have any" | Glossary plus the compressed count in the wallet profile | ANSWERS NOW |
@@ -171,7 +171,7 @@ collection name or address.
 
 | Question | How it is answered | Status |
 |---|---|---|
-| "give me a stat for a post about this collection" | Window sales: count, volume, top sale, with the venue and timestamp to cite | ANSWERS NOW |
+| "give me a stat for a post about this collection" | Window sales: count, volume, top sale, with the marketplace and timestamp to cite | ANSWERS NOW |
 | "write a thread about who has owned this card" | Dated ownership history with marketplaces named, as the thread's spine | ANSWERS NOW (Core only) |
 | "what is the top sale today" | Highest sale over a one-day window | ANSWERS NOW |
 | "I need the image for this card for my post" | Image URL comes back with the asset; downloading and reuse rights are yours to check | PARTIAL (URL yes, rights not adjudicated) |
@@ -204,12 +204,12 @@ collection name or address.
 
 | Question | How it is answered | Status |
 |---|---|---|
-| "which of these three collections is doing better" | Window sales for each, compared on count and volume with venues named | ANSWERS NOW |
+| "which of these three collections is doing better" | Window sales for each, compared on count and volume with marketplaces named | ANSWERS NOW |
 | "compare floors across my watchlist" | Batch floor lookup, up to ten collections in one call | ANSWERS NOW |
 | "is Candy MLB or Candy DC moving more volume" | Window volume per collection, with the coverage of each feed stated | ANSWERS NOW |
 | "serial #69 across every Solana project" | Would need a full chain index of every collection, which nobody offers keyless | NOT YET (no keyless whole-chain index exists) |
 | "which Solana collections does OpenSea actually index" | The OpenSea Solana collection index, with each on-chain address | ANSWERS NOW (needs the optional key) |
-| "same collection, both venues, which has more depth" | Listed counts per venue, with the currency caveat when floors differ in unit | ANSWERS NOW |
+| "same collection, both marketplaces, which has more depth" | Listed counts per marketplace, with the currency caveat when floors differ in unit | ANSWERS NOW |
 | "rank these by holder concentration" | Share of supply per wallet you name; there is no automatic ranking across collections | PARTIAL (manual, wallet by wallet) |
 | "which of my collections has the deepest book" | Listed count and recent sales per collection | ANSWERS NOW |
 | "compare this Solana collection to an Ethereum one" | Solana only; keyless indexed NFT data on other chains is gone | NOT YET (no keyless multi-chain source survives) |
@@ -226,11 +226,11 @@ collection name or address.
 | "show me price distribution of current listings" | Listings with prices and traits, ready to bucket | ANSWERS NOW |
 | "floor per trait, as a table" | Per-trait floors | ANSWERS NOW |
 | "buyers ranked by spend" | Top buyers over the window | ANSWERS NOW |
-| "volume by day for the last 30 days" | Daily series over a 30-day window, subject to what the venue retains | PARTIAL (window limited by venue retention) |
+| "volume by day for the last 30 days" | Daily series over a 30-day window, subject to what the marketplace retains | PARTIAL (window limited by marketplace retention) |
 | "hold time distribution for this wallet" | Every flip carries hold time; the distribution is yours to bucket | ANSWERS NOW |
-| "venue split for this wallet as a pie" | Order book versus pool split already comes back as numbers | ANSWERS NOW |
+| "marketplace split for this wallet as a pie" | Order book versus pool split already comes back as numbers | ANSWERS NOW |
 | "sales per hour during the drop" | The window series is daily, not hourly | NOT YET (series granularity is daily) |
-| "a two-year price history" | Older than the venue's retained feed would need chain reads, which are decoded for Core assets only | PARTIAL (recent window yes, long history no) |
+| "a two-year price history" | Older than the marketplace's retained feed would need chain reads, which are decoded for Core assets only | PARTIAL (recent window yes, long history no) |
 | "chart the supply burning down over time" | Current minted and existing counts are point-in-time, not a historical series | NOT YET (no historical supply snapshots are stored) |
 
 ---

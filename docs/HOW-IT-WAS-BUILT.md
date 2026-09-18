@@ -34,9 +34,9 @@ comes from the collection account. Current owner comes from a hand-decoded asset
 an indexer's opinion. Ownership history comes from walking the transfer instructions in each
 transaction. There is no indexer in the path and no key required to do it.
 
-**Venue labelled, always.** Marketplace data is that marketplace's index, and it is returned
-saying so. Each number carries its venue, its currency, and its read time. When two venues
-disagree, both are returned. One marketplace has been observed reporting another venue's fills as
+**Marketplace labelled, always.** Marketplace data is that marketplace's index, and it is returned
+saying so. Each number carries its marketplace, its currency, and its read time. When two marketplaces
+disagree, both are returned. One marketplace has been observed reporting another marketplace's fills as
 its own, so events are labelled by the program that executed the transaction rather than by who
 reported it.
 
@@ -65,7 +65,7 @@ Every tool and prompt is exercised offline against captured feeds, including the
 
 ### Why that is worth trusting
 
-Not because it is always right. Sources lag, venues go down, public RPC throttles. It is worth
+Not because it is always right. Sources lag, marketplaces go down, public RPC throttles. It is worth
 trusting because it reports those conditions instead of smoothing them over. Cached values come
 back labelled stale rather than erroring mid-conversation. Caps are disclosed. Disagreements are
 shown rather than resolved by a coin flip. Every claim check hands back a line telling you how to

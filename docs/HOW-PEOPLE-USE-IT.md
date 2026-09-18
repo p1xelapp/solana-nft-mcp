@@ -122,14 +122,14 @@ answer online is either a shill or a scam warning.
 the OpenSea link.
 
 **What happens:** `identify` reads the mint out of the link and says what it is (a
-Solana NFT in the Claynosaurz collection, listed on both venues). `get_asset` shows the
+Solana NFT in the Claynosaurz collection, listed on both marketplaces). `get_asset` shows the
 item, its traits and the royalty the project asks for. `get_collection_stats` gives the
 floor on both marketplaces and says whether they are comparable. `get_recent_sales`
 shows what people paid this week. Sam finds out he paid a touch over floor, which is
 normal, and that his item is a Core asset with nothing unusual attached.
 
 **Then:** *"Can I sell it on Magic Eden even though I bought it on OpenSea?"* The
-glossary already told the assistant the answer: yes, it is the same asset, venues are
+glossary already told the assistant the answer: yes, it is the same asset, marketplaces are
 just storefronts.
 
 ### 2. Marcus, spends real money on Candy cards
@@ -238,7 +238,7 @@ days old". She re-rolls.
 
 **Level:** analyst / journalist. **Background:** covering the gacha-card wave
 (Collector Crypt, Jupiter Gacha, Candy). **Why collector-mcp:** every number in the
-space is quoted without a unit or a venue.
+space is quoted without a unit or a marketplace.
 
 **Asks:** *"Collector Crypt: floor, volume, supply, and is the floor the same on
 Magic Eden and OpenSea?"*
@@ -247,7 +247,7 @@ Magic Eden and OpenSea?"*
 OpenSea and says **not comparable as printed**. No conversion, on purpose, because a
 price feed that has gone stale gives a wrong number with no warning. The glossary reminds
 the assistant that gacha odds are an operator claim the chain cannot verify. Jordan
-writes both numbers with their venues and one sentence about odds.
+writes both numbers with their marketplaces and one sentence about odds.
 
 ### 9. Chen, brand licensing lead doing due diligence
 
@@ -334,14 +334,14 @@ alternatives gave her. It is not tax advice and says so.
 
 **Level:** dev at a Solana project. **Background:** the community wants a floor
 dashboard that shows both marketplaces now that the collection is on OpenSea. **Why
-collector-mcp:** he wants to get cross-venue right the first time.
+collector-mcp:** he wants to get cross-marketplace right the first time.
 
 **Asks:** *"Floor dashboard for our collection across Magic Eden and OpenSea. How do I
 not make a fool of myself?"*
 
 **What happens:** `get_integration_recipe` (floor-dashboard) plus a live
 `get_collection_stats` showing the reconciliation block: comparable or not, spread,
-cheapest venue only when the currencies match. He copies the rule into his dashboard.
+cheapest marketplace only when the currencies match. He copies the rule into his dashboard.
 The recipe also tells him OpenSea has been seen labelling Magic Eden fills as its own
 sales, so he labels by the program that executed the transaction, not by who reported it.
 

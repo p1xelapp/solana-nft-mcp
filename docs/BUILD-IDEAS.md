@@ -43,7 +43,7 @@ the time to something that works and survives a restart, not the time to a scree
 ### 5. Floor tracker spreadsheet
 **Who:** collectors with a watchlist who live in a sheet.
 **Ask:** "Give me floors for these ten collections as a table I can paste into a spreadsheet."
-**Server supplies:** batch floor lookup for up to ten collections in one call, with currency per venue and a stale flag when a value is cached.
+**Server supplies:** batch floor lookup for up to ten collections in one call, with currency per marketplace and a stale flag when a value is cached.
 **You build:** the paste, and a habit. If you want it to refresh itself, that is build 13.
 **Time:** 20 minutes.
 
@@ -105,9 +105,9 @@ the time to something that works and survives a restart, not the time to a scree
 ### 13. Floor dashboard across two marketplaces
 **Who:** a project dev whose community asked for one.
 **Ask:** "Floor dashboard for our collection across Magic Eden and OpenSea. How do I not make a fool of myself?"
-**Server supplies:** floors per venue with currencies, the reconciliation block that says whether the two are comparable, and a spread only when they are.
-**You build:** the page. Copy the reconciliation rule verbatim: Collector Crypt has been 0.053 SOL on one venue and 9 USDC on the other, and merging those gives a 170x gap that does not exist.
-**What the recipe saves you:** a blank panel when a source is down reads as an empty market, so serve the last good value with its age visible. And label a sale by the program that executed the transaction, because one venue has been observed reporting another venue's fills as its own.
+**Server supplies:** floors per marketplace with currencies, the reconciliation block that says whether the two are comparable, and a spread only when they are.
+**You build:** the page. Copy the reconciliation rule verbatim: Collector Crypt has been 0.053 SOL on one marketplace and 9 USDC on the other, and merging those gives a 170x gap that does not exist.
+**What the recipe saves you:** a blank panel when a source is down reads as an empty market, so serve the last good value with its age visible. And label a sale by the program that executed the transaction, because one marketplace has been observed reporting another marketplace's fills as its own.
 **Time:** an evening for one collection, a weekend for a real watchlist.
 
 ### 14. X poster with image
@@ -127,7 +127,7 @@ the time to something that works and survives a restart, not the time to a scree
 ### 16. Weekly market digest
 **Who:** anyone who posts a Monday recap, for a community or for themselves.
 **Ask:** "For these collections, give me last week's sale count, volume, top sale and daily series."
-**Server supplies:** window sales per collection with the daily series, top buyers, and each figure's venue and coverage.
+**Server supplies:** window sales per collection with the daily series, top buyers, and each figure's marketplace and coverage.
 **You build:** the template and the schedule. Give the scheduled job an owner, a cost, and a date it turns off.
 **Time:** 4 hours, then it runs itself.
 
@@ -141,7 +141,7 @@ the time to something that works and survives a restart, not the time to a scree
 ### 18. Wallet tracker for one address
 **Who:** somebody watching a wallet that seems to know things.
 **Ask:** "Track what this wallet buys and sells and tell me when it moves."
-**Server supplies:** activity with buys, sells, net flow, venue split, flips with hold time and profit, and the behaviour label with its reason.
+**Server supplies:** activity with buys, sells, net flow, marketplace split, flips with hold time and profit, and the behaviour label with its reason.
 **You build:** the polling loop and the notification. Track three states, not two: held, listed and sold are different, and a listed item has left the wallet on chain without being sold.
 **Time:** 4 hours.
 
@@ -160,7 +160,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** a project wanting a public volume chart, or a creator wanting one for posts.
 **Ask:** "Daily sales count and volume for this collection over the last 30 days."
 **Server supplies:** the daily series, count, volume and top sale for the window.
-**You build:** the chart, and honesty about the window. Series granularity is daily and the window is limited by what the venue retains, so label both on the axis rather than implying an unbroken history.
+**You build:** the chart, and honesty about the window. Series granularity is daily and the window is limited by what the marketplace retains, so label both on the axis rather than implying an unbroken history.
 **Time:** a weekend for something you would publish.
 
 ### 21. Multi-collection watchlist service
@@ -188,7 +188,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** collectors chasing a specific number or player across a collection.
 **Ask:** "Find item #1390, and every listing with this player's name."
 **Server supplies:** name search across the Magic Eden index, trait filters, listings with prices.
-**You build:** the saved-search list and the alerting. The index is one venue's, so say so in the interface.
+**You build:** the saved-search list and the alerting. The index is one marketplace's, so say so in the interface.
 **Time:** a weekend.
 
 ### 25. Source catalog page for your own team
@@ -202,7 +202,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** somebody who traded a lot and needs a record.
 **Ask:** "Every buy and sell for this address this year, dated and priced, as a table."
 **Server supplies:** paged activity, dated and priced, flips paired with hold times, and an explicit list of what is missing.
-**You build:** the export and the reconciliation against your own records. Read the gaps out loud: venues not in the feed, fees and royalties excluded, anything older than the window. It is a record with named gaps, not a tax document, and it is not advice.
+**You build:** the export and the reconciliation against your own records. Read the gaps out loud: marketplaces not in the feed, fees and royalties excluded, anything older than the window. It is a record with named gaps, not a tax document, and it is not advice.
 **Time:** a weekend.
 
 ### 27. Agent that answers collection questions in a channel
@@ -212,10 +212,10 @@ the time to something that works and survives a restart, not the time to a scree
 **You build:** the agent loop and the guardrails. Keep the defanging on: minting is permissionless, so a name can be a fake message boundary followed by instructions aimed at your model.
 **Time:** a weekend.
 
-### 28. Cross-venue reconciliation job
+### 28. Cross-marketplace reconciliation job
 **Who:** a project or analyst who wants to know when two sources disagree, on purpose.
-**Ask:** "Compare supply, floor and listed counts per venue and flag every disagreement."
-**Server supplies:** chain supply, per-venue floors and counts, and the comparability verdict.
+**Ask:** "Compare supply, floor and listed counts per marketplace and flag every disagreement."
+**Server supplies:** chain supply, per-marketplace floors and counts, and the comparability verdict.
 **You build:** the job, the history table, and the alert. Disagreement is the product here, so store both numbers rather than picking one, and read the provider's usage graph 24 and 48 hours after you switch it on.
 **Time:** a weekend, including testing the comparison job.
 

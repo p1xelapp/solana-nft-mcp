@@ -44,7 +44,7 @@ Claude / MCP client
 Standard `@modelcontextprotocol/sdk` server over stdio. Every tool input is validated with zod schemas (base58 shape checks on addresses, length caps, enum-like regexes on symbols) *before* any network call. Errors return as clean `isError` results with actionable messages ("try search_collections, or pass a Core collection address") - an agent can recover mid-conversation instead of dead-ending.
 
 ### The domain layer (the differentiator)
-Generic NFT tools make the user hunt for marketplace symbols. The curated registry maps human vocabulary ("candy gold series", "batman") to the *right identifier for each source*: a Magic Eden symbol for market data, a Metaplex Core collection address for on-chain supply, an OpenSea slug for the second venue. Everything not in the registry still works by passing identifiers directly - the registry is a convenience layer, not a wall.
+Generic NFT tools make the user hunt for marketplace symbols. The curated registry maps human vocabulary ("candy gold series", "batman") to the *right identifier for each source*: a Magic Eden symbol for market data, a Metaplex Core collection address for on-chain supply, an OpenSea slug for the second marketplace. Everything not in the registry still works by passing identifiers directly - the registry is a convenience layer, not a wall.
 
 ### The provenance engine (the hard part)
 For a Core asset, the server:

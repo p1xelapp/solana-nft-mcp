@@ -15,13 +15,13 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ## Twelve replies
 
-### 1. A venue is down
+### 1. A marketplace is down
 
 > Magic Eden is not responding right now. The floor below is the last good value, read 14 minutes
 > ago and marked stale. Chain supply and ownership are unaffected because those come from RPC.
 > Ask again in a few minutes for a live floor, or go ahead with the on-chain side now.
 
-### 2. A venue is rate-limited
+### 2. A marketplace is rate-limited
 
 > Magic Eden is throttling this session, so I paced the reads and stopped at 3 of your 10
 > collections rather than getting blocked. Here are the three. Ask again in about a minute for
@@ -35,7 +35,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ### 4. Two sources disagree
 
-> The two venues do not agree, and this tool will not pick one for you. Magic Eden reports supply
+> The two marketplaces do not agree, and this tool will not pick one for you. Magic Eden reports supply
 > 4,996, OpenSea's index reports 5,000. The chain's collection account says 4,996, which is the
 > authoritative one, so the OpenSea figure is likely a stale index entry. Both are above with
 > their timestamps.
@@ -114,7 +114,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 - **Ask for a private key, a seed phrase or a wallet connection.** Wallet questions take a public address, the same one anyone can paste into a block explorer.
 - **Collect anything.** No accounts, no telemetry, no logs sent anywhere. It runs locally and talks to three public sources.
 - **Call a floor a valuation.** Floor times count comes back labelled a ceiling, with the items it could not price counted.
-- **Convert currencies.** A SOL floor and a USDC floor are each shown as their venue quoted them.
+- **Convert currencies.** A SOL floor and a USDC floor are each shown as their marketplace quoted them.
 - **Rank two numbers that are not comparable.** It says not comparable as printed and shows both.
 - **Render an empty result as a fact.** An empty history means unsupported or unread, never "never traded".
 - **Give financial, tax or legal advice.** It gives the figures, the sources and the gaps.

@@ -38,12 +38,12 @@ itself never sees the image. If the screenshot shows a name and a number, type t
 The tool keeps answering from the sources that are up and says which one is missing.
 Chain reads (supply, ownership, history, custody rules) do not depend on any
 marketplace. Every source sits in a catalog with a tier, a fallback and a weekly live
-check, so a venue going quiet shows up as a failed check, not as a wrong answer. See
+check, so a marketplace going quiet shows up as a failed check, not as a wrong answer. See
 docs/SOURCES.md for the full list and how a source gets added or retired.
 
 **How far back does it look?**
 As far as the source keeps. Ownership history for Metaplex Core assets is walked from
-the chain itself, back to the mint. Marketplace feeds page back as far as the venue
+the chain itself, back to the mint. Marketplace feeds page back as far as the marketplace
 serves; when a window is cut short the result says `truncated: true` and how far it got.
 It never fills a gap with a guess.
 
@@ -84,7 +84,7 @@ or an answer - and a session that never asks an OpenSea question never requests 
 **What if the key cannot be issued?**
 OpenSea caps key creation at about two a day per IP address, so on a shared or busy
 address it can refuse. Then OpenSea stays off exactly as it always could: every tool still
-answers, and the OpenSea half of a cross-venue answer is named as missing rather than
+answers, and the OpenSea half of a cross-marketplace answer is named as missing rather than
 quietly dropped. `get_source_status` says which key is in use and when it expires.
 
 **Can I use my own OpenSea key, or none at all?**
@@ -95,7 +95,7 @@ clean environment. `COLLECTOR_MCP_NO_AUTO_KEYS=1` turns the self-issue off entir
 **What about Tensor and Rarible?**
 Neither is read. Tensor has no self-serve API keys. Rarible relaunched a Solana marketplace in
 August 2026, but its API needs a key with a 100-requests-per-month free tier and cannot label
-a Magic Eden fill as Magic Eden's, so reading it would repeat the venue mix-ups this server
+a Magic Eden fill as Magic Eden's, so reading it would repeat the marketplace mix-ups this server
 exists to avoid. Both sit in the source catalog as planned, with the trigger for adding them.
 
 **Does it cost anything to run?**
@@ -130,7 +130,7 @@ identical on chain.
 **Which wallet activity does it see?**
 Magic Eden's feed: listings, delists, bids, buys and sells on the order book and AMM
 pools. It excludes Tensor, mints and plain transfers, and OpenSea unless a key is present. The result
-says this every time so the model does not present one venue as a wallet's whole life.
+says this every time so the model does not present one marketplace as a wallet's whole life.
 
 **Does it understand packs?**
 Yes. Sealed packs are separate assets from the cards they open into; opening either
