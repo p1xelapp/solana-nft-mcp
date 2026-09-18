@@ -50,6 +50,7 @@ export interface Identification {
     | "indexed-asset"
     | "marketplace-collection"
     | "wallet-or-unknown-account"
+    | "venue-account"
     | "registry-entry"
     | "ambiguous"
     | "unknown";
@@ -652,6 +653,11 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     kind = "unknown";
     summary = `${shown} is a valid Solana address, but the chain could not be read just now, so it could not be classified. Retry shortly.`;
     confidence = "low";
+  } else if (looksLikeAddress(q) && sol.knownVenueAccount(q)) {
+    kind = "venue-account";
+    summary = `${shown} is ${sol.knownVenueAccount(q)}. It is not a collectible and not a person's wallet: get_wallet_holdings lists what it currently holds, and get_asset_provenance on any of those items shows who handed it over.`;
+    confidence = "high";
+    next.push("get_wallet_holdings");
   } else if (looksLikeAddress(q)) {
     kind = "wallet-or-unknown-account";
     summary =

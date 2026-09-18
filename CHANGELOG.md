@@ -1056,3 +1056,17 @@ the self-issued OpenSea key is stored locally, so "keeps nothing" became
 weekly; the missing-key example states that auto-issue was off or refused;
 the questions guide no longer denies a holder sweep; and the offline test
 expects local tools to keep answering.
+
+Found by the live edge battery (`test/live-edges.mjs`, 21 real questions
+against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
+
+- `get_asset` on the Magic Eden escrow address, which people paste because it
+  shows as the owner of every listed item, said "could not be completed, try
+  again". The account's owning program is read first now: a venue account is
+  named, a wallet is called a wallet and pointed at the wallet tools, and any
+  other program's account is named by program. `identify` reports the escrow
+  as `venue-account` with what it is and where to look next.
+- The cold-machine install (fresh home, empty npm cache, a folder with a space
+  and an ampersand in its name) was run end to end: 21 tools in 2.3 seconds
+  from launch, first answer in 0.7 seconds, nothing written to the home
+  folder, and an offline install fails cleanly with no half install left.

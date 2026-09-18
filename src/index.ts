@@ -1155,6 +1155,19 @@ registerTool(
       throw new WrongKindError(`${mint} is a Core COLLECTION account ("${core.name}"), not an asset. Use get_collection_stats for it.`);
     }
     if (!meToken && !core && !indexed) {
+      // Before "try again": is this an ASSET at all? The Magic Eden escrow
+      // address, pasted here because it shows as the owner of every listed
+      // item, came back as "could not be completed, try again", which sent a
+      // reader round in circles. The account's owning program settles it.
+      const venue = sol.knownVenueAccount(mint);
+      if (venue) throw new WrongKindError(`${mint} is ${venue}. It is not an asset: get_wallet_holdings lists what it holds, and get_asset_provenance on one of those items shows who handed it over.`);
+      const nature = await sol.accountNature(mint).catch(() => null);
+      if (nature?.looksLikeAWallet === true) {
+        throw new WrongKindError(`${mint} is a wallet (a System Program account), not an asset. Use get_wallet_holdings, get_wallet_profile or get_wallet_activity for it.`);
+      }
+      if (nature?.ownerProgram && nature.ownerProgram !== sol.CORE_PROGRAM) {
+        throw new WrongKindError(`${mint} is an account owned by ${nature.ownerName ?? nature.ownerProgram}, not a Metaplex Core asset, and neither Magic Eden nor the chain's asset index has it as a token. identify says more about what it is.`);
+      }
       if (Object.keys(sourceErrors).length) throw new Error(`could not read ${mint}: ${Object.entries(sourceErrors).map(([k, v]) => `${k}: ${v}`).join("; ")}`);
       throw new NotFoundError(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`);
     }

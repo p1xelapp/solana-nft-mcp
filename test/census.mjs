@@ -690,5 +690,17 @@ const kinds = (r) => r.events.map((e) => e.event);
   ok("R5-21/24/25/27 the documents say what the code does");
 }
 
+// ================================================================ R5-28 (live find, 2026-09-17)
+// The Magic Eden escrow address, pasted into get_asset because it shows as
+// the owner of every listed item, came back "could not be completed, try
+// again". A known venue account is named, and a wallet is called a wallet.
+{
+  assert.match(sol.knownVenueAccount("1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix") ?? "", /Magic Eden's escrow/);
+  assert.strictEqual(sol.knownVenueAccount(address("nobody")), null);
+  const src = fs.readFileSync(path.join(root, "src", "index.ts"), "utf8");
+  assert.ok(/knownVenueAccount\(mint\)/.test(src) && /accountNature\(mint\)/.test(src), "get_asset settles what a non-asset address IS before saying try again");
+  ok("R5-28 a venue escrow and a plain wallet are named as such instead of 'try again'");
+}
+
 for (const h of homes) fs.rmSync(h, { recursive: true, force: true });
 console.log(`\nround5: ${passed} blocks passed`);

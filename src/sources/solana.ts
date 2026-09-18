@@ -52,6 +52,22 @@ const MARKETPLACE_PROGRAMS: Record<string, string> = {
  * chain-decoded row was being read back as "Magic Eden reported this", which
  * would attribute our own instruction decode to somebody else's feed.
  */
+/**
+ * Venue-owned accounts a person is likely to paste in. The Magic Eden escrow
+ * shows up as the OWNER of every listed asset, so it is the address people
+ * meet first; asked what it was, the server called it "a wallet or another
+ * program's account", which is true and useless. Named here so identify and
+ * get_asset can say what it is and where to look next.
+ */
+export const KNOWN_VENUE_ACCOUNTS: Record<string, string> = {
+  "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix": "Magic Eden's escrow account: it holds every asset listed for sale on Magic Eden, so it appears as the owner of a listed item",
+};
+
+/** The venue account label for an address, or null. */
+export function knownVenueAccount(address: string): string | null {
+  return KNOWN_VENUE_ACCOUNTS[address] ?? null;
+}
+
 const MAGIC_EDEN_PROGRAMS = new Set([
   "M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K",
   "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc",
