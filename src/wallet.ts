@@ -13,6 +13,7 @@
 
 import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
+import { accountEventFingerprint } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
 import { knownVenueAccount } from "./sources/solana.js";
 
@@ -336,8 +337,10 @@ export function summarizeActivity(
       `${events.length} event(s), ${lists} of them listings. Widen the window or read get_wallet_holdings for what it actually holds.`;
   }
 
+  // The same predicate the loop uses: a self-fill is not a purchase, and it
+  // was being reported as the first one.
   const firstBuy = chrono.find(
-    (e) => e.type === "buyNow" && e.buyer === wallet && usablePrice(e.price) !== null && (e as { unsettled?: boolean }).unsettled !== true,
+    (e) => e.type === "buyNow" && e.buyer === wallet && e.seller !== wallet && usablePrice(e.price) !== null && (e as { unsettled?: boolean }).unsettled !== true,
   );
   const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
@@ -422,7 +425,7 @@ export interface OpenSeaWalletView {
   /** Items that LEFT by plain transfer with no sale recorded: consolidation, gift, or a trade elsewhere. Itemised, because a count alone left a reader unable to follow one. */
   sentWithoutSale: { mint: string; collection: string | null; to: string; time: string | null; note?: string }[];
   collections: Record<string, number>;
-  /** Transfers-in sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
+  /** Transfers in or out sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
   settlementUncertain: number;
   /** Exact duplicate rows the feed served and this view dropped before counting. */
   duplicateRowsDropped: number;
@@ -437,7 +440,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
   const events: OsAccountEvent[] = [];
   let duplicateRowsDropped = duplicatesUpstream;
   for (const e of rawEvents) {
-    const id = JSON.stringify([e.event_type, e.transaction, e.event_timestamp, e.nft?.identifier, e.buyer, e.seller, e.from_address, e.to_address, e.payment?.quantity]);
+    const id = accountEventFingerprint(e);
     if (seen.has(id)) {
       duplicateRowsDropped++;
       continue;
@@ -486,6 +489,12 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
       tout++;
       const id = e.nft?.identifier ?? "";
       const settlesASale = Boolean(e.transaction && id && saleKeys.has(`${e.transaction}\u0000${id}`));
+      // The same uncertainty as the incoming side: a sale that names no item
+      // in this transaction may be this transfer's settlement.
+      if (e.transaction && !settlesASale && itemlessSaleTxs.has(e.transaction)) {
+        settlementUncertain++;
+        continue;
+      }
       if (id && !settlesASale && e.to_address && e.to_address !== wallet) {
         sent.push({ mint: id, collection: e.nft?.collection ?? null, to: e.to_address, time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
       }

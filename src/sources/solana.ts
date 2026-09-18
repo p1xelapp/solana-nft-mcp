@@ -913,9 +913,12 @@ export async function getProvenance(
       });
       // Inner groups with no parent in the outer list (an index past its end,
       // or none at all) still count: dropping them turned a CPI-only
-      // transaction into "nothing happened". They go last, in index order,
-      // which is the least wrong place for them.
-      for (const idx of [...inner.keys()].sort((a, b) => a - b)) for (const child of inner.get(idx) ?? []) all.push(child);
+      // transaction into "nothing happened". They go last, and because their
+      // place is NOT known, the transaction's order is marked unreadable: a
+      // row appended here must not be called the final custody.
+      const orphaned = [...inner.keys()].sort((a, b) => a - b);
+      const orderUnknown = orphaned.length > 0 && outer.length > 0;
+      for (const idx of orphaned) for (const child of inner.get(idx) ?? []) all.push(child);
       const usable = all.filter((i): i is ParsedInstruction => Boolean(i) && typeof i.programId === "string");
 
       // Log text is a CROSS-CHECK, never the detector.
@@ -950,8 +953,6 @@ export async function getProvenance(
       // routing through an intermediary); keeping only the first erased the
       // final owner.
       const transferIxs = coreIxs.filter((i) => about(i, IX_TRANSFER_V1));
-      const createIx = coreIxs.find((i) => about(i, IX_CREATE_V1, IX_CREATE_V2));
-      const burnIx = coreIxs.find((i) => about(i, IX_BURN_V1));
 
       // A transaction we can read neither way is a hole, not an absence of
       // events: no logs AND no decodable Core instruction means we cannot say
@@ -972,13 +973,11 @@ export async function getProvenance(
       // instruction or one asset, so they may only ADD a transfer (the safe
       // direction: it weakens "never traded"), never establish a mint. An
       // unreadable instruction stays counted even when a log names a transfer.
-      if (undecodable.length > 0) {
-        unreadable += undecodable.length;
-        if (!logSaysTransfer) {
-          events.push(hole(sig.signature, time, "unreadable", 1, `${undecodable.length} Core instruction(s) on this asset in this transaction could not be decoded; what they did is unknown`));
-          continue;
-        }
-      }
+      // Counted here; each one becomes a gap row IN ITS PLACE in the walk
+      // below, beside whatever readable instructions the transaction carried.
+      // Returning early here threw away a decoded transfer that sat next to an
+      // undecodable sibling (2026-09-18).
+      unreadable += undecodable.length;
 
       const marketplace = usable
         .map((i) => MARKETPLACE_PROGRAMS[i.programId])
@@ -1001,10 +1000,61 @@ export async function getProvenance(
 
       /** Rows for this transaction in EXECUTION order; pushed reversed below so the final reverse restores it. */
       const rows: ProvenanceEvent[] = [];
-      if (transferIxs.length > 0 || undecodableTransfer) {
-        const structural = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
-        const sources: (ParsedInstruction | null)[] = transferIxs.length > 0 ? transferIxs : [null];
-        for (const transferIx of sources) {
+      const structural = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
+      // EVERY Core instruction on this asset, one row each, in the order it
+      // ran. An `else if` between transfer, burn and create could not show a
+      // transaction that minted and then moved the asset, and a log line was
+      // deciding which sibling survived.
+      let inferredUsed = false;
+      for (const ix of coreIxs) {
+        const disc = discriminator(ix.data);
+        const subject = ix.accounts?.[0] === mint;
+        if (!subject) continue;
+        if (disc === null) {
+          if (undecodableTransfer && !inferredUsed) {
+            inferredUsed = true;
+            // Recorded as a transfer below, with the owner inferred.
+            rows.push(inferredTransfer(ix));
+            continue;
+          }
+          rows.push(hole(sig.signature, time, "unreadable", 1, "a Core instruction on this asset in this transaction could not be decoded; what it did, and the custody after it, is unknown"));
+          continue;
+        }
+        if (disc === IX_TRANSFER_V1) rows.push(decodedTransfer(ix));
+        else if (disc === IX_BURN_V1) rows.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
+        else if (disc === IX_CREATE_V1 || disc === IX_CREATE_V2) rows.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
+      }
+      if (rows.length === 0) {
+        rows.push(
+          marketplace
+            ? { signature: sig.signature, time, event: "marketplace_activity", marketplace, readFrom: "the Solana chain" }
+            : { signature: sig.signature, time, event: "other", marketplace, readFrom: "the Solana chain" },
+        );
+      }
+      const transfersHere = rows.filter((r) => r.event === "transferred");
+      if (transfersHere.length > 1) {
+        const last = transfersHere[transfersHere.length - 1]!;
+        last.note = `${last.note ? last.note + "; " : ""}this transaction moved the asset ${transfersHere.length} times; the rows are in execution order and this one is the final custody`;
+      }
+      if (orderUnknown) {
+        // The endpoint answered with inner instructions whose parent is not in
+        // the list. The rows are kept; their ORDER is not a fact, so the
+        // transaction is a hole as well and the walk is not complete.
+        unreadable++;
+        for (const r of rows) if (r.event === "transferred") r.note = `${r.note ? r.note + "; " : ""}the endpoint listed inner instructions with no parent, so the order of this transaction's rows could not be established`;
+        rows.push(hole(sig.signature, time, "unreadable", 1, "the endpoint returned inner instructions whose parent instruction is not in the list; the order of this transaction's events, and the custody after it, is unknown"));
+      }
+      for (let r = rows.length - 1; r >= 0; r--) events.push(rows[r]!);
+
+      function decodedTransfer(transferIx: ParsedInstruction): ProvenanceEvent {
+        return transferRow(transferIx, true);
+      }
+      function inferredTransfer(coreIx: ParsedInstruction): ProvenanceEvent {
+        return transferRow(coreIx, false);
+      }
+      function transferRow(ix: ParsedInstruction, decoded: boolean): ProvenanceEvent {
+        {
+          const transferIx = decoded ? ix : null;
           let newOwner: string | undefined;
           const notes: string[] = [];
           if (transferIx) {
@@ -1022,8 +1072,7 @@ export async function getProvenance(
               );
             }
           } else {
-            const coreIx = undecodable[0];
-            const candidates = (coreIx?.accounts ?? []).filter((a) => !structural.has(a) && isBase58Address(a));
+            const candidates = (ix.accounts ?? []).filter((a) => !structural.has(a) && isBase58Address(a));
             newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
             notes.push("new owner inferred from the account list (no instruction data available); treat as probable");
           }
@@ -1041,25 +1090,9 @@ export async function getProvenance(
           // buyer is passed to the same program, so this fact alone would label a
           // person's wallet an escrow.
           if (isMeEscrow(newOwner)) recipientIsMeAccount.add(row);
-          rows.push(row);
+          return row;
         }
-        if (transferIxs.length > 1) {
-          const last = rows[rows.length - 1]!;
-          last.note = `${last.note ? last.note + "; " : ""}this transaction moved the asset ${transferIxs.length} times; the rows are in execution order and this one is the final custody`;
-        }
-      } else if (burnIx) {
-        rows.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
-      } else if (createIx) {
-        // Decoded, and about this asset. A log line saying "Instruction:
-        // CreateV2" used to be enough, and it was another asset's.
-        rows.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
-      } else if (marketplace) {
-        // Listing/delisting/escrow motion on a marketplace - no ownership change.
-        rows.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace, readFrom: "the Solana chain" });
-      } else {
-        rows.push({ signature: sig.signature, time, event: "other", marketplace, readFrom: "the Solana chain" });
       }
-      for (let r = rows.length - 1; r >= 0; r--) events.push(rows[r]!);
     }
 
     events.reverse(); // oldest first - reads as a story
@@ -1093,7 +1126,10 @@ export async function getProvenance(
       // The row sits after the oldest kept event, which is where the dropped
       // window begins. An unreadable anchor is now a row of its own, so the
       // search still finds its place.
-      const at = gapAfterSignature ? events.findIndex((e) => e.signature === gapAfterSignature) : -1;
+      // After the LAST row of the anchor: one transaction is several rows
+      // now, and inserting after the first split the anchor's own rows.
+      let at = -1;
+      if (gapAfterSignature) for (let i = events.length - 1; i >= 0; i--) if (events[i]!.signature === gapAfterSignature) { at = i; break; }
       events.splice(at >= 0 ? at + 1 : 0, 0, hole("", null, "depth", skipped, depthLabel));
     }
 

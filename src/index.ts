@@ -1496,12 +1496,14 @@ registerTool(
       }
       byOwner.set(a.owner, (byOwner.get(a.owner) ?? 0) + 1);
     }
+    /** Rows with an owner the index actually reported: the denominator of every share. */
+    const ownerKnown = held.length - unknownOwner;
     const holders = [...byOwner.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([owner, count]) => ({
         owner,
         held: count,
-        shareOfHeldPct: held.length > 0 ? Number(((count / held.length) * 100).toFixed(1)) : 0,
+        shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
         explorer: `https://solscan.io/account/${owner}`,
       }));
 
@@ -1564,7 +1566,10 @@ registerTool(
       },
       assetsInCollection: page.items.length,
       matched: rows.length,
-      heldByAWallet: held.length,
+      /** Matched rows that are not burned. Not "held by a person": an escrow or a custodian counts, and a row with no owner reported is in this number too. */
+      nonBurntMatched: held.length,
+      /** Non-burned matched rows whose owner the index reported. Shares are over this. */
+      ownerKnown,
       burnt,
       distinctHolders: byOwner.size,
       assetsWithNoOwnerReported: unknownOwner,

@@ -69,7 +69,7 @@ await edge("E01", "the Aces question: who holds the 36 packs", async () => {
   must(body.distinctHolders >= 8, `too few holders: ${body.distinctHolders}`);
   must(bytes < 100_000, `answer too big: ${bytes}`);
   const top = body.holders[0];
-  return { note: `${body.assetsInCollection} assets, 36 packs, ${body.distinctHolders} holders, top ${top.owner.slice(0, 6)} holds ${top.held} (${top.shareOfHeldPct}%), ${ms} ms, ${bytes} B` };
+  return { note: `${body.assetsInCollection} assets, 36 packs, ${body.distinctHolders} holders, top ${top.owner.slice(0, 6)} holds ${top.held} (${top.shareOfOwnerKnownPct}%), ${ms} ms, ${bytes} B` };
 });
 
 await edge("E02", "every pack in the collection by trait, all series", async () => {

@@ -129,11 +129,11 @@ const kinds = (r) => r.events.map((e) => e.event);
 {
   resetSecrets();
   assert.strictEqual(registerUrlCredentials("https://rpc.invalid/?api-key=QUERY-CANARY-1234567890"), 1);
-  assert.ok(registerUrlCredentials("https://rpc.invalid/v2/PATH-CANARY-abcdefghijklmnop/") >= 1, "a long path segment is a token");
+  assert.ok(registerUrlCredentials("https://rpc.invalid/v2/PATH-CANARY-abc123def456ghij/") >= 1, "a long path segment is a token");
   assert.strictEqual(registerUrlCredentials("https://rpc.invalid/v2/"), 0, "a short route word is not a secret");
   assert.strictEqual(registerUrlCredentials("https://user:USERINFO-CANARY-9876543210@rpc.invalid/"), 1, "the password is a credential; a four-letter username is too short to protect");
   assert.strictEqual(registerUrlCredentials("not a url"), 0);
-  const text = "rejected QUERY-CANARY-1234567890 and PATH-CANARY-abcdefghijklmnop and USERINFO-CANARY-9876543210 but kept v2";
+  const text = "rejected QUERY-CANARY-1234567890 and PATH-CANARY-abc123def456ghij and USERINFO-CANARY-9876543210 but kept v2";
   const out = redactSecrets(text);
   assert.ok(!/CANARY/.test(out), `every URL credential is redacted: ${out}`);
   assert.ok(out.includes("kept v2"), "ordinary words survive");

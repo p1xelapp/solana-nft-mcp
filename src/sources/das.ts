@@ -390,7 +390,11 @@ const TRAIT_ROWS_MAX = 64;
  * confident zero (2026-09-17).
  */
 export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: number } {
-  const valid = (Array.isArray(raw) ? raw : [])
+  const list = Array.isArray(raw) ? raw : [];
+  // Entries past the raw bound were never looked at. They count as omitted,
+  // because a filter that finds no match must not call that a decision.
+  const uninspected = Math.max(0, list.length - 4096);
+  const valid = list
     .slice(0, 4096)
     .map((t: { trait_type?: unknown; value?: unknown } | null | undefined) => {
       const trait = traitText(t?.trait_type);
@@ -400,7 +404,7 @@ export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: numb
         : null;
     })
     .filter((t): t is DasTrait => t !== null);
-  return { rows: valid.slice(0, TRAIT_ROWS_MAX), omitted: Math.max(0, valid.length - TRAIT_ROWS_MAX) };
+  return { rows: valid.slice(0, TRAIT_ROWS_MAX), omitted: Math.max(0, valid.length - TRAIT_ROWS_MAX) + uninspected };
 }
 
 /**
@@ -652,6 +656,9 @@ export interface DasGroupPage {
  * Not every endpoint carries the index: a plain RPC without DAS answers -32601
  * and capability() turns that into a refusal by name rather than an empty list.
  */
+/** The traits of a row as one comparable string, for the duplicate check. */
+const traitKey = (a: DasAsset): string => JSON.stringify(a.attributes.map((t) => [t.trait, t.value]));
+
 export async function getAssetsByGroup(
   collection: string,
   max = 2000,
@@ -718,14 +725,17 @@ export async function getAssetsByGroup(
       // Membership is evidence, not the fact of being on the page. A row that
       // names another collection, or whose grouping the index itself marks
       // unverified, was being counted as a holder of THIS collection.
-      if (a.collection !== null && a.collection !== collection) { foreignGroupRows++; continue; }
-      if (a.collectionVerified === false) { unverifiedRows++; continue; }
+      const foreign = a.collection !== null && a.collection !== collection;
+      const unverified = a.collectionVerified === false;
       if (dropped.has(a.id)) continue;
       const at = seen.get(a.id);
       if (at !== undefined) {
         duplicateRows++;
         const prev = items[at]!;
-        if (prev.owner !== a.owner || prev.burnt !== a.burnt) {
+        // A second copy that names another collection, or is unverified, or
+        // carries different traits, contradicts the first: it used to be
+        // dropped BEFORE this comparison, and the first copy won in silence.
+        if (foreign || unverified || prev.owner !== a.owner || prev.burnt !== a.burnt || traitKey(prev) !== traitKey(a)) {
           // Two copies that disagree: neither is the truth. Out, and counted.
           conflictingRows++;
           items.splice(at, 1);
@@ -735,6 +745,8 @@ export async function getAssetsByGroup(
         }
         continue;
       }
+      if (foreign) { foreignGroupRows++; continue; }
+      if (unverified) { unverifiedRows++; continue; }
       seen.set(a.id, items.length);
       items.push(a);
     }

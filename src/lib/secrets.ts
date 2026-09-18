@@ -37,9 +37,14 @@ function spellings(v: string): string[] {
   const out = new Set<string>([v]);
   // Inside a JSON string: quotes, backslashes and control characters escaped.
   out.add(JSON.stringify(v).slice(1, -1));
-  // Inside a URL or a form body.
+  // Inside a URL or a form body: upper-case escapes, lower-case escapes (a
+  // provider that lower-cases %2F is still echoing the same key), and the
+  // form spelling where a space is a plus.
   try {
-    out.add(encodeURIComponent(v));
+    const enc = encodeURIComponent(v);
+    out.add(enc);
+    out.add(enc.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase()));
+    out.add(enc.replace(/%20/g, "+"));
   } catch {
     /* a lone surrogate cannot be encoded; the raw form still covers it */
   }
@@ -79,24 +84,48 @@ export function registerUrlCredentials(url: string | null | undefined): number {
     return 0;
   }
   let n = 0;
-  const reg = (v: string) => {
-    if (registerSecret(v)) n++;
-    let decoded = v;
+  // The RAW component is registered as written, as well as its decoded
+  // value: `searchParams` decodes, and re-encoding it produced upper-case
+  // escapes only, so a key the URL spelt with %2f or with + for a space was
+  // never protected (2026-09-18).
+  const reg = (raw: string) => {
+    if (registerSecret(raw)) n++;
+    let decoded = raw;
     try {
-      decoded = decodeURIComponent(v);
+      decoded = decodeURIComponent(raw.replace(/\+/g, "%20"));
     } catch {
       /* not percent-encoded; the raw form is registered above */
     }
-    if (decoded !== v && registerSecret(decoded)) n++;
+    if (decoded !== raw && registerSecret(decoded)) n++;
   };
   if (u.username) reg(u.username);
   if (u.password) reg(u.password);
-  for (const [, v] of u.searchParams) reg(v);
-  // Path segments: a key is long and opaque, a version prefix is not. Sixteen
-  // characters is under every provider token seen (UUIDs are 36, QuickNode
-  // and Alchemy tokens 32+) and over any route word.
-  for (const seg of u.pathname.split("/")) if (seg.length >= 16) reg(seg);
+  // Query values: only fields whose NAME says credential. Registering every
+  // long value turned `commitment=confirmed` into a secret and redacted the
+  // word "confirmed" out of every answer.
+  const query = u.search.startsWith("?") ? u.search.slice(1) : u.search;
+  for (const pair of query.split("&")) {
+    if (!pair) continue;
+    const eq = pair.indexOf("=");
+    const key = eq < 0 ? pair : pair.slice(0, eq);
+    const value = eq < 0 ? "" : pair.slice(eq + 1);
+    if (value && CREDENTIAL_FIELD.test(decodeURIComponent(key.replace(/\+/g, " ")))) reg(value);
+  }
+  // Path segments: a token, not a route word. A token mixes letters and
+  // digits (or is hex) and is at least twelve characters; `solana-mainnet-beta`
+  // has no digit and `v2` is short, so neither is registered.
+  for (const seg of u.pathname.split("/")) if (looksLikeToken(seg)) reg(seg);
   return n;
+}
+
+/** Query field names that carry a credential, across the RPC providers seen. */
+const CREDENTIAL_FIELD = /key|token|secret|auth|pass|access|credential|sig/i;
+
+/** A path segment that is a token rather than a route word: twelve or more characters mixing letters and digits, or hex. */
+function looksLikeToken(seg: string): boolean {
+  const s = seg.replace(/[-_.~%]/g, "");
+  if (s.length < 12) return false;
+  return /^[0-9a-f]+$/i.test(s) ? /[0-9]/.test(s) && /[a-f]/i.test(s) : /[0-9]/.test(s) && /[a-z]/i.test(s);
 }
 
 /** Replace every registered credential, in any of its spellings, with a marker. Cheap when nothing is registered. */

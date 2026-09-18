@@ -1080,3 +1080,32 @@ against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
 - A plain transfer to or from the Magic Eden escrow in the OpenSea view is
   annotated as a listing, a fill or a delisting, because OpenSea records
   those as transfers and a reader was calling them gifts.
+
+Round six of the outside review (2026-09-18) read the fix commit itself and
+found 12 more, one a blocker. All fixed and pinned in `test/escrow-and-dedupe.mjs`; the
+reviewer's round-six probes pass on this tree except one that reads a field
+by its old name.
+
+- A private URL key spelt with lower-case percent escapes, or with `+` for
+  a space, or a twelve-character path token, was not registered and could
+  be echoed into an answer. The raw component is registered as written
+  alongside its decoded form, every spelling is redacted, and a path token
+  is recognised by its shape. Registration also stopped treating ordinary
+  query options and route words as secrets: `commitment=confirmed` had
+  redacted the word "confirmed" out of every answer.
+- Provenance walks every Core instruction on the asset individually, in
+  order. A mint and a transfer in one transaction are both rows; a readable
+  transfer beside an undecodable sibling is kept and the sibling is a hole
+  in its place, whatever the log said; an inner instruction group with no
+  parent keeps its rows but marks the order and the history as unknown; the
+  depth gap sits after the last row of the anchor transaction, not the first.
+- The census reconciles a second copy of a mint before dropping it for
+  naming another collection or being unverified, and treats differing
+  traits as a conflict too. Trait entries beyond the raw bound count as
+  omitted, so a no-match there is undecided. `heldByAWallet` is gone:
+  `nonBurntMatched` and `ownerKnown` say what they count, and shares are
+  over `ownerKnown`.
+- OpenSea rows are duplicates only when every claim matches, currency and
+  decimals included, with one fingerprint shared by the reader and the
+  view. An outgoing transfer beside an itemless sale is uncertain, as the
+  incoming one already was. A self-fill is no longer the first purchase.

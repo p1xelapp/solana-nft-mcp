@@ -673,6 +673,21 @@ export interface OsAccountEvent {
  * the piece Magic Eden's wallet feed lacks - they are how "was this
  * airdropped or bought?" gets an evidence-based answer.
  */
+/**
+ * The identity of one account event, for the exact-copy check. Two rows
+ * are one event only when EVERY claim matches: the payment's currency and
+ * scale are claims too (1000000 USDC at six decimals and 1000000 lamports
+ * at nine were being collapsed into one sale). Shared with the wallet view
+ * so the reader and the summary cannot disagree.
+ */
+export function accountEventFingerprint(e: OsAccountEvent): string {
+  return JSON.stringify([
+    e.event_type, e.transaction, e.event_timestamp, e.nft?.identifier, e.nft?.collection,
+    e.buyer, e.seller, e.from_address, e.to_address, e.transfer_type,
+    e.payment?.quantity, e.payment?.symbol, e.payment?.decimals,
+  ]);
+}
+
 export async function accountEvents(wallet: string, pages: number) {
   const { data, stale, cachedAt } = await cached(`os:aev:${wallet}:${pages}`, 60_000, async () => {
     const out: OsAccountEvent[] = [];
@@ -689,7 +704,7 @@ export async function accountEvents(wallet: string, pages: number) {
       // counting it twice doubled a wallet's buys; two rows that DIFFER are
       // kept, because a different price or side is a different claim.
       for (const r of rows) {
-        const id = JSON.stringify([r.event_type, r.transaction, r.event_timestamp, r.nft?.identifier, r.buyer, r.seller, r.from_address, r.to_address, r.payment?.quantity]);
+        const id = accountEventFingerprint(r);
         if (seenEvents.has(id)) {
           duplicates++;
           continue;
