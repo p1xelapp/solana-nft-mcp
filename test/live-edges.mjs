@@ -274,6 +274,118 @@ await edge("E24", "the issuer's wallet is named as the issuer, not a whale", asy
   return { note: `issuer ${body.issuer.name ?? "unnamed"} holds ${body.heldByIssuer}, escrow ${body.heldInVenueEscrow}, collectors ${body.heldByCollectors}; identify=${id.body.kind}` };
 });
 
+// ---------------------------------------------------------------- beyond Candy
+// The questions people type about the collections they already own.
+const pick = async (query) => {
+  const { body } = await call("search_collections", { query });
+  // A curated registry hit outranks the venue directory, which stops short
+  // of its catalogue and once answered a 0.055 SOL derivative for SMB.
+  const hit = (body?.results ?? []).find((r) => r.meSymbol);
+  if (hit) return hit.meSymbol;
+  const m = body?.magicEdenDirectory?.matches ?? [];
+  return (m.find((x) => x.badged) ?? m[0])?.symbol ?? null;
+};
+const bad = (err) => /try again/i.test(err);
+
+let madMint = null;
+let madSeller = null;
+await edge("N01", "Mad Lads: search, stats, listings, one asset", async () => {
+  const sym = await pick("Mad Lads");
+  must(sym === "mad_lads", `badged symbol resolves: ${sym}`);
+  const stats = await call("get_collection_stats", { collection: sym });
+  must(stats.body?.market?.floorPriceSol > 0, `floor read: ${stats.err}`);
+  const listings = await call("find_listings", { symbol: sym, limit: 3 });
+  must(listings.body?.deals?.length > 0, `listings read: ${listings.err}`);
+  madMint = listings.body.deals[0].tokenMint;
+  madSeller = listings.body.deals[0].seller;
+  const asset = await call("get_asset", { mint: madMint });
+  must(asset.body, `get_asset on a listed pNFT: ${asset.err}`);
+  return { note: `floor ${stats.body.market.floorPriceSol} SOL, ${listings.body.deals.length} listings, asset owner=${asset.body.market?.owner?.slice(0, 6) ?? "?"}, listed=${asset.body.market?.listed}` };
+});
+
+await edge("N02", "Mad Lads: freeze, fees, custody on a non-Core asset are named as a gap", async () => {
+  const t = await call("get_asset_trust", { mint: madMint });
+  if (t.body) return { status: "CHECK", note: `answered: ${JSON.stringify(t.body).slice(0, 140)}` };
+  must(!bad(t.err) && /Core|standard|Token Metadata|programmable/i.test(t.err), `names the standard: ${t.err.slice(0, 160)}`);
+  const v = await call("verify_claim", { claim: "never-traded", subject: madMint });
+  must(v.body ? v.body.verdict === "unverifiable" : !bad(v.err), `a claim on a non-Core asset is unverifiable by name: ${v.body?.verdict ?? v.err.slice(0, 120)}`);
+  return { note: `trust: ${t.err.slice(0, 90)}; claim: ${v.body?.verdict ?? "error named"}` };
+});
+
+await edge("N03", "Mad Lads: the seller's wallet profile and activity, bounded, no role invented", async () => {
+  const prof = await call("get_wallet_profile", { wallet: madSeller });
+  must(prof.body, `profile: ${prof.err}`);
+  must(prof.bytes < 120_000, `profile size ${prof.bytes}`);
+  must(prof.body.walletRole === undefined, `a collector has no role: ${prof.body.walletRole}`);
+  const act = await call("get_wallet_activity", { wallet: madSeller });
+  must(act.body, `activity: ${act.err}`);
+  return { note: `profile ${prof.bytes} B, activity label=${act.body.magiceden?.behaviour?.label}` };
+});
+
+await edge("N04", "Mad Lads: sales window, recent sales, top traders", async () => {
+  const s7 = await call("get_collection_sales", { symbol: "mad_lads", days: 7 });
+  must(s7.body, `sales: ${s7.err}`);
+  const recent = await call("get_recent_sales", { collection: "mad_lads", limit: 5 });
+  must(recent.body, `recent: ${recent.err}`);
+  const top = await call("get_top_traders", { symbol: "mad_lads", limit: 5 });
+  must(top.body, `traders: ${top.err}`);
+  return { note: `7d sales=${s7.body.sales ?? "?"} vol=${s7.body.volumeSol ?? "?"} SOL, recent rows=${(recent.body.sales ?? recent.body.rows ?? []).length}, traders=${JSON.stringify(top.body).length} B` };
+});
+
+await edge("N05", "a Token Metadata collection asked for a Core census is refused by name", async () => {
+  const asset = await call("get_asset", { mint: madMint });
+  const col = asset.body?.chainIndex?.collection ?? null;
+  if (!col) return { status: "CHECK", note: "no collection address surfaced for a pNFT; nothing to census" };
+  const r = await call("get_collection_holders", { collection: col });
+  if (r.body) return { status: "CHECK", note: `census answered for a non-Core group: ${r.body.assetsInCollection} rows, standards ${[...new Set(r.body.assets.map((a) => a.standard))].join(",")}` };
+  must(!bad(r.err), `refusal names the standard, never try again: ${r.err.slice(0, 160)}`);
+  return { note: r.err.slice(0, 140) };
+});
+
+await edge("N06", "SMB and Claynosaurz resolve and answer floors", async () => {
+  const out = [];
+  for (const q of ["Solana Monkey Business", "Claynosaurz"]) {
+    const sym = await pick(q);
+    must(sym, `${q} resolves`);
+    const f = await call("get_floor_prices", { symbols: [sym] });
+    must(f.body?.floors?.[0]?.symbolKnown, `${sym} known on the venue`);
+    out.push(`${sym}=${f.body.floors[0].floorSol}`);
+  }
+  must(out[0].startsWith("solana_monkey_business="), `SMB must resolve to the real collection, not a lookalike: ${out[0]}`);
+  return { note: out.join(", ") };
+});
+
+await edge("N07", "names people type: Pikachu, Shohei, Batman", async () => {
+  const out = [];
+  for (const q of ["Pikachu", "Shohei Ohtani", "Batman"]) {
+    const id = await call("identify", { query: q });
+    must(id.body || !bad(id.err), `${q}: ${id.err.slice(0, 100)}`);
+    out.push(`${q}=${id.body?.kind ?? "error"}`);
+  }
+  return { note: out.join(", ") };
+});
+
+await edge("N08", "explain_mechanics answers freeze, royalties, escrow and the Candy issuer", async () => {
+  const out = [];
+  for (const topic of ["freeze", "royalties", "escrow", "candy wallet", "pack opened"]) {
+    const m = await call("explain_mechanics", { topic });
+    must(m.body && (m.body.entries?.length ?? 0) > 0, `${topic}: ${m.err || "no entries"}`);
+    out.push(`${topic}=${m.body.entries.length}`);
+  }
+  return { note: out.join(", ") };
+});
+
+await edge("N09", "a dormant-looking wallet: the first Aces recipient who never traded", async () => {
+  const { body } = await call("get_collection_holders", { collection: ACES, namePrefix: "Gold Series - Aces" });
+  const one = body.holders.find((h) => h.role === "wallet" && h.held === 1);
+  must(one, "a single-pack collector exists");
+  const act = await call("get_wallet_activity", { wallet: one.owner });
+  must(act.body, `activity: ${act.err}`);
+  const label = act.body.magiceden?.behaviour?.label;
+  must(label && label !== "unknown" || /no completed/i.test(act.body.magiceden?.behaviour?.why ?? ""), `quiet wallets get a reason, not 'unknown': ${label} / ${act.body.magiceden?.behaviour?.why}`);
+  return { note: `${one.owner.slice(0, 6)} label=${label}: ${(act.body.magiceden?.behaviour?.why ?? "").slice(0, 90)}` };
+});
+
 await client.close();
 fs.rmSync(home, { recursive: true, force: true });
 const counts = results.reduce((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});

@@ -329,13 +329,20 @@ const MAX_BATCH_IDS = 5000;
  * whole read now, and running out of it is an error that NAMES the endpoint.
  */
 const READ_DEADLINE_MS = 25_000;
+/**
+ * A census reads whole 1,000-row pages, and the public index answered one in
+ * about a second on a quiet day and in twelve on a busy one (2026-09-18, the
+ * 2,000-row read was abandoned at 25 s). Clients allow four minutes; a
+ * census that takes one of them is still an answer.
+ */
+const CENSUS_DEADLINE_MS = 60_000;
 
 /** The endpoints this read would have used, for an error that has to name them. */
 const endpointNames = (): string => endpoints().map((e) => e.id).join(", ");
 
-const deadlinePassed = (what: string): Error =>
+const deadlinePassed = (what: string, ms = READ_DEADLINE_MS): Error =>
   new Error(
-    `${SOURCE} did not finish ${what} within ${READ_DEADLINE_MS / 1000} s (${endpointNames()}), so the read was abandoned. That is the endpoint not answering, not a problem with what you asked; the other sources still work.`,
+    `${SOURCE} did not finish ${what} within ${ms / 1000} s (${endpointNames()}), so the read was abandoned. That is the endpoint not answering, not a problem with what you asked; the other sources still work.`,
   );
 
 function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
@@ -664,7 +671,7 @@ export async function getAssetsByGroup(
   max = 2000,
   opts: { signal?: AbortSignal } = {},
 ): Promise<DasGroupPage> {
-  const deadline = combineSignals(READ_DEADLINE_MS, opts.signal);
+  const deadline = combineSignals(CENSUS_DEADLINE_MS, opts.signal);
   const cap = await capability({ signal: deadline });
   refuseIfWithdrawn(cap);
   const limit = 1000;
@@ -687,7 +694,7 @@ export async function getAssetsByGroup(
   let stale = false;
   let cachedAt = new Date().toISOString();
   for (;;) {
-    if (deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`);
+    if (deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`, CENSUS_DEADLINE_MS);
     let hit;
     try {
       hit = await cached<{ items: RawAsset[]; rejected: number; endpoint: string }>(
@@ -697,7 +704,7 @@ export async function getAssetsByGroup(
           const { result, endpoint } = await call<{ items?: unknown }>(
             "getAssetsByGroup",
             { groupKey: "collection", groupValue: collection, page, limit, displayOptions: { showFungible: false } },
-            combineSignals(READ_DEADLINE_MS, producer),
+            combineSignals(CENSUS_DEADLINE_MS, producer),
           );
           const rows = objectRows<RawAsset>(SOURCE, "getAssetsByGroup items", result.items);
           if (rows.length > limit) {
@@ -712,7 +719,7 @@ export async function getAssetsByGroup(
         { signal: deadline },
       );
     } catch (e) {
-      if (e instanceof AbortedError || deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`);
+      if (e instanceof AbortedError || deadline.aborted) throw deadlinePassed(`listing what is in collection ${collection}`, CENSUS_DEADLINE_MS);
       throw e;
     }
     const data = hit.data;

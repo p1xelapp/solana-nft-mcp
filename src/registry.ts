@@ -40,6 +40,186 @@ export interface RegistryEntry {
 }
 
 export const REGISTRY: RegistryEntry[] = [
+  // ---- Well-known Solana collections, by the names people type.
+  //
+  // The Magic Eden directory snapshot stops at the venue's 30,000-row
+  // ceiling, and "Solana Monkey Business" came back as "Rare Solana Monkey
+  // Business" at 0.055 SOL while the real collection sat at 12 SOL under a
+  // symbol the snapshot never reached (2026-09-18). A curated row with the
+  // aliases people use puts the real one first. Every symbol here was
+  // checked against the venue on the date in its note.
+  {
+    id: "smb-gen2",
+    name: "Solana Monkey Business (SMB Gen2)",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "solana_monkey_business",
+    keywords: ["smb", "monke", "monkes", "gen2", "monkey business"],
+    aliases: ["SMB", "SMB Gen2", "Solana Monkey Business", "Monkes"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "smb-gen3",
+    name: "SMB Gen3",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "smb_gen3",
+    keywords: ["smb", "gen3", "monke"],
+    aliases: ["SMB Gen3", "Solana Monkey Business Gen3"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "okay-bears",
+    name: "Okay Bears",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "okay_bears",
+    keywords: ["okay", "bears", "bear"],
+    aliases: ["Okay Bears", "OKB"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "famous-fox-federation",
+    name: "Famous Fox Federation",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "famous_fox_federation",
+    keywords: ["fox", "foxes", "fff"],
+    aliases: ["Famous Fox Federation", "FFF", "Famous Foxes"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "tensorians",
+    name: "Tensorians",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "tensorians",
+    keywords: ["tensor", "tensorian"],
+    aliases: ["Tensorians"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "degods",
+    name: "DeGods",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "degods",
+    keywords: ["degod", "dust", "y00ts"],
+    aliases: ["DeGods", "De Gods"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "y00ts",
+    name: "y00ts",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "y00ts",
+    keywords: ["yoots", "y00t", "degods"],
+    aliases: ["y00ts", "yoots"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "degenerate-ape-academy",
+    name: "Degenerate Ape Academy",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "degenerate_ape_academy",
+    keywords: ["daa", "ape", "apes", "degen ape"],
+    aliases: ["Degenerate Ape Academy", "DAA", "Degen Apes"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "cets-on-creck",
+    name: "Cets on Creck",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "cets_on_creck",
+    keywords: ["cets", "cet", "creck"],
+    aliases: ["Cets on Creck", "Cets"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "froganas",
+    name: "Froganas",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "froganas",
+    keywords: ["frog", "frogana"],
+    aliases: ["Froganas"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "lifinity-flares",
+    name: "Lifinity Flares",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "lifinity_flares",
+    keywords: ["lifinity", "flare"],
+    aliases: ["Lifinity Flares"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "galactic-geckos",
+    name: "Galactic Gecko Space Garage",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "galactic_geckos",
+    keywords: ["gecko", "geckos", "ggsg"],
+    aliases: ["Galactic Geckos", "GGSG", "Galactic Gecko Space Garage"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "aurory",
+    name: "Aurory",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "aurory",
+    keywords: ["aurorian", "aurorians"],
+    aliases: ["Aurory", "Aurorians"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "taiyo-robotics",
+    name: "Taiyo Robotics",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "taiyo_robotics",
+    keywords: ["taiyo", "robotics", "robot"],
+    aliases: ["Taiyo Robotics", "Taiyo"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "sharx",
+    name: "Sharx by Sharky",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "sharx",
+    keywords: ["sharky", "shark"],
+    aliases: ["Sharx", "Sharx by Sharky"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "primates",
+    name: "Primates",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "primates",
+    keywords: ["primate"],
+    aliases: ["Primates"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "backwoods",
+    name: "Backwoods",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "backwoods",
+    keywords: ["backwood"],
+    aliases: ["Backwoods"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "retardio-cousins",
+    name: "Retardio Cousins",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "retardio_cousins",
+    keywords: ["retardio", "cousins"],
+    aliases: ["Retardio Cousins", "Retardios"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+  {
+    id: "bozo-collective",
+    name: "Bozo Collective",
+    platform: "Solana community collection (Token Metadata)",
+    meSymbol: "bozo_collective",
+    keywords: ["bozo", "bozos"],
+    aliases: ["Bozo Collective", "Bozos"],
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+  },
+
   {
     id: "candy-mlb-icon-2026",
     name: "Candy Digital - 2026 MLB ICON Series",
@@ -181,7 +361,11 @@ export function searchRegistry(query: string): RegistryEntry[] {
   const scored = REGISTRY.map((e) => {
     const hay = [e.id, e.name.toLowerCase(), ...e.keywords, ...(e.aliases ?? []).map((a) => a.toLowerCase())].join(" ");
     const matched = terms.filter((t) => hay.includes(t)).length;
-    return { e, matched, score: matched + (hay.includes(q) ? 2 : 0) };
+    // An exact name or alias beats a name that merely contains the query:
+    // "Solana Monkey Business" is SMB Gen2's alias and a substring of Gen3's,
+    // and the shorter-name tiebreak was handing the query to Gen3.
+    const exact = e.name.toLowerCase() === q || (e.aliases ?? []).some((a) => a.toLowerCase() === q);
+    return { e, matched, score: matched + (hay.includes(q) ? 2 : 0) + (exact ? 3 : 0) };
   }).filter((x) => x.matched >= needed);
   if (scored.length === 0) return [];
   const best = Math.max(...scored.map((x) => x.score));

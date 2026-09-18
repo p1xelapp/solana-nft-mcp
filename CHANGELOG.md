@@ -1141,3 +1141,17 @@ gold pack returns to the treasury.
   what opening a pack does on the gold and base series, and why a wallet
   that receives many items is a collector, not a Candy alt. Each carries
   what was observed on chain and the date.
+- Nineteen well-known Solana collections (SMB Gen2 and Gen3, Claynosaurz,
+  Okay Bears, Famous Fox Federation, Tensorians, DeGods, y00ts, Degenerate
+  Ape Academy, Cets on Creck, Froganas, Lifinity Flares, Galactic Geckos,
+  Aurory, Taiyo Robotics, Sharx, Primates, Backwoods, Retardio Cousins, Bozo
+  Collective) are curated registry rows with the aliases people type. The
+  venue directory snapshot stops at its 30,000-row ceiling, and "Solana
+  Monkey Business" was answered with "Rare Solana Monkey Business" at
+  0.055 SOL while the real collection sat at 12 SOL under a symbol the
+  snapshot never reached. Every symbol was checked against the venue on
+  2026-09-18.
+- The live battery grew to 33 cases: nine of them are questions about
+  collections other than Candy (Mad Lads, SMB, Claynosaurz, the names
+  people type), a Token Metadata asset asked for freeze, fee and custody
+  facts, a quiet wallet, and every mechanics topic a collector asks about.
