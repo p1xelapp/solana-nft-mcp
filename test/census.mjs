@@ -683,7 +683,10 @@ const kinds = (r) => r.events.map((e) => e.event);
   const trust = doc("docs/TRUST-AND-LIMITS.md");
   const section = trust.slice(trust.indexOf("### 9."), trust.indexOf("### 10."));
   assert.ok(/COLLECTOR_MCP_NO_AUTO_KEYS/.test(section), "the missing-key example states the auto-issue precondition");
-  assert.ok(!doc("PRE-LAUNCH-TESTS.md").includes("Every tool should refuse by name."), "local tools answer offline by design");
+  // The launch checklist is a private, untracked file; CI has no copy.
+  if (fs.existsSync(path.join(root, "PRE-LAUNCH-TESTS.md"))) {
+    assert.ok(!doc("PRE-LAUNCH-TESTS.md").includes("Every tool should refuse by name."), "local tools answer offline by design");
+  }
   ok("R5-21/24/25/27 the documents say what the code does");
 }
 
