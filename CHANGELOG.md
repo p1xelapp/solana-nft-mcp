@@ -1070,3 +1070,8 @@ against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
   and an ampersand in its name) was run end to end: 21 tools in 2.3 seconds
   from launch, first answer in 0.7 seconds, nothing written to the home
   folder, and an offline install fails cleanly with no half install left.
+- The OpenSea wallet view itemises transfers OUT (`sentWithoutSale`) the
+  way it already itemised transfers in; a reader asked where 70 items went
+  and had only a count. `get_wallet_activity` now says, when its window hit
+  the page cap, that "has this wallet ever sold one of X" is answered by the
+  collection's sales feed and the item's provenance, not by the window.

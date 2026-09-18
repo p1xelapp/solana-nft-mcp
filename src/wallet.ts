@@ -412,6 +412,8 @@ export interface OpenSeaWalletView {
   transfersOut: number;
   /** Items that arrived by plain transfer with no sale recorded for them: gift, airdrop, self-transfer, or a trade elsewhere. */
   receivedWithoutSale: { mint: string; collection: string | null; from: string; time: string | null }[];
+  /** Items that LEFT by plain transfer with no sale recorded: consolidation, gift, or a trade elsewhere. Itemised, because a count alone left a reader unable to follow one. */
+  sentWithoutSale: { mint: string; collection: string | null; to: string; time: string | null }[];
   collections: Record<string, number>;
   /** Transfers-in sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
   settlementUncertain: number;
@@ -458,6 +460,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
     if (e.nft?.collection) collections[e.nft.collection] = (collections[e.nft.collection] ?? 0) + 1;
   }
   const received: OpenSeaWalletView["receivedWithoutSale"] = [];
+  const sent: OpenSeaWalletView["sentWithoutSale"] = [];
   let settlementUncertain = 0;
   for (const e of events) {
     if (e.event_type !== "transfer") continue;
@@ -472,7 +475,14 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
       if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
         received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp) });
       }
-    } else if (e.from_address === wallet) tout++;
+    } else if (e.from_address === wallet) {
+      tout++;
+      const id = e.nft?.identifier ?? "";
+      const settlesASale = Boolean(e.transaction && id && saleKeys.has(`${e.transaction}\u0000${id}`));
+      if (id && !settlesASale && e.to_address && e.to_address !== wallet) {
+        sent.push({ mint: id, collection: e.nft?.collection ?? null, to: e.to_address, time: iso(e.event_timestamp) });
+      }
+    }
   }
   return {
     events: events.length,
@@ -482,6 +492,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
     transfersIn: tin,
     transfersOut: tout,
     receivedWithoutSale: received.slice(0, 25),
+    sentWithoutSale: sent.slice(0, 25),
     collections,
     settlementUncertain,
     duplicateRowsDropped,

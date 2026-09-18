@@ -437,6 +437,9 @@ const kinds = (r) => r.events.map((e) => e.event);
   const itemless = summarizeOpenSeaEvents(W, [{ ...sale, nft: undefined }, gift], false);
   assert.strictEqual(itemless.receivedWithoutSale.length, 0);
   assert.strictEqual(itemless.settlementUncertain, 1, "a sale naming no item makes a same-transaction transfer uncertain, not settled");
+  const out = summarizeOpenSeaEvents(W, [{ event_type: "transfer", event_timestamp: 1, transaction: "tx9", from_address: W, to_address: address("cousin"), nft: { identifier: address("item-c"), collection: "col" } }], false);
+  assert.strictEqual(out.transfersOut, 1);
+  assert.deepStrictEqual(out.sentWithoutSale.map((r) => [r.mint, r.to]), [[address("item-c"), address("cousin")]], "an outgoing transfer is itemised, not just counted");
 
   // Exact duplicate rows from the feed are dropped before counting.
   process.env.OPENSEA_API_KEY = "test-key-never-sent";

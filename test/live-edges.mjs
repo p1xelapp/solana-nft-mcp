@@ -242,6 +242,25 @@ await edge("E21", "the same census twice: identical numbers", async () => {
   return { note: `${a.body.matched}/${a.body.distinctHolders} both times, second read ${b.ms} ms (cached)` };
 });
 
+await edge("E22", "provenance asked for a Token Metadata (non-Core) asset names the limit", async () => {
+  // Mad Lads is a programmable NFT, not Core: the byte-level walk does not
+  // apply and the answer must say so and point at what does, never "try again".
+  const { body, err } = await call("get_asset_provenance", { mint: "6CuvTFPkRcB3EQR1orNGsze81eaJ1xuKPHeJX9h9Wn3x" });
+  if (body) return { status: "CHECK", note: `answered: historyComplete=${body.historyComplete}, ${body.events?.length} events` };
+  must(!/try again/i.test(err) && /Core|standard|Token Metadata|programmable/i.test(err), `must name the standard gap: ${err.slice(0, 200)}`);
+  return { note: err.slice(0, 160).replace(/\s+/g, " ") };
+});
+
+await edge("E23", "the issuer wallet's outgoing transfers are itemised", async () => {
+  const { body, err } = await call("get_wallet_activity", { wallet: CANDY_WALLET, includeOpenSea: true });
+  must(body, `tool error: ${err}`);
+  const os = body.opensea;
+  if (!os || typeof os !== "object" || !("transfersOut" in os)) return { status: "CHECK", note: `OpenSea half absent: ${JSON.stringify(body.openseaNote ?? "").slice(0, 120)}` };
+  must(Array.isArray(os.sentWithoutSale), "sentWithoutSale list present");
+  must(os.transfersOut === 0 || os.sentWithoutSale.length > 0, `${os.transfersOut} transfers out but nothing itemised`);
+  return { note: `${os.transfersOut} out, ${os.sentWithoutSale.length} itemised (cap 25), first to ${os.sentWithoutSale[0]?.to?.slice(0, 6)}` };
+});
+
 await client.close();
 fs.rmSync(home, { recursive: true, force: true });
 const counts = results.reduce((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});

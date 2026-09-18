@@ -1796,6 +1796,12 @@ registerTool(
       },
       opensea,
       openseaNote,
+      // A busy wallet fills the whole window with mints in a day or two, and
+      // "has it ever sold one of X" was being answered from that window. The
+      // collection's own sales feed is the read that question needs.
+      next: feed.truncated
+        ? "This window hit the page cap, so it is the wallet's most recent activity, not its history. To learn whether this wallet ever sold an item of ONE collection, read that collection's sales instead: get_collection_sales on its symbol lists sellers, and get_asset_provenance on a specific item shows every hand it passed through."
+        : "For whether this wallet ever sold an item of one collection, get_collection_sales on that symbol lists sellers; get_asset_provenance on a specific item shows every hand it passed through.",
     });
   }),
 );
