@@ -354,10 +354,17 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   // An empty `total` object is a shape change, not a collection with no stats:
   // every real answer carries at least one finite number.
   if (!t || typeof t !== "object") throw new Error(`OpenSea has no stats for slug "${slug}"`);
-  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  // Money and counts have a domain: finite and at or above zero. A negative
+  // floor passed the finite check and was published.
+  const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
   const fields = [t.floor_price, t.volume, t.sales, t.num_owners];
   if (!fields.some((v) => num(v) !== null)) {
-    throw new Error(`OpenSea answered for slug "${slug}" with a stats block carrying no usable numbers (outage or API change)`);
+    const negatives = fields.filter((v) => typeof v === "number" && Number.isFinite(v) && v < 0).length;
+    throw new Error(
+      negatives > 0
+        ? `OpenSea answered for slug "${slug}" with a stats block whose ${negatives} number(s) are all negative, which no floor, volume, sale count or owner count can be; the block is refused rather than shown as zero`
+        : `OpenSea answered for slug "${slug}" with a stats block carrying no usable numbers (outage or API change)`,
+    );
   }
   // Float dust is not a figure. OpenSea answered for a Candy collection with
   // a lifetime volume of 7.6e-17 next to zero sales, which is what its own
@@ -669,6 +676,8 @@ export interface OsAccountEvent {
 export async function accountEvents(wallet: string, pages: number) {
   const { data, stale, cachedAt } = await cached(`os:aev:${wallet}:${pages}`, 60_000, async () => {
     const out: OsAccountEvent[] = [];
+    const seenEvents = new Set<string>();
+    let duplicates = 0;
     let next: string | undefined;
     for (let p = 0; p < pages; p++) {
       const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
@@ -676,13 +685,24 @@ export async function accountEvents(wallet: string, pages: number) {
       );
       const rows = objectRows<OsAccountEvent>("OpenSea", "account events", res.asset_events);
       assertPageSize("OpenSea", "account events", rows, 50);
-      appendAll(out, rows);
+      // Exact copies only. A page overlap repeats a row byte for byte, and
+      // counting it twice doubled a wallet's buys; two rows that DIFFER are
+      // kept, because a different price or side is a different claim.
+      for (const r of rows) {
+        const id = JSON.stringify([r.event_type, r.transaction, r.event_timestamp, r.nft?.identifier, r.buyer, r.seller, r.from_address, r.to_address, r.payment?.quantity]);
+        if (seenEvents.has(id)) {
+          duplicates++;
+          continue;
+        }
+        seenEvents.add(id);
+        appendAll(out, [r]);
+      }
       if (!res.next || rows.length < 50) break;
       next = res.next;
     }
-    return out;
+    return { rows: out, duplicates };
   });
-  return { events: data, truncated: data.length >= pages * 50, stale, cachedAt };
+  return { events: data.rows, duplicates: data.duplicates, truncated: data.rows.length + data.duplicates >= pages * 50, stale, cachedAt };
 }
 
 // ------------------------------------------------- newer OpenSea reads (2026)
@@ -718,7 +738,10 @@ export async function traitFloors(slug: string) {
   const byKey = new Map<string, TraitFloorEntry>();
   for (const f of data.floors) {
     if (typeof f.trait_type !== "string" || typeof f.value !== "string") continue;
-    if (typeof f.floor_price !== "number" || !Number.isFinite(f.floor_price)) continue;
+    // A trait floor is an ASK: a finite amount above zero. Zero is "nobody
+    // has priced it" on this venue and negative is corrupt; neither is a
+    // price a reader can be offered.
+    if (typeof f.floor_price !== "number" || !Number.isFinite(f.floor_price) || f.floor_price <= 0) continue;
     const entry: TraitFloorEntry = {
       traitType: clean(f.trait_type).slice(0, 64),
       value: clean(f.value).slice(0, 64),
@@ -798,7 +821,9 @@ export async function holders(slug: string, limit = 10, totalSupply: number | nu
   );
   if (!data || !Array.isArray(data.holders)) throw new Error(`OpenSea returned no holder list for "${slug}" (outage or API change)`);
   const rows = data.holders
-    .filter((h) => typeof h.address === "string" && typeof h.quantity === "number")
+    // A holding is a positive whole number of items. A negative quantity was
+    // producing a negative share of supply.
+    .filter((h) => typeof h.address === "string" && typeof h.quantity === "number" && Number.isInteger(h.quantity) && h.quantity > 0)
     .map((h) => ({
       wallet: h.address as string,
       items: h.quantity as number,

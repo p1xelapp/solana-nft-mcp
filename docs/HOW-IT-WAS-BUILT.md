@@ -51,7 +51,8 @@ plain Solana RPC and its asset index. OpenSea is the one source that wants a key
 server asks OpenSea for a free one itself rather than asking you. Requests are paced per source and cached, because being a polite
 client is the only thing that keeps a keyless server viable. There is no signing code in the
 repository, so the ability to move anything was never written rather than merely disabled. It runs
-on the user's own machine, keeps nothing, and asks for no account.
+on the user's own machine, keeps no wallet data or telemetry (only the OpenSea key it issues
+itself, stored locally), and asks for no account.
 
 **Refuse to guess.** The stats block will not rank a SOL floor against a USDC floor. No currency
 conversion happens, on purpose, because it would mean depending on a second price

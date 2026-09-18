@@ -24,6 +24,7 @@ import { clean } from "../lib/untrusted.js";
 import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
 import { DasUnsupported } from "../lib/errors.js";
+import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
 
 const PUBLIC_DAS = "https://api.mainnet-beta.solana.com";
 const SOURCE = "the public Solana RPC asset index (DAS)";
@@ -42,6 +43,9 @@ const CANARY = "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K";
 
 function endpoints(): { id: string; url: string }[] {
   const custom = process.env.DAS_RPC_URL?.trim();
+  // Registered before the first request: an index that echoes the request
+  // URL inside an error message must not carry the key into an answer.
+  if (custom) registerUrlCredentials(custom);
   const list = [{ id: "rpc-mainnet-beta", url: PUBLIC_DAS }];
   return custom ? [{ id: "your DAS_RPC_URL", url: custom }, ...list] : list;
 }
@@ -121,7 +125,9 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       continue;
     }
     if (j.error) {
-      last = `${ep.id}: ${j.error.message ?? "error " + String(j.error.code)}`;
+      // The index's own words, redacted against every registered credential
+      // and cut short: an upstream message is text it controls.
+      last = `${ep.id}: ${typeof j.error.message === "string" ? redactSecrets(clean(j.error.message)).slice(0, 300) : "error " + String(j.error.code)}`;
       continue;
     }
     if (!("result" in j)) {
@@ -255,7 +261,13 @@ export interface DasAsset {
    * model, so both halves are neutralised and bounded, and a row missing a
    * trait name is dropped rather than keyed on "".
    */
-  attributes: { trait: string; value: string }[];
+  attributes: DasTrait[];
+  /**
+   * Traits the index served that are NOT in `attributes`: past the row cap.
+   * A filter that finds no match while this is above zero has not proven a
+   * no-match, and says so.
+   */
+  attributesOmitted: number;
   collection: string | null;
   collectionVerified: boolean | null;
   owner: string | null;
@@ -348,14 +360,47 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.length ? 
  * and a row reading "Item Type = [object Object]" is a fact this server would
  * be inventing. Exported so the rule has a test of its own.
  */
-export function normaliseAttributes(raw: unknown): { trait: string; value: string }[] {
-  return (Array.isArray(raw) ? raw : [])
-    .slice(0, 64)
-    .map((t: { trait_type?: unknown; value?: unknown } | null | undefined) => ({
-      trait: traitText(t?.trait_type),
-      value: traitText(t?.value),
-    }))
-    .filter((t) => t.trait.length > 0 && t.value.length > 0);
+export function normaliseAttributes(raw: unknown): DasTrait[] {
+  return normaliseTraits(raw).rows;
+}
+
+/** One trait as the index reported it, bounded for display. */
+export interface DasTrait {
+  trait: string;
+  value: string;
+  /**
+   * True when the raw value was longer than the display bound and was cut.
+   * A clipped value is display text, not the value: it must never prove an
+   * exact match, because a 129-character value and its 128-character prefix
+   * are different values that print the same.
+   */
+  clipped?: true;
+}
+
+/** Display bound on a trait name or value. */
+const TRAIT_TEXT_MAX = 128;
+/** Rows kept per asset. Counted first, capped second, so an index that pads with junk cannot push the real traits off the end. */
+const TRAIT_ROWS_MAX = 64;
+
+/**
+ * The bounded rows plus how many valid rows were left off.
+ *
+ * Invalid rows are dropped BEFORE the cap: sixty-four empty entries ahead of
+ * the one real trait used to push it off the end and turn a match into a
+ * confident zero (2026-09-17).
+ */
+export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: number } {
+  const valid = (Array.isArray(raw) ? raw : [])
+    .slice(0, 4096)
+    .map((t: { trait_type?: unknown; value?: unknown } | null | undefined) => {
+      const trait = traitText(t?.trait_type);
+      const value = traitText(t?.value);
+      return trait.text.length > 0 && value.text.length > 0
+        ? ({ trait: trait.text, value: value.text, ...(value.clipped || trait.clipped ? { clipped: true as const } : {}) } satisfies DasTrait)
+        : null;
+    })
+    .filter((t): t is DasTrait => t !== null);
+  return { rows: valid.slice(0, TRAIT_ROWS_MAX), omitted: Math.max(0, valid.length - TRAIT_ROWS_MAX) };
 }
 
 /**
@@ -365,14 +410,18 @@ export function normaliseAttributes(raw: unknown): { trait: string; value: strin
  * an array becomes the empty string so the caller drops the row, because the
  * alternative is presenting "[object Object]" as somebody's trait.
  */
-function traitText(v: unknown): string {
-  if (typeof v === "string") return clean(v).slice(0, 128);
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  if (typeof v === "boolean") return String(v);
-  return "";
+function traitText(v: unknown): { text: string; clipped: boolean } {
+  if (typeof v === "string") {
+    const c = clean(v);
+    return { text: c.slice(0, TRAIT_TEXT_MAX), clipped: c.length > TRAIT_TEXT_MAX };
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return { text: String(v), clipped: false };
+  if (typeof v === "boolean") return { text: String(v), clipped: false };
+  return { text: "", clipped: false };
 }
 
 function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
+  const traits = normaliseTraits(a.content?.metadata?.attributes);
   const iface = typeof a.interface === "string" && KNOWN_INTERFACES.has(a.interface) ? a.interface : "unknown";
   const compressed = a.compression?.compressed === true;
   // `grouping` has been observed as an object rather than an array; .find on
@@ -392,7 +441,8 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     name: str(a.content?.metadata?.name),
     symbol: str(a.content?.metadata?.symbol),
     image: https(a.content?.links?.image),
-    attributes: normaliseAttributes(a.content?.metadata?.attributes),
+    attributes: traits.rows,
+    attributesOmitted: traits.omitted,
     collection: addr(collection?.group_value),
     // An absent `verified` is "the index did not say", not "verified". Reading
     // a missing field as true is how an unverified grouping gets presented as
@@ -562,8 +612,24 @@ export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal
 export interface DasGroupPage {
   items: DasAsset[];
   pagesRead: number;
+  /**
+   * True when `items` is not everything the index holds for this group:
+   * the cap was hit before the index said it was done, OR rows past the cap
+   * were seen on the last page and cut. A short page under the cap is the
+   * only thing that makes this false.
+   */
   truncated: boolean;
+  /** True when the index served a short page, its own signal that the group ends here. */
+  indexExhausted: boolean;
   rowsRejected: number;
+  /** Rows seen again on a later page (same id). Counted once in `items`. */
+  duplicateRows: number;
+  /** Duplicates whose owner or membership disagreed between copies. Neither copy is trusted; the row is dropped. */
+  conflictingRows: number;
+  /** Rows the index returned for this group that name a DIFFERENT collection. Not members; dropped. */
+  foreignGroupRows: number;
+  /** Rows whose grouping the index marked verified: false. Not counted as members; dropped. */
+  unverifiedRows: number;
   readFrom: string;
   stale: boolean;
   cachedAt: string;
@@ -596,9 +662,20 @@ export async function getAssetsByGroup(
   refuseIfWithdrawn(cap);
   const limit = 1000;
   const items: DasAsset[] = [];
+  /** Position in `items` by id, for the duplicate check. */
+  const seen = new Map<string, number>();
+  const dropped = new Set<string>();
   let page = 1;
   let truncated = false;
+  let indexExhausted = false;
   let rowsRejected = 0;
+  let duplicateRows = 0;
+  let conflictingRows = 0;
+  let foreignGroupRows = 0;
+  let unverifiedRows = 0;
+  // An index that serves the same page forever would otherwise be read
+  // forever once duplicates stop counting towards the cap.
+  const pageCeiling = Math.ceil(max / limit) + 2;
   let readFrom = cap.endpoint ?? PUBLIC_DAS;
   let stale = false;
   let cachedAt = new Date().toISOString();
@@ -636,15 +713,57 @@ export async function getAssetsByGroup(
     stale = stale || hit.stale;
     rowsRejected += data.rejected;
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
-    for (const raw of data.items) items.push(normalise(raw, data.endpoint, hit.cachedAt));
-    if (data.items.length + data.rejected < limit) break;
-    if (items.length >= max) {
-      truncated = true;
+    for (const raw of data.items) {
+      const a = normalise(raw, data.endpoint, hit.cachedAt);
+      // Membership is evidence, not the fact of being on the page. A row that
+      // names another collection, or whose grouping the index itself marks
+      // unverified, was being counted as a holder of THIS collection.
+      if (a.collection !== null && a.collection !== collection) { foreignGroupRows++; continue; }
+      if (a.collectionVerified === false) { unverifiedRows++; continue; }
+      if (dropped.has(a.id)) continue;
+      const at = seen.get(a.id);
+      if (at !== undefined) {
+        duplicateRows++;
+        const prev = items[at]!;
+        if (prev.owner !== a.owner || prev.burnt !== a.burnt) {
+          // Two copies that disagree: neither is the truth. Out, and counted.
+          conflictingRows++;
+          items.splice(at, 1);
+          seen.delete(a.id);
+          for (const [id, pos] of seen) if (pos > at) seen.set(id, pos - 1);
+          dropped.add(a.id);
+        }
+        continue;
+      }
+      seen.set(a.id, items.length);
+      items.push(a);
+    }
+    if (data.items.length + data.rejected < limit) {
+      indexExhausted = true;
       break;
     }
+    if (items.length >= max) break;
+    if (page >= pageCeiling) break;
     page++;
   }
-  return { items: items.slice(0, max), pagesRead: page, truncated, rowsRejected, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
+  // The cap is checked AFTER the short-page exit, not before it: a three-row
+  // last page against a cap of one used to return one row and say the whole
+  // collection had been read.
+  truncated = !indexExhausted || items.length > max;
+  return {
+    items: items.slice(0, max),
+    pagesRead: page,
+    truncated,
+    indexExhausted,
+    rowsRejected,
+    duplicateRows,
+    conflictingRows,
+    foreignGroupRows,
+    unverifiedRows,
+    readFrom: `${SOURCE} via ${readFrom}`,
+    stale,
+    cachedAt,
+  };
 }
 
 /**

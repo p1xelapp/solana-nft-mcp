@@ -55,6 +55,50 @@ export function registerSecret(value: string | null | undefined): boolean {
   return true;
 }
 
+/**
+ * Register whatever a private endpoint URL carries as its credential.
+ *
+ * A private RPC puts its key in one of three places: the query string
+ * (`?api-key=...`), a path segment (`/v2/<key>`, `/<token>/`), or the
+ * userinfo (`https://user:pass@host`). The host itself is a label and is
+ * never treated as a secret. Only the URL's credential parts are registered,
+ * so an ordinary path like `/v2` or `/rpc` is not redacted from every answer.
+ *
+ * The round-four review (2026-09-16) mocked an RPC that reflected the
+ * `api-key` query value inside a JSON-RPC error message; the message became
+ * `sourceErrors["solana-rpc"]` on a SUCCESSFUL `get_asset` answer. The host-
+ * only endpoint label had never been the leak; the upstream's own text was.
+ * Returns how many parts were registered, for tests.
+ */
+export function registerUrlCredentials(url: string | null | undefined): number {
+  if (typeof url !== "string" || !url.trim()) return 0;
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  const reg = (v: string) => {
+    if (registerSecret(v)) n++;
+    let decoded = v;
+    try {
+      decoded = decodeURIComponent(v);
+    } catch {
+      /* not percent-encoded; the raw form is registered above */
+    }
+    if (decoded !== v && registerSecret(decoded)) n++;
+  };
+  if (u.username) reg(u.username);
+  if (u.password) reg(u.password);
+  for (const [, v] of u.searchParams) reg(v);
+  // Path segments: a key is long and opaque, a version prefix is not. Sixteen
+  // characters is under every provider token seen (UUIDs are 36, QuickNode
+  // and Alchemy tokens 32+) and over any route word.
+  for (const seg of u.pathname.split("/")) if (seg.length >= 16) reg(seg);
+  return n;
+}
+
 /** Replace every registered credential, in any of its spellings, with a marker. Cheap when nothing is registered. */
 export function redactSecrets(text: string): string {
   if (secrets.size === 0 || !text) return text;

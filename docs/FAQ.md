@@ -14,7 +14,10 @@ itself. For a single item, the collection name plus the card number or the trait
 If a name matches several collections you get the list and a question, not a guess.
 
 **Does it collect anything about me?**
-No. It runs on your machine, talks to public data sources, and keeps nothing. No
+No. It runs on your machine, talks to public data sources, and keeps no wallet data,
+no questions and no telemetry. The one thing it may write is the free OpenSea key it issues
+itself, stored in `~/.collector-mcp/` so it is not re-issued every start (`COLLECTOR_MCP_NO_AUTO_KEYS=1`
+turns that off). No
 account, no sign-in, no telemetry, no log sent anywhere. The only thing that leaves your
 computer is the public address or name you asked about, sent to the public source that
 can answer it. There is nothing to opt out of because nothing is collected.

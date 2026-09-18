@@ -945,3 +945,114 @@ Tests: the cooldown recovery moves a fake clock across the boundary instead
 of resetting state; persona cases that only cite another test report
 REFERENCE rather than PASS, and the runner refuses to start without
 `PERSONA_LIVE=1` and an explicit `PERSONA_CASES` path.
+
+## 1.15.1 - 2026-09-17
+
+Two outside reviews, one on 1.14.3 and one on 1.15.0, produced 27 findings
+between them. The first report was never handed over, so its sixteen findings
+sat unfixed for a day and the second report found them again. All 27 are fixed
+here, each pinned by a test that failed on 1.15.0, and the reviewer's own probe
+scripts were re-run against this tree: 16 of 16 census checks, 9 of 9
+provenance checks and the credential, cache and answer-size probes all pass.
+
+The one that mattered most:
+
+- A private `SOLANA_RPC_URL` or `DAS_RPC_URL` carries its key in the query
+  string, a path segment or the userinfo. An upstream that echoed the key
+  inside a JSON-RPC error message put it into `sourceErrors` on a normal
+  `get_asset` answer, because only the host label had ever been protected.
+  The key is now registered from the URL before the first request, the
+  upstream's text is redacted and cut short at the RPC boundary, and a
+  stdio test proves a reflected canary never reaches an answer.
+
+Provenance:
+
+- One transaction can move an asset twice. Keeping only the first TransferV1
+  reported the intermediary as the final owner of a complete trail. Every
+  transfer is a row now, in execution order, with inner instructions placed
+  after the instruction that invoked them rather than after all of them.
+- Another asset's decoded TransferV1 that named this asset as its recipient
+  was turned into a transfer of this asset by a transaction-wide log line,
+  and a true never-traded claim came back contradicted. Only an instruction
+  whose subject is this asset can put a transfer into its history.
+- The walk reads newest first, so what a budget abandons is older than what
+  was decoded. The gap row was appended after the newest event and labelled
+  as following it; it now sits before the decoded rows, and with a depth
+  window as well the unread ranges are laid out oldest first.
+- Custody after any hole is unknown, not "not in escrow". Resetting it to
+  false after a gap labelled the next fill's buyer as an escrow again. A
+  transfer to a venue account with unknown custody says the direction cannot
+  be told; nothing is claimed about the wallet.
+- An unreadable transaction is a gap row in its place, with the signature it
+  stands for, so custody read before it does not carry across it.
+- Gap rows carry a structured `reason` (`depth`, `budget`, `unreadable`) and
+  transfers to a venue account carry `escrowDirection` (`into`, `out_of`,
+  `unknown`), so a client does not have to parse the label.
+
+The census:
+
+- A short page bigger than the cap returned the cap and said the whole
+  collection had been read. The cap is checked after the short-page exit.
+- One mint on two pages counted twice. Rows are deduplicated by id; two
+  copies that disagree on owner or burn state are dropped and counted.
+- Membership is evidence. A row naming a different collection, or one whose
+  grouping the index marks unverified, is not a member and is counted apart.
+  A non-Core row is counted with a scope warning.
+- A trait filter compares whole values. A 129-character value matched its
+  128-character display prefix; an asset carrying the trait name twice was
+  judged on the first copy; 64 empty rows pushed a real trait past the cap.
+  Invalid rows are dropped before the cap, a clipped value is marked and
+  never proves equality, and any pair on the asset can match. Rows the
+  filter cannot decide are counted as `undecided` and named.
+- A burned record with a leftover owner field was a holding with a share of
+  supply. Burned rows are listed, flagged, and outside the holder counts.
+- The default census came back as 2 MB. The holder and asset lists are
+  bounded separately, the counts stay whole, and the omission is named.
+- A trait without a value was refused after two index pages had been read.
+  It is refused first.
+- `membershipComplete` says whether every count covers every row the index
+  holds; the coverage sentence lists every reason it does not.
+
+Venues and wallets:
+
+- A stale trait floor still produced a numeric discount next to
+  `comparison: "unavailable"`. No comparison, no number.
+- An abandoned cache producer that settled after its replacement overwrote
+  the newer answer. A producer commits only while it still owns its key.
+- One unrepresentable timestamp on a full sales page became the boundary and
+  ended the walk with `truncated: false`. Only a usable time sets it.
+- A fill with the wallet on both sides was booked as SOL spent. Self-fills
+  are counted apart, named, and outside every total.
+- A sale of item A hid a gift of item B in the same transaction. Settlement
+  matches on transaction and item; a sale naming no item makes a
+  same-transaction transfer uncertain rather than settled.
+- Two identical OpenSea sale rows counted as two buys. Exact copies are
+  dropped in the reader and in the view; rows that differ are kept.
+- Negative floors, volumes, counts and holder quantities passed the finite
+  check and were published. Money and counts are finite and nonnegative or
+  they are unknown; a trait floor must be above zero; a holding is a positive
+  whole number. A stats block that is all negative is refused by name.
+- An even-length hold sample took its upper middle as the median (1 and 20
+  days gave 20, and a flipper became "mixed"). The middle pair is averaged.
+
+Answers and packaging:
+
+- A venue image URL of 130,000 characters made a single asset answer 263 KB.
+  URLs are bounded at 2,048 characters.
+- The bundle installed production dependencies with `npm install` and no
+  lockfile, so it could carry versions CI never tested. The stage now carries
+  the lock and `.npmrc`, installs with `npm ci`, and refuses to pack if any
+  staged dependency differs from the lock.
+- `npm run build` now empties `dist/` first. A compiled file from a source
+  deleted weeks ago was still there and would have shipped in the tarball.
+- The lockfile's root version and engines were a release behind.
+- README links are absolute, so they resolve from an installed package.
+
+Documents corrected against the code: `historyComplete` is a complete walk
+and `mintObserved` is the mint (they were conflated); the decoded TransferV1
+owner is slot 4, the last-account heuristic is the undecodable fallback only;
+the self-issued OpenSea key is stored locally, so "keeps nothing" became
+"keeps no wallet data or telemetry"; refresh is on demand near expiry, not
+weekly; the missing-key example states that auto-issue was off or refused;
+the questions guide no longer denies a holder sweep; and the offline test
+expects local tools to keep answering.

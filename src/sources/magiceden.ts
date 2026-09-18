@@ -11,7 +11,7 @@ import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
-import { isoFromBlockTime } from "../lib/time.js";
+import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
 import { isBase58Address } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
@@ -37,8 +37,15 @@ function page<T>(what: string, batch: unknown): T[] {
 }
 
 const LAMPORTS = 1_000_000_000;
+// A price is a finite amount of money at or above zero. A negative or
+// infinite lamport figure passed the shape gate and was published as a floor
+// (2026-09-16); it is unknown, not a number.
 const sol = (lamports: unknown): number | null =>
-  typeof lamports === "number" ? lamports / LAMPORTS : null;
+  typeof lamports === "number" && Number.isFinite(lamports) && lamports >= 0 ? lamports / LAMPORTS : null;
+/** A count the venue reports: a nonnegative integer, or unknown. */
+const count = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : null);
+/** A SOL total the venue reports: finite and at or above zero, or unknown. */
+const solAmount = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
 
 export interface MeStats {
   symbol: string;
@@ -163,10 +170,10 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
   return {
     symbol: data.symbol,
     floorPriceSol: sol(data.floorPrice),
-    listedCount: data.listedCount ?? null,
+    listedCount: count(data.listedCount),
     // ME reports volumeAll in SOL for some collections and lamports for
     // others historically; current v2 returns SOL. Label the unit explicitly.
-    volumeAllSol: typeof data.volumeAll === "number" ? data.volumeAll : null,
+    volumeAllSol: solAmount(data.volumeAll),
     avgPrice24hSol: sol(data.avgPrice24hr),
     stale,
     cachedAt,
@@ -595,9 +602,13 @@ export async function collectionActivities(
     pagesRead++;
     appendAll(events, batch);
     for (const a of batch) {
-      if (typeof a.blockTime !== "number") continue;
-      if (oldestSeen === null || a.blockTime < oldestSeen) oldestSeen = a.blockTime;
-      if (newestSeen === null || a.blockTime > newestSeen) newestSeen = a.blockTime;
+      // Only a REPRESENTABLE time can set the boundary. A blockTime of -1e20
+      // on one row became oldestSeen, satisfied the window check, and ended
+      // the walk after page one with truncated: false.
+      const t = usableBlockTime(a.blockTime);
+      if (t === null) continue;
+      if (oldestSeen === null || t < oldestSeen) oldestSeen = t;
+      if (newestSeen === null || t > newestSeen) newestSeen = t;
     }
     // A short page is the end of what ME will serve, not a budget cut.
     if (batch.length < ACTIVITY_PAGE) {

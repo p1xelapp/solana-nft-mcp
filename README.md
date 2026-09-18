@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="collector-mcp" width="100%" />
+<img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/banner.png" alt="collector-mcp" width="100%" />
 
 # collector-mcp
 
 **Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](tsconfig.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://github.com/p1xelapp/collector-mcp/blob/main/tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](https://github.com/p1xelapp/collector-mcp/blob/main/LICENSE)
 [![Sign-up](https://img.shields.io/badge/sign--up-none-f59e0b)](#what-it-reads)
 
 </div>
@@ -30,7 +30,7 @@ source could not see.
 
 ## How it fits together
 
-<img src="assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
+<img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
 
 The server runs on your machine and your AI app starts it. Nothing here is a hosted
 service, and there is no account between you and the data. This picture is generated
@@ -208,11 +208,11 @@ without raising an error.
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
 | `get_collection_stats` | chain supply, floors per venue, and a reconciliation that refuses to rank SOL against USDC |
-| `get_collection_holders` | every asset in a Core collection and who holds it, listed or not, filterable by trait or name, with a holder count per address |
+| `get_collection_holders` | census of a Core collection from the chain's asset index: each asset and its last-indexed owner, listed or not, filterable by trait or name, holders ranked by count, capped at 2,000 rows by default and saying so when the cap is hit |
 | `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-venue floors live in `get_collection_stats`) |
 | `get_recent_sales` | latest completed fills with buyer, seller, price and signature |
 | `get_asset` | three readers for one item: the venue, a byte-level decode, and the chain's asset index, with owner agreement reported |
-| `get_asset_provenance` | bounded ownership history of a Core asset, dated, marketplaces named - `historyComplete` says whether it reached the mint |
+| `get_asset_provenance` | bounded ownership history of a Core asset, dated, marketplaces named, every unread hole marked in place - `historyComplete` says every transaction was read, `mintObserved` says the mint itself was decoded |
 | `get_wallet_holdings` | holdings from two independent readers, with the gap between them named |
 | `get_wallet_profile` | holdings by collection, share of wallet and of supply, listed and compressed counts, floor ceiling with assumptions, wallet age |
 | `get_wallet_activity` | buys and sells, net flow, venue split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
@@ -256,15 +256,15 @@ with the rules for presenting this data), `get_source_status` for the source cat
   carries `historyComplete` and `skippedTransactions`, so a partial trail is never presented as
   the whole story.
 - Public RPC throttles bursts, and cached values come back labelled `stale: true` rather than
-  erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](docs/TRUST-AND-LIMITS.md)
-  and [docs/SOURCES.md](docs/SOURCES.md).
+  erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
+  and [docs/SOURCES.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/SOURCES.md).
 
 ## Security
 
 Minting is permissionless, so a collection name is attacker-controlled text. Every name from a
 chain or a marketplace is neutralised before a model sees it: invisible and bidi characters
 stripped, newlines collapsed, delimiter markup defanged, instruction-shaped phrasing flagged.
-This is covered by the offline test suite. Reporting: [SECURITY.md](SECURITY.md).
+This is covered by the offline test suite. Reporting: [SECURITY.md](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md).
 
 ## Development
 
@@ -282,16 +282,16 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 
 ## Docs
 
-- [How it was built, and why](docs/HOW-IT-WAS-BUILT.md)
-- [Under the hood](docs/DEEP-DIVE.md)
-- [Every data source, tiered](docs/SOURCES.md)
-- [Trust language and limits](docs/TRUST-AND-LIMITS.md)
-- [Questions people ask, and which ones it can answer](docs/QUESTIONS.md)
-- [How people use it, by persona](docs/HOW-PEOPLE-USE-IT.md)
-- [Things people build with it](docs/BUILD-IDEAS.md)
-- [FAQ](docs/FAQ.md)
-- [What can change under this server, and what happens when it does](docs/MAINTENANCE.md)
-- [Contributing](CONTRIBUTING.md) and [Security policy](SECURITY.md)
+- [How it was built, and why](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-IT-WAS-BUILT.md)
+- [Under the hood](https://github.com/p1xelapp/collector-mcp/blob/main/docs/DEEP-DIVE.md)
+- [Every data source, tiered](https://github.com/p1xelapp/collector-mcp/blob/main/docs/SOURCES.md)
+- [Trust language and limits](https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
+- [Questions people ask, and which ones it can answer](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md)
+- [How people use it, by persona](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
+- [Things people build with it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/BUILD-IDEAS.md)
+- [FAQ](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
+- [What can change under this server, and what happens when it does](https://github.com/p1xelapp/collector-mcp/blob/main/docs/MAINTENANCE.md)
+- [Contributing](https://github.com/p1xelapp/collector-mcp/blob/main/CONTRIBUTING.md) and [Security policy](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md)
 
 ## Why I built this
 
@@ -315,7 +315,7 @@ the venue. Say what you could not see. Refuse to guess.
 
 ## Running on the same decoding
 
-<a href="https://candyscan.p1xel.app"><img src="assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
+<a href="https://candyscan.p1xel.app"><img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
 
 **[CandyScan](https://candyscan.p1xel.app)** tracks the Candy Digital collections on Solana:
 supply, holders, migrations and sales, kept current. It is where the Core decoding was written
@@ -330,7 +330,7 @@ Built and maintained by P1xel ([p1xel.app](https://p1xel.app),
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/p1xelapp/collector-mcp/blob/main/LICENSE).
 
 Not affiliated with Candy Digital, MLB, DC Comics, Magic Eden or OpenSea, and
 nothing here is financial advice.

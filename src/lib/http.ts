@@ -178,8 +178,15 @@ export async function cached<T>(
       // own signal - which may fire long before the other waiters' - is not
       // what the fetcher's pages and gate waits see.
       const producer = new AbortController();
+      // The commit belongs to the producer that still OWNS the key. One whose
+      // last waiter left was replaced (below); if it goes on to settle after
+      // its replacement, its older answer must not overwrite the newer one.
+      // Reproduced 2026-09-16: an abandoned owner read at slot 100 replaced
+      // slot 200 in the cache. The identity check on cleanup was never enough.
+      // `entry` is assigned just below and read here only after the fetch
+      // settles, so the closure sees this call's own entry.
       const promise = runWithSignal(producer.signal, () => fetcher(producer.signal)).then((data) => {
-        commit(key, data);
+        if (!producer.signal.aborted && inflight.get(key) === entry) commit(key, data);
         return data;
       });
       entry = { promise, producer, waiters: 0 };

@@ -68,10 +68,11 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ### 9. A request needs a key that is not configured
 
-> This one needs an OpenSea key, which is not set here, so OpenSea floors, sales, plain transfers
-> and the Solana collection index are all out of view for now. Everything keyless still works and
-> is above. A free key is one request to OpenSea's auth endpoint, and it goes in the `env` block
-> of the config, not your shell.
+> This one needs an OpenSea key. The server normally issues itself a free one, but auto-issue was
+> disabled here (`COLLECTOR_MCP_NO_AUTO_KEYS`) or OpenSea refused the request, and no
+> `OPENSEA_API_KEY` is set, so OpenSea floors, sales, plain transfers and the Solana collection
+> index are all out of view for now. Everything keyless still works and is above. A free key is one
+> request to OpenSea's auth endpoint, and it goes in the `env` block of the config, not your shell.
 
 ### 10. A wallet holds more than the page read
 
@@ -103,7 +104,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 5. Cached values are served labelled stale rather than shown as fresh or hidden behind an error.
 6. Unverifiable is a real verdict here, alongside confirmed and contradicted.
 7. Read-only by construction. There is no signing code in the repository, so there is nothing to misuse.
-8. Runs on your machine, reads public data, keeps nothing of yours. No account, no sign-in, no key to go and get: the one free key it uses, it requests for you, and you can turn that off.
+8. Runs on your machine, reads public data, keeps no wallet data or telemetry. No account, no sign-in, no key to go and get: the one free key it uses, it requests for you and stores under your home folder, and you can turn that off.
 
 ---
 

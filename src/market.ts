@@ -752,8 +752,11 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
       traits,
       strongestTraitFloorSol: strongestFloor,
       strongestTrait: strongest ? `${strongest.traitType}: ${strongest.value}` : null,
+      // The number IS the comparison. When the comparison is unavailable the
+      // number is too: a 50% discount next to comparison: "unavailable" was
+      // read by anything that takes the field and skips the sentence.
       underStrongestTraitFloorPct:
-        priceSol === null || strongestFloor === null || strongestFloor <= 0 || isOwnTraitFloor
+        !comparable || priceSol === null || strongestFloor === null || strongestFloor <= 0 || isOwnTraitFloor
           ? null
           : round(((strongestFloor - priceSol) / strongestFloor) * 100, 1),
       isOwnTraitFloor,

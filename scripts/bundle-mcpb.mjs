@@ -1,7 +1,8 @@
 /**
  * Builds the one-click install bundle for Claude Desktop (an .mcpb file).
  *
- * A user who cannot edit a JSON config double-clicks the bundle instead. It
+ * A user who cannot edit a JSON config drags the bundle onto Claude Desktop's
+ * Settings > Extensions page instead (double-clicking does not open it). It
  * carries the built server, the collection snapshot, production dependencies
  * and a manifest; Claude Desktop reads the manifest and registers the server.
  *
@@ -31,13 +32,42 @@ if (!existsSync(path.join(root, "dist", "index.js"))) {
 
 rmSync(stage, { recursive: true, force: true });
 mkdirSync(stage, { recursive: true });
+// The lockfile and .npmrc travel with the stage so the install below is the
+// TESTED tree: `npm install` without them resolved every production range
+// again, and a bundle could carry versions CI never ran.
 for (const f of ["dist", "data", "LICENSE", "README.md", "package.json"]) cpSync(path.join(root, f), path.join(stage, f), { recursive: true });
+cpSync(path.join(root, "package-lock.json"), path.join(stage, "package-lock.json"));
+cpSync(path.join(root, ".npmrc"), path.join(stage, ".npmrc"));
 cpSync(path.join(root, "assets", "icon-512.png"), path.join(stage, "icon.png"));
 
-// Production dependencies only, no lifecycle scripts: the bundle must carry
-// exactly what `npm install collector-mcp` would give a user, nothing else.
+// Production dependencies only, from the lockfile, no lifecycle scripts:
+// `npm ci` refuses to run when package.json and the lock disagree, which is
+// the check that the bundle carries what the suite tested.
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-execFileSync(npm, ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: stage, stdio: "ignore", shell: process.platform === "win32" });
+execFileSync(npm, ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: stage, stdio: "ignore", shell: process.platform === "win32" });
+// Prove it: every production dependency in the staged tree is at the version
+// the root lock names. A mismatch here is a build bug, not a warning.
+{
+  const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
+  const drift = [];
+  for (const [p, entry] of Object.entries(lock.packages ?? {})) {
+    if (!p.startsWith("node_modules/") || entry.dev) continue;
+    const staged = path.join(stage, p, "package.json");
+    if (!existsSync(staged)) {
+      drift.push(`${p}: missing from the stage`);
+      continue;
+    }
+    const v = JSON.parse(readFileSync(staged, "utf8")).version;
+    if (v !== entry.version) drift.push(`${p}: lock ${entry.version}, staged ${v}`);
+  }
+  if (drift.length) {
+    console.error("staged dependencies differ from package-lock.json:\n  " + drift.join("\n  "));
+    process.exit(1);
+  }
+}
+// The lock and .npmrc did their job; they are not part of what ships.
+rmSync(path.join(stage, "package-lock.json"), { force: true });
+rmSync(path.join(stage, ".npmrc"), { force: true });
 
 const manifest = {
   manifest_version: "0.2",

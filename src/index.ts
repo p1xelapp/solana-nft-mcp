@@ -332,7 +332,10 @@ const symbolSchema = z
  */
 function marketView(t: Record<string, unknown>) {
   const str = (v: unknown) => (typeof v === "string" && v.length ? v : null);
-  const url = (v: unknown) => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
+  // Bounded as well as https: a venue-supplied URL is text the venue
+  // controls, and a 130,000-character one turned a single asset answer into
+  // 263 KB, twice (text and structured content), which a client cuts off.
+  const url = (v: unknown) => (typeof v === "string" && v.length <= 2048 && /^https:\/\//.test(v) ? v : null);
   const flags: string[] = [];
   const cl = (v: unknown, label: string) => {
     const s = str(v);
@@ -1431,7 +1434,6 @@ registerTool(
     },
   },
   guard(async ({ collection, trait, value, namePrefix, max = 2000 }) => {
-    const page = await das.getAssetsByGroup(collection, max);
     const lower = (v: string) => v.toLocaleLowerCase();
     const wantTrait = trait ? lower(trait) : null;
     const wantValue = value ? lower(value) : null;
@@ -1439,22 +1441,42 @@ registerTool(
 
     // A trait filter with only half the pair is a caller error that would
     // otherwise silently return the whole collection as though it matched.
+    // Checked BEFORE the census: it used to be checked after, which spent two
+    // index pages on a request that was always going to be refused.
     if ((wantTrait && !wantValue) || (wantValue && !wantTrait)) {
       throw new Error("trait and value go together: pass both, or neither.");
     }
 
+    const page = await das.getAssetsByGroup(collection, max);
+
+    // A row either MATCHES the filter, or does not, or cannot be decided:
+    // its trait list was cut at the row cap, or the only candidate value was
+    // clipped for display so equality cannot be proven. The third state is
+    // reported, never folded into "no".
+    let undecided = 0;
     const rows = page.items.filter((a) => {
       if (wantName && !lower(a.name ?? "").startsWith(wantName)) return false;
       if (wantTrait) {
-        const hit = a.attributes.find((t) => lower(t.trait) === wantTrait);
-        if (!hit || lower(hit.value) !== wantValue) return false;
+        const candidates = a.attributes.filter((t) => lower(t.trait) === wantTrait);
+        // Any pair on the asset equal to the requested pair is a match: an
+        // asset carrying "Item Type" twice, with the second one "Pack",
+        // still carries the pair. Only an unclipped value can prove it.
+        if (candidates.some((t) => !t.clipped && lower(t.value) === wantValue)) return true;
+        if (a.attributesOmitted > 0 || candidates.some((t) => t.clipped)) undecided++;
+        return false;
       }
       return true;
     });
 
+    // Holder arithmetic is over items somebody HOLDS. A burned record can
+    // keep its last owner field in the index, and counted as a holding it
+    // gave that address a share of a supply that no longer exists.
+    const held = rows.filter((a) => !a.burnt);
+    const burnt = rows.length - held.length;
+    const nonCore = rows.filter((a) => a.standard !== "metaplex-core").length;
     const byOwner = new Map<string, number>();
     let unknownOwner = 0;
-    for (const a of rows) {
+    for (const a of held) {
       if (!a.owner) {
         unknownOwner++;
         continue;
@@ -1463,12 +1485,58 @@ registerTool(
     }
     const holders = [...byOwner.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([owner, held]) => ({
+      .map(([owner, count]) => ({
         owner,
-        held,
-        shareOfMatchedPct: rows.length > 0 ? Number(((held / rows.length) * 100).toFixed(1)) : 0,
+        held: count,
+        shareOfHeldPct: held.length > 0 ? Number(((count / held.length) * 100).toFixed(1)) : 0,
         explorer: `https://solscan.io/account/${owner}`,
       }));
+
+    // The COUNTS above cover every row read. The two lists are bounded
+    // separately so the whole answer stays inside what a client carries:
+    // the default census of 2,000 rows came back as two megabytes, and a
+    // client cuts that off without saying so.
+    const fittedHolders = fitRows(holders, {
+      budget: 14_000,
+      moreHint: "distinctHolders above counts every holder; the rows here are the largest. Narrow with namePrefix or a trait pair to see the rest.",
+    });
+    const fittedAssets = fitRows(
+      rows.map((a) => ({
+        mint: a.id,
+        name: a.name,
+        owner: a.owner,
+        standard: a.standard,
+        burnt: a.burnt,
+        explorer: `https://solscan.io/token/${a.id}`,
+      })),
+      { budget: 18_000, moreHint: "matched above counts every row; narrow with namePrefix or a trait pair to list the rest." },
+    );
+
+    const readThis = [
+      "Owners come from the chain's asset index, which is a database somebody else maintains: it can lag a transfer it has not picked up yet. get_asset settles one owner byte-for-byte from the chain.",
+      "An item listed for sale reports the marketplace's escrow account as its owner, not the seller. A holder row with an implausible share is usually an escrow or a custodial account, not a collector: get_asset_provenance on one of its mints names the escrow and shows who handed it over.",
+      "A custodial platform holds a buyer's item in its own address, so one address holding many does not settle whether one person bought them.",
+    ];
+    const coverage: string[] = [];
+    if (page.truncated) coverage.push(`the read stopped at ${max} assets and the index has more: raise max, because every count here covers only what was read`);
+    if (page.rowsRejected > 0) coverage.push(`${page.rowsRejected} row(s) the index served had no usable id and were dropped`);
+    if (page.conflictingRows > 0) coverage.push(`${page.conflictingRows} asset(s) came back twice with a different owner or burn state and were left out rather than guessed`);
+    if (page.foreignGroupRows > 0) coverage.push(`${page.foreignGroupRows} row(s) the index served for this group named a different collection and were not counted`);
+    if (page.unverifiedRows > 0) coverage.push(`${page.unverifiedRows} row(s) carried a grouping the index marks unverified and were not counted as members`);
+    readThis.push(
+      coverage.length === 0
+        ? "Every asset the index reports for this collection was read and counted."
+        : `This census is INCOMPLETE or qualified: ${coverage.join("; ")}.`,
+    );
+    if (undecided > 0) {
+      readThis.push(
+        `${undecided} asset(s) could not be decided against the trait filter: their trait list was cut at the row cap or the value was too long to compare exactly, so a no-match among them is uncertain, not confirmed.`,
+      );
+    }
+    if (burnt > 0) readThis.push(`${burnt} matched asset(s) are burned; they are listed below with burnt: true and left out of the holder counts and shares.`);
+    if (nonCore > 0) readThis.push(`${nonCore} matched asset(s) are not Metaplex Core (a legacy Token Metadata or compressed standard) and are counted on the index's word alone; the byte-level Core reads cannot check them.`);
+    if (fittedHolders.note) readThis.push(fittedHolders.note);
+    if (fittedAssets.note) readThis.push(fittedAssets.note);
 
     return ok({
       collection,
@@ -1477,34 +1545,33 @@ registerTool(
         value: value ?? null,
         namePrefix: namePrefix ?? null,
         applied: Boolean(wantTrait || wantName),
+        /** Rows the filter could neither accept nor reject; see readThis. */
+        undecided,
+        incomplete: undecided > 0,
       },
       assetsInCollection: page.items.length,
       matched: rows.length,
+      heldByAWallet: held.length,
+      burnt,
       distinctHolders: byOwner.size,
       assetsWithNoOwnerReported: unknownOwner,
-      holders,
-      assets: rows.map((a) => ({
-        mint: a.id,
-        name: a.name,
-        owner: a.owner,
-        standard: a.standard,
-        burnt: a.burnt,
-        explorer: `https://solscan.io/token/${a.id}`,
-      })),
+      holders: fittedHolders.rows,
+      holdersOmitted: fittedHolders.omitted,
+      assets: fittedAssets.rows,
+      assetsOmitted: fittedAssets.omitted,
       truncated: page.truncated,
+      /** False whenever a count above does not cover every row the index holds for this collection. */
+      membershipComplete: !page.truncated && page.rowsRejected === 0 && page.conflictingRows === 0,
       pagesRead: page.pagesRead,
       rowsRejected: page.rowsRejected,
+      duplicateRows: page.duplicateRows,
+      conflictingRows: page.conflictingRows,
+      foreignGroupRows: page.foreignGroupRows,
+      unverifiedRows: page.unverifiedRows,
       readFrom: page.readFrom,
       stale: page.stale,
       readAt: page.cachedAt,
-      readThis: [
-        "Owners come from the chain's asset index, which is a database somebody else maintains: it can lag a transfer it has not picked up yet. get_asset settles one owner byte-for-byte from the chain.",
-        "An item listed for sale reports the marketplace's escrow account as its owner, not the seller. A holder row with an implausible share is usually an escrow or a custodial account, not a collector: get_asset_provenance on one of its mints names the escrow and shows who handed it over.",
-        "A custodial platform holds a buyer's item in its own address, so one address holding many does not settle whether one person bought them.",
-        page.truncated
-          ? `Truncated at ${max} assets: raise max or narrow the filter, because the holder counts below cover only what was read.`
-          : "Every asset the index reports for this collection was read.",
-      ],
+      readThis,
     });
   }),
 );
@@ -1667,7 +1734,7 @@ registerTool(
     if (includeOpenSea && (await os.openSeaAvailable())) {
       try {
         const ev = await os.accountEvents(wallet, 2);
-        opensea = summarizeOpenSeaEvents(wallet, ev.events, ev.truncated);
+        opensea = summarizeOpenSeaEvents(wallet, ev.events, ev.truncated, ev.duplicates);
       } catch (e) {
         openseaNote = `OpenSea account feed unavailable: ${e instanceof Error ? e.message : String(e)}`;
       }

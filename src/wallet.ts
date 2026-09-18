@@ -138,6 +138,8 @@ export interface ActivitySummary {
   buys: { count: number; totalSol: number; collections: Record<string, number> };
   sells: { count: number; totalSol: number; collections: Record<string, number> };
   netFlowSol: number;
+  /** Fills with this wallet on both sides. Outside every total above. */
+  selfFills: number;
   /** Money figures cover the trades this many SOL totals could actually be built from. */
   pricing: {
     /** Trade-shaped rows whose price was present but not a finite amount above zero. */
@@ -201,6 +203,12 @@ export function summarizeActivity(
   let unpricedTrades = 0;
   /** Trades excluded from money because two copies of the row disagreed about the amount or a side. */
   let unsettledTrades = 0;
+  /**
+   * Fills where this wallet is BOTH buyer and seller. No money left or
+   * entered the wallet, so they sit outside the buy and sell totals and the
+   * net flow; buyer precedence used to book a 2 SOL self-fill as 2 SOL spent.
+   */
+  let selfFills = 0;
 
   const bump = (r: Record<string, number>, k: string) => (r[k] = (r[k] ?? 0) + 1);
 
@@ -224,6 +232,10 @@ export function summarizeActivity(
       // price: the side is counted, the money is not.
       if (!settled && parsed !== null) unsettledTrades++;
       const price = settled ? parsed : null;
+      if (e.buyer === wallet && e.seller === wallet) {
+        selfFills++;
+        continue;
+      }
       const side = e.buyer === wallet ? "buy" : e.seller === wallet ? "sell" : null;
       if (side && price === null) unpricedTrades++;
       if (side === "buy") {
@@ -270,7 +282,15 @@ export function summarizeActivity(
   const flips: Flip[] = rows.map((r) => r.flip);
 
   const holds = flips.map((f) => f.heldDays).filter((d): d is number => d !== null).sort((a, b) => a - b);
-  const medianHold = holds.length ? holds[Math.floor(holds.length / 2)]! : null;
+  // The median of an even-length sample is the mean of its two middle
+  // values. Taking the upper one turned holds of 1 and 20 days into a median
+  // of 20, and a flipper into "mixed".
+  const medianHold =
+    holds.length === 0
+      ? null
+      : holds.length % 2 === 1
+        ? holds[(holds.length - 1) / 2]!
+        : round((holds[holds.length / 2 - 1]! + holds[holds.length / 2]!) / 2, 1);
   const boughtThenSoldPct = purchases ? round((flips.length / purchases) * 100, 1) : null;
 
   let label: ActivitySummary["behaviour"]["label"] = "unknown";
@@ -328,6 +348,11 @@ export function summarizeActivity(
       `${unsettledTrades} trade(s) came back twice with a different price or a different buyer/seller, so no amount can be shown to be the right one. They are counted as trades and left out of the SOL totals and P&L.`,
     );
   }
+  if (selfFills) {
+    caveats.push(
+      `${selfFills} fill(s) had this wallet as both buyer and seller. No SOL entered or left it on those, so they are outside the buy and sell counts, the totals and the net flow. A wallet filling its own listing is worth a look on its own.`,
+    );
+  }
   if (unpricedTrades) {
     caveats.push(
       `${unpricedTrades} of the buys and sells here carry no usable price: the counts include them, the SOL totals, net flow and realised P&L do not.`,
@@ -343,6 +368,7 @@ export function summarizeActivity(
     buys: { ...buys, totalSol: round(buys.totalSol) },
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
+    selfFills,
     pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades },
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
@@ -387,34 +413,62 @@ export interface OpenSeaWalletView {
   /** Items that arrived by plain transfer with no sale recorded for them: gift, airdrop, self-transfer, or a trade elsewhere. */
   receivedWithoutSale: { mint: string; collection: string | null; from: string; time: string | null }[];
   collections: Record<string, number>;
+  /** Transfers-in sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
+  settlementUncertain: number;
+  /** Exact duplicate rows the feed served and this view dropped before counting. */
+  duplicateRowsDropped: number;
   caveat: string;
 }
 
-export function summarizeOpenSeaEvents(wallet: string, events: OsAccountEvent[], truncated: boolean): OpenSeaWalletView {
+export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent[], truncated: boolean, duplicatesUpstream = 0): OpenSeaWalletView {
+  // Exact copies are dropped here as well as in the reader, so a caller that
+  // hands this function a feed of its own gets the same arithmetic: two
+  // identical rows are one event, two rows that differ are two claims.
+  const seen = new Set<string>();
+  const events: OsAccountEvent[] = [];
+  let duplicateRowsDropped = duplicatesUpstream;
+  for (const e of rawEvents) {
+    const id = JSON.stringify([e.event_type, e.transaction, e.event_timestamp, e.nft?.identifier, e.buyer, e.seller, e.from_address, e.to_address, e.payment?.quantity]);
+    if (seen.has(id)) {
+      duplicateRowsDropped++;
+      continue;
+    }
+    seen.add(id);
+    events.push(e);
+  }
   let bought = 0;
   let sold = 0;
   let tin = 0;
   let tout = 0;
   const collections: Record<string, number> = {};
-  // A sale's own settlement shows up as a transfer in the same transaction.
-  // Match on the transaction, not the mint: an item bought in March and
-  // handed over by plain transfer in August is a real transfer-in.
-  const saleTxs = new Set<string>();
+  // A sale's own settlement shows up as a transfer in the same transaction
+  // FOR THE SAME ITEM. Matching on the transaction alone hid a gift of item B
+  // that shared a transaction with a sale of item A. A sale that names no
+  // item cannot be matched to an item, so a transfer in its transaction is
+  // uncertain: it is kept out of the list and counted, not silently either way.
+  const saleKeys = new Set<string>();
+  const itemlessSaleTxs = new Set<string>();
   for (const e of events) {
     if (e.event_type === "sale") {
       if (e.buyer === wallet) bought++;
       if (e.seller === wallet) sold++;
-      if (e.transaction) saleTxs.add(e.transaction);
+      if (e.transaction && e.nft?.identifier) saleKeys.add(`${e.transaction}\u0000${e.nft.identifier}`);
+      else if (e.transaction) itemlessSaleTxs.add(e.transaction);
     }
     if (e.nft?.collection) collections[e.nft.collection] = (collections[e.nft.collection] ?? 0) + 1;
   }
   const received: OpenSeaWalletView["receivedWithoutSale"] = [];
+  let settlementUncertain = 0;
   for (const e of events) {
     if (e.event_type !== "transfer") continue;
     if (e.to_address === wallet) {
       tin++;
       const id = e.nft?.identifier ?? "";
-      const settlesASale = Boolean(e.transaction && saleTxs.has(e.transaction));
+      const settlesASale = Boolean(e.transaction && id && saleKeys.has(`${e.transaction}\u0000${id}`));
+      if (e.transaction && !settlesASale && itemlessSaleTxs.has(e.transaction)) {
+        settlementUncertain++;
+        continue;
+      }
       if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
         received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp) });
       }
@@ -429,6 +483,8 @@ export function summarizeOpenSeaEvents(wallet: string, events: OsAccountEvent[],
     transfersOut: tout,
     receivedWithoutSale: received.slice(0, 25),
     collections,
+    settlementUncertain,
+    duplicateRowsDropped,
     caveat:
       "OpenSea's account feed on Solana includes plain transfers, which Magic Eden's does not. A transfer-in with no sale can be a gift, an airdrop, a move between the owner's own wallets, or a purchase OpenSea did not see (e.g. a Magic Eden fill) - the chain records the movement, not the reason. OpenSea has also been observed labelling Magic Eden fills as its own sales.",
   };

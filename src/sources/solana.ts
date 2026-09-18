@@ -12,10 +12,13 @@
  *  - AssetV1 / CollectionV1 account layouts (owner, name, mint counts)
  *  - TransferV1 instruction accounts -> the new owner of each transfer
  *
- * The transfer heuristic (last account that is not the asset, the collection,
- * the Core program, or the System program) survives the optional-account
- * variants that make fixed indexes unreliable. Verified against a live Candy
- * Digital auction: 36/36 packs traced to their winners, 0 untraced.
+ * A decoded TransferV1 names its new owner in a FIXED slot (index 4): Core
+ * fills omitted optional accounts with the program id, so the layout does not
+ * shift. Only an instruction whose data could not be decoded falls back to a
+ * heuristic (the last account that is not the asset, the collection, the Core
+ * program or the System program), and that row is marked as inferred.
+ * Verified against a live Candy Digital auction: 36/36 packs traced to their
+ * winners, 0 untraced.
  */
 
 import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals } from "../lib/http.js";
@@ -23,6 +26,7 @@ import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 import { NotFoundError, WrongKindError } from "../lib/errors.js";
+import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -72,7 +76,22 @@ interface RpcEndpoint {
  */
 function endpoints(): RpcEndpoint[] {
   const custom = process.env.SOLANA_RPC_URL?.trim();
+  // The key inside a private URL is registered BEFORE the first request, so
+  // an upstream that echoes it back in an error message cannot carry it into
+  // a tool answer. Idempotent, so doing it on every call costs nothing.
+  if (custom) registerUrlCredentials(custom);
   return custom ? [{ id: "your SOLANA_RPC_URL", url: custom }, ...PUBLIC_RPC_ENDPOINTS] : [...PUBLIC_RPC_ENDPOINTS];
+}
+
+/**
+ * Upstream error text on its way into an answer. A provider's message is a
+ * string it controls: it has been seen to echo the request URL, key and all,
+ * and it can be any length. Redacted against every registered credential and
+ * cut short, so a caller sees the category and enough of the text to act on.
+ */
+function upstreamMessage(m: unknown): string {
+  const text = typeof m === "string" ? m : m === undefined ? "" : JSON.stringify(m);
+  return redactSecrets(clean(text)).slice(0, 300);
 }
 
 /**
@@ -247,8 +266,8 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           throw new EndpointError("returned a body that is not a JSON-RPC response");
         }
         if (j.error) {
-          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(`${j.error.code}: ${j.error.message}`);
-          throw new ChainError(`Solana RPC ${j.error.code}: ${j.error.message}`);
+          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(`${j.error.code}: ${upstreamMessage(j.error.message)}`);
+          throw new ChainError(`Solana RPC ${j.error.code}: ${upstreamMessage(j.error.message)}`);
         }
         // A malformed envelope with neither result nor error must not read as
         // "no account" or "no history" downstream.
@@ -631,6 +650,22 @@ export interface ProvenanceEvent {
   label?: string;
   /** True when this transfer's counterparty is a Magic Eden escrow or pool account. */
   magicEdenEscrow?: boolean;
+  /**
+   * On a transfer whose recipient is an account Magic Eden's program brought
+   * into the transaction: which way custody moved. `into` is a listing going
+   * into escrow, `out_of` is a withdrawal or a fill coming back to a person,
+   * and `unknown` means the history before this row was not read, so the
+   * direction cannot be told. An unknown direction is never rendered as a
+   * claim about somebody's wallet.
+   */
+  escrowDirection?: "into" | "out_of" | "unknown";
+  /**
+   * On an `unread_gap` row: why the hole exists. `depth` is the caller's
+   * bound, `budget` is the wall clock, `unreadable` is a transaction the
+   * endpoint could not return or that carried nothing decodable. Structured
+   * so a client does not have to parse the label to tell them apart.
+   */
+  reason?: "depth" | "budget" | "unreadable";
   /** Present when a field had to be inferred rather than decoded. */
   note?: string;
 }
@@ -674,7 +709,7 @@ interface ParsedTx {
   meta: {
     err: unknown;
     logMessages?: string[];
-    innerInstructions?: { instructions: ParsedInstruction[] }[];
+    innerInstructions?: { index?: number; instructions: ParsedInstruction[] }[];
   } | null;
   transaction: { message: { instructions: ParsedInstruction[]; accountKeys: { pubkey: string }[] } };
 }
@@ -800,12 +835,22 @@ export async function getProvenance(
     const recipientIsMeAccount = new Set<ProvenanceEvent>();
     // A signature the RPC could not return, or one carrying neither logs nor a
     // readable instruction list, is a hole in the evidence and is counted as
-    // such - never silently skipped.
+    // such - never silently skipped. It is also placed as a row IN the story,
+    // because a count alone lets a reader carry custody state across it.
     let unreadable = 0;
     // Transactions whose logs and whose decoded instructions disagreed about
     // whether a transfer happened. The INSTRUCTIONS win; the count is reported
     // so a reader knows the log text could not corroborate them.
     let logsDisagreed = 0;
+    const hole = (sig: string, time: string | null, reason: NonNullable<ProvenanceEvent["reason"]>, count: number, label: string): ProvenanceEvent => ({
+      signature: sig,
+      time,
+      event: "unread_gap",
+      reason,
+      unreadTransactions: count,
+      readFrom: "the Solana chain",
+      label,
+    });
     for (const [i, sig] of selected.entries()) {
       // Out of time. Everything decoded so far is kept and the remainder is
       // counted, so the caller gets a trail with a named end rather than an
@@ -814,6 +859,7 @@ export async function getProvenance(
         abandoned = selected.length - i;
         break;
       }
+      const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
       // Confirmed transactions are immutable, so a cached one is the same bytes
       // whichever node served it; only the reads that actually go out are
       // pinned.
@@ -823,15 +869,38 @@ export async function getProvenance(
           { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
         ),
       );
-      if (!tx?.meta) { unreadable++; continue; }
+      if (!tx?.meta) {
+        unreadable++;
+        events.push(hole(sig.signature, time, "unreadable", 1, "this transaction could not be read from the endpoint; whatever it did to the asset is unknown, and anything read in order across it must start over"));
+        continue;
+      }
       if (tx.meta.err) continue; // failed transaction: nothing happened on chain
 
-      const all: ParsedInstruction[] = [
-        ...(Array.isArray(tx.transaction?.message?.instructions) ? tx.transaction.message.instructions : []),
-        ...(Array.isArray(tx.meta.innerInstructions) ? tx.meta.innerInstructions : []).flatMap((i) =>
-          Array.isArray(i?.instructions) ? i.instructions : [],
-        ),
-      ].filter((i): i is ParsedInstruction => Boolean(i) && typeof i.programId === "string");
+      // EXECUTION order: each top-level instruction followed by the inner
+      // instructions it invoked. Listing every outer instruction and then
+      // every inner one put a CPI transfer after an unrelated later
+      // instruction, and two transfers of the same asset in one transaction
+      // came out in the wrong order - the final owner read as the intermediary.
+      const outer = Array.isArray(tx.transaction?.message?.instructions) ? tx.transaction.message.instructions : [];
+      const inner = new Map<number, ParsedInstruction[]>();
+      for (const group of Array.isArray(tx.meta.innerInstructions) ? tx.meta.innerInstructions : []) {
+        const at = typeof group?.index === "number" ? group.index : -1;
+        const list = Array.isArray(group?.instructions) ? group.instructions : [];
+        if (at >= 0) inner.set(at, [...(inner.get(at) ?? []), ...list]);
+        else inner.set(-1, [...(inner.get(-1) ?? []), ...list]);
+      }
+      const all: ParsedInstruction[] = [];
+      outer.forEach((ix, idx) => {
+        all.push(ix);
+        for (const child of inner.get(idx) ?? []) all.push(child);
+        inner.delete(idx);
+      });
+      // Inner groups with no parent in the outer list (an index past its end,
+      // or none at all) still count: dropping them turned a CPI-only
+      // transaction into "nothing happened". They go last, in index order,
+      // which is the least wrong place for them.
+      for (const idx of [...inner.keys()].sort((a, b) => a - b)) for (const child of inner.get(idx) ?? []) all.push(child);
+      const usable = all.filter((i): i is ParsedInstruction => Boolean(i) && typeof i.programId === "string");
 
       // Log text is a CROSS-CHECK, never the detector.
       //
@@ -845,23 +914,37 @@ export async function getProvenance(
       // get to agree or disagree afterwards.
       const logs = Array.isArray(tx.meta.logMessages) ? tx.meta.logMessages : [];
       const logsMissing = !Array.isArray(tx.meta.logMessages);
-      const coreIxs = all.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
+      const coreIxs = usable.filter((i) => i.programId === CORE_PROGRAM && (i.accounts ?? []).includes(mint));
       const decodable = coreIxs.filter((i) => discriminator(i.data) !== null);
-      const undecodable = coreIxs.filter((i) => discriminator(i.data) === null);
+      // Only an undecodable instruction whose SUBJECT is this asset is a hole
+      // in this asset's history. Another asset's TransferV1 that names this
+      // one as its recipient sits in slot 4, not slot 0, and is somebody
+      // else's event: it was being turned into a transfer of THIS asset by a
+      // transaction-wide log line, which contradicted a true never-traded
+      // claim (2026-09-16).
+      const undecodable = coreIxs.filter((i) => discriminator(i.data) === null && i.accounts?.[0] === mint);
       // The asset an instruction is ABOUT sits in slot 0 for CreateV1/V2,
       // TransferV1 and BurnV1 alike. Membership anywhere in the account list
       // is not the same thing: a CreateV2 for another asset can name this one
       // in its optional owner slot, and reading that as this asset's mint let
       // a never-traded claim be confirmed on somebody else's creation.
       const about = (i: ParsedInstruction, ...discs: number[]) => discs.includes(discriminator(i.data) ?? -1) && i.accounts?.[0] === mint;
-      const transferIx = coreIxs.find((i) => about(i, IX_TRANSFER_V1));
+      // EVERY transfer of this asset in the transaction, in execution order.
+      // One transaction can move it twice (a swap, a wrap, a marketplace
+      // routing through an intermediary); keeping only the first erased the
+      // final owner.
+      const transferIxs = coreIxs.filter((i) => about(i, IX_TRANSFER_V1));
       const createIx = coreIxs.find((i) => about(i, IX_CREATE_V1, IX_CREATE_V2));
       const burnIx = coreIxs.find((i) => about(i, IX_BURN_V1));
 
       // A transaction we can read neither way is a hole, not an absence of
       // events: no logs AND no decodable Core instruction means we cannot say
       // what it did.
-      if (logsMissing && decodable.length === 0) { unreadable++; continue; }
+      if (logsMissing && decodable.length === 0) {
+        unreadable++;
+        events.push(hole(sig.signature, time, "unreadable", 1, "this transaction carried no logs and no decodable Core instruction for this asset; what it did is unknown"));
+        continue;
+      }
 
       const logSaysTransfer = logs.some((l) => typeof l === "string" && l.includes("Instruction: Transfer"));
 
@@ -875,10 +958,13 @@ export async function getProvenance(
       // unreadable instruction stays counted even when a log names a transfer.
       if (undecodable.length > 0) {
         unreadable += undecodable.length;
-        if (!logSaysTransfer) continue;
+        if (!logSaysTransfer) {
+          events.push(hole(sig.signature, time, "unreadable", 1, `${undecodable.length} Core instruction(s) on this asset in this transaction could not be decoded; what they did is unknown`));
+          continue;
+        }
       }
 
-      const marketplace = all
+      const marketplace = usable
         .map((i) => MARKETPLACE_PROGRAMS[i.programId])
         .find((m): m is string => Boolean(m));
 
@@ -886,101 +972,113 @@ export async function getProvenance(
       // of them receiving the asset is a listing moving into escrow, not a
       // sale to a person - and it is a CHAIN observation either way.
       const meAccounts = new Set<string>();
-      for (const i of all) {
+      for (const i of usable) {
         if (MAGIC_EDEN_PROGRAMS.has(i.programId)) for (const a of i.accounts ?? []) meAccounts.add(a);
       }
       const isMeEscrow = (a: string | undefined): boolean =>
         typeof a === "string" && meAccounts.has(a) && a !== mint && a !== account.collection && !MAGIC_EDEN_PROGRAMS.has(a);
 
-      const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
-
-      // A Core instruction on this asset that we could not decode at all, with
+      // A Core instruction on THIS asset that we could not decode at all, with
       // logs claiming a transfer, is still a transfer - just one whose new
       // owner has to be inferred.
-      const undecodableTransfer = !transferIx && logSaysTransfer && coreIxs.length > 0;
+      const undecodableTransfer = transferIxs.length === 0 && logSaysTransfer && undecodable.length > 0;
 
-      if (transferIx || undecodableTransfer) {
-        let newOwner: string | undefined;
-        const notes: string[] = [];
-        if (transferIx) {
-          const candidate = transferIx.accounts?.[TRANSFER_NEW_OWNER_INDEX];
-          // The slot is fixed, but the value still has to look like a pubkey
-          // and must not be one of the structural accounts.
-          const structural = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
-          newOwner = candidate && isBase58Address(candidate) && !structural.has(candidate) ? candidate : undefined;
-          if (!newOwner) notes.push("the TransferV1 new_owner slot did not hold a usable address; the transfer is recorded, the recipient is not");
-          if (!logSaysTransfer) {
-            logsDisagreed++;
-            notes.push(
-              logsMissing
-                ? "this transaction carried no logs; the transfer was identified from the Core program id, the TransferV1 discriminator and the account list"
-                : "the transaction logs do not mention a Transfer instruction, but a TransferV1 for this asset is present in the instruction list - the instructions are the record, the logs could not corroborate them",
-            );
+      /** Rows for this transaction in EXECUTION order; pushed reversed below so the final reverse restores it. */
+      const rows: ProvenanceEvent[] = [];
+      if (transferIxs.length > 0 || undecodableTransfer) {
+        const structural = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
+        const sources: (ParsedInstruction | null)[] = transferIxs.length > 0 ? transferIxs : [null];
+        for (const transferIx of sources) {
+          let newOwner: string | undefined;
+          const notes: string[] = [];
+          if (transferIx) {
+            const candidate = transferIx.accounts?.[TRANSFER_NEW_OWNER_INDEX];
+            // The slot is fixed, but the value still has to look like a pubkey
+            // and must not be one of the structural accounts.
+            newOwner = candidate && isBase58Address(candidate) && !structural.has(candidate) ? candidate : undefined;
+            if (!newOwner) notes.push("the TransferV1 new_owner slot did not hold a usable address; the transfer is recorded, the recipient is not");
+            if (!logSaysTransfer) {
+              logsDisagreed++;
+              notes.push(
+                logsMissing
+                  ? "this transaction carried no logs; the transfer was identified from the Core program id, the TransferV1 discriminator and the account list"
+                  : "the transaction logs do not mention a Transfer instruction, but a TransferV1 for this asset is present in the instruction list - the instructions are the record, the logs could not corroborate them",
+              );
+            }
+          } else {
+            const coreIx = undecodable[0];
+            const candidates = (coreIx?.accounts ?? []).filter((a) => !structural.has(a) && isBase58Address(a));
+            newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
+            notes.push("new owner inferred from the account list (no instruction data available); treat as probable");
           }
-        } else {
-          const coreIx = coreIxs[0];
-          const exclude = new Set([mint, account.collection ?? "", CORE_PROGRAM, SYSTEM_PROGRAM, LOG_WRAPPER]);
-          const candidates = (coreIx?.accounts ?? []).filter((a) => !exclude.has(a) && isBase58Address(a));
-          newOwner = candidates.length > 0 ? candidates[candidates.length - 1] : undefined;
-          notes.push("new owner inferred from the account list (no instruction data available); treat as probable");
+          const row: ProvenanceEvent = {
+            signature: sig.signature,
+            time,
+            event: "transferred",
+            newOwner,
+            marketplace,
+            readFrom: "the Solana chain",
+            ...(notes.length ? { note: notes.join("; ") } : {}),
+          };
+          // The recipient is one of Magic Eden's own accounts. Whether that makes
+          // this a move INTO escrow is decided below, in order: in a fill the
+          // buyer is passed to the same program, so this fact alone would label a
+          // person's wallet an escrow.
+          if (isMeEscrow(newOwner)) recipientIsMeAccount.add(row);
+          rows.push(row);
         }
-        const row: ProvenanceEvent = {
-          signature: sig.signature,
-          time,
-          event: "transferred",
-          newOwner,
-          marketplace,
-          readFrom: "the Solana chain",
-          ...(notes.length ? { note: notes.join("; ") } : {}),
-        };
-        // The recipient is one of Magic Eden's own accounts. Whether that makes
-        // this a move INTO escrow is decided below, in order: in a fill the
-        // buyer is passed to the same program, so this fact alone would label a
-        // person's wallet an escrow.
-        if (isMeEscrow(newOwner)) recipientIsMeAccount.add(row);
-        events.push(row);
+        if (transferIxs.length > 1) {
+          const last = rows[rows.length - 1]!;
+          last.note = `${last.note ? last.note + "; " : ""}this transaction moved the asset ${transferIxs.length} times; the rows are in execution order and this one is the final custody`;
+        }
       } else if (burnIx) {
-        events.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
+        rows.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
       } else if (createIx) {
         // Decoded, and about this asset. A log line saying "Instruction:
         // CreateV2" used to be enough, and it was another asset's.
-        events.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
+        rows.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
       } else if (marketplace) {
         // Listing/delisting/escrow motion on a marketplace - no ownership change.
-        events.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace, readFrom: "the Solana chain" });
+        rows.push({ signature: sig.signature, time, event: "marketplace_activity", marketplace, readFrom: "the Solana chain" });
       } else {
-        events.push({ signature: sig.signature, time, event: "other", marketplace, readFrom: "the Solana chain" });
+        rows.push({ signature: sig.signature, time, event: "other", marketplace, readFrom: "the Solana chain" });
       }
+      for (let r = rows.length - 1; r >= 0; r--) events.push(rows[r]!);
     }
 
     events.reverse(); // oldest first - reads as a story
 
-    // Put the hole in the story.
+    // Put every hole in the story, in its place.
     //
-    // Without this the list read as one continuous trail, and a depth that
-    // dropped the middle dropped the transfer to the buyer: a "who bought it"
-    // question is answered by the events most likely to be cut. The row sits
-    // after the oldest kept event, which is where the dropped window begins.
-    if (skipped > 0) {
-      const at = gapAfterSignature ? events.findIndex((e) => e.signature === gapAfterSignature) : -1;
-      events.splice(at >= 0 ? at + 1 : 0, 0, {
-        signature: "",
-        time: null,
-        event: "unread_gap",
-        unreadTransactions: skipped,
-        readFrom: "the Solana chain",
-        label: `${skipped} transaction(s) here were not read, because depth was ${depth} and this asset has ${ok.length}. Any ownership change among them is missing from this list. Raise depth to close the hole.`,
-      });
-    }
+    // The walk reads newest first. Whatever the budget abandoned is therefore
+    // OLDER than everything decoded, and belongs before it, never after: the
+    // first version appended the budget gap to the end and labelled the
+    // unread transactions as following the newest event, which reversed the
+    // chronology (2026-09-17). With a depth window as well,
+    // the unread ranges at the old end are, oldest first: the mint anchor,
+    // the depth window, then whatever newer transactions the budget dropped.
+    const holes: ProvenanceEvent[] = [];
+    const depthLabel = `${skipped} transaction(s) here were not read, because depth was ${depth} and this asset has ${ok.length}. Any ownership change among them is missing from this list. Raise depth to close the hole.`;
     if (abandoned > 0) {
-      events.push({
-        signature: "",
-        time: null,
-        event: "unread_gap",
-        unreadTransactions: abandoned,
-        readFrom: "the Solana chain",
-        label: `${abandoned} transaction(s) after this point were not read: the walk ran out of its ${Math.round(budgetMs / 1000)}s budget. What is above is decoded and true; what follows it is unknown.`,
-      });
+      const seconds = Math.round(budgetMs / 1000);
+      if (skipped > 0) {
+        // The anchor (the oldest transaction, normally the mint) is the last
+        // in the selection, so a budget that stopped early never reached it.
+        holes.push(hole("", null, "budget", 1, `the oldest transaction, where the mint would be, was not read: the walk ran out of its ${seconds}s budget before reaching it.`));
+        holes.push(hole("", null, "depth", skipped, depthLabel));
+        if (abandoned > 1) {
+          holes.push(hole("", null, "budget", abandoned - 1, `${abandoned - 1} transaction(s) older than everything below were not read: the walk ran out of its ${seconds}s budget. What follows is decoded and true; what came before it is unknown.`));
+        }
+      } else {
+        holes.push(hole("", null, "budget", abandoned, `${abandoned} transaction(s) older than everything below were not read: the walk ran out of its ${seconds}s budget. What follows is decoded and true; what came before it is unknown.`));
+      }
+      events.unshift(...holes);
+    } else if (skipped > 0) {
+      // The row sits after the oldest kept event, which is where the dropped
+      // window begins. An unreadable anchor is now a row of its own, so the
+      // search still finds its place.
+      const at = gapAfterSignature ? events.findIndex((e) => e.signature === gapAfterSignature) : -1;
+      events.splice(at >= 0 ? at + 1 : 0, 0, hole("", null, "depth", skipped, depthLabel));
     }
 
     // Escrow custody has a direction, and it can only be read in order.
@@ -993,21 +1091,41 @@ export async function getProvenance(
     // wallet into the transaction. Labelling on the account list alone marked
     // the buyer of a filled listing as an escrow, which is a false claim about
     // somebody's wallet.
-    let heldInEscrow = false;
+    //
+    // Custody has THREE states, not two. After a hole in the history it is
+    // unknown: resetting it to "not in escrow" turned the next fill's buyer
+    // into an escrow again, by a different route. An unknown state stays
+    // unknown until a transfer to an account the venue did not bring in, which
+    // can only happen from a wallet.
+    let custody: "wallet" | "escrow" | "unknown" = "wallet";
     for (const e of events) {
-      // Custody direction is read in order, so an unread hole breaks the chain:
-      // an item could have left escrow inside it. Forgetting the state is the
-      // honest move; carrying it across would label the next transfer wrongly.
-      if (e.event === "unread_gap") { heldInEscrow = false; continue; }
+      if (e.event === "unread_gap") { custody = "unknown"; continue; }
+      if (e.event === "minted") { custody = "wallet"; continue; }
       if (e.event !== "transferred") continue;
-      if (heldInEscrow) {
+      if (custody === "escrow") {
+        // Whatever the recipient, the item was in escrow and now it is not:
+        // a withdrawal back to the seller or a fill to the buyer.
         e.magicEdenEscrow = true;
+        e.escrowDirection = "out_of";
         e.label = "transfer from a Magic Eden escrow (chain read)";
-        heldInEscrow = false;
-      } else if (recipientIsMeAccount.has(e)) {
+        custody = "wallet";
+        continue;
+      }
+      if (!recipientIsMeAccount.has(e)) {
+        // A plain transfer to an address the venue did not bring in. Escrow
+        // releases go through the venue's program, so this one came from a
+        // wallet, and custody is known again.
+        custody = "wallet";
+        continue;
+      }
+      if (custody === "wallet") {
         e.magicEdenEscrow = true;
+        e.escrowDirection = "into";
         e.label = "transfer to a Magic Eden escrow (chain read)";
-        heldInEscrow = true;
+        custody = "escrow";
+      } else {
+        e.escrowDirection = "unknown";
+        e.label = "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
       }
     }
     return { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote };
