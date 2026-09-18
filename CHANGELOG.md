@@ -1075,3 +1075,8 @@ against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
   and had only a count. `get_wallet_activity` now says, when its window hit
   the page cap, that "has this wallet ever sold one of X" is answered by the
   collection's sales feed and the item's provenance, not by the window.
+- A wallet with 493 bids and 3 buys was labelled "holder", because bids were
+  not part of the label at all. `bidder` is a label now, with its reason.
+- A plain transfer to or from the Magic Eden escrow in the OpenSea view is
+  annotated as a listing, a fill or a delisting, because OpenSea records
+  those as transfers and a reader was calling them gifts.

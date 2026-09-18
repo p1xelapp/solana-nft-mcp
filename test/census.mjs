@@ -703,6 +703,20 @@ const kinds = (r) => r.events.map((e) => e.event);
   const src = fs.readFileSync(path.join(root, "src", "index.ts"), "utf8");
   assert.ok(/knownVenueAccount\(mint\)/.test(src) && /accountNature\(mint\)/.test(src), "get_asset settles what a non-asset address IS before saying try again");
   ok("R5-28 a venue escrow and a plain wallet are named as such instead of 'try again'");
+  // 493 bids and 3 buys came back "holder". Bids are a behaviour of their own.
+  const B = address("bidder");
+  const bidFeed = [
+    ...Array.from({ length: 40 }, (_, i) => ({ signature: signature(`bid-${i}`), type: "bid", source: "magiceden_v2", tokenMint: address(`b-${i}`), collectionSymbol: "c", blockTime: 1_700_000_000 + i, buyer: B, price: 1 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ signature: signature(`buy-${i}`), type: "buyNow", source: "magiceden_v2", tokenMint: address(`p-${i}`), collectionSymbol: "c", blockTime: 1_700_001_000 + i, buyer: B, seller: address("s"), price: 0.4 })),
+  ].reverse();
+  const bidder = summarizeActivity(B, bidFeed, true);
+  assert.strictEqual(bidder.behaviour.label, "bidder", `${bidder.behaviour.label}: ${bidder.behaviour.why}`);
+  assert.strictEqual(bidder.buys.count, 3, "the completed buys are still counted");
+  // A transfer from the venue escrow is a fill or a delisting, and says so.
+  const W2 = address("buyer-two");
+  const fromEscrow = summarizeOpenSeaEvents(W2, [{ event_type: "transfer", event_timestamp: 1, transaction: "tx-fill", from_address: "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix", to_address: W2, nft: { identifier: address("item-d"), collection: "col" } }], false);
+  assert.match(fromEscrow.receivedWithoutSale[0].note ?? "", /Magic Eden escrow/);
+  ok("R5-29 a bidder is labelled a bidder, and a transfer from the venue escrow is named a fill or delisting");
 }
 
 for (const h of homes) fs.rmSync(h, { recursive: true, force: true });

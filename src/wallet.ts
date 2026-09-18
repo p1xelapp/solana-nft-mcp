@@ -14,6 +14,7 @@
 import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
+import { knownVenueAccount } from "./sources/solana.js";
 
 /**
  * Lamport resolution (1e-9 SOL) by default, not the 3 decimals a summary can
@@ -164,7 +165,7 @@ export interface ActivitySummary {
     /** Of the items bought in the window, how many were sold again inside it. */
     boughtThenSoldPct: number | null;
     medianHoldDays: number | null;
-    label: "flipper" | "mixed" | "holder" | "seller" | "lister" | "quiet" | "unknown";
+    label: "flipper" | "mixed" | "holder" | "seller" | "lister" | "bidder" | "quiet" | "unknown";
     why: string;
   };
   firstBuyInWindow: { mint: string; collection: string | null; time: string | null; priceSol: number } | null;
@@ -197,6 +198,8 @@ export function summarizeActivity(
   const rows: { flip: Flip; delta: number }[] = [];
   let purchases = 0;
   let lists = 0;
+  /** Standing offers placed. A wallet that bids hundreds of times and buys three items is a bidder, not a "holder". */
+  let bids = 0;
   /** Trade-shaped rows whose price field was present but not a finite amount above zero. */
   let malformedPrices = 0;
   /** Trades counted on their side but kept out of every SOL total, because no usable price survived. */
@@ -222,6 +225,7 @@ export function summarizeActivity(
     const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
     if (type === "list") lists++;
+    if (type === "bid") bids++;
     if (type === "buyNow") {
       const rawPrice = (e as { price?: unknown }).price;
       const settled = (e as { unsettled?: boolean }).unsettled !== true;
@@ -298,6 +302,9 @@ export function summarizeActivity(
   if (events.length === 0) {
     label = "quiet";
     why = "No Magic Eden activity on record for this wallet.";
+  } else if (bids >= 10 && bids >= 5 * (buys.count + sells.count)) {
+    label = "bidder";
+    why = `${bids} bids against ${buys.count + sells.count} completed trades in the window - standing offers below the ask, not buying at it. Labelled from what dominates the feed; the few trades it did complete are counted above.`;
   } else if (lists >= 5 && buys.count + sells.count <= Math.max(2, Math.floor(lists / 10))) {
     label = "lister";
     why = `${lists} listings against ${buys.count + sells.count} completed trades in the window - inventory being offered, not traded.`;
@@ -411,9 +418,9 @@ export interface OpenSeaWalletView {
   transfersIn: number;
   transfersOut: number;
   /** Items that arrived by plain transfer with no sale recorded for them: gift, airdrop, self-transfer, or a trade elsewhere. */
-  receivedWithoutSale: { mint: string; collection: string | null; from: string; time: string | null }[];
+  receivedWithoutSale: { mint: string; collection: string | null; from: string; time: string | null; note?: string }[];
   /** Items that LEFT by plain transfer with no sale recorded: consolidation, gift, or a trade elsewhere. Itemised, because a count alone left a reader unable to follow one. */
-  sentWithoutSale: { mint: string; collection: string | null; to: string; time: string | null }[];
+  sentWithoutSale: { mint: string; collection: string | null; to: string; time: string | null; note?: string }[];
   collections: Record<string, number>;
   /** Transfers-in sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
   settlementUncertain: number;
@@ -473,14 +480,14 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
         continue;
       }
       if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
-        received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp) });
+        received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp), ...(knownVenueAccount(e.from_address) ? { note: "from a Magic Eden escrow account: a fill or a delisting that OpenSea recorded as a plain transfer, not a gift" } : {}) });
       }
     } else if (e.from_address === wallet) {
       tout++;
       const id = e.nft?.identifier ?? "";
       const settlesASale = Boolean(e.transaction && id && saleKeys.has(`${e.transaction}\u0000${id}`));
       if (id && !settlesASale && e.to_address && e.to_address !== wallet) {
-        sent.push({ mint: id, collection: e.nft?.collection ?? null, to: e.to_address, time: iso(e.event_timestamp) });
+        sent.push({ mint: id, collection: e.nft?.collection ?? null, to: e.to_address, time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
       }
     }
   }
