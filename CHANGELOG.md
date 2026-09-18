@@ -1109,3 +1109,35 @@ by its old name.
   decimals included, with one fingerprint shared by the reader and the
   view. An outgoing transfer beside an itemless sale is uncertain, as the
   incoming one already was. A self-fill is no longer the first purchase.
+
+## 1.15.2 - 2026-09-18
+
+The issuer is a role, read from the chain.
+
+Asked who held the 36 packs of a Candy auction, the server listed Candy's
+own treasury as the top holder with nothing on the row to say so, and a
+reader called it a whale that had bought eleven. On the chain the story is
+plain: that address is the update authority of every one of the 398 Candy
+collections in the registry, it pays for and signs the mints, and it holds
+the permanent transfer, burn and freeze delegates on all of them. And every
+pack sitting there had first gone to a collector and come back: an opened
+gold pack returns to the treasury.
+
+- `get_collection_holders` reads the collection's update authority live and
+  puts a `role` on every holder row: `issuer`, `venue-escrow` or `wallet`,
+  with `heldByIssuer`, `heldInVenueEscrow` and `heldByCollectors` beside the
+  totals. When the issuer holds anything, the first sentence of the answer
+  says what that means and how to tell an unsold item from a returned one.
+- `data/issuers.json`, derived by `scripts/issuers.mjs` from the chain and
+  dated: the update authorities of the whole registry (one key, 398 of 398).
+  `identify` names such a key as `issuer-key`; the wallet tools carry
+  `walletRole` for it and for venue escrows. A new drop under the same key
+  is recognised the day it mints, because the live read comes first.
+- Provenance: the `minted` row names who paid (`mintedBy`) and who the item
+  was created for (`firstOwner`); a transfer back to the collection's update
+  authority is labelled as the issuer taking it back, which on a Candy pack
+  is the pack being opened.
+- Three mechanics entries for `explain_mechanics`: Candy's single issuer key,
+  what opening a pack does on the gold and base series, and why a wallet
+  that receives many items is a collector, not a Candy alt. Each carries
+  what was observed on chain and the date.

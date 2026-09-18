@@ -261,6 +261,19 @@ await edge("E23", "the issuer wallet's outgoing transfers are itemised", async (
   return { note: `${os.transfersOut} out, ${os.sentWithoutSale.length} itemised (cap 25), first to ${os.sentWithoutSale[0]?.to?.slice(0, 6)}` };
 });
 
+await edge("E24", "the issuer's wallet is named as the issuer, not a whale", async () => {
+  const { body, err } = await call("get_collection_holders", { collection: ACES, namePrefix: "Gold Series - Aces" });
+  must(body, `tool error: ${err}`);
+  must(body.issuer?.updateAuthority === CANDY_WALLET, `issuer read from the chain: ${JSON.stringify(body.issuer)}`);
+  const row = body.holders.find((h) => h.owner === CANDY_WALLET);
+  must(row && row.role === "issuer", `the issuer's row carries the role: ${JSON.stringify(row)}`);
+  must(body.readThis[0].includes("ISSUER"), "the first sentence says so");
+  must(body.heldByIssuer + body.heldInVenueEscrow + body.heldByCollectors === body.nonBurntMatched, "the three custody buckets add up");
+  const id = await call("identify", { query: CANDY_WALLET });
+  must(id.body?.kind === "issuer-key", `identify names the key: ${id.body?.kind}`);
+  return { note: `issuer ${body.issuer.name ?? "unnamed"} holds ${body.heldByIssuer}, escrow ${body.heldInVenueEscrow}, collectors ${body.heldByCollectors}; identify=${id.body.kind}` };
+});
+
 await client.close();
 fs.rmSync(home, { recursive: true, force: true });
 const counts = results.reduce((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});

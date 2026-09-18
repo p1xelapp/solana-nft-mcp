@@ -1,0 +1,27 @@
+{
+  "derivedAt": "2026-09-18T08:40:58.298Z",
+  "collectionsRead": 398,
+  "collectionsUnreadable": 0,
+  "issuers": [
+    {
+      "address": "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2",
+      "issuer": "Candy Digital",
+      "role": "update authority of the collections listed in data/candy-collections.json; signs the mints",
+      "collections": 398,
+      "sample": [
+        {
+          "address": "5LQ7jqaxRFYmnsk72ejFZ2cuGRABuky9Rik5bY9KGrCr",
+          "name": "2024 MLB All-Star Commemorative Helmet"
+        },
+        {
+          "address": "Csrmj9A385zj4v21XZ6Su6o4qva5Nf9vmUEfKrGnt2Ld",
+          "name": "'70s Music & Culture Collections"
+        },
+        {
+          "address": "BjynzkWaEpSvNYhcTBi7aFnEdJA1TX28BcWm7VJY6XW",
+          "name": "'70s Music & Culture Collections | Volume 2"
+        }
+      ]
+    }
+  ]
+}

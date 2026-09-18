@@ -208,7 +208,7 @@ without raising an error.
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
 | `get_collection_stats` | chain supply, floors per venue, and a reconciliation that refuses to rank SOL against USDC |
-| `get_collection_holders` | census of a Core collection from the chain's asset index: each asset and its last-indexed owner, listed or not, filterable by trait or name, holders ranked by count, capped at 2,000 rows by default and saying so when the cap is hit |
+| `get_collection_holders` | census of a Core collection from the chain's asset index: each asset and its last-indexed owner, listed or not, filterable by trait or name, holders ranked by count with a role on each (issuer, venue escrow, or wallet, the issuer read from the collection's update authority on chain), capped at 2,000 rows by default and saying so when the cap is hit |
 | `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only (cross-venue floors live in `get_collection_stats`) |
 | `get_recent_sales` | latest completed fills with buyer, seller, price and signature |
 | `get_asset` | three readers for one item: the venue, a byte-level decode, and the chain's asset index, with owner agreement reported |

@@ -26,6 +26,7 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
+import { knownIssuer } from "./issuers.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError } from "./lib/http.js";
@@ -51,6 +52,7 @@ export interface Identification {
     | "marketplace-collection"
     | "wallet-or-unknown-account"
     | "venue-account"
+    | "issuer-key"
     | "registry-entry"
     | "ambiguous"
     | "unknown";
@@ -653,6 +655,12 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     kind = "unknown";
     summary = `${shown} is a valid Solana address, but the chain could not be read just now, so it could not be classified. Retry shortly.`;
     confidence = "low";
+  } else if (looksLikeAddress(q) && knownIssuer(q)) {
+    const k = knownIssuer(q)!;
+    kind = "issuer-key";
+    summary = `${shown} is ${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry (derived from the chain on ${k.derivedAt.slice(0, 10)}), which signs their metadata and their mints. Items held here were kept back or not yet distributed, not bought: it is the issuer, not a collector. get_collection_holders on any of its collections shows what it still holds.`;
+    confidence = "high";
+    next.push("get_collection_holders", "get_wallet_holdings");
   } else if (looksLikeAddress(q) && sol.knownVenueAccount(q)) {
     kind = "venue-account";
     summary = `${shown} is ${sol.knownVenueAccount(q)}. It is not a collectible and not a person's wallet: get_wallet_holdings lists what it currently holds, and get_asset_provenance on any of those items shows who handed it over.`;

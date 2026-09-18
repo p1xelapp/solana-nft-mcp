@@ -961,6 +961,57 @@ export const MECHANICS: MechanicsEntry[] = [
     keywords: ["candy", "auction", "bid", "not listed", "off chain", "unlisted", "for sale"],
   },
   {
+    id: "venue-candy-one-issuer-key",
+    category: "venue",
+    title: "Candy Digital signs everything with one key, and that key is not a collector",
+    venue: "candy",
+    plain:
+      "One Solana address is the update authority of every Candy Digital collection in this server's registry, and holds the permanent transfer, burn and freeze delegates on all of them. It pays for and signs the mints. When it appears in a holder list it is the issuer's treasury, not a whale: an item there is unsold, held back, or came back after a collector opened or redeemed it.",
+    pitfall:
+      "Reading the issuer's wallet at the top of a holder ranking as a collector who bought a large share. Asked who held the 36 packs of an auction, a reader called the treasury a whale with eleven packs; all eleven had been won by collectors and returned on opening.",
+    documented: "Not published by Candy; established from the chain.",
+    observed:
+      "On 2026-09-18 the update authority of all 398 collections in data/candy-collections.json decoded to the same address (data/issuers.json). On the 36 Gold Series Aces packs, every pack then sitting in that wallet had first been transferred to a collector and then transferred back, signed by that key, six signatures each.",
+    verified: true,
+    source: "https://metaplex.com/docs/core/collections",
+    sourceRead: "2026-09-18",
+    keywords: ["candy", "issuer", "treasury", "update authority", "whale", "holder", "official wallet", "candy wallet"],
+  },
+  {
+    id: "venue-candy-pack-open-returns-to-treasury",
+    category: "venue",
+    title: "Opening a Candy gold pack sends it back to the treasury; a base pack burns",
+    venue: "candy",
+    plain:
+      "A sealed Candy pack is a Metaplex Core asset with a permanent transfer delegate and a permanent burn delegate held by Candy's key. Opening one exercises a delegate: on the Gold Series the empty pack is transferred back to Candy's treasury and still exists on chain, on the base series it is burned. Either way the collector receives the cards it contained as separate assets.",
+    pitfall:
+      "Counting packs in the treasury as unsold, or counting a gold pack that still exists as sealed. On the Gold Series the treasury's own holding IS the opened count; on the base series still-existing IS sealed.",
+    documented: "Not established this session.",
+    observed:
+      "Gold Series Aces packs now held by the treasury show a trail of mint, transfer to a collector, transfer back to the treasury signed by the treasury key, with burnt: false. Base series packs disappear from the collection's current size when opened.",
+    verified: true,
+    source: "https://metaplex.com/docs/core/plugins/permanent-transfer-delegate",
+    sourceRead: "2026-09-18",
+    keywords: ["candy", "pack", "open", "opened", "burn", "treasury", "returned", "sealed", "gold series", "base series"],
+  },
+  {
+    id: "venue-candy-other-addresses-are-not-candy",
+    category: "venue",
+    title: "No second Candy wallet has been observed; other addresses are collectors or venues",
+    venue: "candy",
+    plain:
+      "Across every Candy collection this server knows, one key issues, freezes, burns and takes back. No second issuer key, alternate treasury or distribution wallet has been observed on chain. The other addresses that recur around a Candy drop are collectors (auction winners, repeat bidders) and marketplace escrows.",
+    pitfall:
+      "Calling a frequently seen wallet 'a Candy alt' because it received many items. The winner of nine auction packs is a collector. A Candy account would show as the signer of delegate actions on other people's items, and only the treasury key does that.",
+    documented: "Not established this session.",
+    observed:
+      "On the 36 Gold Series Aces packs, first recipients after mint were 17 distinct wallets; none of them signed any delegate action, and every return to the treasury was signed by the one issuer key.",
+    verified: true,
+    source: "https://metaplex.com/docs/core/plugins/permanent-transfer-delegate",
+    sourceRead: "2026-09-18",
+    keywords: ["candy", "alt", "alternate wallet", "second wallet", "distribution wallet", "auction winner", "collector"],
+  },
+  {
     id: "venue-candy-burn-window-broke-supply-comparisons",
     category: "venue",
     title: "Candy supply before May 2026 is not comparable to supply after it",

@@ -684,6 +684,12 @@ export interface ProvenanceEvent {
   reason?: "depth" | "budget" | "unreadable";
   /** Present when a field had to be inferred rather than decoded. */
   note?: string;
+  /** On a `minted` row: the account that paid for the mint (Create accounts, slot 3). */
+  mintedBy?: string;
+  /** On a `minted` row: the owner the asset was created for (Create accounts, slot 4). */
+  firstOwner?: string;
+  /** On a `transferred` row whose recipient is the collection's update authority: the issuer took it back or never let it go. */
+  toIssuer?: true;
 }
 
 interface ParsedInstruction {
@@ -1022,7 +1028,21 @@ export async function getProvenance(
         }
         if (disc === IX_TRANSFER_V1) rows.push(decodedTransfer(ix));
         else if (disc === IX_BURN_V1) rows.push({ signature: sig.signature, time, event: "burned", marketplace, readFrom: "the Solana chain" });
-        else if (disc === IX_CREATE_V1 || disc === IX_CREATE_V2) rows.push({ signature: sig.signature, time, event: "minted", marketplace, readFrom: "the Solana chain" });
+        else if (disc === IX_CREATE_V1 || disc === IX_CREATE_V2) {
+          // Create accounts: asset, collection, authority, payer, owner, ...
+          // Omitted optionals carry the program id, which is not a wallet.
+          const payer = ix.accounts?.[3];
+          const owner = ix.accounts?.[4];
+          rows.push({
+            signature: sig.signature,
+            time,
+            event: "minted",
+            marketplace,
+            readFrom: "the Solana chain",
+            ...(payer && isBase58Address(payer) && !structural.has(payer) ? { mintedBy: payer } : {}),
+            ...(owner && isBase58Address(owner) && !structural.has(owner) ? { firstOwner: owner } : {}),
+          });
+        }
       }
       if (rows.length === 0) {
         rows.push(
@@ -1149,8 +1169,20 @@ export async function getProvenance(
     // into an escrow again, by a different route. An unknown state stays
     // unknown until a transfer to an account the venue did not bring in, which
     // can only happen from a wallet.
+    // The collection's update authority is the issuer's key. A transfer to
+    // it is the issuer keeping or taking an item back, and a reader who sees
+    // that wallet at the top of a holder list needs the role, not a guess.
+    const issuerKey = account.collection
+      ? await getCoreAccount(account.collection)
+          .then((c) => (c && c.kind === "collection" ? c.updateAuthority : null))
+          .catch(() => null)
+      : null;
     let custody: "wallet" | "escrow" | "unknown" = "wallet";
     for (const e of events) {
+      if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {
+        e.toIssuer = true;
+        e.label = "transfer to the collection's update authority, the issuer's own key (chain read): the issuer took it back, which on a Candy pack is the pack being opened. Not a sale to a collector";
+      }
       if (e.event === "unread_gap") { custody = "unknown"; continue; }
       if (e.event === "minted") { custody = "wallet"; continue; }
       if (e.event !== "transferred") continue;

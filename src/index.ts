@@ -24,6 +24,7 @@ import { REGISTRY, searchRegistry } from "./registry.js";
 import { reconcileFloors, type FloorQuote } from "./lib/reconcile.js";
 import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
 import { identify } from "./identify.js";
+import { roleOf, knownIssuer } from "./issuers.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
 import { decodeCoreAccountPlugins, deriveTrust } from "./lib/coreplugins.js";
@@ -317,6 +318,16 @@ const addressSchema = z
  * model reading tool output.
  */
 const NOT_ADVICE = "Figures, sources and gaps; not financial advice.";
+
+/**
+ * A wallet's role, when it has one worth saying before anything else: an
+ * issuer's key or a venue's escrow is not a collector, and every count that
+ * follows reads differently once that is known.
+ */
+function walletRole(wallet: string): { walletRole?: string; walletRoleNote?: string } {
+  const r = roleOf(wallet, null);
+  return r.role === "wallet" ? {} : { walletRole: r.role, walletRoleNote: r.note ?? undefined };
+}
 
 const symbolSchema = z
   .string()
@@ -1373,6 +1384,7 @@ registerTool(
 
     return ok({
       wallet,
+      ...walletRole(wallet),
       magicEden: marketplace ? { ...marketplace, tokens: fittedMe?.rows ?? [], ...(fittedMe?.note ? { answerSize: fittedMe.note } : {}) } : undefined,
       chainIndex: index
         ? {
@@ -1435,6 +1447,8 @@ registerTool(
       "are still with the issuer', 'which wallets hold this set'. Filter to part of a collection with " +
       "`trait`/`value` (e.g. Item Type = Pack) or `namePrefix` (e.g. 'Gold Series - Aces'). Returns the " +
       "rows plus a holder count per address, largest first. " +
+      "Every holder row carries a ROLE: issuer (the collection's update authority, read from the chain; " +
+      "not a collector, items there are unsold, held back or returned after opening), venue-escrow (listed), or wallet. " +
       "An item currently listed for sale shows the MARKETPLACE'S ESCROW as its owner, not the seller: " +
       "call get_asset_provenance on that mint to see who handed it over.",
     annotations: READ_ONLY,
@@ -1461,6 +1475,12 @@ registerTool(
     }
 
     const page = await das.getAssetsByGroup(collection, max);
+    // The collection account names its update authority: the issuer's own
+    // key. Without it the issuer's wallet led the holder list with no role,
+    // and a reader called it a whale that had bought eleven packs.
+    const collectionAccount = await sol.getCoreAccount(collection).catch(() => null);
+    const updateAuthority = collectionAccount?.kind === "collection" ? collectionAccount.updateAuthority : null;
+    const issuerName = updateAuthority ? knownIssuer(updateAuthority)?.issuer ?? null : null;
 
     // A row either MATCHES the filter, or does not, or cannot be decided:
     // its trait list was cut at the row cap, or the only candidate value was
@@ -1500,12 +1520,20 @@ registerTool(
     const ownerKnown = held.length - unknownOwner;
     const holders = [...byOwner.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([owner, count]) => ({
-        owner,
-        held: count,
-        shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
-        explorer: `https://solscan.io/account/${owner}`,
-      }));
+      .map(([owner, count]) => {
+        const r = roleOf(owner, updateAuthority);
+        return {
+          owner,
+          held: count,
+          shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
+          /** issuer (the collection's own key), venue-escrow (listed items), or wallet. */
+          role: r.role,
+          ...(r.note ? { roleNote: r.note } : {}),
+          explorer: `https://solscan.io/account/${owner}`,
+        };
+      });
+    const issuerHeld = holders.filter((h) => h.role === "issuer").reduce((s, h) => s + h.held, 0);
+    const escrowHeld = holders.filter((h) => h.role === "venue-escrow").reduce((s, h) => s + h.held, 0);
 
     // The COUNTS above cover every row read. The two lists are bounded
     // separately so the whole answer stays inside what a client carries:
@@ -1532,6 +1560,11 @@ registerTool(
       "An item listed for sale reports the marketplace's escrow account as its owner, not the seller. A holder row with an implausible share is usually an escrow or a custodial account, not a collector: get_asset_provenance on one of its mints names the escrow and shows who handed it over.",
       "A custodial platform holds a buyer's item in its own address, so one address holding many does not settle whether one person bought them.",
     ];
+    if (issuerHeld > 0) {
+      readThis.unshift(
+        `${issuerHeld} of the ${held.length} matched item(s) sit in the ISSUER's own wallet (${updateAuthority}, the collection's update authority${issuerName ? `, ${issuerName}` : ""}). That wallet is not a collector and did not buy them: an item there is unsold, held back, or RETURNED after a collector opened or redeemed it (Candy gold packs go back to this wallet on open; base packs burn). get_asset_provenance on one of them shows which: a trail that reads mint > collector > issuer is an opened pack. ${escrowHeld > 0 ? `Another ${escrowHeld} sit in a marketplace escrow, listed for sale. ` : ""}Collectors hold ${held.length - issuerHeld - escrowHeld} outright.`,
+      );
+    }
     const coverage: string[] = [];
     if (page.truncated) coverage.push(`the read stopped at ${max} assets and the index has more: raise max, because every count here covers only what was read`);
     if (page.rowsRejected > 0) coverage.push(`${page.rowsRejected} row(s) the index served had no usable id and were dropped`);
@@ -1564,6 +1597,12 @@ registerTool(
         undecided,
         incomplete: undecided > 0,
       },
+      issuer: updateAuthority
+        ? { updateAuthority, name: issuerName, readFrom: "the collection account on chain (Metaplex Core CollectionV1, decoded locally)" }
+        : null,
+      heldByIssuer: issuerHeld,
+      heldInVenueEscrow: escrowHeld,
+      heldByCollectors: held.length - issuerHeld - escrowHeld,
       assetsInCollection: page.items.length,
       matched: rows.length,
       /** Matched rows that are not burned. Not "held by a person": an escrow or a custodian counts, and a row with no owner reported is in this number too. */
@@ -1665,6 +1704,7 @@ registerTool(
 
     return ok({
       wallet,
+      ...walletRole(wallet),
       holdings: {
         ...holdings,
         byCollection: holdings.byCollection.slice(0, 40),
@@ -1761,6 +1801,7 @@ registerTool(
     }
     return ok({
       wallet,
+      ...walletRole(wallet),
       magiceden: {
         ...summary,
         stale: feed.stale,

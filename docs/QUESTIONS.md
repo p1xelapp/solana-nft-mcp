@@ -99,7 +99,7 @@ collection name or address.
 |---|---|---|
 | "is this project rugged" | Supply, recent sales activity, listed depth and custody rights are given; the word rugged is not the tool's to apply | PARTIAL (evidence yes, label no) |
 | "how many actually exist vs how many they announced" | Chain supply from the collection account against the claim, via claim verification | ANSWERS NOW |
-| "are holders concentrated in a few wallets" | `get_collection_holders` reads every asset in the collection from the chain's asset index and ranks holders by count and share, listed or not, with escrow and custodial addresses called out | ANSWERS NOW (one collection at a time; no cross-collection ranking) |
+| "are holders concentrated in a few wallets" | `get_collection_holders` reads every asset in the collection from the chain's asset index and ranks holders by count and share, listed or not, with the issuer's own key and marketplace escrows called out as roles so neither is mistaken for a collector | ANSWERS NOW (one collection at a time; no cross-collection ranking) |
 | "has anyone traded this in the last month" | Recent sales plus window sales count | ANSWERS NOW |
 | "can the team still mint more" | Update authority and collection state from the chain; mint authority behaviour is read from the collection account | PARTIAL (authority visible, future intent is not) |
 | "did they burn the supply they said they burned" | Collection account reports minted versus current size, which exposes burns | ANSWERS NOW |

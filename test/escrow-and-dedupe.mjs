@@ -178,4 +178,30 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
   ok("R6-08/09/10 a duplicate is exact in every claim, outgoing settlement is uncertain too, a self-fill is no first buy");
 }
 
+// ================================================================ R6-13 (live find, 2026-09-18)
+// The issuer's own wallet led the holder list with no role on it, and a
+// reader called it a whale that had bought eleven packs. The collection's
+// update authority is the issuer's key, read from the chain.
+{
+  const { roleOf, knownIssuer } = await import("../dist/issuers.js");
+  const CANDY = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2";
+  const k = knownIssuer(CANDY);
+  assert.ok(k && k.collections >= 300, `the table knows the key that signs the Candy registry: ${JSON.stringify(k)}`);
+  assert.strictEqual(roleOf(CANDY, null).role, "issuer");
+  assert.strictEqual(roleOf(address("someone"), CANDY).role, "wallet");
+  assert.strictEqual(roleOf(address("someone"), address("someone")).role, "issuer", "matching the live update authority is enough, table or no table");
+  assert.strictEqual(roleOf("1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix", null).role, "venue-escrow");
+  assert.match(roleOf(CANDY, CANDY).note, /not a collector/);
+  // The minted row names who paid and who it was created for.
+  rpcFor("issuer-mint", [
+    { signature: signature("mint-i"), tx: tx([{ programId: CORE, accounts: [MINT, COLLECTION, CORE, address("payer-x"), address("first-owner"), CORE, SYSTEM, CORE], data: "11" }], C) },
+  ]);
+  const r = await sol.getProvenance(MINT, 15, { fresh: true });
+  const minted = r.events.find((e) => e.event === "minted");
+  assert.strictEqual(minted.mintedBy, address("payer-x"));
+  assert.strictEqual(minted.firstOwner, address("first-owner"));
+  globalThis.fetch = denied;
+  ok("R6-13 the issuer's key is a role, read from the chain, and the mint says who paid and who it was for");
+}
+
 console.log(`\nround6: ${passed} blocks passed`);
