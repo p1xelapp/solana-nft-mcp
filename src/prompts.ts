@@ -8,7 +8,7 @@
  * in the bundle script would mean two copies that drift; importing the server
  * itself would start a server inside the build. So both sides import this.
  *
- * Two rules the wording follows, learned from watching this fail in a real
+ * Three rules the wording follows, learned from watching this fail in a real
  * client:
  *
  *  1. No interpolation. A prompt whose text changes with an argument cannot
@@ -42,7 +42,7 @@ export const PROMPT_TEXTS = {
     "Only ask me which collection I mean if I have not named one yet, and do not offer a list of guesses.\n" +
     "Resolve the identifiers first, then supply and floor, then what actually sold recently with the price range and how many changed hands.\n" +
     "Then pick one recently traded item and show its ownership history as a short story.\n" +
-    "Close with three things a collector would want to know. Label anything stale, and never call a floor a valuation.",
+    "Close with what a buyer would want to know next. Label anything stale, and never call a floor a valuation.",
   wallet_report:
     "Profile a wallet as a collector with the collector-mcp tools.\n" +
     "If I have already pasted a wallet address in this conversation, use that one and start now. " +

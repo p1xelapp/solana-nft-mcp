@@ -410,7 +410,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Whoever holds this can take the item from your wallet without you. It is normal on packs and rentals, where a program has to move things for you. On a finished collectible it means custody is shared with the issuer no matter what the marketplace page says. It cannot be added later and cannot be removed.",
     pitfall:
-      "This is the single most consequential fact about an item and no marketplace shows it. Check who holds it before treating a purchase as final.",
+      "No marketplace page shows this, and it decides whether a purchase is final: check who holds it first.",
     documented:
       "The delegate can transfer the Asset unlimited times without owner approval; can only be added at Asset or Collection creation.",
     verified: true,

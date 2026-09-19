@@ -110,7 +110,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ## What it never does
 
-- **Sign, buy, sell, list or transfer anything.** The ability was never written into the code.
+- **Sign, buy, sell, list or transfer anything.** There is no such code in it.
 - **Ask for a private key, a seed phrase or a wallet connection.** Wallet questions take a public address, the same one anyone can paste into a block explorer.
 - **Collect anything.** No accounts, no telemetry, no logs sent anywhere. It runs locally and talks to three public sources.
 - **Call a floor a valuation.** Floor times count comes back labelled a ceiling, with the items it could not price counted.

@@ -20,7 +20,7 @@ collection name or address.
 | "what's hot on Magic Eden right now" | Trending list with the numbers behind the ranking | ANSWERS NOW |
 | "is the floor real or is it one guy" | Floor plus listed count plus last ten sales; a thin book gets called thin | ANSWERS NOW |
 | "what are people actually paying, not asking" | Recent sales only counts completed buys, never listings | ANSWERS NOW |
-| "did the floor move this week" | Daily series over the window shows the shape; single-point floor is live only | ANSWERS NOW |
+| "did the floor move this week" | The daily sales series shows what cleared each day; there is no stored history of asks, so movement is read from sales rather than from past floors | PARTIAL (sales, not historical floors) |
 | "which marketplace is cheaper for this collection" | Reconciliation block; when the currencies differ it shows both and refuses to rank | PARTIAL (ranks only when currencies match, by design) |
 | "how many are listed vs how many exist" | Listed count from the marketplace, existing supply from the chain, both labelled | ANSWERS NOW |
 | "what's the biggest sale this collection has ever had" | Window-based highest sale only; all-time needs history older than the marketplace keeps | PARTIAL (window covered, all-time not) |

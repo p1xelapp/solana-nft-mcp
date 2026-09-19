@@ -21,8 +21,8 @@ priority; blue-chip Solana collections are welcome when they help demos.
 - Keyless sources only. PRs that add an API-key requirement will be declined -
   zero-config is the product.
 - Read-only forever. No signing, no transactions, no wallet code.
-- `npm test` is the OFFLINE suite (build + protocol, market, DAS, mechanics,
-  hardening and wave-8 regression tests) and is what CI runs. The regression
+- `npm test` is the OFFLINE suite (build, lint and every regression suite under
+  `test/`) and is what CI runs. The regression
   files hold one block per closed defect, named by the wrong answer it
   prevents; add to them rather than editing what a block asserts. `npm run test:smoke` is the live
   smoke test that makes real calls to the sources, and `npm run test:live` is
@@ -35,7 +35,7 @@ priority; blue-chip Solana collections are welcome when they help demos.
 ## Release
 
 `.npmrc` sets `ignore-scripts=true` as supply-chain hardening, and npm applies
-that to OUR lifecycle scripts too - so `npm publish` on a fresh clone can ship a
+that to this project's lifecycle scripts too - so `npm publish` on a fresh clone can ship a
 package with no `dist/` in it, and `npx collector-mcp` dies with
 MODULE_NOT_FOUND for every user. Build explicitly, prove the tarball, then
 publish with scripts enabled for that one command:
@@ -48,11 +48,9 @@ npm run build && node scripts/pack-check.mjs && npm publish --ignore-scripts=fal
 fails unless `dist/index.js` and `data/me-collections.json.gz` are both in it.
 It runs in CI too, so a missing build is caught before release day.
 
-The ship-gate receipt (`.audit-receipt.json`) is produced by the audit tool on
-release day and is bound to the commit it was run against, so it is not
-tracked in this repository - a receipt in git is either stale or a claim about
-a commit it did not check. Run the audit from the repository root so the SHA it
-records is this repository's.
+Before a release, run the checks anyone can run from a clean clone: `npm test`,
+`npm run pack-check`, `npm run check:images` and `npm audit --audit-level=high`.
+Those four are the release gate; nothing else is required.
 
 Before releasing, also refresh the bundled directory snapshot with
 `npm run snapshot` - it refuses to overwrite a good snapshot with a partial

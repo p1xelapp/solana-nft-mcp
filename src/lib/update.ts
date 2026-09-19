@@ -31,6 +31,8 @@ export interface UpdateInfo {
 }
 
 const REGISTRY = "https://registry.npmjs.org/collector-mcp/latest";
+/** A complete semantic version, bounded: digits, dots, an optional short pre-release tag, nothing else. */
+const SEMVER = /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:-[0-9A-Za-z.-]{1,32})?$/;
 const HOW_TO = "git pull && npm install && npm run build (or npm i -g collector-mcp@latest if installed from npm), then restart your AI app";
 
 /** Numeric semver compare on the dotted core only: 1 if a > b, -1 if a < b, 0 if equal or unreadable. */
@@ -81,8 +83,12 @@ async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> 
     // Bounded like every other body. The registry is a fixed, trusted host,
     // but a proxy or a captive portal in front of it is not.
     const body = await readBoundedJson<{ version?: unknown }>(res, "the npm registry");
-    const latest = typeof body.version === "string" ? body.version : null;
-    if (!latest) return { ...base, checked: true, reason: "registry answer carried no version" };
+    // Only a complete, bounded semantic version is a version. Anything else
+    // from the registry, or from whatever sits in front of it, is text: it
+    // used to be printed into the startup line and the status answer as
+    // served, and a proxy could put a fake message boundary there.
+    const latest = typeof body.version === "string" && SEMVER.test(body.version) ? body.version : null;
+    if (!latest) return { ...base, checked: true, reason: "registry answer carried no usable version" };
     const behind = compareVersions(latest, current) > 0;
     return { ...base, checked: true, latest, behind, howTo: behind ? HOW_TO : null };
   } catch (e) {

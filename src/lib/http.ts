@@ -566,7 +566,26 @@ export async function fetchRetry(
             `the request was abandoned rather than sent late`,
         );
       }
-      const res = await fetch(url, { ...opts, signal: combineSignals(remaining, signal) });
+      // Never follow a redirect. Every request this server makes goes to one
+      // fixed API host, and fetch's default would carry the request headers,
+      // including an OpenSea key, to whatever host a 302 named. A redirect
+      // from an API host is a change at the venue or something in between,
+      // and either way it is an upstream failure with a name, not a hop.
+      const res = await fetch(url, { ...opts, redirect: "manual", signal: combineSignals(remaining, signal) });
+      if (res.status >= 300 && res.status < 400) {
+        await res.body?.cancel().catch(() => undefined);
+        const location = res.headers.get("location");
+        let target = "an unnamed location";
+        try {
+          if (location) target = new URL(location, url).origin;
+        } catch {
+          /* an unparsable Location is still a redirect; the label stands */
+        }
+        throw new RedirectRefused(
+          `HTTP ${res.status} redirect to ${target} refused: this server sends each request to one fixed host and follows no redirect, so a credential is never carried to a host it was not meant for`,
+          res.status,
+        );
+      }
       if (res.status === 429) {
         await res.body?.cancel().catch(() => undefined);
         const wait = retryAfterMs(res.headers.get("retry-after"));
@@ -584,6 +603,8 @@ export async function fetchRetry(
       return res;
     } catch (e) {
       if (e instanceof StopError) throw new HttpError(e.message, 429, "rate limited", e.retryAfterMs);
+      // A redirect is final: retrying asks the same host for the same hop.
+      if (e instanceof RedirectRefused) throw new HttpError(e.message, e.status, "redirect refused");
       // Shed load and oversized bodies are both final answers: retrying adds
       // another queued caller, or downloads the same gigabyte again.
       if (e instanceof BusyError || e instanceof OversizedBodyError || e instanceof AbortedError) throw e;
@@ -634,6 +655,16 @@ function retryAfterMs(h: string | null): number {
   if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
   const at = Date.parse(h);
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
+}
+
+/** Thrown when an upstream answered with a redirect, which this server never follows. */
+class RedirectRefused extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
 /** Thrown to leave the retry loop immediately. */

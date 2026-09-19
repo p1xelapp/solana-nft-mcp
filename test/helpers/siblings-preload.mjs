@@ -1,5 +1,5 @@
 /**
- * Preloaded into a child server (node --import) for the round-eight
+ * Preloaded into a child server (node --import) for the sibling-path
  * regression cases that need a whole tool handler, not a pure function.
  *
  * Magic Eden's listings book for one synthetic symbol carries two players and
@@ -32,7 +32,7 @@ const listings = [
 // asset was moved in, nothing was burned. Authority is the all-zero key.
 const str = (t) => { const b = Buffer.from(t); const n = Buffer.alloc(4); n.writeUInt32LE(b.length); return Buffer.concat([n, b]); };
 const counters = Buffer.alloc(8); counters.writeUInt32LE(10, 0); counters.writeUInt32LE(11, 4);
-const COLLECTION_B64 = Buffer.concat([Buffer.from([5]), Buffer.alloc(32), str("Round eight"), str("https://example.invalid/c"), counters]).toString("base64");
+const COLLECTION_B64 = Buffer.concat([Buffer.from([5]), Buffer.alloc(32), str("Sibling fixture"), str("https://example.invalid/c"), counters]).toString("base64");
 const CORE = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 
 globalThis.fetch = async (url, init = {}) => {
@@ -42,18 +42,18 @@ globalThis.fetch = async (url, init = {}) => {
     let body = {};
     try { body = JSON.parse(String(init.body ?? "{}")); } catch { /* answered as an error below */ }
     if (body.method === "getAccountInfo") return json({ jsonrpc: "2.0", id: body.id, result: { context: { slot: 1000 }, value: { owner: CORE, data: [COLLECTION_B64, "base64"] } } });
-    return json({ jsonrpc: "2.0", id: body.id ?? 1, error: { code: -32601, message: `round-eight preload does not serve ${body.method}` } });
+    return json({ jsonrpc: "2.0", id: body.id ?? 1, error: { code: -32601, message: `siblings preload does not serve ${body.method}` } });
   }
   if (target.includes("magiceden.dev")) {
     // A quiet wallet: no activity, no tokens.
     if (target.includes("/wallets/")) return json([]);
-    if (target.includes("/collections/r8-fixture/listings")) {
+    if (target.includes("/collections/sibling-fixture/listings")) {
       // One short page: the venue reports the end of the book.
       return json(target.includes("offset=0") || !target.includes("offset=") ? listings : []);
     }
-    if (target.includes("/collections/r8-fixture/stats")) return json({ symbol: "r8-fixture", floorPrice: 100_000_000, listedCount: 3, volumeAll: 1 });
-    if (target.includes("/collections/r8-fixture/attributes")) return json({ results: { availableAttributes: [] } });
-    if (target.includes("/collections/r8-fixture")) return json({ symbol: "r8-fixture", name: "Round eight fixture" });
+    if (target.includes("/collections/sibling-fixture/stats")) return json({ symbol: "sibling-fixture", floorPrice: 100_000_000, listedCount: 3, volumeAll: 1 });
+    if (target.includes("/collections/sibling-fixture/attributes")) return json({ results: { availableAttributes: [] } });
+    if (target.includes("/collections/sibling-fixture")) return json({ symbol: "sibling-fixture", name: "Sibling fixture" });
   }
-  return json({ message: `refused by the round-eight preload: ${target.slice(0, 80)}` }, 404);
+  return json({ message: `refused by the siblings preload: ${target.slice(0, 80)}` }, 404);
 };

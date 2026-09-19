@@ -1,7 +1,7 @@
 /**
  * Neutralising attacker-controlled text before it reaches a model.
  *
- * We found no other blockchain MCP server that closes this hole; the MCP spec itself leaves tool text unsanitised. Every field a
+ * The MCP specification leaves tool text to the server. Every field a
  * collectibles API returns as a "name" - the NFT name, the collection name, an
  * attribute value, a card title - is text somebody chose when they minted it.
  * Minting is permissionless and costs cents. So an attacker can mint an asset
@@ -30,21 +30,40 @@
  * what the model receives), and the byte-order mark.
  */
 const INVISIBLE = new RegExp(
-  "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u00AD" +
-    "\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF]",
+  "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u00AD\\u061C\\u180E" +
+    "\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF\\uFFF9-\\uFFFB]",
   "g",
 );
+/**
+ * The same idea outside the basic plane: Unicode TAG characters, a whole
+ * hidden alphabet that renders as nothing. A payload spelt in tags is
+ * invisible to a person and legible to a tokenizer, so they go the same way
+ * as the zero-width characters above.
+ */
+const INVISIBLE_SUPPLEMENTARY = /[\u{E0000}-\u{E007F}]/gu;
 
 /**
  * Structural markers an injection uses to fake a message boundary. These are
  * defanged rather than deleted, so a reader can still see what the name said.
+ *
+ * None of these patterns has a length an attacker can outrun: the opening
+ * delimiter is matched on its own, and the closing one is optional, so a
+ * role tag padded past any bound still loses its angle bracket. Input is
+ * capped before these run, so an unbounded class is still linear work.
  */
 const STRUCTURE: RegExp[] = [
-  /<\|[^|>]{0,40}\|>/g, // <|im_start|> and relatives
-  /<\/?(?:system|assistant|user|tool|function|result|instructions?)\b[^>]{0,60}>/gi,
+  /<\|[^|>]{0,200}(?:\|>)?/g, // <|im_start|> and relatives, closed or not
+  /<\/?(?:system|assistant|user|tool|function|result|instructions?)\b[^>]{0,200}>?/gi,
   /```+/g, // a code fence can visually close our own JSON block
   /\[\/?INST\]/gi,
 ];
+
+/**
+ * Hard cap applied before any pattern runs. A name is never this long; a
+ * payload that is has only one purpose, and the regexes above must not be
+ * asked to walk it.
+ */
+const HARD_CAP = 2_000;
 
 /** Phrasing that only appears in text trying to steer a model. */
 const IMPERATIVE =
@@ -81,11 +100,17 @@ export function inspectUntrusted(raw: unknown): Untrusted {
   const flags: string[] = [];
   let v = String(raw);
 
-  if (INVISIBLE.test(v)) {
+  if (v.length > HARD_CAP) {
+    flags.push(`over-long (${v.length} chars, cut before inspection)`);
+    v = v.slice(0, HARD_CAP);
+  }
+
+  if (INVISIBLE.test(v) || INVISIBLE_SUPPLEMENTARY.test(v)) {
     flags.push("invisible or direction-override characters");
-    v = v.replace(INVISIBLE, "");
+    v = v.replace(INVISIBLE, "").replace(INVISIBLE_SUPPLEMENTARY, "");
   }
   INVISIBLE.lastIndex = 0; // `g` regexes are stateful across .test() calls
+  INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
 
   // Line breaks are how a payload fakes a turn boundary. A real name never
   // needs one, so they collapse to spaces.

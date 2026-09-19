@@ -52,6 +52,17 @@ gap rather than a silent absence.
 
 Three signals, none of which need you to remember to look:
 
-- **The weekly live check** (`.github/workflows/live-check.yml`, Mondays 09:00 Boise) opens or updates one issue titled "Live source check: a source is not answering" whenever a source fails or degrades, and pings the `LIVE_CHECK_WEBHOOK` repository secret if you set one to a Discord webhook. Close the issue when a run is green again.
+- **The weekly live check** (`.github/workflows/live-check.yml`, Mondays 15:00 UTC) opens or updates one issue titled "Live source check: a source is not answering" whenever a source fails or degrades, and pings the `LIVE_CHECK_WEBHOOK` repository secret if you set one to a Discord webhook. Close the issue when a run is green again.
 - **Dependabot** batches dependency bumps weekly; CI runs the full suite on each.
 - **Users see it too.** At startup the server asks the npm registry once and prints one line if a newer version is published; `get_source_status` reports the same in its `update` field, so an assistant can tell them. Every answer already names its source and read time, and every miss names the layer that missed, so a stale directory or a dead marketplace reads as exactly that.
+
+## Files that are not code
+
+- `assets/social-preview.png` (1280x640) is the image to upload under Settings > Social preview on
+  GitHub; the repository cannot reference it, GitHub serves it.
+- `assets/og.png` is the source of the share image the site at p1xel.app/collector-mcp serves.
+- `assets/banner.png`, `assets/architecture.svg` and `assets/using/candyscan.png` are the README's
+  pictures. The diagram is generated: `npm run docs:architecture` redraws it from the running
+  server and `--check` fails CI when it drifts.
+- `npm run test:compat` includes one group (x7, answer sizes) that reads real collections, so it
+  needs the network; the other groups are offline. `npm test` does not run it.

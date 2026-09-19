@@ -110,7 +110,7 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
 }
 
 // -- the window's edges, and what a sale is --------------------------------
-// Three mutants survived this file in an outside review: counting `list`
+// Three mutants survived this file in review: counting `list`
 // rows as sales, and making either window boundary exclusive. Each is a
 // wrong number a reader would never see coming, so each gets an assertion
 // that fails the moment the boundary moves by one second or the sale set

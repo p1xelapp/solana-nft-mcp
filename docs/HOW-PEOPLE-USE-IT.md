@@ -11,8 +11,8 @@ the tool. You never type a tool name.
 ## Setup, once (any client, about 3 minutes)
 
 The server is a small Node program. Your AI client starts it in the background and talks
-to it over stdin/stdout. Nothing runs on our side. Nothing phones home. It cannot sign,
-send or spend anything because that code was never written.
+to it over stdin/stdout. Nothing runs on my side. Nothing phones home. It cannot sign,
+send or spend anything; there is no such code in it.
 
 **1. Get the code**
 
@@ -47,7 +47,7 @@ claude mcp add collector -- node /absolute/path/to/collector-mcp/dist/index.js
 ```
 
 Save, fully quit Claude Desktop, reopen. A small tools icon appears under the chat box.
-Click it: 20 collector tools.
+Click it: 21 collector tools.
 
 *Cursor:* Settings → MCP → Add new global MCP server. Same JSON.
 

@@ -5,9 +5,11 @@
 collector-mcp reads. It has no signing code, no wallet code and no transaction
 path: it cannot buy, sell, list, transfer or spend anything, and that is true
 because the ability was never written, not because it is switched off. Every
-tool declares `readOnlyHint` in the protocol. The worst failure this server
-can produce on its own is a wrong or stale number, and it is built to label
-those rather than hide them.
+tool declares `readOnlyHint` in the protocol, which here means that nothing on
+the chain or at a marketplace is changed; the two local side effects below are
+not covered by that annotation and are listed instead. Against the chain and
+the marketplaces, the failure to plan for is a wrong or stale number, and the
+server is built to label those rather than hide them.
 
 That is the boundary against the chain and the venues. Two things this server
 does on the machine it runs on are worth knowing about, because "read-only"
@@ -19,13 +21,18 @@ does not describe them:
   next session does not spend another. Set `OPENSEA_API_KEY` and it uses yours
   instead; set `COLLECTOR_MCP_NO_AUTO_KEYS=1` and it never asks. A refused
   issue is remembered for a cooldown and any `Retry-After` the venue sends is
-  honoured, so a failing endpoint is not asked again on every call.
+  honoured, so a failing endpoint is not asked again on every call. The
+  status tool (`get_source_status`) describes this state and never requests a
+  key itself.
 - **It asks npm once at startup** whether a newer version exists, sending the
   package name and version as a user-agent and nothing else. Off with
   `COLLECTOR_MCP_NO_UPDATE_CHECK=1`; `COLLECTOR_MCP_OFFLINE=1` stops every
   request the server would make on its own.
 
-Whichever key is in use, it is sent only to `api.opensea.io`. Every credential
+Whichever key is in use, it is sent only to `api.opensea.io`, and never across
+a redirect: every request this server makes refuses a 3xx answer rather than
+following it, so a header cannot be carried to a host a redirect names. Every
+credential
 this process has sent is registered, and every string that leaves the process
 for a client, a model or a log goes through that registry: an upstream that
 reflects the request header in an error body gets the reflection replaced,
@@ -64,8 +71,9 @@ the query string.
 
 ## Reporting a vulnerability
 
-Open a GitHub security advisory on this repository, or a plain issue if the
-finding is not sensitive. Realistic classes worth reporting:
+Open a GitHub security advisory on this repository
+(https://github.com/p1xelapp/collector-mcp/security/advisories/new), or a plain
+issue if the finding is not sensitive. Realistic classes worth reporting:
 
 - a credential, a file path or an environment value reaching an answer or a log
 - input validation bypasses that reach an upstream un-encoded
@@ -90,9 +98,9 @@ paths wholesale - a real credential committed there still fails the scan.
 The offline suite (`npm test`) runs every child server with
 `COLLECTOR_MCP_OFFLINE=1` or with every upstream stubbed by a preload, so a
 test that reaches the network fails loudly rather than passing against live
-data. `test/credentials-and-cancellation.mjs` holds one regression per finding of the September 2026
-outside audit, each asserting the correct behaviour on a fixture that
-reproduced the defect.
+data. `test/credentials-and-cancellation.mjs` holds one regression per fixed
+credential and cancellation defect, each asserting the correct behaviour on
+the fixture that reproduced it.
 
 Releases run `node scripts/pack-check.mjs` to prove the tarball carries
 `dist/index.js` before going out, and `npm run bundle` verifies the `.mcpb`

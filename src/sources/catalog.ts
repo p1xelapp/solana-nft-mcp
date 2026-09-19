@@ -20,9 +20,9 @@ export type SourceKind =
   | "marketplace"
   /** An indexer that re-publishes other people's data. */
   | "aggregator"
-  /** Not called by this server - we only build URLs a person can click. */
+  /** Not called by this server, which only builds URLs a person can click. */
   | "explorer-links"
-  /** A specification we decode by hand; the docs are the source. */
+  /** A specification decoded here by hand; the docs are the source. */
   | "standard-docs";
 
 /**
@@ -31,7 +31,7 @@ export type SourceKind =
  * which can lag the chain), 3 = secondary or optional colour, 4 = reference
  * link only. A lower tier never loses an argument to a higher one.
  *
- * An indexer never earns tier 1, however good it is: tier 1 means we read the
+ * An indexer never earns tier 1, however good it is: tier 1 means this server reads the
  * bytes ourselves.
  */
 export type SourceTier = 1 | 2 | 3 | 4;
@@ -152,7 +152,7 @@ export const SOURCES: readonly SourceEntry[] = [
     fallback: null,
     retention: "unknown (not documented)",
     note:
-      "Reached with the vendor's shared public token in the URL - no signup, nothing issued to this user, so the zero-key promise holds. Slowest of the three in our measurements.",
+      "Reached with the vendor's shared public token in the URL - no signup, nothing issued to this user, so the zero-key promise holds. Measured slowest of the three.",
   },
   {
     id: "metaplex-core",
@@ -163,7 +163,7 @@ export const SOURCES: readonly SourceEntry[] = [
     keyEnvVar: null,
     wired: true,
     answers: [
-      "the byte layout we decode owner, name and mint counts from",
+      "the byte layout this server decodes owner, name and mint counts from",
       "the TransferV1 instruction shape that tells us who received an asset",
       "which plugins can freeze, burn or take royalties on an asset",
     ],

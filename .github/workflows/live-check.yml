@@ -1,12 +1,10 @@
 # This workflow exists to send exactly one email: the one that says a real source broke.
-# Weekly, keyless, three live calls. A red run here means a venue changed or went
+# Weekly, keyless, five live calls. A red run here means a venue changed or went
 # away - not that our code changed, because nothing in this repo moved between runs.
 name: live-check
 on:
   schedule:
-    # Mondays 09:00 America/Boise. GitHub cron is UTC only and does not observe
-    # daylight saving, so this is pinned to 15:00 UTC = 09:00 MDT in summer and
-    # 08:00 MST in winter. The hour it runs matters less than it running.
+    # Mondays 15:00 UTC. The hour it runs matters less than it running.
     - cron: "0 15 * * 1"
   workflow_dispatch:
 
@@ -28,6 +26,8 @@ jobs:
     steps:
       # Pinned to a full commit SHA - a moved tag is a supply-chain vector.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # Setup is SEPARATE from the source check, and named so, because this
       # workflow's whole purpose is to send exactly one email: "a real source
@@ -52,10 +52,10 @@ jobs:
           npm run build
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
-      # No secrets, no env: this proves the keyless path a new user gets.
-      # OpenSea is deliberately not exercised here - it needs a key, and a
-      # workflow that needs a key cannot tell us whether the zero-key promise
-      # still holds.
+      # No secrets: this proves the keyless path a new user gets. The child
+      # runs with automatic key issue and the update check switched off, so
+      # OpenSea is deliberately not exercised here and nothing is provisioned
+      # on a CI runner.
       #
       # THIS is the step whose failure means a source broke. If the run is red
       # and this step was skipped or never started, the sources were never

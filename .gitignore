@@ -25,11 +25,11 @@ IMAGES/
 .audit-receipt.json
 
 # Local working notes and run reports. Kept on disk, not published.
-LAUNCH-PLAYBOOK.html
-LAUNCH-NOTES.md
+LAUNCH-*.html
+LAUNCH-*.md
 HANDOFF.md
 CHECKLIST.md
-PRE-LAUNCH-TESTS.md
+PRE-LAUNCH-*.md
 REVIEW-BRIEF-*.md
 GOAL.md
 NEXT-RELEASE.md
@@ -38,12 +38,7 @@ docs/LAUNCH-KIT.md
 docs/DEMO-SCRIPT.md
 scripts/persona-prompts.mjs
 test/persona-server.mjs
-battery-report.json
-battery2-report.json
-battery3-report.json
-sweep-report.json
-persona-report.json
-live-edges-report.json
+*-report.json
 .battery-*.txt
 
 # Local safety copies of the tree taken before a fix wave. Never published.

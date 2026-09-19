@@ -23,6 +23,7 @@ import * as me from "./sources/magiceden.js";
 import { collectionNameKey } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
+import { BoundedMap } from "./lib/bounded.js";
 
 /**
  * Symbols a collection with this name plausibly has, most likely first.
@@ -92,8 +93,9 @@ export interface DirectSymbolMiss {
 
 export type DirectSymbolOutcome = DirectSymbolHit | DirectSymbolMiss;
 
-const misses = new Map<string, { at: number; conflict?: DirectConflict }>();
 const MISS_TTL_MS = 10 * 60_000;
+/** Recent names the venue did not know. Bounded: a session that asks about thousands of unknown names must not keep every one. */
+const misses = new BoundedMap<{ conflict?: DirectConflict }>(2_000, MISS_TTL_MS);
 
 const conflictNote = (name: string, c: DirectConflict): string =>
   `Magic Eden has a collection under the symbol "${c.symbol}", which is exactly what "${name}" slugifies to, but the marketplace calls it ` +
@@ -136,7 +138,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
   // second without ever asking the venue about `audit_crown`.
   const cacheKey = symbolCandidates(name).join("|") || wanted;
   const cachedMiss = misses.get(cacheKey);
-  if (cachedMiss !== undefined && Date.now() - cachedMiss.at < MISS_TTL_MS) {
+  if (cachedMiss !== undefined) {
     return cachedMiss.conflict
       ? { found: false, conclusive: true, conflict: cachedMiss.conflict, note: conflictNote(name, cachedMiss.conflict) }
       : { found: false, conclusive: true, note: "asked the marketplace for this name recently and every spelling answered 404" };
@@ -243,7 +245,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
         (conflict ? `. ${conflictNote(name, conflict)}` : ""),
     };
   }
-  misses.set(cacheKey, { at: Date.now(), ...(conflict ? { conflict } : {}) });
+  misses.set(cacheKey, conflict ? { conflict } : {});
   if (conflict) return { found: false, conclusive: true, conflict, note: conflictNote(name, conflict) };
   return { found: false, conclusive: true, note: `no collection at the marketplace under any spelling tried: ${tried.join(", ")}` };
 }
