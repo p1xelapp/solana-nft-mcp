@@ -870,7 +870,14 @@ registerTool(
           name: acct.name,
           numMinted: acct.numMinted,
           currentSize: acct.currentSize,
-          burnedOrClosed: acct.numMinted - acct.currentSize,
+          // Two counters, not a burn count. Core's UpdateV2 moves an asset
+          // between collections and adjusts current_size without a burn, and
+          // an asset moved IN makes the difference negative. The number was
+          // published as burnedOrClosed, a story the two counters do not
+          // tell (2026-09-18).
+          sizeDelta: acct.numMinted - acct.currentSize,
+          sizeDeltaNote:
+            "numMinted minus currentSize. Burns and closures lower it, but so does an asset moved out to another collection, and an asset moved in raises currentSize without a mint. A burn count needs decoded history (get_asset_provenance), not these two counters.",
           source: "solana-rpc (Metaplex Core account, decoded locally)",
         };
       }
@@ -1077,7 +1084,7 @@ registerTool(
           continue;
         }
         const st = await me.collectionStats(s);
-        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, listed: st.listedCount, stale: st.stale, readAt: st.cachedAt });
+        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, currency: "SOL", source: "magiceden", listed: st.listedCount, stale: st.stale, readAt: st.cachedAt });
       } catch (e) {
         floors.push({ symbol: s, error: e instanceof Error ? e.message : String(e) });
       }
@@ -1832,23 +1839,34 @@ registerTool(
     // feed is deduplicated on the whole event before anything counts it.
     const deduped = dedupeEvents(feed.events);
     const summary = summarizeActivity(wallet, deduped.events, feed.truncated);
-    let opensea: unknown;
+    // The OpenSea block is always present and always says which of four
+    // things it is: read, disabled by the caller, not read for want of a key,
+    // or failed. An absent block with a prose note beside it was a state a
+    // program had to parse English to tell apart (2026-09-18). A read that found nothing is status "ok" with zero events.
+    let opensea: Record<string, unknown>;
     let openseaNote: string | undefined;
-    if (includeOpenSea && (await os.openSeaAvailable())) {
+    if (!includeOpenSea) {
+      opensea = { status: "disabled", reason: "caller", note: "includeOpenSea was false; OpenSea was not read." };
+    } else if (await os.openSeaAvailable()) {
       try {
         const ev = await os.accountEvents(wallet, 2);
-        opensea = summarizeOpenSeaEvents(wallet, ev.events, ev.truncated, ev.duplicates);
+        opensea = { status: "ok", ...summarizeOpenSeaEvents(wallet, ev.events, ev.truncated, ev.duplicates) };
       } catch (e) {
         openseaNote = `OpenSea account feed unavailable: ${e instanceof Error ? e.message : String(e)}`;
+        opensea = { status: "unavailable", reason: "upstream", note: openseaNote };
       }
-    } else if (includeOpenSea) {
-      openseaNote = `OpenSea sales and plain transfers (the only feed that shows airdrops and gifts) are missing: ${os.openSeaState().note}`;
+    } else {
+      const state = os.openSeaState();
+      openseaNote = `OpenSea sales and plain transfers (the only feed that shows airdrops and gifts) are missing: ${state.note}`;
+      opensea = { status: "not-read", reason: state.source === "none" && /NO_AUTO_KEYS/.test(state.note) ? "auto-keys-disabled" : "missing-key", note: openseaNote };
     }
     return ok({
       wallet,
       ...walletRole(wallet),
       magiceden: {
         ...summary,
+        currency: "SOL",
+        source: "magiceden",
         stale: feed.stale,
         eventsRead: feed.events.length,
         duplicateEventsDropped: deduped.duplicates,
@@ -1916,7 +1934,7 @@ registerTool(
       "Answers 'how many sales this week', 'how many Ohtani cards sold', 'which player sold the most', 'what was " +
       "the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
       "The result says how far back the feed was read and whether older sales exist beyond the page budget; " +
-      "it never fills a gap with an estimate. Magic Eden's feed only: Tensor and OpenSea fills are not here.",
+      "it never fills a gap with an estimate. Magic Eden's API feed only: each row carries the execution venue that feed reported, and fills it did not index are not here.",
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
@@ -1953,6 +1971,9 @@ registerTool(
     const nameFilterRun = applyNameFilter(windowEvents, names ? names.names : null, needle);
     const nameFilterAvailable = nameFilterRun.status === "applied";
     const filtered = nameFilterRun.events;
+    // A filter that could not judge every row is a lower bound, and a program
+    // needs that as a field, not as a sentence.
+    const nameFilterIncomplete = nameFilterAvailable && nameFilterRun.unresolved > 0;
     const summarised = filtered ?? read.events;
     const summary = summarizeSales(summarised, {
       windowStartUnix: sinceUnix,
@@ -1963,7 +1984,12 @@ registerTool(
       stale: read.stale,
       cachedAt: read.cachedAt,
     });
-    const byName = names ? breakdownByName(windowEvents, names.names) : null;
+    // Same rows as the figures above it: the filtered set when a name filter
+    // ran, otherwise the collection. Built from the whole window under a
+    // filtered headline, this table listed Aaron Judge under "sales whose
+    // item name contains Ohtani" (2026-09-18).
+    const byNameScope: "filtered" | "collection-wide" = filtered ? "filtered" : "collection-wide";
+    const byName = names ? breakdownByName(filtered ?? windowEvents, names.names) : null;
     return ok({
       symbol,
       symbolKnown: true,
@@ -1973,7 +1999,7 @@ registerTool(
       /** What the figures above are actually about. */
       figuresCover: needle
         ? nameFilterAvailable
-          ? `sales in the window whose item name contains "${needle}"`
+          ? `sales in the window whose item name contains "${needle}"${nameFilterIncomplete ? ` - a lower bound: ${nameFilterRun.unresolved} sale(s) could not be judged, see nameFilter` : ""}`
           : "the WHOLE collection - the name filter could not run, see nameFilter"
         : "the whole collection over the window",
       ...(needle
@@ -1983,6 +2009,13 @@ registerTool(
                 status: "applied" as const,
                 matched: filtered!.length,
                 of: windowEvents.length,
+                /** Rows the index named, so the filter could judge them. */
+                resolved: nameFilterRun.resolved,
+                /** Rows it could not judge (no name in the index, or never requested). Unmatched, not non-matching. */
+                unresolved: nameFilterRun.unresolved,
+                omitted: names!.omitted,
+                /** True when unresolved > 0: matched is a lower bound, not the count. */
+                incomplete: nameFilterIncomplete,
                 note:
                   `Sales whose item name contains "${needle}", by the chain's asset index; ${names!.unresolved} sale(s) could not be matched because the index had no name for them` +
                   (names!.omitted ? `, of which ${names!.omitted} were never requested (the batch cap was reached)` : "") +
@@ -2010,11 +2043,14 @@ registerTool(
         : {}),
       byName: byName
         ? {
+            /** Which rows this table was built from: the same ones as the figures above it. */
+            scope: byNameScope,
+            currency: "SOL" as const,
             rows: byName.rows,
             distinctNames: byName.distinctNames,
             unnamedSales: byName.unnamedSales,
             stale: names?.stale ?? false,
-            note: "Sales in the window grouped by item name without its serial (player, character, issue). Source: Magic Eden fills named by the chain's asset index.",
+            note: `Sales ${byNameScope === "filtered" ? `matching the name filter` : "in the window"} grouped by item name without its serial (player, character, issue), with the same duplicate and disputed-price policy as the figures above. Source: Magic Eden fills named by the chain's asset index.`,
           }
         : { error: namesError ?? "asset index unavailable", note: "Per-name breakdown skipped; collection-wide figures are unaffected." },
       feed: { source: "Magic Eden v2 collection activity (buyNow)", pagesRead: read.pagesRead, stale: read.stale, cachedAt: read.cachedAt },
@@ -2090,21 +2126,34 @@ registerTool(
       // together, so the comparison is either made from two live reads or not
       // made at all, with both read times named.
       const multiplesComparable = !stale && !floorStale && typeof floor === "number" && Number.isFinite(floor) && floor > 0;
-      const parsed = seen
+      // The name filter applies here exactly as in ordinary mode. It used to
+      // be accepted and ignored, so "lowest Ohtani serial" returned a Judge
+      // card (2026-09-18).
+      const serialNeedle = nameContains ? clean(nameContains).toLowerCase() : null;
+      const nameMatched = serialNeedle ? seen.filter((l) => (l.token?.name ?? "").toLowerCase().includes(serialNeedle)) : seen;
+      // A price is money only when it is a finite amount above zero, the same
+      // rule ordinary mode and every sales figure use. A -2 ask became a
+      // -2x floor multiple here.
+      const askOf = (l: me.MeListing) => (typeof l.price === "number" && Number.isFinite(l.price) && l.price > 0 ? l.price : null);
+      let malformedPrices = 0;
+      for (const l of nameMatched) if (askOf(l) === null && l.price !== null && l.price !== undefined) malformedPrices++;
+      const parsed = nameMatched
         .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
         .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
-        .sort((a, b) => a.s.serial - b.s.serial || (a.l.price ?? Infinity) - (b.l.price ?? Infinity));
+        .sort((a, b) => a.s.serial - b.s.serial || (askOf(a.l) ?? Infinity) - (askOf(b.l) ?? Infinity));
       const rows = parsed.slice(0, limit).map(({ l, s }) => {
-        const price = typeof l.price === "number" && Number.isFinite(l.price) ? l.price : null;
+        const price = askOf(l);
         return {
           serial: s.serial,
           editionSize: s.of,
           name: clean(l.token?.name ?? ""),
           tokenMint: l.tokenMint && sol.isBase58Address(l.tokenMint) ? l.tokenMint : null,
           priceSol: price,
+          currency: "SOL" as const,
+          source: "magiceden" as const,
           vsFloor:
             price !== null && multiplesComparable && floor
-              ? { floorSol: floor, multiple: Math.round((price / floor) * 100) / 100 }
+              ? { floorSol: floor, currency: "SOL" as const, multiple: Math.round((price / floor) * 100) / 100 }
               : null,
         };
       });
@@ -2112,11 +2161,14 @@ registerTool(
         symbol,
         symbolKnown: true,
         mode: "lowest-serials",
-        filters: { traits: traits ?? [] },
+        filters: { traits: traits ?? [], nameContains: nameContains ?? null },
         lowestSerials: rows,
         coverage: {
           listingsRead: seen.length,
+          nameMatches: nameMatched.length,
           withSerialInName: parsed.length,
+          /** Name-matched listings whose ask was present but not a finite amount above zero. Shown with a null ask, outside every floor multiple. */
+          malformedPrices,
           pagesRead,
           /** The venue served a short page and stopped. That is its report, not proof that nothing else exists. */
           venueReportedEnd,
@@ -2129,9 +2181,9 @@ registerTool(
           ? "available: both the listing pages and the floor were read live"
           : `not computed: ${[stale ? "at least one listing page came from cache after a failed refresh" : null, floorStale ? "the floor came from cache after a failed refresh" : null, floor === null ? "no floor was returned" : null].filter(Boolean).join("; ")}. A multiple of the floor is only true if both sides were read just now, so the asks are shown as they are.`,
         floor: floorRes.ok
-          ? { floorSol: floor, listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
+          ? { floorSol: floor, currency: "SOL", source: "magiceden", listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
           : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
-        readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
+        readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number, or whose fraction is impossible (#101/100), are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
         stale,
         cachedAt,
       });

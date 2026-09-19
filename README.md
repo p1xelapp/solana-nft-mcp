@@ -249,7 +249,20 @@ with the rules for presenting this data), `get_source_status` for the source cat
 - Magic Eden and OpenSea only, for marketplace data. Tensor has no self-serve API keys. Rarible's
   Solana API needs a key on a 100-request-a-month free tier and cannot say that a fill happened
   on Magic Eden, which is the mislabelling this server exists to avoid. Both sit in the source
-  catalog as planned, with the condition that would add them.
+  catalog as planned, with the condition that would add them. Magic Eden's feed sometimes carries
+  rows it labels with another execution venue; each answer lists the venues it observed and
+  never claims that a venue absent from those rows is absent from the market.
+- Every money figure names its currency and the API it came from in the same object
+  (`currency: "SOL"`, `source: "magiceden"`), on the summary and on every nested row, so a
+  copied row keeps its units. Counts keep their coverage beside them (`truncated`,
+  `membershipComplete`, `nameFilter.incomplete`, `unmeasuredCycles`). A program should
+  refuse to act on a row whose coverage flag says the read was partial.
+- Two error surfaces, on purpose. Input that fails a tool's schema is refused by the MCP SDK
+  before the handler runs: `isError: true` with a text message, and no `structuredContent`.
+  Every failure inside a handler carries `structuredContent.error`, a stable category a
+  program can switch on: `not-found`, `wrong-kind`, `escrow`, `source-unsupported`,
+  `bad-input`, `upstream-unavailable`, `error`. Treat a missing `structuredContent` on an
+  error as the schema surface.
 - Solana only. Keyless indexed NFT data on other chains went away with Reservoir and SimpleHash.
 - No valuations and no currency conversion. A floor-times-count figure is returned as a ceiling
   with its assumptions attached, because a stale price feed is wrong with the same confidence as

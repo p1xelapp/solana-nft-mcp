@@ -35,6 +35,8 @@ const store = new Map<string, CacheEntry>();
  * leaver's to cancel.
  */
 interface Inflight {
+  /** When the producer's answer was observed, set once at commit time. */
+  observedAt?: number;
   promise: Promise<unknown>;
   producer: AbortController;
   waiters: number;
@@ -88,7 +90,7 @@ const sizeOf = (v: unknown): number => { try { return Buffer.byteLength(JSON.str
 const MAX_ENTRIES = 500;
 
 /** Store one value: remove the old entry first, refuse oversized values before evicting anything, then evict oldest until within budget. */
-function commit(key: string, data: unknown) {
+function commit(key: string, data: unknown, at = Date.now()) {
   const bytes = sizeOf(data);
   const prev = store.get(key);
   if (prev) {
@@ -102,7 +104,7 @@ function commit(key: string, data: unknown) {
     approxBytes -= store.get(oldest)?.bytes ?? 0;
     store.delete(oldest);
   }
-  store.set(key, { data, cachedAt: Date.now(), bytes });
+  store.set(key, { data, cachedAt: at, bytes });
   approxBytes += bytes;
   if (approxBytes < 0) approxBytes = 0;
 }
@@ -186,7 +188,12 @@ export async function cached<T>(
       // `entry` is assigned just below and read here only after the fetch
       // settles, so the closure sees this call's own entry.
       const promise = runWithSignal(producer.signal, () => fetcher(producer.signal)).then((data) => {
-        if (!producer.signal.aborted && inflight.get(key) === entry) commit(key, data);
+        // One observation, one timestamp. The first waiter used to stamp its
+        // own return time, so the same data carried two cachedAt values ten
+        // milliseconds apart (2026-09-18).
+        const at = Date.now();
+        if (entry) entry.observedAt = at;
+        if (!producer.signal.aborted && inflight.get(key) === entry) commit(key, data, at);
         return data;
       });
       entry = { promise, producer, waiters: 0 };
@@ -202,7 +209,7 @@ export async function cached<T>(
     }
     entry.waiters++;
     const data = await raceSignal(entry.promise as Promise<T>, waiterSignal, "the caller's deadline passed while waiting for a shared read of this data");
-    return { data, stale: false, cachedAt: new Date().toISOString() };
+    return { data, stale: false, cachedAt: new Date(entry.observedAt ?? Date.now()).toISOString() };
   } catch (err) {
     // An abort is the caller leaving, not the upstream failing: it must not be
     // dressed up as a stale answer from a source that is perfectly healthy.

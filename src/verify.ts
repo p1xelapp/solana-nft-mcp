@@ -124,16 +124,16 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
     },
     {
       source: `Solana account ${collectionAddress}`,
-      method: "Same account, currentSize field - how many still exist after burns.",
+      method: "Same account, currentSize field - how many members it counts now. Burns, closures and moves to another collection lower it; a move in raises it.",
       observed: `currentSize = ${acct.currentSize}`,
     },
   ];
 
-  const burned = acct.numMinted - acct.currentSize;
+  const delta = acct.numMinted - acct.currentSize;
   const caveats: string[] = [];
-  if (burned > 0) {
+  if (delta !== 0) {
     caveats.push(
-      `${burned} item(s) have been burned or closed, so "minted" and "how many exist" are different numbers here. A claim is ambiguous unless it says which one it means.`,
+      `numMinted and currentSize differ by ${delta}, so "minted" and "how many are in it now" are different numbers here. The counters do not say why: burns and closures lower currentSize, and so does an asset moved out to another collection, while one moved in raises it. A claim is ambiguous unless it says which number it means, and a burn count needs decoded history.`,
     );
   }
   caveats.push(

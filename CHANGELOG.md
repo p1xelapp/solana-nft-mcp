@@ -1110,9 +1110,86 @@ by its old name.
   view. An outgoing transfer beside an itemless sale is uncertain, as the
   incoming one already was. A self-fill is no longer the first purchase.
 
-## 1.15.3 - 2026-09-18
+## 1.15.4 - 2026-09-18
 
-Round seven of outside review: 14 findings, one of them a blocker, all fixed
+Round eight of outside review: 18 findings, none a blocker, all fixed and
+pinned by `test/siblings.mjs`. The round was about breadth: people building
+bots, trackers and dashboards on these answers, across every Solana
+collection. The theme this time was sibling code paths disagreeing: a
+summary and the table beside it built from different events, a filter
+applied in one mode and ignored in another, a rule enforced in one reader
+and missing from its twin.
+
+- Wallet P&L: a sale with no usable price still consumes the item's open
+  lot. Buy at 1, sell unpriced, buy at 10, sell at 12 reported one flip
+  earning 11; it is one measured flip earning 2 and one unmeasured cycle,
+  now counted as `realized.unmeasuredCycles` and named in the caveats.
+  `boughtThenSoldPct` counts every closed cycle, priced or not.
+- `get_collection_sales`: the per-name table (`byName`) is built from the
+  same rows as the figures above it, with the same duplicate and
+  disputed-price policy, and carries `scope` ("filtered" or
+  "collection-wide"). It listed Aaron Judge under a headline that said
+  "sales whose item name contains Ohtani", counted a repeated fill twice
+  and added a disputed price the summary had refused. Rows carry
+  `pricedSales`.
+- Name filters report what they could not judge: `nameFilter` carries
+  `resolved`, `unresolved`, `omitted` and `incomplete`, and
+  `figuresCover` says "a lower bound" when any sale had no name to test.
+- Two collection counters are not a burn count. `onchain.burnedOrClosed`
+  is replaced by `sizeDelta` with a note: Core's UpdateV2 moves an asset
+  between collections and adjusts `currentSize` without a burn, and an
+  asset moved in makes the difference negative. `verify_claim`'s supply
+  caveat says the same.
+- Provenance custody starts unknown. The first transfer of an unobserved
+  history was labelled "into escrow" because custody began as "wallet", and
+  a mint whose transaction also ran a marketplace program (a mint straight
+  into a pool, then a fill in the same transaction) made the buyer an
+  escrow. Custody is now established only by an observed mint to a plain
+  wallet or a transfer to an address the venue did not bring in.
+- `find_listings` in lowest-serials mode applies `nameContains` (it was
+  accepted and ignored, so "lowest Ohtani serial" returned a Judge card),
+  refuses a malformed ask the way ordinary mode does (a -2 ask became a
+  -2x floor multiple), and reports `nameMatches` and `malformedPrices`
+  in its coverage.
+- Names and serials: `baseName` removes only the span the serial was read
+  from, so "Superman (2023) #1 (4/750)" and "#2 (8/750)" are two issues
+  and "Ohtani 7/100" and "8/100" are one card. `matchSerial` exposes the
+  span and format. An impossible fraction (#101/100, #1/0) is no serial.
+- Timestamps: the wallet activity reader and the trader leaderboard no
+  longer throw on a block time the Date type cannot represent; the field
+  is null, the row counts, and `pricing.unusableTimestamps` says how many.
+- Plugins: no assurance that royalties are absent is made over an unread
+  collection or an unread external adapter; completeness is decided first.
+- Counters keyed by venue-authored strings use own properties only, so a
+  collection called "constructor" counts as 1, not as the text of a
+  function.
+- Daily rows carry `coveredFrom` and `coveredTo`, and `partial` is set
+  when the window's edge or the feed's cut falls inside the day, not only
+  on the feed's cut.
+- A cached observation has one timestamp: the producer's commit time is
+  what every waiter and every later hit reports, so the same data no
+  longer carries two `cachedAt` values ten milliseconds apart.
+- The consumer contract, first step: every money-carrying row now names
+  its `currency` ("SOL") and the API it came from (`source`: "magiceden")
+  in the same object: floors, sales summaries and their top-buyer,
+  top-seller, daily, venue and per-name rows, deals, lowest-serial rows,
+  wallet activity and its flips. Field names are unchanged; the fields are
+  additive. A versioned quote object with an execution venue on every row
+  is queued (see NEXT-RELEASE.md).
+- `get_wallet_activity` always returns an `opensea` block with a
+  `status`: "ok" (with the summary), "disabled" (caller), "not-read"
+  (reason "missing-key" or "auto-keys-disabled") or "unavailable"
+  (upstream). The prose note stays beside it.
+- Coverage notes describe the feed by what it carried. "Tensor trades are
+  not in it" was stated as a rule while the same answer counted six rows
+  Magic Eden labelled Tensor; the note now lists the execution venues
+  observed and says that coverage of other programs is not established.
+- Documented, not changed: input that fails the tool's schema is refused by
+  the MCP SDK before the handler runs, as `isError` with a text message,
+  and carries no `structuredContent.error`; every failure inside a handler
+  does. README, Trust and limits, says so.
+
+: 14 findings, one of them a blocker, all fixed
 and pinned by `test/roles-and-holes.mjs`. The theme was interpretation: a fact read
 from the chain was being turned into a story the chain does not tell.
 

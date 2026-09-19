@@ -92,7 +92,7 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(s.venues[0].venue, "magiceden_v2", "venue comes from the executing program, not the site");
   assert.ok(new Date(s.coverage.oldestSeen).toISOString() === s.coverage.oldestSeen, "coverage dates are ISO");
   assert.ok(new Date(s.window.from).toISOString() === s.window.from, "window dates are ISO");
-  assert.ok(/Tensor, OpenSea/.test(s.coverage.note), "the note must say what this feed cannot see");
+  assert.ok(/not established/.test(s.coverage.note) && /Tensor, OpenSea/.test(s.coverage.note), "the note must say which venues it observed and that coverage of the rest is not established");
 }
 
 // -- events outside the window -------------------------------------------

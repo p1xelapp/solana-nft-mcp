@@ -821,12 +821,13 @@ export async function collectionLeaderboard(symbol: string, limit: number): Prom
       .map((r) => ({
         wallet: r.wallet,
         volumeSol: sol(r.totalVolume),
-        lastTradeAt: typeof r.lastTradeAt === "number" ? new Date(r.lastTradeAt * 1000).toISOString() : null,
+        // Representable or null; one 1e20 row used to throw the whole board away.
+        lastTradeAt: isoFromBlockTime(r.lastTradeAt),
       })),
     stale,
     cachedAt,
     caveat:
-      "Volume counted by Magic Eden across its own order book and AMM pools. Trades on Tensor, OpenSea or peer-to-peer are not in it, so this ranks Magic Eden activity, not a collection's whole trading.",
+      "Volume as Magic Eden's API counts it. How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established, so this ranks what Magic Eden indexed, not a collection's whole trading.",
   };
 }
 

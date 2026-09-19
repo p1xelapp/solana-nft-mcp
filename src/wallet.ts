@@ -16,6 +16,7 @@ import type { OsAccountEvent } from "./sources/opensea.js";
 import { accountEventFingerprint } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
 import { knownVenueAccount } from "./sources/solana.js";
+import { isoFromBlockTime, usableBlockTime } from "./lib/time.js";
 
 /**
  * Lamport resolution (1e-9 SOL) by default, not the 3 decimals a summary can
@@ -27,7 +28,10 @@ import { knownVenueAccount } from "./sources/solana.js";
  * and day counts pass their own smaller `dp`.
  */
 const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
-const iso = (t?: number) => (t ? new Date(t * 1000).toISOString() : null);
+// Never throws: a block time the Date type cannot represent (1e20 was served
+// once) is null here, and the row it sits on is counted as unusable rather
+// than costing the whole report (2026-09-18).
+const iso = (t?: unknown) => isoFromBlockTime(t);
 
 /**
  * A price this module will do arithmetic on.
@@ -123,6 +127,7 @@ export function summarizeHoldings(tokens: MeWalletToken[]): HoldingsSummary {
 // ----------------------------------------------------------- activity
 
 export interface Flip {
+  currency: "SOL";
   mint: string;
   collection: string | null;
   boughtAt: string | null;
@@ -134,6 +139,9 @@ export interface Flip {
 }
 
 export interface ActivitySummary {
+  /** Every SOL figure in this object is denominated in this currency and read from this venue's API. */
+  currency: "SOL";
+  source: "magiceden";
   window: { from: string | null; to: string | null; events: number; truncated: boolean };
   byType: Record<string, number>;
   venues: Record<string, number>;
@@ -150,11 +158,22 @@ export interface ActivitySummary {
     unsettled: number;
     /** Buys and sells counted on their side but left out of every SOL total. */
     unpricedTrades: number;
+    /** Rows whose blockTime was present but not a representable time. Their times are null; the rows still count. */
+    unusableTimestamps: number;
   };
   topCollections: { collection: string; events: number }[];
   flips: Flip[];
   realized: {
+    /** Buy-then-sell cycles where both prices and the order in time were usable: the only ones pnlSol is built from. */
     flips: number;
+    /**
+     * Buy-then-sell cycles of one item that closed inside the window but could
+     * not be measured: a leg with no usable price, or two legs whose times
+     * could not be ordered. They moved inventory, so they are matched and
+     * counted here rather than left open to pair a later sale with the wrong
+     * purchase (2026-09-18).
+     */
+    unmeasuredCycles: number;
     pnlSol: number;
     wins: number;
     losses: number;
@@ -191,13 +210,22 @@ export function summarizeActivity(
   const sells = { count: 0, totalSol: 0, collections: {} as Record<string, number> };
   const perCollection: Record<string, number> = {};
   // Per mint, a FIFO of buys not yet matched to a later sell, so a wallet that
-  // buys, sells and re-buys the same item gets one flip per cycle.
-  const openBuys = new Map<string, MeWalletActivity[]>();
+  // buys, sells and re-buys the same item gets one flip per cycle. Every buy
+  // of an item is a lot and every sell of it consumes one, whatever the price:
+  // an unpriced sale used to leave its purchase open, so the next cycle's sale
+  // was matched against the earlier, cheaper purchase and the profit of one
+  // cycle was booked as the profit of two.
+  const openBuys = new Map<string, { e: MeWalletActivity; price: number | null }[]>();
   // Each flip is carried with its UNROUNDED delta: a win or a loss is decided
   // on the real difference, never on a displayed number that rounding can pull
   // to zero.
   const rows: { flip: Flip; delta: number }[] = [];
+  /** Buys of an identifiable item, priced or not. */
   let purchases = 0;
+  /** Buy-then-sell cycles of one item that closed inside the window, measured or not. */
+  let cyclesClosed = 0;
+  let unmeasuredCycles = 0;
+  let unusableTimestamps = 0;
   let lists = 0;
   /** Standing offers placed. A wallet that bids hundreds of times and buys three items is a bidder, not a "holder". */
   let bids = 0;
@@ -214,12 +242,15 @@ export function summarizeActivity(
    */
   let selfFills = 0;
 
-  const bump = (r: Record<string, number>, k: string) => (r[k] = (r[k] ?? 0) + 1);
+  // Own properties only: a venue-authored key such as "constructor" used to
+  // read the inherited function and concatenate "1" onto its source text.
+  const bump = (r: Record<string, number>, k: string) => (r[k] = (Object.hasOwn(r, k) ? r[k]! : 0) + 1);
 
   // Feed is newest-first; walk oldest-first so "bought then sold" reads in time order.
   const chrono = [...events].reverse();
   for (const e of chrono) {
     const type = e.type ? clean(e.type) : "unknown";
+    if (e.blockTime !== undefined && e.blockTime !== null && usableBlockTime(e.blockTime) === null) unusableTimestamps++;
     bump(byType, type);
     bump(venues, e.source ? clean(e.source) : "unknown");
     const rawCol = e.collectionSymbol ?? e.collection ?? null;
@@ -247,37 +278,43 @@ export function summarizeActivity(
         buys.count++;
         if (price !== null) buys.totalSol += price;
         if (col) bump(buys.collections, col);
-        if (e.tokenMint && price !== null) {
+        if (e.tokenMint) {
           purchases++;
+          const lot = { e, price };
           const q = openBuys.get(e.tokenMint);
-          if (q) q.push(e);
-          else openBuys.set(e.tokenMint, [e]);
+          if (q) q.push(lot);
+          else openBuys.set(e.tokenMint, [lot]);
         }
       } else if (side === "sell") {
         sells.count++;
         if (price !== null) sells.totalSol += price;
         if (col) bump(sells.collections, col);
-        // A flip is arithmetic on two prices. One unusable price on either leg
-        // means no P&L can be stated for it, so the pair is not matched at all
-        // rather than matched against a zero.
-        const q = e.tokenMint && price !== null ? openBuys.get(e.tokenMint) : undefined;
-        const buy = q?.shift();
-        const buyPrice = usablePrice(buy?.price);
-        if (buy && buyPrice !== null && price !== null && buy.blockTime && e.blockTime && e.blockTime > buy.blockTime && e.tokenMint) {
-          const delta = price - buyPrice;
-          rows.push({
-            delta,
-            flip: {
-              mint: e.tokenMint,
-              collection: col,
-              boughtAt: iso(buy.blockTime),
-              soldAt: iso(e.blockTime),
-              buySol: round(buyPrice),
-              sellSol: round(price),
-              pnlSol: round(delta),
-              heldDays: round((e.blockTime - buy.blockTime) / 86_400, 1),
-            },
-          });
+        // A sale consumes the oldest open lot of that item whatever its price:
+        // inventory moved. P&L is arithmetic on two prices and two times, so
+        // the cycle is measured only when all four are usable, and counted as
+        // unmeasured otherwise rather than matched against a zero.
+        const lot = e.tokenMint ? openBuys.get(e.tokenMint)?.shift() : undefined;
+        if (lot && e.tokenMint) {
+          cyclesClosed++;
+          const boughtAt = usableBlockTime(lot.e.blockTime);
+          const soldAt = usableBlockTime(e.blockTime);
+          if (lot.price !== null && price !== null && boughtAt !== null && soldAt !== null && soldAt > boughtAt) {
+            const delta = price - lot.price;
+            rows.push({
+              delta,
+              flip: {
+                currency: "SOL",
+                mint: e.tokenMint,
+                collection: col,
+                boughtAt: iso(boughtAt),
+                soldAt: iso(soldAt),
+                buySol: round(lot.price),
+                sellSol: round(price),
+                pnlSol: round(delta),
+                heldDays: round((soldAt - boughtAt) / 86_400, 1),
+              },
+            });
+          } else unmeasuredCycles++;
         }
       }
     }
@@ -296,7 +333,9 @@ export function summarizeActivity(
       : holds.length % 2 === 1
         ? holds[(holds.length - 1) / 2]!
         : round((holds[holds.length / 2 - 1]! + holds[holds.length / 2]!) / 2, 1);
-  const boughtThenSoldPct = purchases ? round((flips.length / purchases) * 100, 1) : null;
+  // Resold means the cycle closed, measured or not: an unpriced resale is
+  // still a resale.
+  const boughtThenSoldPct = purchases ? round((cyclesClosed / purchases) * 100, 1) : null;
 
   let label: ActivitySummary["behaviour"]["label"] = "unknown";
   let why = "";
@@ -315,13 +354,13 @@ export function summarizeActivity(
   } else if (boughtThenSoldPct !== null && purchases >= 3) {
     if (boughtThenSoldPct >= 50 && (medianHold ?? 0) < 14) {
       label = "flipper";
-      why = `${flips.length} of ${purchases} purchases were resold inside the window, median hold ${medianHold} days.`;
+      why = `${cyclesClosed} of ${purchases} purchases were resold inside the window, median hold ${medianHold ?? "n/a"} days.`;
     } else if (boughtThenSoldPct <= 15) {
       label = "holder";
-      why = `Only ${flips.length} of ${purchases} purchases were resold inside the window.`;
+      why = `Only ${cyclesClosed} of ${purchases} purchases were resold inside the window.`;
     } else {
       label = "mixed";
-      why = `${flips.length} of ${purchases} purchases resold, median hold ${medianHold ?? "n/a"} days.`;
+      why = `${cyclesClosed} of ${purchases} purchases resold, median hold ${medianHold ?? "n/a"} days.`;
     }
   } else if (buys.count + sells.count > 0) {
     label = "mixed";
@@ -345,7 +384,7 @@ export function summarizeActivity(
   const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
   const caveats = [
-    "This is Magic Eden's view of the wallet: listings, bids, buys and sells that touched Magic Eden or its AMM pools. Trades on Tensor or OpenSea, plain transfers, mints and airdrops are not in this feed.",
+    "This is Magic Eden's API feed for the wallet: listings, bids, buys and sells as Magic Eden indexed them. Each row names the execution venue Magic Eden reported for it (see venues); how completely that feed covers fills on other programs is not established, so a venue absent from it is unobserved here, not absent from the wallet's life. Plain transfers, mints and airdrops are never in it.",
     "Realised P&L here is sale price minus purchase price for items both bought and sold in the window, before marketplace fees and royalties. It is a lower bound on cost, not an accounting.",
   ];
   if (malformedPrices) {
@@ -368,10 +407,20 @@ export function summarizeActivity(
       `${unpricedTrades} of the buys and sells here carry no usable price: the counts include them, the SOL totals, net flow and realised P&L do not.`,
     );
   }
+  if (unmeasuredCycles) {
+    caveats.push(
+      `${unmeasuredCycles} buy-then-sell cycle(s) closed in the window but could not be measured (a leg without a usable price, or two legs whose times could not be ordered). They are matched so that a later sale of the same item is paired with its own purchase, and they are outside pnlSol, wins and losses.`,
+    );
+  }
+  if (unusableTimestamps) {
+    caveats.push(`${unusableTimestamps} row(s) carried a blockTime that is not a representable time; their times are null and the rows still count.`);
+  }
   if (truncated) caveats.push("The feed was cut at the page limit; older activity exists. Raise `pages` to see more.");
   if (sells.count > 0 && purchases === 0) caveats.push("Sells without matching buys usually means the items were minted, transferred in, or bought before the window started.");
 
   return {
+    currency: "SOL",
+    source: "magiceden",
     window: { from: iso(chrono[0]?.blockTime), to: iso(events[0]?.blockTime), events: events.length, truncated },
     byType,
     venues,
@@ -379,7 +428,7 @@ export function summarizeActivity(
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
     selfFills,
-    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades },
+    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades, unusableTimestamps },
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
@@ -389,6 +438,7 @@ export function summarizeActivity(
     // wallet made" does not silently shrink with the display cap.
     realized: {
       flips: rows.length,
+      unmeasuredCycles,
       pnlSol: round(rows.reduce((s, r) => s + r.delta, 0)),
       // Classified on the real difference. A 0.00016 SOL gain is a win on a
       // card that cost 0.0096; rounding it away invents a break-even.
@@ -396,7 +446,7 @@ export function summarizeActivity(
       losses: rows.filter((r) => r.delta < 0).length,
       best: rows.length ? rows.reduce((a, b) => (b.delta > a.delta ? b : a)).flip : null,
       worst: rows.length ? rows.reduce((a, b) => (b.delta < a.delta ? b : a)).flip : null,
-      note: "Sale minus purchase for items both bought and sold inside the window, before fees and royalties, Magic Eden feed only. Amounts are shown to lamport resolution (9 decimals); wins and losses are decided on the unrounded difference.",
+      note: "Sale minus purchase for items both bought and sold inside the window, before fees and royalties, Magic Eden feed only. Amounts are shown to lamport resolution (9 decimals); wins and losses are decided on the unrounded difference. unmeasuredCycles are resales that closed but could not be priced or ordered; they are outside every figure here.",
     },
     behaviour: { boughtThenSoldPct, medianHoldDays: medianHold, label, why },
     firstBuyInWindow: firstBuy
@@ -467,7 +517,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
       if (e.transaction && e.nft?.identifier) saleKeys.add(`${e.transaction}\u0000${e.nft.identifier}`);
       else if (e.transaction) itemlessSaleTxs.add(e.transaction);
     }
-    if (e.nft?.collection) collections[e.nft.collection] = (collections[e.nft.collection] ?? 0) + 1;
+    if (e.nft?.collection) collections[e.nft.collection] = (Object.hasOwn(collections, e.nft.collection) ? collections[e.nft.collection]! : 0) + 1;
   }
   const received: OpenSeaWalletView["receivedWithoutSale"] = [];
   const sent: OpenSeaWalletView["sentWithoutSale"] = [];

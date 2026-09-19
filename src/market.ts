@@ -286,11 +286,21 @@ export interface SaleRef {
   buyer: string | null;
   seller: string | null;
   venue: string;
+  currency: "SOL";
 }
 
 export interface DailyPoint {
-  /** UTC calendar day, YYYY-MM-DD. */
+  /** UTC calendar day, YYYY-MM-DD. This is a label for a bucket, not an instant. */
   date: string;
+  currency: "SOL";
+  /**
+   * The part of this calendar day the figures actually cover, as instants.
+   * A window from noon to noon touches two dates and covers half of each;
+   * a chart that draws them as whole days is wrong by half. Present on every
+   * row that was read; absent when the day was never reached.
+   */
+  coveredFrom?: string | null;
+  coveredTo?: string | null;
   /**
    * False when the feed did not reach this day (the page budget ran out
    * before it), so its zero is "not read", not "nothing sold". A chart that
@@ -298,8 +308,9 @@ export interface DailyPoint {
    */
   covered?: false;
   /**
-   * True on the oldest day the feed reached when it was cut mid-day: the
-   * sales counted for it are what was read, a floor rather than the day.
+   * True when the figures cover less than the whole calendar day: the window
+   * started or ended inside it, or the feed was cut inside it. The sales
+   * counted for it are what was read, a floor rather than the day.
    */
   partial?: true;
   /** Every sale that day, priced or not. */
@@ -310,6 +321,9 @@ export interface DailyPoint {
 }
 
 export interface SalesSummary {
+  /** Every SOL figure in this object is denominated in this currency and read from this API. */
+  currency: "SOL";
+  source: "magiceden";
   window: { from: string | null; to: string | null };
   /** Freshness of the feed these figures were derived from. */
   freshness: {
@@ -329,11 +343,11 @@ export interface SalesSummary {
   averageSol: number | null;
   uniqueBuyers: number;
   uniqueSellers: number;
-  topBuyers: { wallet: string; sales: number; spentSol: number }[];
-  topSellers: { wallet: string; sales: number; receivedSol: number }[];
+  topBuyers: { wallet: string; sales: number; spentSol: number; currency: "SOL" }[];
+  topSellers: { wallet: string; sales: number; receivedSol: number; currency: "SOL" }[];
   daily: DailyPoint[];
-  /** Fills grouped by the program that executed them, not by the site a person was looking at. */
-  venues: { venue: string; sales: number; volumeSol: number }[];
+  /** Fills grouped by the execution venue the feed reported for them, not by the site a person was looking at. */
+  venues: { venue: string; sales: number; volumeSol: number; currency: "SOL" }[];
   coverage: {
     oldestSeen: string | null;
     newestSeen: string | null;
@@ -432,6 +446,7 @@ export function summarizeSales(
   const priced = sales.filter((s): s is { price: number; e: MeCollectionActivity; at: number | null } => s.price !== null);
 
   const ref = (s: { price: number; e: MeCollectionActivity; at: number | null }): SaleRef => ({
+    currency: "SOL",
     priceSol: round(s.price),
     tokenMint: typeof s.e.tokenMint === "string" ? s.e.tokenMint : null,
     // The only attacker-authored string on this row: anyone can mint an item
@@ -525,11 +540,19 @@ export function summarizeSales(
           : ""),
     );
   }
+  // The feed is Magic Eden's API. It has been observed carrying rows labelled
+  // with other execution venues (Tensor fills on Claynosaurz, round-eight
+  // review, 2026-09-18), so "Tensor is not in it" was false as a rule, and
+  // "Tensor is in it" would claim a coverage nobody has established. The
+  // honest statement is what was observed and what was not checked.
+  const observedVenues = [...venues.keys()];
   notes.push(
-    "Magic Eden's feed, so this is what settled through Magic Eden and its AMM pools. Tensor, OpenSea and peer-to-peer trades are not in it.",
+    `Magic Eden's API feed. ${observedVenues.length ? `Execution venues it reported for these rows: ${observedVenues.join(", ")}.` : "No rows, so no execution venue was observed."} How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established: a venue absent from these rows is unobserved here, not absent from the market.`,
   );
 
   return {
+    currency: "SOL",
+    source: "magiceden",
     window: { from: iso(windowStartUnix), to: iso(windowEndUnix) },
     freshness: {
       stale,
@@ -549,34 +572,48 @@ export function summarizeSales(
     averageSol: priced.length ? round(volume / priced.length) : null,
     uniqueBuyers: buyers.size,
     uniqueSellers: sellers.size,
-    topBuyers: rank(buyers).map(([wallet, v]) => ({ wallet, sales: v.sales, spentSol: round(v.sol) })),
-    topSellers: rank(sellers).map(([wallet, v]) => ({ wallet, sales: v.sales, receivedSol: round(v.sol) })),
+    topBuyers: rank(buyers).map(([wallet, v]) => ({ wallet, sales: v.sales, spentSol: round(v.sol), currency: "SOL" as const })),
+    topSellers: rank(sellers).map(([wallet, v]) => ({ wallet, sales: v.sales, receivedSol: round(v.sol), currency: "SOL" as const })),
     // Every UTC day in the window is present, so a day with no sales is an
     // explicit zero and a day the feed never reached is marked, rather than
     // both being an absent row a chart would draw the same way.
     daily: ((): DailyPoint[] => {
-      const sparse: DailyPoint[] = [...days.entries()].map(([date, v]) => ({ date, sales: v.sales, volumeSol: round(v.sol), pricedSales: v.priced }));
+      const sparse: DailyPoint[] = [...days.entries()].map(([date, v]) => ({ date, currency: "SOL" as const, sales: v.sales, volumeSol: round(v.sol), pricedSales: v.priced }));
+      // Each read day carries the interval its figures cover. The window's
+      // edges and the feed's cut (when truncated) all fall inside calendar
+      // days, and a row that says nothing about that reads as a whole day.
+      const covered = (row: DailyPoint): DailyPoint => {
+        if (row.covered === false) return row;
+        const dayStart = Date.UTC(Number(row.date.slice(0, 4)), Number(row.date.slice(5, 7)) - 1, Number(row.date.slice(8, 10))) / 1000;
+        const dayEnd = dayStart + 86_400;
+        const cut = truncated && oldestSeen !== null ? oldestSeen : -Infinity;
+        const from = Math.max(dayStart, windowStartUnix, cut);
+        // The window end is an inclusive second: a window ending 23:59:59 covers the whole day.
+        const to = Math.min(dayEnd, windowEndUnix + 1);
+        const partial = from > dayStart || to < dayEnd;
+        return { ...row, coveredFrom: iso(from), coveredTo: iso(to), ...(partial ? { partial: true as const } : {}) };
+      };
       // Filling is for a chart window (the tool caps at 90 days). An empty
       // feed stays empty, and a window wider than a year stays sparse rather
       // than becoming thousands of zero rows.
       const spanDays = (windowEndUnix - windowStartUnix) / 86_400;
-      if (sparse.length === 0 || !Number.isFinite(spanDays) || spanDays > 400) return sparse.sort((a, b) => a.date.localeCompare(b.date));
+      if (sparse.length === 0 || !Number.isFinite(spanDays) || spanDays > 400) return sparse.map(covered).sort((a, b) => a.date.localeCompare(b.date));
       const byDate = new Map<string, DailyPoint>(sparse.map((d) => [d.date, d]));
       const oldestDay = truncated && oldestSeen !== null ? utcDay(oldestSeen) : null;
       for (let t = windowStartUnix; t <= windowEndUnix + 86_399; t += 86_400) {
         const date = utcDay(t);
         if (!date || byDate.has(date) || date > (utcDay(windowEndUnix) ?? date)) continue;
-        byDate.set(date, oldestDay !== null && date < oldestDay ? { date, covered: false, sales: 0, volumeSol: 0, pricedSales: 0 } : { date, sales: 0, volumeSol: 0, pricedSales: 0 });
+        byDate.set(date, oldestDay !== null && date < oldestDay ? { date, currency: "SOL", covered: false, sales: 0, volumeSol: 0, pricedSales: 0 } : { date, currency: "SOL", sales: 0, volumeSol: 0, pricedSales: 0 });
       }
       // The day the cut fell in was read from noon onwards, say: its row
       // exists, so the loop above left it alone, and it read as a whole day.
       const boundary = oldestDay !== null ? byDate.get(oldestDay) : undefined;
       if (boundary && oldestDay !== null && oldestDay >= (utcDay(windowStartUnix) ?? oldestDay)) byDate.set(oldestDay, { ...boundary, partial: true });
-      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+      return [...byDate.values()].map(covered).sort((a, b) => a.date.localeCompare(b.date));
     })(),
     venues: [...venues.entries()]
       .sort((a, b) => b[1].sales - a[1].sales)
-      .map(([venue, v]) => ({ venue, sales: v.sales, volumeSol: round(v.sol) })),
+      .map(([venue, v]) => ({ venue, sales: v.sales, volumeSol: round(v.sol), currency: "SOL" as const })),
     coverage: {
       oldestSeen: iso(oldestSeen),
       newestSeen: iso(newestSeen),
@@ -614,14 +651,29 @@ export function applyNameFilter(
   windowEvents: MeCollectionActivity[],
   names: Map<string, { name: string | null }> | null,
   needle: string | null,
-): { status: "not-requested" | "applied" | "unavailable"; events: MeCollectionActivity[] | null } {
-  if (!needle) return { status: "not-requested", events: null };
-  if (names === null) return { status: "unavailable", events: null };
+): {
+  status: "not-requested" | "applied" | "unavailable";
+  events: MeCollectionActivity[] | null;
+  /** Events whose item name the index returned, so the filter could judge them. */
+  resolved: number;
+  /** Events the filter could NOT judge: no mint on the row, or no name for it in the index. Unmatched, not non-matching. */
+  unresolved: number;
+} {
+  if (!needle) return { status: "not-requested", events: null, resolved: 0, unresolved: 0 };
+  if (names === null) return { status: "unavailable", events: null, resolved: 0, unresolved: 0 };
   const lower = needle.toLowerCase();
-  const rows = (Array.isArray(windowEvents) ? windowEvents : []).filter(
-    (e) => (e?.tokenMint && names.get(e.tokenMint)?.name?.toLowerCase().includes(lower)) === true,
-  );
-  return { status: "applied", events: rows };
+  let resolved = 0;
+  let unresolved = 0;
+  const rows = (Array.isArray(windowEvents) ? windowEvents : []).filter((e) => {
+    const nm = e?.tokenMint ? names.get(e.tokenMint)?.name : undefined;
+    if (typeof nm !== "string") {
+      unresolved++;
+      return false;
+    }
+    resolved++;
+    return nm.toLowerCase().includes(lower);
+  });
+  return { status: "applied", events: rows, resolved, unresolved };
 }
 
 // ----------------------------------------------------------- listings
@@ -635,6 +687,7 @@ export interface DealTrait {
 }
 
 export interface Deal {
+  currency: "SOL";
   tokenMint: string | null;
   name: string | null;
   priceSol: number | null;
@@ -743,6 +796,7 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
     const moonrank = typeof r?.moonrank?.rank === "number" ? r.moonrank.rank : null;
 
     return {
+      currency: "SOL" as const,
       tokenMint: typeof l?.tokenMint === "string" ? l.tokenMint : null,
       name: l?.token?.name ? clean(l.token.name) : null,
       priceSol: priceSol === null ? null : round(priceSol),
@@ -886,8 +940,39 @@ export function findByName(index: MeCollectionIndexEntry[], query: string): Name
  * present because "#12" of 250 and "#12" of 15 are different rarities.
  */
 export function parseSerial(name: string | null | undefined): { serial: number; of: number | null } | null {
+  const m = matchSerial(name);
+  return m ? { serial: m.serial, of: m.of } : null;
+}
+
+/**
+ * Which characters of the name the serial was read from, beside the serial.
+ * `baseName` removes exactly that span and nothing else: "Superman (2023) #1
+ * (4/750)" and "Superman (2023) #2 (8/750)" are two issues, and stripping
+ * every hash number merged them into one row (2026-09-18).
+ */
+export interface SerialMatch {
+  serial: number;
+  of: number | null;
+  /** How the serial was written: the format decides how certain the read is. */
+  format: "trailing-hash" | "hash-fraction" | "of-form" | "bare-fraction" | "hash";
+  start: number;
+  end: number;
+}
+
+/**
+ * A fraction has to be one: a positive denominator and a numerator inside it.
+ * "#101/100" and "#1/0" are metadata mistakes, not rarities, and ranking
+ * them as serial 1 of 0 put a broken name at the top of a lowest-serial hunt.
+ * They read as no serial; the name still groups by the whole text.
+ */
+const validFraction = (serial: number, of: number | null) => of === null || (of >= 1 && serial <= of);
+
+export function matchSerial(name: string | null | undefined): SerialMatch | null {
   if (typeof name !== "string" || !name) return null;
+  const lead = name.length - name.trimStart().length;
   const s = name.trim();
+  const found = (serial: number, of: number | null, format: SerialMatch["format"], m: RegExpMatchArray): SerialMatch | null =>
+    validFraction(serial, of) ? { serial, of, format, start: lead + (m.index ?? 0), end: lead + (m.index ?? 0) + m[0].length } : null;
 
   // 1. An explicit terminal "#N" wins outright.
   //
@@ -900,17 +985,17 @@ export function parseSerial(name: string | null | undefined): { serial: number; 
   if (trailingHash) {
     // "#12 / 250" at the end still carries its edition size.
     const withSize = s.match(/#\s*(\d{1,6})\s*\/\s*(\d{1,7})\s*$/);
-    if (withSize) return { serial: Number(withSize[1]), of: Number(withSize[2]) };
-    return { serial: Number(trailingHash[1]), of: null };
+    if (withSize) return found(Number(withSize[1]), Number(withSize[2]), "hash-fraction", withSize);
+    return found(Number(trailingHash[1]), null, "trailing-hash", trailingHash);
   }
 
   // "#12/250" anywhere: the hash makes the fraction a serial, not a date.
   const hashFrac = s.match(/#\s*(\d{1,6})\s*\/\s*(\d{1,7})/);
-  if (hashFrac) return { serial: Number(hashFrac[1]), of: Number(hashFrac[2]) };
+  if (hashFrac) return found(Number(hashFrac[1]), Number(hashFrac[2]), "hash-fraction", hashFrac);
 
   // 2. "N of M" spelled out - unambiguous wherever it appears.
   const ofForm = s.match(/\b(\d{1,6})\s+of\s+(\d{1,7})\b/i);
-  if (ofForm) return { serial: Number(ofForm[1]), of: Number(ofForm[2]) };
+  if (ofForm) return found(Number(ofForm[1]), Number(ofForm[2]), "of-form", ofForm);
 
   // 3. A bare "N/M" only when it is the LAST numeric thing in the name.
   //
@@ -920,23 +1005,26 @@ export function parseSerial(name: string | null | undefined): { serial: number; 
   // "12/250" working while refusing "(2011/2016) #10041" and "2011/2016 Prizm
   // Panini #5".
   const bareFrac = s.match(/\(?\s*(\d{1,6})\s*\/\s*(\d{1,7})\s*\)?\s*$/);
-  if (bareFrac) return { serial: Number(bareFrac[1]), of: Number(bareFrac[2]) };
+  if (bareFrac) return found(Number(bareFrac[1]), Number(bareFrac[2]), "bare-fraction", bareFrac);
 
   // 4. A non-terminal "#N" last: it is still explicit, just less certain about
   // being the serial than a terminal one.
   const hash = s.match(/#\s*(\d{1,7})\b/);
-  if (hash) return { serial: Number(hash[1]), of: null };
+  if (hash) return found(Number(hash[1]), null, "hash", hash);
   return null;
 }
 
-/** "Shohei Ohtani (12/250)" -> "Shohei Ohtani": the name without its serial, for grouping. */
+/**
+ * "Shohei Ohtani (12/250)" -> "Shohei Ohtani": the name without the serial
+ * that was actually read from it, for grouping. Only the recognised span is
+ * removed, so an issue number beside an edition fraction survives. A name
+ * with no readable serial groups by its whole text.
+ */
 export function baseName(name: string | null | undefined): string | null {
   if (!name) return null;
-  const s = name
-    .replace(/\(\s*#?\d{1,6}\s*\/\s*\d{1,7}\s*\)/g, "")
-    .replace(/#\s*\d{1,7}\s*\/\s*\d{1,7}/g, "")
-    .replace(/#\s*\d{1,7}\b/g, "")
-    .replace(/\b\d{1,6}\s+of\s+\d{1,7}\b/gi, "")
+  const m = matchSerial(name);
+  const s = (m ? name.slice(0, m.start) + " " + name.slice(m.end) : name)
+    .replace(/\(\s*\)/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
   return s.length ? s : null;
@@ -944,7 +1032,10 @@ export function baseName(name: string | null | undefined): string | null {
 
 export interface NameBreakdownRow {
   name: string;
+  currency: "SOL";
   sales: number;
+  /** Of those sales, how many carried a usable, settled price: the only ones volumeSol is built from. */
+  pricedSales: number;
   volumeSol: number;
   highestSol: number | null;
   lowestSol: number | null;
@@ -954,6 +1045,13 @@ export interface NameBreakdownRow {
  * Sales grouped by the item's base name (player, character, issue), so
  * "which player sold the most this week" is one read. Events without a
  * resolved name are counted, never dropped.
+ *
+ * Same event identity and the same money policy as summarizeSales: repeated
+ * copies count once, and a copy whose repeats disagreed about price or side
+ * is a sale with no stateable amount. Built from the raw feed, this table
+ * reported two sales for one repeated fill and 5 SOL for a fill whose copies
+ * said 2 and 3 while the summary beside it said one sale and no volume
+ * (2026-09-18).
  */
 export function breakdownByName(
   events: MeCollectionActivity[],
@@ -962,17 +1060,19 @@ export function breakdownByName(
 ): { rows: NameBreakdownRow[]; unnamedSales: number; distinctNames: number } {
   const acc = new Map<string, NameBreakdownRow>();
   let unnamed = 0;
-  for (const e of events) {
+  for (const e of dedupeEvents(Array.isArray(events) ? events : []).events) {
     if (e.type !== "buyNow") continue;
     const nm = e.tokenMint ? baseName(names.get(e.tokenMint)?.name) : null;
     if (!nm) {
       unnamed++;
       continue;
     }
-    const price = usablePrice(e.price);
-    const row = acc.get(nm) ?? { name: nm, sales: 0, volumeSol: 0, highestSol: null, lowestSol: null };
+    const settled = (e as { unsettled?: boolean }).unsettled !== true;
+    const price = settled ? usablePrice(e.price) : null;
+    const row = acc.get(nm) ?? { name: nm, currency: "SOL", sales: 0, pricedSales: 0, volumeSol: 0, highestSol: null, lowestSol: null };
     row.sales++;
     if (price !== null) {
+      row.pricedSales++;
       row.volumeSol = Math.round((row.volumeSol + price) * 1e9) / 1e9;
       row.highestSol = row.highestSol === null ? price : Math.max(row.highestSol, price);
       row.lowestSol = row.lowestSol === null ? price : Math.min(row.lowestSol, price);

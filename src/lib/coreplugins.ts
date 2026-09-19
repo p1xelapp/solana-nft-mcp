@@ -313,13 +313,22 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   const bd = has("BurnDelegate");
   if (heldByOther(bd)) { out.warnings.push(`Burn delegate approved to ${bd!.authority}: they can burn it. Expected for pack-opening flows, otherwise revoke it.`); out.ownerIsNotSoleController = true; }
 
+  // Whether the picture is complete is decided BEFORE any assurance that
+  // rests on absence. "No royalties plugin" beside an unread collection or an
+  // unread external adapter was a definite claim built on a hole (2026-09-18).
+  const contextIncomplete =
+    asset.externalPlugins + (collection?.externalPlugins ?? 0) > 0 ||
+    Boolean(asset.decodeNote || collection?.decodeNote) ||
+    (asset.kind === "asset" && Boolean(asset.collection) && !collection) ||
+    plugins.some((p) => p.unsupported);
   const roy = has("Royalties");
   if (roy?.unreadable) out.warnings.push("A Royalties plugin is present but its data could not be decoded: assume a creator fee may apply and may be enforced.");
   else if (roy?.data) {
     const rs = String(roy.data.ruleSet); const pct = String(roy.data.percent);
     if (rs === "none") out.assurances.push(`Royalties set at ${pct}%${where(roy)} with no program rule set - advisory; a marketplace can ignore them.`);
     else out.assurances.push(`Royalties ${pct}%${where(roy)} enforced by a ${rs}: transfers through non-approved programs are blocked, so the creator fee is not optional here.`);
-  } else if (!roy) out.assurances.push("No royalties plugin on the asset or its collection: nothing enforces a creator fee on resale.");
+  } else if (!roy && contextIncomplete) out.warnings.push("No Royalties plugin in the decoded data, but part of the picture was not read (see the warnings below), so whether a creator fee is enforced on resale cannot be settled from this read.");
+  else if (!roy) out.assurances.push("No royalties plugin on the asset or its collection: nothing enforces a creator fee on resale.");
 
   if (has("ImmutableMetadata")) out.assurances.push("Metadata is immutable: the name and URI cannot be changed by anyone, including the issuer.");
   else if (asset.updateAuthorityIsNone) out.assurances.push("The asset's update authority is None: nobody can change its name or URI.");

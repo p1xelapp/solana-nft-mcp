@@ -128,9 +128,11 @@ not "airdropped", because a gift, a self-transfer and a trade settled elsewhere 
 identical on chain.
 
 **Which wallet activity does it see?**
-Magic Eden's feed: listings, delists, bids, buys and sells on the order book and AMM
-pools. It excludes Tensor, mints and plain transfers, and OpenSea unless a key is present. The result
-says this every time so the model does not present one marketplace as a wallet's whole life.
+Magic Eden's API feed: listings, delists, bids, buys and sells as Magic Eden indexed them, each
+row naming the execution venue it reported. How completely that feed covers fills on other
+programs such as Tensor is not established, so the answer names the venues it saw and claims
+nothing about the rest. Mints and plain transfers are never in it, and OpenSea needs a key. The
+result says this every time so the model does not present one marketplace as a wallet's whole life.
 
 **Does it understand packs?**
 Yes. Sealed packs are separate assets from the cards they open into; opening either

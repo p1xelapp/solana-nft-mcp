@@ -290,7 +290,7 @@ assert.ok(["flipper", "holder", "mixed", "seller", "lister", "quiet", "unknown"]
 assert.strictEqual(a.behaviour.label, "seller", a.behaviour.why);
 assert.ok(a.behaviour.why.length > 10, "behaviour label must carry its reason");
 assert.ok(a.firstBuyInWindow && a.firstBuyInWindow.time, "first buy in window must be identified");
-assert.ok(a.caveats.some((c) => /Magic Eden's view/.test(c)), "activity must say which feed it is");
+assert.ok(a.caveats.some((c) => /Magic Eden's API feed/.test(c)), "activity must say which feed it is");
 for (const f of a.flips) assert.ok(f.heldDays >= 0 && f.soldAt > f.boughtAt, "a flip is a buy followed by a sell");
 // Buy, sell, re-buy, re-sell the same mint: two flips, not one synthetic one.
 const W = act.wallet;

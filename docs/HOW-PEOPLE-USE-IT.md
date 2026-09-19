@@ -180,8 +180,8 @@ transactions; he wants behaviour.
 131 SOL, 39 sells totalling 158 SOL, net +27 SOL, label **flipper** (33 of 48 purchases
 resold inside the window, median hold 2.1 days), 71% order book / 29% AMM pools, top
 collections listed, best flip +6.2 SOL on a Claynosaurz held four days. The caveats say
-Tensor and OpenSea trades are not in this feed, so Rio adds his OpenSea key and the
-OpenSea side shows up with plain transfers included.
+this is Magic Eden's API feed and OpenSea was not read without a key, so Rio adds his
+OpenSea key and the OpenSea side shows up with plain transfers included.
 
 **What he does not get:** a signal. The tool describes; it does not recommend.
 
@@ -325,8 +325,9 @@ less. Kofi already knew how to read that; he just did not want to open four tabs
 **Asks:** *"List every NFT I bought and sold this year with dates and prices."*
 
 **What happens:** `get_wallet_activity` with five pages: every Magic Eden buy and sell,
-dated, priced, flips paired with hold time. The caveats say what is missing: Tensor,
-OpenSea without a key, fees and royalties, anything older than the window. She adds the
+dated, priced, flips paired with hold time. The caveats say what is missing:
+OpenSea without a key, fees and royalties, anything older than the window, and that
+coverage of venues outside Magic Eden's feed is not established. She adds the
 OpenSea key and re-runs. It is a record with its gaps labelled, which is more than the
 alternatives gave her. It is not tax advice and says so.
 

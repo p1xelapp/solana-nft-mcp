@@ -1227,14 +1227,26 @@ export async function getProvenance(
         issuerRead = { status: "unavailable", reason: (e instanceof Error ? e.message : String(e)).slice(0, 160) };
       }
     }
-    let custody: "wallet" | "escrow" | "unknown" = "wallet";
+    // Custody starts UNKNOWN. It becomes known only from an observed mint to
+    // a plain wallet or from a transfer to an address the venue did not bring
+    // in. Starting at "wallet" turned the first transfer of an unobserved
+    // history into "into escrow", a claim about an account nothing had
+    // classified; and a mint whose transaction also ran a marketplace program
+    // (a mint straight into a pool, then a fill to the buyer in the same
+    // transaction) made the buyer's wallet an escrow (2026-09-18).
+    let custody: "wallet" | "escrow" | "unknown" = "unknown";
     for (const e of events) {
       if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {
         e.toIssuer = true;
         e.label = "transfer to the address that is the collection's update authority at the time of this read (chain read). The address says who received it, not why: a return, a buyback, a refund and a pack opening all look the same here, and whether anything was paid is not in this row";
       }
       if (e.event === "unread_gap") { custody = "unknown"; continue; }
-      if (e.event === "minted") { custody = "wallet"; continue; }
+      if (e.event === "minted") {
+        if (e.marketplace) custody = "unknown";
+        else if (e.firstOwner && knownVenueAccount(e.firstOwner)) custody = "escrow";
+        else custody = "wallet";
+        continue;
+      }
       if (e.event !== "transferred") continue;
       if (custody === "escrow") {
         // Whatever the recipient, the item was in escrow and now it is not:
