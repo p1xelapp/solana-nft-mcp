@@ -113,6 +113,27 @@ const detail = (v: unknown): string => inspectUntrusted(typeof v === "string" ? 
  * including failures, so "we could not find it" is always accompanied by
  * "here is where we looked".
  */
+/**
+ * When a query reached a curated entry through a spelling that is not the
+ * entry's own name, say so. "yoots" reaches y00ts and "solana monkey business"
+ * reaches the collection the marketplace now lists as SMB Gen2; an answer
+ * that printed only the entry name looked like a confident match on a name
+ * nothing carries, or like the rebrand had gone unmentioned.
+ */
+function aliasNote(entry: RegistryEntry, nq: string, norm: (s: string) => string): string {
+  if (norm(entry.name) === nq || entry.id === nq) return "";
+  const aliases = (entry.aliases ?? []).filter((a) => norm(a) !== norm(entry.name));
+  const matched = aliases.find((a) => norm(a) === nq);
+  const others = aliases.filter((a) => a !== matched);
+  const parts: string[] = [];
+  if (matched) parts.push(`matched the alias "${matched}", not the collection's own name`);
+  else parts.push(`matched by name, not by the id or the exact name`);
+  if (others.length) parts.push(`also known as ${others.join(", ")}`);
+  const marketplaceName = /\(([^)]+)\)\s*$/.exec(entry.name)?.[1];
+  if (marketplaceName) parts.push(`the marketplace currently calls it ${marketplaceName}, so check that is the one you meant`);
+  return ` (${parts.join("; ")})`;
+}
+
 export async function identify(query: string): Promise<Identification> {
   const q = query.trim();
   // ONE budget for the whole identification, threaded into every network call
@@ -190,7 +211,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       ? `${sharedName.length} different collections are filed under that exact name, each with its own chain address: ` +
         `${sharedName.map((e) => `${e.id} (${e.coreCollection ?? "no address"})`).join("; ")}. Pass one of these ids.`
       : entry
-      ? `${entry.id} - ${entry.name}`
+      ? `${entry.id} - ${entry.name}${aliasNote(entry, nq, norm)}`
       : fuzzy.length > 1
         ? // Capped, because "candy" matches 399 entries and printing all of
           // them spends the reader's context on a list nobody scrolls. The

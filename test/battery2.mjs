@@ -429,7 +429,10 @@ check("T8", "fakes", "a name nothing is actually called is offered, never assert
   if (BUSY.test(asText(r))) return SKIP;
   const sym = r.identifiers?.meSymbol;
   if (!sym) return true;
-  const warned = (r.checked ?? []).some((p) => p.result === "ambiguous" && /actually NAMED/i.test(p.looked_for ?? ""));
+  // Either the venue probe says the name does not match, or a curated entry
+  // says which alias it matched: both tell the reader the spelling is not
+  // the collection's own name.
+  const warned = (r.checked ?? []).some((p) => (p.result === "ambiguous" && /actually NAMED/i.test(p.looked_for ?? "")) || (p.source === "registry" && /matched the alias/i.test(p.detail ?? "")));
   return warned || `resolved confidently to ${sym} for a name no collection carries, with no warning that the name does not match`;
 });
 check("T9", "fakes", "a rebranded collection is still reachable by its old name, and the rebrand is said out loud", async () => {

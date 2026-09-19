@@ -1061,6 +1061,9 @@ registerTool(
     if (osBlock && slug) {
       const osChain = typeof osBlock.onchainCollection === "string" && sol.isBase58Address(osBlock.onchainCollection) ? osBlock.onchainCollection : null;
       const requested = coreAddress ?? null;
+      // A caller repeating the registry's own slug is not overriding anything.
+      const curatedSlug = "openseaSlug" in r ? r.openseaSlug : undefined;
+      const callerOverride = Boolean(openseaSlug) && openseaSlug !== curatedSlug;
       if (osChain && requested) {
         identity =
           osChain === requested
@@ -1072,7 +1075,7 @@ registerTool(
                 openseaCollection: osChain,
                 note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, which is not ${requested}. The OpenSea figures describe a different collection and are shown for the record only; they are not compared with this collection's.`,
               };
-      } else if (openseaSlug) {
+      } else if (callerOverride) {
         identity = {
           verdict: "unverified",
           slug,
@@ -1104,8 +1107,15 @@ registerTool(
     }
     if (quotes.length > 0 || osQuote) {
       const rec = reconcileFloors(quotes, extra);
-      out.reconciliation =
-        osQuote && !rankable && identity
+      if (osQuote && !rankable && identity) {
+        // Two reasons not to rank can apply at once. The currency verdict is
+        // the one a reader acts on ("do not call one cheaper"), so when the
+        // currencies differ that verdict stands and the identity problem
+        // rides beside it as a caveat; only same-currency floors get the
+        // identity verdict in its place.
+        const full = reconcileFloors([...quotes, osQuote], extra);
+        const oneCurrency = new Set([...quotes, osQuote].map((q) => q.currency)).size === 1;
+        out.reconciliation = oneCurrency
           ? {
               ...rec,
               comparable: false,
@@ -1116,7 +1126,10 @@ registerTool(
               floors: [...rec.floors, osQuote],
               identity,
             }
-          : rec;
+          : { ...full, identity, caveats: [...full.caveats, identity.note] };
+      } else {
+        out.reconciliation = rec;
+      }
     }
     out.readThis = NOT_ADVICE;
     return ok(out);
@@ -2345,7 +2358,7 @@ registerTool(
     // that names another collection would put a stranger's floors beside
     // every trait (2026-09-19). A registry slug is curated and joins as is.
     let slugIdentity: { verdict: "verified" | "conflict" | "unverified" | "registry"; note: string } = { verdict: "registry", note: "slug from the curated registry entry for this collection" };
-    if (openseaSlug && slug && (await os.openSeaAvailable())) {
+    if (openseaSlug && slug && openseaSlug !== registryEntry?.openseaSlug && (await os.openSeaAvailable())) {
       const detail = await os.collectionDetail(slug).catch(() => null);
       const osChain = detail?.onchainCollection && sol.isBase58Address(detail.onchainCollection) ? detail.onchainCollection : null;
       const expected = registryEntry?.coreCollection ?? null;

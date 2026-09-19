@@ -983,6 +983,7 @@ check("W1", "every-tool", "every published tool answers its simplest valid quest
     get_integration_recipe: { goal: "sales-bot" },
     search_collections: { query: "candy gold" },
     get_collection_stats: { collection: "mad_lads" },
+    get_collection_holders: { collection: "candy-mlb-gold-auction-1" },
     get_floor_prices: { symbols: ["mad_lads"] },
     get_recent_sales: { collection: "mad_lads", limit: 2 },
     get_asset: { mint: FIX.pnft },
