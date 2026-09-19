@@ -163,6 +163,35 @@ instructions to your AI. Every name from chain or marketplace is neutralised bef
 model sees it: invisible and bidi characters stripped, newlines collapsed, delimiter
 markup defanged, imperative phrasing flagged. This is tested offline in CI.
 
+**What is different between the Solana marketplaces?**
+Magic Eden holds the deepest book for collectibles and prices in SOL. OpenSea added
+Solana in August 2026 and often prices the same item in USDC, so its floor is not
+comparable to a SOL floor and the server refuses to merge them; you get both, each in
+its own currency. Magic Eden also fills from its own pools beside the ordinary order
+book, and every sale names the program that executed it, so a pool fill is never
+reported as an order-book fill. Tensor is a real venue the server cannot read, so a
+market that looks quiet here may be busier there, and the coverage note says so instead
+of implying the market is dead.
+
+**Can it build sales bots for Discord and X? Dashboards and scripts?**
+Yes. `get_integration_recipe` carries five recipes with the real endpoints, the
+published rate limits, a runnable skeleton, the steady-state cost and the ways each
+integration fails silently. A sale row gives you time, price, currency, buyer, seller,
+marketplace and the transaction signature; one `get_asset` call per sale adds the image
+URL and the item name for an embed, and the signature is the receipt link. Key each sale
+on signature plus mint plus type, never the signature alone, because one transaction can
+carry two sales. `docs/BUILD-IDEAS.md` has 28 more ideas, tiny to ambitious.
+
+**How safe are MCP servers? Is this one safe?**
+An MCP server runs on your machine with your permissions, so reading one before you
+install it is the right instinct, whoever wrote it. This one is read-only by design: 21
+tools, each declaring `readOnlyHint`, and no code that can sign, buy, sell, list or
+transfer. It is MIT licensed and open source. Item names are attacker-chosen text and
+are treated that way, as the entry above describes. `test/abuse.mjs` runs on every
+commit and asserts that a hostile marketplace cannot get a fake turn boundary, a
+reflected API key, or anything about the person running the server into an answer. The
+only thing that leaves your machine is the public address or name you asked about.
+
 **Will tool names change?**
 No. Agents reference them in prompts and a rename breaks integrations silently. New
 tools get added; existing names stay.
