@@ -56,3 +56,9 @@ BACKUPS/
 # Agent workflow notes that point at an internal task board no outside
 # contributor can use. Kept on disk, not published.
 AGENTS.md
+
+# Internal planning and a persona campaign that needs a report file which is
+# never published. Kept on disk, not in the repository.
+NEXT-RELEASE.md
+scripts/persona-prompts.mjs
+test/persona-server.mjs

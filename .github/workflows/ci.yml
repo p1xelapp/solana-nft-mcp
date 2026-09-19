@@ -90,6 +90,9 @@ jobs:
 
       # Publishing with ignore-scripts=true does not build for you: this proves
       # the tarball would carry dist/index.js and the bundled snapshot.
+      - name: Images carry no generator metadata
+        run: node scripts/scan-images.mjs assets
+
       - name: Tarball contents check
         run: node scripts/pack-check.mjs
 
