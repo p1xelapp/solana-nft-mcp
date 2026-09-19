@@ -52,3 +52,7 @@ live-edges-report.json
 # Local safety copies of the tree taken before a fix wave. Never published:
 # they are whole older versions of every source file.
 BACKUPS/
+
+# Agent workflow notes that point at an internal task board no outside
+# contributor can use. Kept on disk, not published.
+AGENTS.md

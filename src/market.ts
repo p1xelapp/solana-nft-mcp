@@ -519,7 +519,7 @@ export function summarizeSales(
   }
   if (deduped.metadataConflicts) {
     notes.push(
-      `${deduped.metadataConflicts} repeated event(s) disagreed only about metadata (item name, venue label or block time). The price both copies agreed on is still counted; only the changed field is in doubt.`,
+      `${deduped.metadataConflicts} repeated event(s) disagreed only about metadata (item name, marketplace label or block time). The price both copies agreed on is still counted; only the changed field is in doubt.`,
     );
   }
   if (malformedPrices) {
@@ -547,7 +547,7 @@ export function summarizeSales(
   // honest statement is what was observed and what was not checked.
   const observedVenues = [...venues.keys()];
   notes.push(
-    `Magic Eden's API feed. ${observedVenues.length ? `Execution venues it reported for these rows: ${observedVenues.join(", ")}.` : "No rows, so no execution venue was observed."} How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established: a venue absent from these rows is unobserved here, not absent from the market.`,
+    `Magic Eden's API feed. ${observedVenues.length ? `Execution marketplaces it reported for these rows: ${observedVenues.join(", ")}.` : "No rows, so no execution venue was observed."} How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established: a marketplace absent from these rows is unobserved here, not absent from the market.`,
   );
 
   return {
@@ -834,7 +834,7 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
   }
   if (traitsUnmatched) {
     readThis.push(
-      `${traitsUnmatched} trait value${traitsUnmatched === 1 ? "" : "s"} on these listings had no entry in the venue's trait index, usually because nothing else carrying ${traitsUnmatched === 1 ? "it is" : "them is"} listed. Those traits have no floor here rather than a floor of zero.`,
+      `${traitsUnmatched} trait value${traitsUnmatched === 1 ? "" : "s"} on these listings had no entry in the marketplace's trait index, usually because nothing else carrying ${traitsUnmatched === 1 ? "it is" : "them is"} listed. Those traits have no floor here rather than a floor of zero.`,
     );
   }
   if (!deals.some((d) => d.rarity)) {
@@ -933,6 +933,59 @@ export function findByName(index: MeCollectionIndexEntry[], query: string): Name
 }
 
 // ------------------------------------------------------------ names + serials
+
+/**
+ * Traits that carry the item's OWN name, as opposed to the set, deck or box it
+ * came out of. Collector Crypt publishes "Card Name"; sports sets publish a
+ * player.
+ */
+const NAME_TRAITS = new Set(["card name", "player", "player name", "character", "name", "subject"]);
+
+export interface NameMatchDetail {
+  /** The text appears somewhere in the item's full name. */
+  inItemName: boolean;
+  /**
+   * The trait holding the item's own name, when the collection publishes one.
+   * `matched` false beside `inItemName` true is the case worth surfacing: the
+   * text was found in the surrounding title, not in what the item actually is.
+   */
+  nameTrait: { traitType: string; value: string; matched: boolean } | null;
+}
+
+/**
+ * Where a name filter actually matched a listing.
+ *
+ * "Cheapest Charizard" on Collector Crypt returned a Ho-Oh card, because the
+ * item's full name is "... Classic Charizard & HO-Oh EX Deck" and the deck
+ * title contains the word. Its "Card Name" trait says "HO-Oh EX". The filter
+ * is not wrong to match it, but an answer that cannot tell the two cases apart
+ * presents a Ho-Oh as the cheapest Charizard (observed 2026-09-19).
+ */
+export function nameMatchDetail(listing: MeListing, needle: string): NameMatchDetail {
+  const want = String(needle ?? "").toLowerCase();
+  const inItemName = (listing?.token?.name ?? "").toLowerCase().includes(want);
+  let nameTrait: NameMatchDetail["nameTrait"] = null;
+  for (const t of listing?.token?.attributes ?? []) {
+    if (!t || typeof t.trait_type !== "string") continue;
+    if (!NAME_TRAITS.has(t.trait_type.trim().toLowerCase())) continue;
+    // Only a string or a number is a name. A trait whose value is an object
+    // would stringify to "[object Object]" and match nothing meaningful.
+    const raw: unknown = t.value;
+    const value = typeof raw === "string" || typeof raw === "number" ? clean(String(raw)) : "";
+    if (!value) continue;
+    nameTrait = { traitType: clean(t.trait_type), value, matched: value.toLowerCase().includes(want) };
+    break;
+  }
+  return { inItemName, nameTrait };
+}
+
+/** True when the listing matches the filter at all, in its name or in a name trait. */
+export const matchesName = (listing: MeListing, needle: string): boolean => {
+  const d = nameMatchDetail(listing, needle);
+  return d.inItemName || d.nameTrait?.matched === true;
+};
+
+
 
 /**
  * The serial printed in a name: "Shohei Ohtani (12/250)", "Claynosaurz #9",

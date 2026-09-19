@@ -44,6 +44,8 @@ interface Snapshot {
 const layerComplete = (partial: boolean, atLimit: boolean): boolean => !partial && !atLimit;
 
 let snapshot: Snapshot | null | undefined;
+/** symbol -> the directory's own name for it, built once from the snapshot. */
+let symbolNames: Map<string, string> | null = null;
 
 function loadSnapshot(): Snapshot | null {
   if (snapshot !== undefined) return snapshot;
@@ -55,6 +57,28 @@ function loadSnapshot(): Snapshot | null {
     snapshot = null;
   }
   return snapshot;
+}
+
+/**
+ * The directory's own name for a symbol.
+ *
+ * An answer carrying only `symbol: "superman_2023_1"` leaves the reader to
+ * work out which Superman #1 it covers, and the directory holds eight. Two
+ * assistants asked the same question on the same day answered about two
+ * different collections and neither said which (observed 2026-09-19). Naming
+ * the collection in the result is what lets a summary say what it read.
+ *
+ * Null when the snapshot does not hold the symbol. The snapshot stops at
+ * Magic Eden's paging ceiling, so a missing name is not evidence of anything.
+ */
+export function nameForSymbol(symbol: string): string | null {
+  if (!symbolNames) {
+    const snap = loadSnapshot();
+    symbolNames = new Map();
+    for (const c of snap?.collections ?? []) if (c?.s && c?.n) symbolNames.set(c.s, c.n);
+  }
+  const raw = symbolNames.get(symbol);
+  return raw ? clean(raw) : null;
 }
 
 /** Full directory walk; the live layer. Kicked off in the background, awaited only when already warm. */
@@ -479,7 +503,7 @@ export function resolveName(query: string, limit = 8): NameResolution {
   const directoryComplete = snapshotComplete === true || liveCompleteLayer === true;
   const directoryNote = directoryComplete
     ? undefined
-    : "Magic Eden refuses to page past offset 30,000, so the directory layers stop short of its full catalogue. A collection beyond that ceiling can be absent here while being perfectly real on the venue - absence in this list is not evidence.";
+    : "Magic Eden refuses to page past offset 30,000, so the directory layers stop short of its full catalogue. A collection beyond that ceiling can be absent here while being perfectly real on the marketplace - absence in this list is not evidence.";
 
   // Merge on symbol, best score and the most authoritative layer wins.
   const rank = { registry: 3, live: 2, snapshot: 1 } as const;
@@ -512,7 +536,7 @@ export function resolveName(query: string, limit = 8): NameResolution {
     hint: didYouMean.length
       ? `Nothing in the layers searched is spelled "${q}". The ${didYouMean.length} entr${didYouMean.length === 1 ? "y" : "ies"} returned are the closest SPELLINGS (reason "close spelling", within ${MAX_EDITS} edits) - suggestions to confirm, not a match for what was typed. Check the name before calling another tool with the symbol.`
       : matches.length === 0
-        ? "No collection by that name in the layers searched. It may be new, listed only on another venue, or spelled differently; a mint address from one of its items lets identify() find it from the chain instead." +
+        ? "No collection by that name in the layers searched. It may be new, listed only on another marketplace, or spelled differently; a mint address from one of its items lets identify() find it from the chain instead." +
           (directoryComplete ? "" : " The layers searched are also short of Magic Eden's full catalogue - see directoryNote.")
         : undefined,
   };

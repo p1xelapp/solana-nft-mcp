@@ -50,7 +50,7 @@ export const PROMPT_TEXTS = {
     "Lead with what it collects, how much of the wallet each collection is, how old the wallet is, " +
     "and the floor ceiling, called a ceiling rather than a value.\n" +
     "Then how it trades: buys against sells, net flow, hold times, and the behaviour label with its reason.\n" +
-    "Then say what the feeds could not see, including other venues, plain transfers, and anything the index could not name.\n" +
+    "Then say what the feeds could not see, including other marketplaces, plain transfers, and anything the index could not name.\n" +
     "Flag airdrop spam separately from real holdings.",
 } as const;
 

@@ -64,7 +64,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   // Everything below ranks `quotes` (fresh only) but reports `allQuotes`.
   if (staleQuotes.length > 0) {
     caveats.push(
-      `${staleQuotes.map((q) => q.source).join(", ")}: the venue did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
+      `${staleQuotes.map((q) => q.source).join(", ")}: the marketplace did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
     );
   }
 
@@ -83,7 +83,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       comparable: false,
       verdict:
         `Only ${only.source} returned a floor (${only.value} ${only.currency}), so there is nothing to compare it ` +
-        `against. This is one venue's view, not the market's.`,
+        `against. This is one marketplace's view, not the market's.`,
       floors: allQuotes,
       caveats,
     };
@@ -115,7 +115,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     comparable: true,
     verdict:
       spreadPct === 0
-        ? `Both venues show the same floor (${cheapest.value} ${cheapest.currency}).`
+        ? `Both marketplaces show the same floor (${cheapest.value} ${cheapest.currency}).`
         : `Cheapest on ${cheapest.source} at ${cheapest.value} ${cheapest.currency}; ` +
           `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.`,
     floors: sorted,
@@ -123,7 +123,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     spreadPct,
     caveats: [
       ...caveats,
-      "Venue floors move independently and these were read seconds apart, so a small spread may be timing rather than a real arbitrage.",
+      "Marketplace floors move independently and these were read seconds apart, so a small spread may be timing rather than a real arbitrage.",
     ],
   };
 }

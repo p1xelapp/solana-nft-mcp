@@ -431,7 +431,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       verdict: "unverifiable",
       explanation: `Magic Eden returned a floor for "${symbol}" that is not a finite number above zero, so it cannot be compared with the claim.`,
       evidence: [],
-      caveats: ["That is a venue shape problem, not a statement about the collection. Retry shortly."],
+      caveats: ["That is a marketplace shape problem, not a statement about the collection. Retry shortly."],
     };
   }
   const evidence: Evidence[] = [
@@ -442,8 +442,8 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     },
   ];
   const caveats = [
-    "A floor is the lowest current ask on ONE venue and moves constantly - this was true at the moment of the call and may not be a minute later.",
-    "Other marketplaces quote their own floors, sometimes in another currency. Use get_collection_stats for the cross-venue view.",
+    "A floor is the lowest current ask on ONE marketplace and moves constantly - this was true at the moment of the call and may not be a minute later.",
+    "Other marketplaces quote their own floors, sometimes in another currency. Use get_collection_stats for the cross-marketplace view.",
   ];
 
   // 2% tolerance: a floor moves while the claim is being made, and calling that

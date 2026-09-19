@@ -603,3 +603,55 @@ console.log("market.mjs OK");
   assert.strictEqual(b.distinctNames, 2);
   console.log("names + serials OK");
 }
+
+// -- where a name filter actually matched -----------------------------------
+// "Cheapest Charizard" on Collector Crypt returned a Ho-Oh card: the item's
+// full name carries the deck title "Classic Charizard & HO-Oh EX Deck", so the
+// word is in the name while the card's own Card Name trait says "HO-Oh EX".
+// The filter is right to match it; an answer that cannot tell the two apart is
+// what presents a Ho-Oh as the cheapest Charizard.
+{
+  const { nameMatchDetail, matchesName } = await import("../dist/market.js");
+  const listing = (name, attrs) => ({ token: { name, attributes: attrs } });
+
+  const deck = listing("2023 #007 HO-Oh EX PSA 9 Classic Charizard & HO-Oh EX Deck", [
+    { trait_type: "Card Name", value: "HO-Oh EX" },
+    { trait_type: "Category", value: "Pokemon" },
+  ]);
+  const d1 = nameMatchDetail(deck, "charizard");
+  assert.strictEqual(d1.inItemName, true, "the deck title carries the word");
+  assert.deepStrictEqual(d1.nameTrait, { traitType: "Card Name", value: "HO-Oh EX", matched: false }, "the card's own name does not");
+  assert.strictEqual(matchesName(deck, "charizard"), true, "it still matches: the filter is a substring search and says so");
+
+  const real = listing("2020 #SWSH050 Charizard V CGC 8.5", [{ trait_type: "Card Name", value: "Charizard V" }]);
+  const d2 = nameMatchDetail(real, "charizard");
+  assert.strictEqual(d2.inItemName, true);
+  assert.strictEqual(d2.nameTrait.matched, true, "the card's own name carries it");
+
+  // A collection that publishes no name trait reports null rather than false,
+  // so "we could not check" is never rendered as "it did not match".
+  const plain = listing("Claynosaurz #9149", [{ trait_type: "Species", value: "Rex" }]);
+  assert.strictEqual(nameMatchDetail(plain, "rex").nameTrait, null, "no name trait published, so nothing is claimed about one");
+  assert.strictEqual(matchesName(plain, "rex"), false, "a species is not the item's name");
+  assert.strictEqual(matchesName(plain, "clayno"), true);
+
+  // A player trait lets a sports set match the player even when the printed
+  // name is spelled differently around it.
+  const card = listing("2026 ICONs Gold 12/250", [{ trait_type: "Player", value: "Shohei Ohtani" }]);
+  assert.strictEqual(matchesName(card, "ohtani"), true, "matched on the player trait alone");
+  assert.strictEqual(nameMatchDetail(card, "ohtani").inItemName, false);
+
+  assert.strictEqual(matchesName({}, "anything"), false, "a listing with no token does not throw");
+  console.log("name-filter match detail OK");
+}
+
+// -- the directory's own name for a symbol ----------------------------------
+// An answer carrying only a symbol leaves the reader to work out which of the
+// eight Superman #1 collections it covers.
+{
+  const { nameForSymbol } = await import("../dist/names.js");
+  const known = nameForSymbol("mad_lads");
+  assert.ok(known === null || typeof known === "string", "a name or an honest null");
+  assert.strictEqual(nameForSymbol("no_such_symbol_anywhere_9f2a"), null, "an unknown symbol is null, never invented");
+  console.log("symbol name lookup OK");
+}

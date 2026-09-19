@@ -283,7 +283,7 @@ export const MECHANICS: MechanicsEntry[] = [
     power: "Sets the creator fee percentage, who it splits to, and which programs may move the item at all.",
     heldBy: "The issuer's update authority.",
     plain:
-      "Says what cut the creators take on resale and, through its rule set, whether that cut can be dodged. With no rule set it is a polite request any marketplace can ignore. With a program allow-list the Core program refuses transfers by anyone not on the list, so the fee is genuinely unavoidable on those venues.",
+      "Says what cut the creators take on resale and, through its rule set, whether that cut can be dodged. With no rule set it is a polite request any marketplace can ignore. With a program allow-list the Core program refuses transfers by anyone not on the list, so the fee is genuinely unavoidable on those marketplaces.",
     pitfall:
       "Quoting the percentage as if it were collected. Without a rule set it is advisory, and the money is handled by marketplaces rather than by the Core program either way.",
     documented:
@@ -302,7 +302,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "An allow-list names the only programs allowed to move the item; everything else, including a marketplace the issuer dislikes, is refused on chain. A deny-list is the opposite and blocks named programs only. An allow-list that omits the System Program would also stop you sending the item to a friend.",
     pitfall:
-      "Treating an allow-list as an anti-theft feature. It restricts venues, not thieves, and it can quietly strand an item if the listed marketplace shuts down.",
+      "Treating an allow-list as an anti-theft feature. It restricts marketplaces, not thieves, and it can quietly strand an item if the listed marketplace shuts down.",
     documented:
       "ProgramAllowList: only programs on the list can transfer, enabling strict enforcement. ProgramDenyList: all programs can transfer except those on the list.",
     verified: true,
@@ -318,7 +318,7 @@ export const MECHANICS: MechanicsEntry[] = [
     power: "Locks the item so it cannot be transferred or burned while it stays in the owner's wallet.",
     heldBy: "The owner by default; commonly delegated to a staking or marketplace program.",
     plain:
-      "You add this one yourself, usually without realising, when you stake an item or list it on a venue that does not take custody. The item stays in your wallet but cannot move until whoever holds the freeze thaws it. Selling the item ends the arrangement.",
+      "You add this one yourself, usually without realising, when you stake an item or list it on a marketplace that does not take custody. The item stays in your wallet but cannot move until whoever holds the freeze thaws it. Selling the item ends the arrangement.",
     pitfall:
       "A frozen item still shows in your holdings and in any portfolio total. It is not liquid until it is thawed, and only the freeze holder can thaw it.",
     documented:
@@ -740,7 +740,7 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Magic Eden and royalties on Solana",
     venue: "magiceden",
     plain:
-      "On Magic Eden's pool program the creator's cut is a number supplied with the purchase rather than a fixed rate, so unless the collection's own rules force the issue, how much reaches creators depends on the transaction. Where a collection uses a Core program allow-list, enforcement comes from the chain instead of from the venue.",
+      "On Magic Eden's pool program the creator's cut is a number supplied with the purchase rather than a fixed rate, so unless the collection's own rules force the issue, how much reaches creators depends on the transaction. Where a collection uses a Core program allow-list, enforcement comes from the chain instead of from the marketplace.",
     pitfall:
       "A collection advertising 10% does not mean 10% was paid. Read the rule set, not the marketing.",
     documented:
@@ -760,7 +760,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Magic Eden is widely reported to let buyers choose none, half or all of a collection's optional royalty. That is not stated here as fact because the page saying so could not be opened. The program-level facts in the neighbouring entries were read from Magic Eden's own source code and do stand.",
     pitfall:
-      "Repeating a percentage policy from memory. Venue policies change quietly and this one is unread.",
+      "Repeating a percentage policy from memory. Marketplace policies change quietly and this one is unread.",
     documented: "Not established this session.",
     observed:
       "help.magiceden.io and docs.magiceden.io both answered HTTP 403 to a plain fetch and to a real headless browser; only a search-engine snippet was available.",
@@ -883,9 +883,9 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Candy Digital royalties are enforced by an allow-list",
     venue: "candy",
     plain:
-      "Candy's MLB collections set a 10% royalty split three ways and back it with a program allow-list, so only the named programs can move a card at all. That makes the fee genuinely unavoidable, and it also means a venue not on the list simply cannot trade these cards.",
+      "Candy's MLB collections set a 10% royalty split three ways and back it with a program allow-list, so only the named programs can move a card at all. That makes the fee genuinely unavoidable, and it also means a marketplace not on the list simply cannot trade these cards.",
     pitfall:
-      "If a marketplace shows a Candy card but cannot complete a sale, the allow-list is the likely reason. It is a collection rule, not a bug at the venue.",
+      "If a marketplace shows a Candy card but cannot complete a sale, the allow-list is the likely reason. It is a collection rule, not a bug at the marketplace.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:
@@ -936,7 +936,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Candy opened its secondary market on 2026-07-24. The listing screen is on candy.io, but the transaction itself happens on Solana through Magic Eden, priced in SOL. So a fill that began on Candy's own site appears in Magic Eden's feed, and this server reports it as a Magic Eden sale, because Magic Eden's program is what executed it.",
     pitfall:
-      "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the venue on the record says Magic Eden.",
+      "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the marketplace on the record says Magic Eden.",
     documented:
       "Transactions take place on Solana through Magic Eden.",
     verified: true,
@@ -997,7 +997,7 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-other-addresses-are-not-candy",
     category: "venue",
-    title: "No second Candy wallet has been observed; other addresses are collectors or venues",
+    title: "No second Candy wallet has been observed; other addresses are collectors or marketplaces",
     venue: "candy",
     plain:
       "Across every Candy collection this server knows, one key issues, freezes, burns and takes back. No second issuer key, alternate treasury or distribution wallet has been observed on chain. The other addresses that recur around a Candy drop are collectors (auction winners, repeat bidders) and marketplace escrows.",
@@ -1080,9 +1080,9 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Who gets paid when this sells?",
     plain:
-      "The seller, the venue, and sometimes the creators. Venue fees are fixed and small - Tensor charges buyers 2%, OpenSea 1% of the sale. The creator's cut is the variable one: enforced when the collection's rules make the chain refuse non-compliant transfers, and otherwise a courtesy the buyer or the venue can reduce.",
+      "The seller, the marketplace, and sometimes the creators. Marketplace fees are fixed and small - Tensor charges buyers 2%, OpenSea 1% of the sale. The creator's cut is the variable one: enforced when the collection's rules make the chain refuse non-compliant transfers, and otherwise a courtesy the buyer or the marketplace can reduce.",
     pitfall:
-      "A listed royalty percentage is a rate, not a receipt. Whether it is actually paid depends on the collection's rule set and the venue.",
+      "A listed royalty percentage is a rate, not a receipt. Whether it is actually paid depends on the collection's rule set and the marketplace.",
     documented:
       "Enforced royalties are always paid by the taker and never by the maker; optional royalties can be set to none, half or all. OpenSea charges a 1% fee for selling NFTs.",
     verified: true,
@@ -1095,9 +1095,9 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Why is the floor different on two sites?",
     plain:
-      "Because a floor is the cheapest ask on one venue at one moment, in one currency. Different venues carry different sellers, some quote in a stablecoin rather than SOL, some cover only a selected group of collections, and cached figures go stale. Two different numbers are normally two correct answers to two different questions.",
+      "Because a floor is the cheapest ask on one marketplace at one moment, in one currency. Different marketplaces carry different sellers, some quote in a stablecoin rather than SOL, some cover only a selected group of collections, and cached figures go stale. Two different numbers are normally two correct answers to two different questions.",
     pitfall:
-      "Ranking floors across venues without checking the currency and the timestamp invents a spread that is not there.",
+      "Ranking floors across marketplaces without checking the currency and the timestamp invents a spread that is not there.",
     documented:
       "OpenSea supports Solana NFTs from a selected group of collections, so its book is not the whole chain.",
     verified: true,

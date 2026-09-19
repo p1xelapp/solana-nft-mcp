@@ -19,9 +19,9 @@ export interface GlossaryEntry {
 export const GLOSSARY: GlossaryEntry[] = [
   {
     term: "floor price",
-    meaning: "The lowest current ASK on one venue - the cheapest listing, not a completed trade.",
+    meaning: "The lowest current ASK on one marketplace - the cheapest listing, not a completed trade.",
     pitfall:
-      "It is not a valuation and not what the item last sold for. On a thin book a single optimistic or panic listing sets it, and each venue has its own floor.",
+      "It is not a valuation and not what the item last sold for. On a thin book a single optimistic or panic listing sets it, and each marketplace has its own floor.",
   },
   {
     term: "last sale",
@@ -74,12 +74,12 @@ export const GLOSSARY: GlossaryEntry[] = [
   {
     term: "floor ceiling (portfolio value)",
     meaning:
-      "Floor price times items held, summed per collection. The most a wallet could list everything for and still be the cheapest seller on that venue at that moment.",
+      "Floor price times items held, summed per collection. The most a wallet could list everything for and still be the cheapest seller on that marketplace at that moment.",
     pitfall:
       "It is not what the wallet is worth. Selling into a floor moves it, illiquid floors have no buyers behind them, and unindexed items count as zero. Present it as a ceiling with the assumptions; use recent sales for what buyers actually pay.",
   },
   {
-    term: "venue split",
+    term: "marketplace split",
     meaning: "Where a wallet's marketplace activity happened: Magic Eden order book (magiceden_v2), Magic Eden AMM pools (mmm), Tensor, OpenSea.",
     pitfall:
       "Each marketplace feed only sees itself. A Magic Eden feed showing 100% Magic Eden proves nothing about Tensor or OpenSea; say which feeds were read before calling a wallet 'ME-only'. OpenSea has been observed labelling Magic Eden fills as its own.",
@@ -177,7 +177,7 @@ export const GLOSSARY: GlossaryEntry[] = [
 
 /** How agents should present this data. Served alongside the glossary. */
 export const PRESENTATION_RULES: string[] = [
-  "Compare venues in a small table (venue, floor, currency, listings) rather than prose - the reader is comparing numbers, and a table is how numbers get compared.",
+  "Compare marketplaces in a small table (marketplace, floor, currency, listings) rather than prose - the reader is comparing numbers, and a table is how numbers get compared.",
   "Never present floors in different currencies as a ranked list or call one 'cheaper'. If `reconciliation.comparable` is false, repeat its `verdict` instead of computing your own comparison.",
   "Render a provenance trail as a dated timeline, oldest first, one line per event, naming the marketplace where one is known. It reads as a story and that is the point.",
   "Always surface `stale: true` and `cachedAt` when present. A number without its age invites the reader to trust it more than they should.",

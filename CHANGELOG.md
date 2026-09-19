@@ -1110,6 +1110,37 @@ by its old name.
   view. An outgoing transfer beside an itemless sale is uncertain, as the
   incoming one already was. A self-fill is no longer the first purchase.
 
+## 1.16.0 - 2026-09-19
+
+The server's own words, and two ways a name search answered the wrong thing.
+
+- Wording: the server instructions, every tool description and every
+  readThis line now say "marketplace" where they said "venue", which is what
+  the site, the README and the documents have said since 2026-09-18. Output
+  field names are deliberately unchanged (`venue`, `listingVenue`,
+  `venues`, `venue-escrow`, `venueReportedEnd`, and the `venue-*`
+  mechanics topic ids): renaming them would break anyone already reading the
+  JSON, and a rename would ship both spellings for a version before the old
+  one went away.
+- `find_listings` and `get_collection_sales` name the collection they
+  answered about. Asked "what is Superman #1 worth", two assistants read two
+  different collections on the same day and neither said which, because the
+  result carried only a symbol and the directory holds eight collections a
+  person would call Superman #1. `collectionName` is the directory's own
+  name for the symbol, and the sales result asks the reader to name it rather
+  than repeat the question's words.
+- A name filter now says WHERE it matched. "Cheapest Charizard" on Collector
+  Crypt returned a Ho-Oh card: the item's full name carries the deck title
+  "Classic Charizard & HO-Oh EX Deck", so the word is in the name, while the
+  card's own Card Name trait says "HO-Oh EX". Every returned row carries
+  `nameMatch` with `inItemName` and the item's own name trait, the search
+  block counts `matchedTitleOnly`, and a note names the difference. The
+  filter also matches a name trait on its own, so a sports card whose printed
+  name is spelled differently still answers to its player.
+- `find_listings` in lowest-serials mode applies the same matcher, so a
+  serial hunt filtered by player no longer returns another player's card
+  through the surrounding title.
+
 ## 1.15.4 - 2026-09-18
 
 Round eight of outside review: 18 findings, none a blocker, all fixed and

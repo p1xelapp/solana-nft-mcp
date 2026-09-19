@@ -96,7 +96,7 @@ const misses = new Map<string, { at: number; conflict?: DirectConflict }>();
 const MISS_TTL_MS = 10 * 60_000;
 
 const conflictNote = (name: string, c: DirectConflict): string =>
-  `Magic Eden has a collection under the symbol "${c.symbol}", which is exactly what "${name}" slugifies to, but the venue calls it ` +
+  `Magic Eden has a collection under the symbol "${c.symbol}", which is exactly what "${name}" slugifies to, but the marketplace calls it ` +
   `"${c.venueName}". That is either a rebrand or a different collection wearing the symbol, and this server will not choose for you: ` +
   `if "${c.venueName}" is the one you meant, pass the symbol "${c.symbol}" directly.`;
 
@@ -139,7 +139,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
   if (cachedMiss !== undefined && Date.now() - cachedMiss.at < MISS_TTL_MS) {
     return cachedMiss.conflict
       ? { found: false, conclusive: true, conflict: cachedMiss.conflict, note: conflictNote(name, cachedMiss.conflict) }
-      : { found: false, conclusive: true, note: "asked the venue for this name recently and every spelling answered 404" };
+      : { found: false, conclusive: true, note: "asked the marketplace for this name recently and every spelling answered 404" };
   }
 
   const tried: string[] = [];
@@ -151,7 +151,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
         found: false,
         conclusive: false,
         note:
-          `the ${PROBE_BUDGET_MS / 1000}s budget for asking the venue about this name ran out after trying ` +
+          `the ${PROBE_BUDGET_MS / 1000}s budget for asking the marketplace about this name ran out after trying ` +
           `${tried.join(", ") || "nothing"}, so this check proves nothing either way`,
       };
     }
@@ -208,8 +208,8 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
         symbol,
         venueName: venueName as string,
         note:
-          `Magic Eden symbol found by asking the venue for "${symbol}" directly, because the bundled directory ` +
-          `stops at the venue's paging ceiling of 30,000 collections. An item listed under it is named ` +
+          `Magic Eden symbol found by asking the marketplace for "${symbol}" directly, because the bundled directory ` +
+          `stops at the marketplace's paging ceiling of 30,000 collections. An item listed under it is named ` +
           `"${venueName}", which matches what was asked for and is why it was accepted.`,
       };
     }
@@ -229,7 +229,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
       venueName: name,
       note:
         `Magic Eden has a collection under the symbol "${symbol}", which is exactly what this name slugifies to. ` +
-        `Nothing is listed under it, so the venue's own name for it could not be read and was not confirmed; treat this as provisional.`,
+        `Nothing is listed under it, so the marketplace's own name for it could not be read and was not confirmed; treat this as provisional.`,
     };
   }
 
@@ -239,13 +239,13 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
       conclusive: false,
       ...(conflict ? { conflict } : {}),
       note:
-        `the venue would not answer for ${unreadable.join("; ")}, so this check proves nothing about whether the collection exists` +
+        `the marketplace would not answer for ${unreadable.join("; ")}, so this check proves nothing about whether the collection exists` +
         (conflict ? `. ${conflictNote(name, conflict)}` : ""),
     };
   }
   misses.set(cacheKey, { at: Date.now(), ...(conflict ? { conflict } : {}) });
   if (conflict) return { found: false, conclusive: true, conflict, note: conflictNote(name, conflict) };
-  return { found: false, conclusive: true, note: `no collection at the venue under any spelling tried: ${tried.join(", ")}` };
+  return { found: false, conclusive: true, note: `no collection at the marketplace under any spelling tried: ${tried.join(", ")}` };
 }
 
 /** Test seam: forget the negative cache. */

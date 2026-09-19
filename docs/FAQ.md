@@ -129,8 +129,8 @@ identical on chain.
 
 **Which wallet activity does it see?**
 Magic Eden's API feed: listings, delists, bids, buys and sells as Magic Eden indexed them, each
-row naming the execution venue it reported. How completely that feed covers fills on other
-programs such as Tensor is not established, so the answer names the venues it saw and claims
+row naming the execution marketplace it reported. How completely that feed covers fills on other
+programs such as Tensor is not established, so the answer names the marketplaces it saw and claims
 nothing about the rest. Mints and plain transfers are never in it, and OpenSea needs a key. The
 result says this every time so the model does not present one marketplace as a wallet's whole life.
 

@@ -1308,7 +1308,7 @@ export async function getProvenance(
     events,
     /** What the rows above are, so a marketplace label on one cannot be read as a venue's report. */
     eventsReadFrom:
-      "Every event is decoded from Solana transaction instructions by this server. A `marketplace` on a row is the program id seen in that transaction, not a statement from that venue - no marketplace API was called. Rows labelled as a Magic Eden escrow are chain observations of the venue's own escrow or pool account taking or releasing custody.",
+      "Every event is decoded from Solana transaction instructions by this server. A `marketplace` on a row is the program id seen in that transaction, not a statement from that marketplace - no marketplace API was called. Rows labelled as a Magic Eden escrow are chain observations of the marketplace's own escrow or pool account taking or releasing custody.",
     skippedTransactions: skipped,
     /** Signatures whose transaction could not be fetched, or which carried neither logs nor a decodable Core instruction. */
     unreadableTransactions: unreadable,

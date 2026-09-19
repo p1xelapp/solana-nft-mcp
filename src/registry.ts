@@ -55,7 +55,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "solana_monkey_business",
     keywords: ["smb", "monke", "monkes", "gen2", "monkey business"],
     aliases: ["SMB", "SMB Gen2", "Solana Monkey Business", "Monkes"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "smb-gen3",
@@ -64,7 +64,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "smb_gen3",
     keywords: ["smb", "gen3", "monke"],
     aliases: ["SMB Gen3", "Solana Monkey Business Gen3"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "okay-bears",
@@ -73,7 +73,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "okay_bears",
     keywords: ["okay", "bears", "bear"],
     aliases: ["Okay Bears", "OKB"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "famous-fox-federation",
@@ -82,7 +82,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "famous_fox_federation",
     keywords: ["fox", "foxes", "fff"],
     aliases: ["Famous Fox Federation", "FFF", "Famous Foxes"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "tensorians",
@@ -91,7 +91,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "tensorians",
     keywords: ["tensor", "tensorian"],
     aliases: ["Tensorians"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "degods",
@@ -100,7 +100,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "degods",
     keywords: ["degod", "dust", "y00ts"],
     aliases: ["DeGods", "De Gods"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "y00ts",
@@ -109,7 +109,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "y00ts",
     keywords: ["yoots", "y00t", "degods"],
     aliases: ["y00ts", "yoots"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "degenerate-ape-academy",
@@ -118,7 +118,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "degenerate_ape_academy",
     keywords: ["daa", "ape", "apes", "degen ape"],
     aliases: ["Degenerate Ape Academy", "DAA", "Degen Apes"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "cets-on-creck",
@@ -127,7 +127,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "cets_on_creck",
     keywords: ["cets", "cet", "creck"],
     aliases: ["Cets on Creck", "Cets"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "froganas",
@@ -136,7 +136,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "froganas",
     keywords: ["frog", "frogana"],
     aliases: ["Froganas"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "lifinity-flares",
@@ -145,7 +145,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "lifinity_flares",
     keywords: ["lifinity", "flare"],
     aliases: ["Lifinity Flares"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "galactic-geckos",
@@ -154,7 +154,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "galactic_geckos",
     keywords: ["gecko", "geckos", "ggsg"],
     aliases: ["Galactic Geckos", "GGSG", "Galactic Gecko Space Garage"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "aurory",
@@ -163,7 +163,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "aurory",
     keywords: ["aurorian", "aurorians"],
     aliases: ["Aurory", "Aurorians"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "taiyo-robotics",
@@ -172,7 +172,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "taiyo_robotics",
     keywords: ["taiyo", "robotics", "robot"],
     aliases: ["Taiyo Robotics", "Taiyo"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "sharx",
@@ -181,7 +181,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "sharx",
     keywords: ["sharky", "shark"],
     aliases: ["Sharx", "Sharx by Sharky"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "primates",
@@ -190,7 +190,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "primates",
     keywords: ["primate"],
     aliases: ["Primates"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "backwoods",
@@ -199,7 +199,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "backwoods",
     keywords: ["backwood"],
     aliases: ["Backwoods"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "retardio-cousins",
@@ -208,7 +208,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "retardio_cousins",
     keywords: ["retardio", "cousins"],
     aliases: ["Retardio Cousins", "Retardios"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
   {
     id: "bozo-collective",
@@ -217,7 +217,7 @@ export const REGISTRY: RegistryEntry[] = [
     meSymbol: "bozo_collective",
     keywords: ["bozo", "bozos"],
     aliases: ["Bozo Collective", "Bozos"],
-    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the venue's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
+    notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",
   },
 
   {
@@ -278,7 +278,7 @@ export const REGISTRY: RegistryEntry[] = [
     openseaSlug: "collector-crypt",
     keywords: ["collector crypt", "collectorcrypt", "graded", "psa", "pokemon", "physical", "vault", "slab"],
     notes:
-      "Trades in DIFFERENT currencies per venue: SOL on Magic Eden, and both USDC and SOL on OpenSea where " +
+      "Trades in DIFFERENT currencies per marketplace: SOL on Magic Eden, and both USDC and SOL on OpenSea where " +
       "USDC dominates (100% of the last 50 sales sampled 2026-09-01). The two floors are therefore not " +
       "directly comparable as printed - read floorCurrency per source. Magic Eden's symbol uses an " +
       "underscore (collector_crypt); the hyphenated and unspaced variants both answer HTTP 200 with an " +

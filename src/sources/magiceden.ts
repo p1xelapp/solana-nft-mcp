@@ -865,7 +865,7 @@ export async function popularCollections(timeRange: PopularTimeRange): Promise<P
     collections: rows,
     note: rows.length
       ? undefined
-      : "Magic Eden's trending endpoint answered but returned no collections. That is the venue publishing nothing for this window, not evidence that trading stopped - read a collection's own stats or activity feed instead.",
+      : "Magic Eden's trending endpoint answered but returned no collections. That is the marketplace publishing nothing for this window, not evidence that trading stopped - read a collection's own stats or activity feed instead.",
     stale,
     cachedAt,
   };

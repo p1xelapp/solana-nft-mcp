@@ -129,7 +129,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
     pitfalls: [
       {
         trap: "Putting two marketplaces' floors side by side and calling the lower one cheaper.",
-        why: "The same collection can be quoted in different currencies per venue. Collector Crypt is 0.053 SOL on Magic Eden and 9 USDC on OpenSea - a 170x gap that is not a gap at all.",
+        why: "The same collection can be quoted in different currencies per marketplace. Collector Crypt is 0.053 SOL on Magic Eden and 9 USDC on OpenSea - a 170x gap that is not a gap at all.",
         instead: "Use the reconciliation block from get_collection_stats. When comparable is false, show both with their currencies and say they are not comparable rather than ranking them.",
       },
       {

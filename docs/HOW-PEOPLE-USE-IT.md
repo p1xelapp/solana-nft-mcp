@@ -327,7 +327,7 @@ less. Kofi already knew how to read that; he just did not want to open four tabs
 **What happens:** `get_wallet_activity` with five pages: every Magic Eden buy and sell,
 dated, priced, flips paired with hold time. The caveats say what is missing:
 OpenSea without a key, fees and royalties, anything older than the window, and that
-coverage of venues outside Magic Eden's feed is not established. She adds the
+coverage of marketplaces outside Magic Eden's feed is not established. She adds the
 OpenSea key and re-runs. It is a record with its gaps labelled, which is more than the
 alternatives gave her. It is not tax advice and says so.
 

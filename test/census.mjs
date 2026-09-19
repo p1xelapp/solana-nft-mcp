@@ -663,9 +663,23 @@ const kinds = (r) => r.events.map((e) => e.event);
   assert.strictEqual(lock.packages[""].version, pkg.version);
   assert.deepStrictEqual(lock.packages[""].engines, pkg.engines, "lock root engines match package.json");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
-  const relative = readme.match(/\]\((?:docs\/|assets\/|SECURITY\.md|CONTRIBUTING\.md|LICENSE\))|src="assets\//g) ?? [];
-  assert.deepStrictEqual(relative, [], `README links must be absolute so they resolve from an installed package: ${relative.join(", ")}`);
-  ok("R5-19/22/26 the bundle is lock-pinned, the lock metadata is current, and the README has no package-relative links");
+  // LINKS to other documents must be absolute: docs/, SECURITY.md and
+  // CONTRIBUTING.md are not in the published tarball, so a relative link to
+  // one 404s for anybody reading the README from an installed package.
+  const relativeLinks = readme.match(/\]\((?:docs\/|SECURITY\.md|CONTRIBUTING\.md|LICENSE\))/g) ?? [];
+  assert.deepStrictEqual(relativeLinks, [], `README document links must be absolute so they resolve from an installed package: ${relativeLinks.join(", ")}`);
+  // IMAGES are the opposite. GitHub renders a README image through a proxy
+  // that fetches with no credentials, so an absolute raw.githubusercontent
+  // URL is a 404 on a private repository and every picture breaks (observed
+  // 2026-09-19). A relative path is rewritten by GitHub to a blob served
+  // under the viewer's own session and renders whether the repository is
+  // private or public, which is where this README is actually read.
+  const absoluteImages = readme.match(/<img[^>]*src="https:\/\/raw\.githubusercontent[^"]*"/g) ?? [];
+  assert.deepStrictEqual(absoluteImages, [], `README images must be repo-relative or they break while the repository is private: ${absoluteImages.join(", ")}`);
+  for (const m of readme.matchAll(/<img[^>]*src="(?!https?:)([^"]+)"/g)) {
+    assert.ok(fs.existsSync(path.join(root, m[1])), `README image ${m[1]} does not exist at that path`);
+  }
+  ok("R5-19/22/26 the bundle is lock-pinned, the lock metadata is current, document links are absolute and images are repo-relative and present");
 }
 
 // ================================================================ R5-21 / R5-24 / R5-25 / R5-27 (documents)

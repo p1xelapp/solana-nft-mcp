@@ -68,7 +68,7 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
   } catch (e) {
     return store({
       verdict: "unknown",
-      detail: `The venue did not answer for "${symbol}", so the symbol could not be checked against this collection: ${e instanceof Error ? e.message : String(e)}`,
+      detail: `The marketplace did not answer for "${symbol}", so the symbol could not be checked against this collection: ${e instanceof Error ? e.message : String(e)}`,
     });
   }
   try {

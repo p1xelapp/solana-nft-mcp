@@ -40,7 +40,7 @@ export function objectRows<T>(source: string, what: string, batch: unknown): T[]
 export function assertPageSize(source: string, what: string, rows: unknown[], requested: number): void {
   if (rows.length > requested) {
     throw new Error(
-      `${source} returned ${rows.length} rows for ${what} when ${requested} were requested - the venue is not honouring its own page size, so the page was refused rather than processed`,
+      `${source} returned ${rows.length} rows for ${what} when ${requested} were requested - the marketplace is not honouring its own page size, so the page was refused rather than processed`,
     );
   }
 }

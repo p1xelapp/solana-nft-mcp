@@ -180,7 +180,7 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
       // probe with a different symbol and a non-numeric floor; a shape that
       // does not echo back what was asked for is a shape change, not an "ok".
       if (stats.symbol !== ME_PROBE_SYMBOL) {
-        return { ok: false, note: `answered a request for ${ME_PROBE_SYMBOL} with stats for "${clean(String(stats.symbol)).slice(0, 40)}" - a shape change, not a healthy venue` };
+        return { ok: false, note: `answered a request for ${ME_PROBE_SYMBOL} with stats for "${clean(String(stats.symbol)).slice(0, 40)}" - a shape change, not a healthy marketplace` };
       }
       // A stats block whose numbers are all null is not health either. The
       // venue has answered 200 with every field nulled while it was broken,
@@ -192,7 +192,7 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
       if (floor === null && listed === null) {
         return {
           ok: false,
-          note: `answered for ${ME_PROBE_SYMBOL} with neither a usable floor nor a usable listed count (both absent or not finite numbers) - a shape change, not a healthy venue`,
+          note: `answered for ${ME_PROBE_SYMBOL} with neither a usable floor nor a usable listed count (both absent or not finite numbers) - a shape change, not a healthy marketplace`,
         };
       }
       return {
@@ -236,7 +236,7 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
   const osReady = await os.openSeaAvailable();
   const osState = os.openSeaState();
   const osPromise = !osReady
-    ? Promise.resolve(unchecked(openSea, `off - ${osState.note}. Every tool still answers; the OpenSea half of cross-venue questions is absent and named, not silently dropped.`))
+    ? Promise.resolve(unchecked(openSea, `off - ${osState.note}. Every tool still answers; the OpenSea half of cross-marketplace questions is absent and named, not silently dropped.`))
     : probe(
         openSea,
         async (signal) => {
@@ -247,10 +247,10 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
           // Same rule as Magic Eden: the answer has to be ABOUT what was
           // asked for, and its numbers have to be numbers.
           if (stats.slug !== OS_PROBE_SLUG) {
-            return { ok: false, note: `answered a request for ${OS_PROBE_SLUG} with stats for "${clean(String(stats.slug)).slice(0, 40)}" - a shape change, not a healthy venue` };
+            return { ok: false, note: `answered a request for ${OS_PROBE_SLUG} with stats for "${clean(String(stats.slug)).slice(0, 40)}" - a shape change, not a healthy marketplace` };
           }
           if (stats.floor === null && stats.owners === null) {
-            return { ok: false, note: `answered with a stats block carrying neither a floor nor an owner count - a shape change, not a healthy venue` };
+            return { ok: false, note: `answered with a stats block carrying neither a floor nor an owner count - a shape change, not a healthy marketplace` };
           }
           // The currency symbol is venue-supplied text printed next to a
           // number: cleaned at this boundary, never pasted into the note raw.
@@ -317,7 +317,7 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
 }
 
 const READ_THIS = [
-  "A source marked not answering means that venue is down or rate-limiting right now. The other sources still answer, and every tool says which venue is missing from its result.",
+  "A source marked not answering means that marketplace is down or rate-limiting right now. The other sources still answer, and every tool says which marketplace is missing from its result.",
   "Tier 1 is an account read straight from the chain and settles ownership. Tier 2 is somebody else's database - a marketplace's view of the market, or an index's view of the chain, either of which can lag it. Tier 4 is a link for a person, never read by this server.",
   "This check reads live endpoints, so running it repeatedly spends the same rate limit the tools use.",
 ];

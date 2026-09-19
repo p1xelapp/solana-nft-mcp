@@ -221,7 +221,7 @@ without raising an error.
 | `get_wallet_activity` | buys and sells, net flow, marketplace split, every flip with hold time and P&L, realized totals, a behaviour label with its reason |
 | `get_collection_sales` | sales over a window: count, volume, top and bottom sale, median, buyers, sellers, per-day series, a per-name breakdown (which player or character sold most), a name filter, how far back the feed was read |
 | `find_in_group` | one edition number hunted across a whole family of collections, each match against that collection's own floor, with a cursor for the rest |
-| `find_listings` | cheapest-first listings, trait filters combined with AND, name filter, a lowest-serials mode for #1 and #100 hunters, each ask against its trait floor |
+| `find_listings` | cheapest-first listings, trait filters combined with AND, a name filter that says whether it matched the item's own name or the set title around it, a lowest-serials mode for #1 and #100 hunters, each ask against its trait floor |
 | `get_top_traders` | the largest wallets in a collection by Magic Eden volume, all time |
 | `get_trending` | Magic Eden's trending list, with an explicit note when the marketplace publishes nothing |
 | `explain_mechanics` | escrow, freezing, delegates, royalties, wash trades and migrations, per standard and marketplace, each entry citing its source |
@@ -250,8 +250,8 @@ with the rules for presenting this data), `get_source_status` for the source cat
   Solana API needs a key on a 100-request-a-month free tier and cannot say that a fill happened
   on Magic Eden, which is the mislabelling this server exists to avoid. Both sit in the source
   catalog as planned, with the condition that would add them. Magic Eden's feed sometimes carries
-  rows it labels with another execution venue; each answer lists the venues it observed and
-  never claims that a venue absent from those rows is absent from the market.
+  rows it labels with another execution marketplace; each answer lists the marketplaces it observed
+  and never claims that a marketplace absent from those rows is absent from the market.
 - Every money figure names its currency and the API it came from in the same object
   (`currency: "SOL"`, `source: "magiceden"`), on the summary and on every nested row, so a
   copied row keeps its units. Counts keep their coverage beside them (`truncated`,

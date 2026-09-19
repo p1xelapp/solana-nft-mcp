@@ -384,7 +384,7 @@ export function summarizeActivity(
   const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
   const caveats = [
-    "This is Magic Eden's API feed for the wallet: listings, bids, buys and sells as Magic Eden indexed them. Each row names the execution venue Magic Eden reported for it (see venues); how completely that feed covers fills on other programs is not established, so a venue absent from it is unobserved here, not absent from the wallet's life. Plain transfers, mints and airdrops are never in it.",
+    "This is Magic Eden's API feed for the wallet: listings, bids, buys and sells as Magic Eden indexed them. Each row names the execution marketplace Magic Eden reported for it (see marketplaces); how completely that feed covers fills on other programs is not established, so a marketplace absent from it is unobserved here, not absent from the wallet's life. Plain transfers, mints and airdrops are never in it.",
     "Realised P&L here is sale price minus purchase price for items both bought and sold in the window, before marketplace fees and royalties. It is a lower bound on cost, not an accounting.",
   ];
   if (malformedPrices) {
@@ -775,11 +775,11 @@ export function floorCeiling(
         : `${Math.max(0, totalItems - coveredItems)} items had no Magic Eden floor (unindexed, no listings, or the collection was outside the priced set) and count as zero here.`,
       ...(thin.length
         ? [
-            `${thin.map((q) => q.collection).join(", ")}: the wallet holds more than half as many items as are listed on the whole venue - selling would move the floor, so the ceiling is generous.`,
+            `${thin.map((q) => q.collection).join(", ")}: the wallet holds more than half as many items as are listed on the whole marketplace - selling would move the floor, so the ceiling is generous.`,
           ]
         : []),
       ...(failed.length
-        ? [`${failed.map((q) => `${q.collection} (${q.stale ? "venue did not answer; last value not used" : q.error})`).join("; ")}: not priced.`]
+        ? [`${failed.map((q) => `${q.collection} (${q.stale ? "marketplace did not answer; last value not used" : q.error})`).join("; ")}: not priced.`]
         : []),
       "Every figure here is in SOL. No fiat conversion is performed: this server reads no price feed, so there is no dollar figure to give and none can be produced on a following turn.",
       "Recent sales, not floors, say what buyers pay. Use get_recent_sales on the collections that matter.",

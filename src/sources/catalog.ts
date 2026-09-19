@@ -219,10 +219,10 @@ export const SOURCES: readonly SourceEntry[] = [
       "floor price and listed count for a Solana collection",
       "recent completed sales, with buyer, seller and signature",
       "what a wallet holds, as Magic Eden indexes it",
-      "a wallet's buy and sell activity on this venue",
+      "a wallet's buy and sell activity on this marketplace",
     ],
     cannotSee: [
-      "trades that happened on any other venue - a Magic Eden floor is one venue's ask, not the market's",
+      "trades that happened on any other marketplace - a Magic Eden floor is one marketplace's ask, not the market's",
       "Metaplex Core ownership history; the API returns it empty, which is why this server reads the chain instead",
       "wallets Magic Eden blocks, including its own escrow accounts",
     ],
@@ -243,24 +243,24 @@ export const SOURCES: readonly SourceEntry[] = [
     keyEnvVar: "OPENSEA_API_KEY",
     wired: true,
     answers: [
-      "a second venue's floor, owner count and royalty for the same collection",
+      "a second marketplace's floor, owner count and royalty for the same collection",
       "sales priced in something other than SOL, in the currency OpenSea reports",
       "transfers in and out of a wallet, including ones with no sale attached",
       "the full list of Solana collections OpenSea has indexed, for name search",
-      "the cheapest listing per trait value across every venue OpenSea aggregates, joined onto each deal in find_listings",
+      "the cheapest listing per trait value across every marketplace OpenSea aggregates, joined onto each deal in find_listings",
       "a 7-day floor series (start, end, low, high, change) in get_collection_stats",
       "the largest holders and their combined share of supply in get_collection_stats",
     ],
     cannotSee: [
       "anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is simply absent",
-      "which venue actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name",
+      "which marketplace actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name",
     ],
     officialDocs: "https://docs.opensea.io/reference/api-overview",
     statusPage: "https://status.opensea.io/",
     lastVerified: VERIFIED,
     fallback: "magiceden-v2",
     retention: "unknown (not documented)",
-    note: "No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and renews it weekly; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.",
+    note: "No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and replaces it on the first call made within a day of its expiry; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.",
   },
 
   // ------------------------------------------------------------- tier 3
@@ -276,7 +276,7 @@ export const SOURCES: readonly SourceEntry[] = [
       "would add: collection-wide bid depth (the exit price a seller can actually get), Rarible listings and fills",
     ],
     cannotSee: [
-      "which venue executed a fill: its platform enum has no Magic Eden or Tensor value, so a Magic Eden sale would be relabelled",
+      "which marketplace executed a fill: its platform enum has no Magic Eden or Tensor value, so a Magic Eden sale would be relabelled",
       "anything without a key: every data endpoint answers 403 keyless",
     ],
     officialDocs: "https://docs.rarible.org/",
@@ -286,7 +286,7 @@ export const SOURCES: readonly SourceEntry[] = [
     retention: "unknown (not documented)",
     note:
       "Not wired. Keys are self-serve but need a wallet, an email and allowed domains, and the free tier is 100 requests per month, which one report would spend. " +
-      "The API terms that govern caching and redistribution are referenced but not published. Revisit when a usable tier and venue attribution exist.",
+      "The API terms that govern caching and redistribution are referenced but not published. Revisit when a usable tier and marketplace attribution exist.",
   },
   {
     id: "tensor",
