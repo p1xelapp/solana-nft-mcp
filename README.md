@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/banner.png" alt="collector-mcp" width="100%" />
+<img src="assets/banner.png" alt="collector-mcp" width="100%" />
 
 # collector-mcp
 
@@ -30,7 +30,7 @@ source could not see.
 
 ## How it fits together
 
-<img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
+<img src="assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
 
 The server runs on your machine and your AI app starts it. Nothing here is a hosted
 service, and there is no account between you and the data. This picture is generated
@@ -305,8 +305,8 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 - [Questions people ask, and which ones it can answer](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md)
 - [How people use it, by persona](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
 - [Things people build with it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/BUILD-IDEAS.md)
-- [FAQ](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
 - [What can change under this server, and what happens when it does](https://github.com/p1xelapp/collector-mcp/blob/main/docs/MAINTENANCE.md)
+- [FAQ](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
 - [Contributing](https://github.com/p1xelapp/collector-mcp/blob/main/CONTRIBUTING.md) and [Security policy](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md)
 
 ## Why I built this
@@ -331,7 +331,7 @@ the marketplace. Say what you could not see. Refuse to guess.
 
 ## Running on the same decoding
 
-<a href="https://candyscan.p1xel.app"><img src="https://raw.githubusercontent.com/p1xelapp/collector-mcp/main/assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
+<a href="https://candyscan.p1xel.app"><img src="assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
 
 **[CandyScan](https://candyscan.p1xel.app)** tracks the Candy Digital collections on Solana:
 supply, holders, migrations and sales, kept current. It is where the Core decoding was written
