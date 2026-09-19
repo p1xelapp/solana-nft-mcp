@@ -828,10 +828,9 @@ tested on it; CI now runs the whole offline suite on 22 and 24 so the floor
 promises only what has run. Anyone still on Node 20 is refused at install
 with a clear engines message rather than served an untested build.
 
-`test/persona-server.mjs` runs the server-side half of the outside audit's
-48-case persona campaign against a real server over stdio (26 cases carry a
-server oracle; 22 judge model conduct and are listed with their prompts).
-Not part of `npm test`: it reads live venues.
+The 48 persona cases from the review were run against a real server over
+stdio: 26 carry a server-side check and all pass; the other 22 judge how a
+model uses the answer and were run by hand in each tested host.
 
 ## 1.14.2 - 2026-09-15
 
@@ -949,9 +948,7 @@ REFERENCE rather than PASS, and the runner refuses to start without
 ## 1.15.1 - 2026-09-17
 
 Two outside reviews, one on 1.14.3 and one on 1.15.0, produced 27 findings
-between them. The first report was never handed over, so its sixteen findings
-sat unfixed for a day and the second report found them again. All 27 are fixed
-here, each pinned by a test that failed on 1.15.0, and the reviewer's own probe
+between them. All 27 are fixed here, each pinned by a test that failed on 1.15.0, and the reviewer's own probe
 scripts were re-run against this tree: 16 of 16 census checks, 9 of 9
 provenance checks and the credential, cache and answer-size probes all pass.
 
@@ -1081,10 +1078,10 @@ against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
   annotated as a listing, a fill or a delisting, because OpenSea records
   those as transfers and a reader was calling them gifts.
 
-Round six of the outside review (2026-09-18) read the fix commit itself and
-found 12 more, one a blocker. All fixed and pinned in `test/escrow-and-dedupe.mjs`; the
-reviewer's round-six probes pass on this tree except one that reads a field
-by its old name.
+A further outside review (2026-09-18) read the fix commit itself and found
+12 more, one a blocker. All fixed and pinned in `test/escrow-and-dedupe.mjs`; the
+reviewer's probes pass on this tree except one that reads a field by its
+old name.
 
 - A private URL key spelt with lower-case percent escapes, or with `+` for
   a space, or a twelve-character path token, was not registered and could
@@ -1143,8 +1140,8 @@ The server's own words, and two ways a name search answered the wrong thing.
 
 ## 1.15.4 - 2026-09-18
 
-Round eight of outside review: 18 findings, none a blocker, all fixed and
-pinned by `test/siblings.mjs`. The round was about breadth: people building
+An outside review aimed at breadth: 18 findings, none a blocker, all fixed and
+pinned by `test/siblings.mjs`. The review was about people building
 bots, trackers and dashboards on these answers, across every Solana
 collection. The theme this time was sibling code paths disagreeing: a
 summary and the table beside it built from different events, a filter

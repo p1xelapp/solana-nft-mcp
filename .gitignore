@@ -1,9 +1,11 @@
 # Secrets - never committed (none are needed to run this server, keep it that way)
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 .dev.vars
+secrets.env
 
 # Build + deps
 node_modules/
@@ -14,51 +16,35 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
-!.env.example
-secrets.env
 
-# Private launch notes, not part of the published project
+# Raw source art (web variants live in assets/)
+IMAGES/
+
+# Release scratch (local only)
+.release/
+.audit-receipt.json
+
+# Local working notes and run reports. Kept on disk, not published.
 LAUNCH-PLAYBOOK.html
+LAUNCH-NOTES.md
 HANDOFF.md
 CHECKLIST.md
 PRE-LAUNCH-TESTS.md
 REVIEW-BRIEF-*.md
 GOAL.md
-LAUNCH-NOTES.md
-.audit-receipt.json
+NEXT-RELEASE.md
+AGENTS.md
 docs/LAUNCH-KIT.md
 docs/DEMO-SCRIPT.md
-
-# raw source art (web variants live in assets/)
-IMAGES/
-
-# release-day scratch (placeholder package, local only)
-.release/
-
-# internal launch working files - never publish
-LAUNCH-PLAYBOOK.html
-LAUNCH-NOTES.md
-CHECKLIST.md
-docs/LAUNCH-KIT.md
-battery-report.json
-sweep-report.json
-.battery-live.txt
-.battery-*.txt
-battery2-report.json
-battery3-report.json
-persona-report.json
-live-edges-report.json
-
-# Local safety copies of the tree taken before a fix wave. Never published:
-# they are whole older versions of every source file.
-BACKUPS/
-
-# Agent workflow notes that point at an internal task board no outside
-# contributor can use. Kept on disk, not published.
-AGENTS.md
-
-# Internal planning and a persona campaign that needs a report file which is
-# never published. Kept on disk, not in the repository.
-NEXT-RELEASE.md
 scripts/persona-prompts.mjs
 test/persona-server.mjs
+battery-report.json
+battery2-report.json
+battery3-report.json
+sweep-report.json
+persona-report.json
+live-edges-report.json
+.battery-*.txt
+
+# Local safety copies of the tree taken before a fix wave. Never published.
+BACKUPS/
