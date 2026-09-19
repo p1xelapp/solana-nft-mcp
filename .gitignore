@@ -48,3 +48,7 @@ battery2-report.json
 battery3-report.json
 persona-report.json
 live-edges-report.json
+
+# Local safety copies of the tree taken before a fix wave. Never published:
+# they are whole older versions of every source file.
+BACKUPS/
