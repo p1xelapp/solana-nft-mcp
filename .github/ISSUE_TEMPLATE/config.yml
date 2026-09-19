@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security problem
+    url: https://github.com/p1xelapp/collector-mcp/security/advisories/new
+    about: Report it privately here rather than in a public issue. SECURITY.md says what is in scope.
+  - name: What the server can and cannot answer
+    url: https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md
+    about: 141 questions people ask, with what each one can and cannot get.
+  - name: Why a number is missing or labelled stale
+    url: https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md
+    about: What each figure means, where it comes from, and what it deliberately refuses to claim.

@@ -57,3 +57,8 @@ records is this repository's.
 Before releasing, also refresh the bundled directory snapshot with
 `npm run snapshot` - it refuses to overwrite a good snapshot with a partial
 read, so a failed run leaves the existing data alone.
+
+## Conduct
+
+Short version: be straight with people, argue with the work rather than the person.
+The full text is in [CODE_OF_CONDUCT.md](https://github.com/p1xelapp/collector-mcp/blob/main/CODE_OF_CONDUCT.md).

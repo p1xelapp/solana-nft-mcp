@@ -1,0 +1,59 @@
+name: A number or a label looks wrong
+description: The server answered, but the answer does not match what the chain or the marketplace shows.
+labels: ["wrong answer"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the report that matters most here. A wrong answer delivered
+        confidently is the failure this server exists to prevent, so please
+        include what you checked it against.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The line the server prints on start, or the version in package.json.
+      placeholder: "1.16.0"
+    validations:
+      required: true
+  - type: textarea
+    id: call
+    attributes:
+      label: The tool call
+      description: The tool name and its arguments. Paste the JSON if you have it.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: answer
+    attributes:
+      label: What came back
+      description: The structured result, or the part of it that is wrong.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should have been, and how you know
+      description: |
+        A link to Solscan, Magic Eden or OpenSea, or a transaction signature.
+        "It looks wrong" is hard to act on; "Magic Eden shows 7.2 SOL at this
+        link" is a fix.
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Which app was running it
+      options:
+        - Claude Desktop
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - VS Code
+        - Gemini CLI
+        - Other
+        - Called the server directly
+    validations:
+      required: true

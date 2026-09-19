@@ -1,0 +1,63 @@
+name: It will not start or connect
+description: The server does not appear in your app, or it fails on startup.
+labels: ["install"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "1.16.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Which app
+      options:
+        - Claude Desktop
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - VS Code
+        - Gemini CLI
+        - Zed
+        - Cline
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Run `node --version`. The server needs 22 or newer.
+      placeholder: "v22.11.0"
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: How it is configured
+      description: The entry from your app's MCP config, with any key replaced by the word REDACTED.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What it printed
+      description: |
+        The error, or the app's MCP log. Please check it for an API key before
+        pasting: some apps echo the whole environment.
+      render: shell
+    validations:
+      required: true
