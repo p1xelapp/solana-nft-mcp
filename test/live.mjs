@@ -74,7 +74,10 @@ await client.connect(
     command: process.execPath,
     args: ["dist/index.js"],
     // Deliberately no OPENSEA_API_KEY: this check must prove the keyless path.
-    env: getDefaultEnvironment(),
+    // The two off switches are explicit, so a CI run can neither request a
+    // key nor ask npm for a version: this child reads the sources and nothing
+    // else.
+    env: { ...getDefaultEnvironment(), COLLECTOR_MCP_NO_AUTO_KEYS: "1", COLLECTOR_MCP_NO_UPDATE_CHECK: "1" },
   }),
 );
 console.log(`connected over stdio (${elapsed()})\n`);

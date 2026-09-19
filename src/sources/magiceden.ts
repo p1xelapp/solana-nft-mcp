@@ -9,7 +9,7 @@
 
 import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
-import { appendAll, assertPageSize, isCollectionSymbol, objectRows } from "../lib/shapes.js";
+import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
 import { isBase58Address } from "./solana.js";
@@ -197,6 +197,13 @@ export async function collectionMeta(symbol: string) {
   return data;
 }
 
+/** A base58 Solana transaction signature: 64 bytes, which is 86 to 88 characters. */
+const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+/** A venue label is a short plain token (magiceden_v2, mmm, tensortrade), never text. */
+const VENUE_LABEL = /^[a-z0-9_.-]{1,40}$/i;
+/** How far ahead of this machine's clock a block time may sit before it is marked. Clock skew between nodes is seconds; this is generous. */
+const FUTURE_TOLERANCE_MS = 15 * 60_000;
+
 interface MeActivity {
   signature?: string;
   type?: string;
@@ -232,7 +239,10 @@ export async function recentSales(symbol: string, limit: number) {
       assertPageSize("Magic Eden", "collection activities", batch, 100);
       if (batch.length === 0) break;
       scanned += batch.length;
-      appendAll(collected, batch.filter((a) => a.type === "buyNow" && typeof a.price === "number"));
+      // Every buyNow row is kept, priced or not: a fill with a malformed price
+      // is still a fill, and dropping it here is how a count went quietly
+      // short. The price is validated below and nulled with a count.
+      appendAll(collected, batch.filter((a) => a.type === "buyNow"));
       if (batch.length < 100) break;
     }
     return { collected, scanned };
@@ -242,6 +252,20 @@ export async function recentSales(symbol: string, limit: number) {
   // used to throw out of `toISOString` and take the other nine sales with it.
   // The guard answers null and the row is counted, not lost.
   let unusableTimestamps = 0;
+  // The same rules every other sales path applies, so this one cannot be the
+  // sibling that lets a -3 price, a role tag in a buyer field or a fill dated
+  // next year through as an ordinary completed sale.
+  // Each typed field is either its declared shape or null, and the nulls are
+  // counted beside the rows rather than hidden inside them.
+  const rejected = { prices: 0, addresses: 0, signatures: 0, venues: 0 };
+  let futureTimes = 0;
+  const futureCutoff = Date.now() + FUTURE_TOLERANCE_MS;
+  const address = (v: unknown): string | null => {
+    if (v === undefined || v === null || v === "") return null;
+    if (typeof v === "string" && isBase58Address(v)) return v;
+    rejected.addresses++;
+    return null;
+  };
   const sales = data.collected
     .slice(0, limit)
     .map((a) => {
@@ -249,19 +273,48 @@ export async function recentSales(symbol: string, limit: number) {
       if (time === null && a.blockTime !== undefined && a.blockTime !== null) unusableTimestamps++;
       return { time, a };
     })
-    .map(({ time, a }) => ({
-      time,
-      priceSol: a.price ?? null,
-      tokenMint: a.tokenMint ?? null,
-      buyer: a.buyer ?? null,
-      seller: a.seller ?? null,
-      marketplace: a.source ?? "magiceden",
-      signature: a.signature ?? null,
-    }));
+    .map(({ time, a }) => {
+      const priceSol = finitePositive(a.price);
+      if (priceSol === null && a.price !== undefined && a.price !== null) rejected.prices++;
+      let signature: string | null = null;
+      if (typeof a.signature === "string" && TX_SIGNATURE.test(a.signature)) signature = a.signature;
+      else if (a.signature !== undefined && a.signature !== null) rejected.signatures++;
+      let marketplace = "magiceden";
+      if (typeof a.source === "string" && a.source) {
+        if (VENUE_LABEL.test(a.source)) marketplace = a.source;
+        else {
+          rejected.venues++;
+          marketplace = "unknown";
+        }
+      }
+      const inFuture = time !== null && Date.parse(time) > futureCutoff;
+      if (inFuture) futureTimes++;
+      return {
+        time,
+        priceSol,
+        tokenMint: address(a.tokenMint),
+        buyer: address(a.buyer),
+        seller: address(a.seller),
+        marketplace,
+        signature,
+        ...(inFuture ? { timeNote: `block time is more than ${FUTURE_TOLERANCE_MS / 60_000} minutes ahead of this machine's clock; the venue's timestamp is relayed as sent and not treated as a completed sale time` } : {}),
+      };
+    });
+  const rejectedTotal = rejected.prices + rejected.addresses + rejected.signatures + rejected.venues;
   return {
     symbol,
     sales,
     activitiesScanned: data.scanned,
+    ...(rejectedTotal > 0 || futureTimes > 0
+      ? {
+          validation: {
+            ...rejected,
+            futureTimes,
+            note:
+              "Fields the venue served in a shape they cannot have (a price that is not a finite amount above zero, an address or signature that is not base58, a venue label that is not a plain token) are null in the row and counted here; a time ahead of this clock is kept and marked on the row.",
+          },
+        }
+      : {}),
     // "A quiet or listing-heavy market" is a claim about a real collection, so
     // it may only be made about a feed that actually carried events. A symbol
     // the venue does not list scans nothing, and that sentence made a made-up

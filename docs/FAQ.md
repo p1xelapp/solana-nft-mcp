@@ -7,8 +7,8 @@ descriptions and picks the right one, chains several when it needs to, and shows
 the result. The names exist for people writing scripts; a collector never sees them.
 
 **I do not have an address. I only know the name of the project or the player.**
-Say the name. The server searches the whole Magic Eden collection index and the OpenSea
-Solana index by name, tells you what matched, and carries the identifiers forward
+Say the name. The server searches a 30,499-collection snapshot of the Magic Eden directory, then
+asks the marketplace directly for the exact symbol, and searches the OpenSea Solana index by name, tells you what matched, and carries the identifiers forward
 itself. For a single item, the collection name plus the card number or the trait
 ("Rex", "#1390", "Aaron Judge") is enough to find it in that collection's listings.
 If a name matches several collections you get the list and a question, not a guess.

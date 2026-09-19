@@ -294,7 +294,8 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   }
   // A freeze blocks the HOLDER. A permanent transfer delegate's transfer is
   // force-approved by the program, frozen or not, so an absolute "cannot be
-  // transferred" beside that delegate was false reassurance (2026-09-18; Metaplex Core docs, permanent transfer delegate).
+  // transferred" beside that delegate was false reassurance (2026-09-18;
+  // Metaplex Core docs, permanent transfer delegate).
   const forceApproved = ptd && heldByOther(ptd) ? ` The permanent transfer delegate (${ptd.authority}) is the exception: its transfers are force-approved by the program even while the asset is frozen.` : "";
   for (const p of plugins) {
     if (p.unsupported) out.warnings.push(`${p.type} is attached (authority: ${p.authority}) and this version cannot read it: it may grant a control over transfers, freezes or burns that the picture below does not show.`);

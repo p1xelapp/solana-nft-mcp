@@ -1,5 +1,6 @@
 /**
- * Regressions for the thirteen findings of the 2026-09-15 outside audit of 1.13.0.
+ * Thirteen regressions from 2026-09-15: credentials and bodies, cancellation,
+ * evidence and identity.
  *
  * Every block asserts the CORRECT behaviour, and every one of them failed on
  * 1.13.0 before the fix: the audit's own reproductions asserted the bug was
@@ -137,6 +138,9 @@ const serverEnvBase = () => {
   // boundary used to search the escaped text for the raw string and miss.
   const canary = 'AK"QUOTED"CANARY';
   const preload = pathToFileURL(path.join(here, "helpers", "reflect-key-preload.mjs")).href;
+  // get_source_status describes the key situation and never requests a key,
+  // so the first call that issues one is the stats question with a slug; its
+  // SUCCESSFUL answer carries the reflected currency, redacted.
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", preload, path.join(root, "dist", "index.js")],
@@ -158,9 +162,9 @@ const serverEnvBase = () => {
     // Raw, JSON-escaped and URL-encoded spellings are all leaks.
     for (const form of [canary, JSON.stringify(canary).slice(1, -1), encodeURIComponent(canary)]) if (text.includes(form)) leaks.push(`${name} (${form === canary ? "raw" : "encoded"})`);
     if (text.includes("[REDACTED]")) redactedSeen = true;
-    if (name === "get_source_status" && !r.isError && /opensea[\s\S]*\[REDACTED\]/i.test(text)) successPathSeen = true;
+    if (!r.isError && /opensea[\s\S]*\[REDACTED\]/i.test(text)) successPathSeen = true;
   }
-  assert.ok(successPathSeen, "the SUCCESSFUL status answer carried the reflected currency and it was redacted there, not only in an error");
+  assert.ok(successPathSeen, "a SUCCESSFUL answer carried the reflected currency and it was redacted there, not only in an error");
   // SEC-04: the side effect the read-only hint does not cover is disclosed in
   // the server's own instructions, where every client's model reads it.
   const instructions = c.getInstructions() ?? "";
@@ -322,8 +326,8 @@ const serverEnvBase = () => {
     });
   const a = new AbortController();
   const b = new AbortController();
-  const pa = cached("audit2:shared", 1_000, fetcher, { signal: a.signal });
-  const pb = cached("audit2:shared", 1_000, fetcher, { signal: b.signal });
+  const pa = cached("credentials-and-cancellation:shared", 1_000, fetcher, { signal: a.signal });
+  const pb = cached("credentials-and-cancellation:shared", 1_000, fetcher, { signal: b.signal });
   await new Promise((r) => setTimeout(r, 5));
   assert.strictEqual(started, 1, "two waiters share one producer");
   a.abort();
@@ -341,7 +345,7 @@ const serverEnvBase = () => {
   let seenInside = null;
   const outer = new AbortController();
   await runWithSignal(outer.signal, () =>
-    cached("audit2:ambient", 1_000, async () => {
+    cached("credentials-and-cancellation:ambient", 1_000, async () => {
       seenInside = ambientSignal();
       return 1;
     }),
@@ -361,10 +365,10 @@ const serverEnvBase = () => {
       if (starts === 2) resolve("fresh");
     });
   const first = new AbortController();
-  const p1 = cached("audit2:late-join", 1_000, slow, { signal: first.signal });
+  const p1 = cached("credentials-and-cancellation:late-join", 1_000, slow, { signal: first.signal });
   first.abort();
   await assert.rejects(p1, AbortedError);
-  const p2 = cached("audit2:late-join", 1_000, slow);
+  const p2 = cached("credentials-and-cancellation:late-join", 1_000, slow);
   const late = await p2;
   assert.strictEqual(starts, 2, "the late caller got a producer of its own");
   assert.strictEqual(late.data, "fresh");
@@ -709,7 +713,7 @@ const serverEnvBase = () => {
   const other = address("some-other-asset");
   // The inner group hangs off a real outer instruction: an inner group with
   // no parent in the outer list is malformed evidence and a hole of its own
-  // (round seven, 2026-09-18), which is not what these cases test.
+  // (2026-09-18), which is not what these cases test.
   const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [{ programId: "11111111111111111111111111111111", accounts: [] }] } } });
   // (a) A decoded CreateV2 for this asset beside an undecodable Core
   // instruction on it. The undecodable one could be the transfer.
@@ -906,4 +910,4 @@ for (const dir of homes) {
     /* a temp dir that would not go is not a failed test */
   }
 }
-console.log(`\naudit2: ${passed} passed`);
+console.log(`\ncredentials-and-cancellation: ${passed} passed`);

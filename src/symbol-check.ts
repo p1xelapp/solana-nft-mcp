@@ -19,6 +19,7 @@
  */
 import * as me from "./sources/magiceden.js";
 import * as das from "./sources/das.js";
+import { BoundedMap } from "./lib/bounded.js";
 
 export type SymbolVerdict = "matches" | "different" | "unknown";
 
@@ -33,14 +34,13 @@ export interface SymbolCheck {
 }
 
 const TTL_MS = 6 * 60 * 60_000;
-const cache = new Map<string, { at: number; value: SymbolCheck }>();
+/** Verdicts taken recently. Bounded, because the symbol side of the key is whatever a caller typed. */
+const cache = new BoundedMap<SymbolCheck>(2_000, TTL_MS);
 const key = (symbol: string, collection: string) => `${symbol}::${collection}`;
 
 /** The stored verdict, when one was taken recently. Never triggers a read. */
 export function cachedSymbolCheck(symbol: string, coreCollection: string): SymbolCheck | null {
-  const hit = cache.get(key(symbol, coreCollection));
-  if (!hit || Date.now() - hit.at > TTL_MS) return null;
-  return hit.value;
+  return cache.get(key(symbol, coreCollection)) ?? null;
 }
 
 /**
@@ -52,7 +52,7 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
   const cached = cachedSymbolCheck(symbol, coreCollection);
   if (cached) return cached;
   const store = (value: SymbolCheck): SymbolCheck => {
-    cache.set(key(symbol, coreCollection), { at: Date.now(), value });
+    cache.set(key(symbol, coreCollection), value);
     return value;
   };
   let mint: string | undefined;

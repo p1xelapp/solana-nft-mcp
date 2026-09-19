@@ -4,7 +4,7 @@
 
 # collector-mcp
 
-**Every Solana collectible has a story on chain. Most tools cannot read it, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
+**The NFT APIs I tried return an empty ownership history for a Metaplex Core asset, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://github.com/p1xelapp/collector-mcp/blob/main/tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
@@ -19,9 +19,8 @@
 
 Ask an assistant about a Solana card today and it answers from memory. It will report that a
 card "never traded", because the mainstream enhanced-transaction APIs return an empty history
-for Metaplex Core assets while the transfers sit on chain the whole time. It will put a SOL
-floor next to a USDC floor and call one of them 170x the other. It will multiply a floor by an
-item count and call the result a portfolio value.
+for Metaplex Core assets while the transfers sit on chain the whole time. It will compare two
+floors quoted in two currencies as if they were one.
 
 collector-mcp hands the same assistant live, labelled data instead: the chain for supply,
 ownership, provenance and custody rules, Magic Eden without a key, and OpenSea
@@ -127,10 +126,11 @@ OpenSea stays off and every answer names it as the missing half.
   `OPENSEA_API_KEY` yourself.
 
 `SOLANA_RPC_URL` and `DAS_RPC_URL` swap in a private endpoint if one is available, and neither
-is required. A key in that URL is registered and redacted from every answer: the userinfo, any
-query field named like a credential, and any path segment of eight or more characters that is
-not a route word. A path key shorter than eight characters is the one shape not covered; put it
-in a query field or the userinfo instead.
+is required. A key in that URL is registered and redacted from every answer: the userinfo password
+and any query field named like a credential (`?api-key=`) at four characters or more, and any path
+segment of eight or more characters that is not a route word. A path key shorter than eight
+characters is the one shape not covered; put it in a query field or the userinfo instead, where
+the shorter floor applies.
 
 ## Ask it anything
 
@@ -160,8 +160,8 @@ itself, which has no ceiling, and the answer is accepted only when the marketpla
 confirms it. A single fuzzy match whose name is not what you asked for is offered as a
 candidate with the mismatch stated, never presented as the answer.
 
-Answers are also sized to arrive whole. Every client silently truncates a large tool result
-and the model then reads the surviving prefix as the complete list, so a long answer drops
+Answers are also sized to arrive whole. Clients put a ceiling on a tool result (Claude Code cuts
+at 25,000 tokens) and the model then reads the surviving prefix as the complete list, so a long answer drops
 per-row detail before it drops rows, and says in the answer what it left out and how to get
 it back.
 
@@ -175,8 +175,7 @@ it back.
 | OpenSea v2 | second-marketplace floors, sales, supply, royalty, wallet transfers | self-issued |
 
 No account, no sign-in, no telemetry, no analytics, no log of your questions. There is no signing
-code in the repository, so transacting was never written rather than merely disabled, and every
-tool declares `readOnlyHint` in the protocol.
+code in the repository, and every tool declares `readOnlyHint` in the protocol.
 
 Precisely what leaves the machine, and nothing else:
 
@@ -197,6 +196,11 @@ leaves, so even an upstream that echoes the request header back cannot carry it 
 Nothing else is written to disk. An in-memory cache of recent answers lives for the process and is
 gone when it exits, and no question you ask is written anywhere. Your AI client and its model
 provider have their own data practices, which this server cannot speak for.
+
+To remove it: `npm uninstall -g collector-mcp` if it was installed from npm, delete the clone if
+it was built from source, or remove the extension in Claude Desktop; then delete
+`~/.collector-mcp/` if it exists. npm keeps its own download cache, which
+`npm cache clean --force` clears.
 
 ## Tools
 
@@ -252,9 +256,10 @@ with the rules for presenting this data), `get_source_status` for the source cat
   catalog as planned, with the condition that would add them. Magic Eden's feed sometimes carries
   rows it labels with another execution marketplace; each answer lists the marketplaces it observed
   and never claims that a marketplace absent from those rows is absent from the market.
-- Every money figure names its currency and the API it came from in the same object
-  (`currency: "SOL"`, `source: "magiceden"`), on the summary and on every nested row, so a
-  copied row keeps its units. Counts keep their coverage beside them (`truncated`,
+- Every money figure names its currency and the API it came from (`currency: "SOL"`,
+  `source: "magiceden"`) on the summary and on every priced row. Nested rows such as top buyers
+  and per-day points carry the currency and inherit the source and coverage of the block they sit
+  in, so keep that block's `source` and coverage flags with any row you copy out. Counts keep their coverage beside them (`truncated`,
   `membershipComplete`, `nameFilter.incomplete`, `unmeasuredCycles`). A program should
   refuse to act on a row whose coverage flag says the read was partial.
 - Two error surfaces, on purpose. Input that fails a tool's schema is refused by the MCP SDK
@@ -347,6 +352,11 @@ Built and maintained by P1xel ([p1xel.app](https://p1xel.app),
 ## License
 
 MIT. See [LICENSE](https://github.com/p1xelapp/collector-mcp/blob/main/LICENSE).
+
+MIT covers this code, not the data it reads. Magic Eden and OpenSea publish API terms of their
+own (attribution, permission for commercial use and redistribution, no working around a quota
+with extra keys), and the collections' names and artwork belong to their issuers. A dashboard or
+bot you sell on top of this server has to meet those terms itself.
 
 Not affiliated with Candy Digital, MLB, DC Comics, Magic Eden or OpenSea, and
 nothing here is financial advice.

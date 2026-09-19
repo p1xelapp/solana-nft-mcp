@@ -27,6 +27,8 @@ import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 import { NotFoundError, WrongKindError } from "../lib/errors.js";
 import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
+import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
+import { BoundedMap } from "../lib/bounded.js";
 
 export const CORE_PROGRAM = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM_PROGRAM = "11111111111111111111111111111111";
@@ -902,7 +904,9 @@ export async function getProvenance(
         abandoned = selected.length - i;
         break;
       }
-      const time = sig.blockTime ? new Date(sig.blockTime * 1000).toISOString() : null;
+      // A block time Date cannot represent is a null time on this row, not a
+      // RangeError that throws the whole trail away.
+      const time = isoFromBlockTime(sig.blockTime);
       // Confirmed transactions are immutable, so a cached one is the same bytes
       // whichever node served it; only the reads that actually go out are
       // pinned.
@@ -1233,7 +1237,8 @@ export async function getProvenance(
     // history into "into escrow", a claim about an account nothing had
     // classified; and a mint whose transaction also ran a marketplace program
     // (a mint straight into a pool, then a fill to the buyer in the same
-    // transaction) made the buyer's wallet an escrow (2026-09-18).
+    // transaction) made the buyer's wallet an escrow
+    // (2026-09-18).
     let custody: "wallet" | "escrow" | "unknown" = "unknown";
     for (const e of events) {
       if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {
@@ -1480,8 +1485,9 @@ export async function walletAge(wallet: string, maxPages = 3) {
       sentinelFailed = true;
     }
   }
-  const iso = (t: number | null) => (t ? new Date(t * 1000).toISOString() : null);
-  const days = oldest ? Math.floor((Date.now() / 1000 - oldest) / 86_400) : null;
+  const iso = (t: number | null) => isoFromBlockTime(t);
+  const usableOldest = usableBlockTime(oldest);
+  const days = usableOldest ? Math.floor((Date.now() / 1000 - usableOldest) / 86_400) : null;
   return {
     transactions: count,
     transactionsExact: complete,
@@ -1534,22 +1540,20 @@ export interface AccountNature {
  * Never throws: an unreadable account returns nulls and says so, because a
  * failed read must not turn into a claim about who holds what.
  */
-const natureCache = new Map<string, { at: number; value: AccountNature }>();
+const natureCache = new BoundedMap<AccountNature>(5_000, 6 * 60 * 60_000);
 /**
  * Six hours. What OWNS an account is structural: a wallet does not become a
  * program. Without this, reading the ten largest holders of a collection cost
  * ten gated RPC calls every time anyone asked for its stats, which is 3.5
  * seconds of pacing for facts that had not changed since breakfast.
  */
-const NATURE_TTL_MS = 6 * 60 * 60_000;
-
 export async function accountNature(address: string, opts: { signal?: AbortSignal } = {}): Promise<AccountNature> {
   const hit = natureCache.get(address);
-  if (hit && Date.now() - hit.at < NATURE_TTL_MS) return hit.value;
+  if (hit) return hit;
   const keep = (value: AccountNature): AccountNature => {
     // A failed read is never cached: it would turn one bad minute into six
     // hours of "unknown" for an address the chain can answer for.
-    if (value.ownerProgram !== null) natureCache.set(address, { at: Date.now(), value });
+    if (value.ownerProgram !== null) natureCache.set(address, value);
     return value;
   };
   try {

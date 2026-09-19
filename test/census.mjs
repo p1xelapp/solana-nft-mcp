@@ -1,12 +1,13 @@
 /**
- * Regressions for the round-four and round-five outside reviews (2026-09-16
- * and 2026-09-17), 27 findings between them.
+ * Twenty-seven regressions from 2026-09-16 and 2026-09-17: a private RPC key
+ * that reached an answer, provenance rows out of order, a census that
+ * counted copies twice, venue and wallet totals, and packaging.
  *
  * Every block asserts the CORRECT behaviour and every one failed before its
  * fix. Nothing here touches the network: the two blocks that need a real
  * server spawn one over stdio with every upstream stubbed by a preload, a
- * throwaway home folder, and real sockets refused. Numbering follows the
- * round-five report, which folded the sixteen earlier findings in.
+ * throwaway home folder, and real sockets refused. Case numbers follow
+ * the report the fixes came from.
  */
 import assert from "node:assert";
 import fs from "node:fs";
@@ -734,4 +735,4 @@ const kinds = (r) => r.events.map((e) => e.event);
 }
 
 for (const h of homes) fs.rmSync(h, { recursive: true, force: true });
-console.log(`\nround5: ${passed} blocks passed`);
+console.log(`\ncensus: ${passed} blocks passed`);

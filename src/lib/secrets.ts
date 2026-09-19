@@ -51,11 +51,21 @@ function spellings(v: string): string[] {
   return [...out];
 }
 
+/**
+ * A value in a field whose NAME says it is a credential (`?api-key=`, the
+ * userinfo password) is a credential at any length a redaction can still be aimed
+ * at. The eight-character floor exists for path segments, where a short
+ * value is as likely a route word as a key; applying it to an explicitly
+ * named credential left a seven-character key unregistered and echoed
+ * (2026-09-19).
+ */
+const MIN_NAMED_SECRET_LENGTH = 4;
+
 /** Remember a credential that is about to be sent somewhere. Idempotent. False when it is too short to protect. */
-export function registerSecret(value: string | null | undefined): boolean {
+export function registerSecret(value: string | null | undefined, minLength: number = MIN_SECRET_LENGTH): boolean {
   if (typeof value !== "string") return false;
   const v = value.trim();
-  if (v.length < MIN_SECRET_LENGTH) return false;
+  if (v.length < minLength) return false;
   if (!secrets.has(v)) secrets.set(v, spellings(v));
   return true;
 }
@@ -69,7 +79,7 @@ export function registerSecret(value: string | null | undefined): boolean {
  * never treated as a secret. Only the URL's credential parts are registered,
  * so an ordinary path like `/v2` or `/rpc` is not redacted from every answer.
  *
- * The round-four review (2026-09-16) mocked an RPC that reflected the
+ * A test on 2026-09-16 mocked an RPC that reflected the
  * `api-key` query value inside a JSON-RPC error message; the message became
  * `sourceErrors["solana-rpc"]` on a SUCCESSFUL `get_asset` answer. The host-
  * only endpoint label had never been the leak; the upstream's own text was.
@@ -88,18 +98,22 @@ export function registerUrlCredentials(url: string | null | undefined): number {
   // value: `searchParams` decodes, and re-encoding it produced upper-case
   // escapes only, so a key the URL spelt with %2f or with + for a space was
   // never protected (2026-09-18).
-  const reg = (raw: string) => {
-    if (registerSecret(raw)) n++;
+  const reg = (raw: string, minLength: number) => {
+    if (registerSecret(raw, minLength)) n++;
     let decoded = raw;
     try {
       decoded = decodeURIComponent(raw.replace(/\+/g, "%20"));
     } catch {
       /* not percent-encoded; the raw form is registered above */
     }
-    if (decoded !== raw && registerSecret(decoded)) n++;
+    if (decoded !== raw && registerSecret(decoded, minLength)) n++;
   };
-  if (u.username) reg(u.username);
-  if (u.password) reg(u.password);
+  // The password is the credential and is protected from four characters.
+  // The username is a label as often as a secret, and a four-letter one
+  // (`data`, `user`) redacted out of every answer would eat ordinary words,
+  // so it keeps the general floor.
+  if (u.username) reg(u.username, MIN_SECRET_LENGTH);
+  if (u.password) reg(u.password, MIN_NAMED_SECRET_LENGTH);
   // Query values: only fields whose NAME says credential. Registering every
   // long value turned `commitment=confirmed` into a secret and redacted the
   // word "confirmed" out of every answer.
@@ -109,7 +123,15 @@ export function registerUrlCredentials(url: string | null | undefined): number {
     const eq = pair.indexOf("=");
     const key = eq < 0 ? pair : pair.slice(0, eq);
     const value = eq < 0 ? "" : pair.slice(eq + 1);
-    if (value && CREDENTIAL_FIELD.test(decodeURIComponent(key.replace(/\+/g, " ")))) reg(value);
+    // A field name with a broken escape (`%XX=`) used to throw out of the
+    // decoder before any request was sent; the raw spelling is judged instead.
+    let fieldName = key.replace(/\+/g, " ");
+    try {
+      fieldName = decodeURIComponent(fieldName);
+    } catch {
+      /* judged as written */
+    }
+    if (value && CREDENTIAL_FIELD.test(fieldName)) reg(value, MIN_NAMED_SECRET_LENGTH);
   }
   // Path segments: on a configured endpoint, every segment that is not a
   // route word is a credential. The earlier rule kept only a segment that
@@ -119,7 +141,7 @@ export function registerUrlCredentials(url: string | null | undefined): number {
   // URL then put it in a successful result (2026-09-18).
   // A route word is a known path component or a version tag; the rest is
   // registered in its raw and decoded spellings.
-  for (const seg of u.pathname.split("/")) if (isPathCredential(seg)) reg(seg);
+  for (const seg of u.pathname.split("/")) if (isPathCredential(seg)) reg(seg, MIN_SECRET_LENGTH);
   return n;
 }
 

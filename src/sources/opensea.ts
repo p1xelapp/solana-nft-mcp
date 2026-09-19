@@ -110,12 +110,21 @@ const ISSUE_COOLDOWN_MAX_MS = 24 * 60 * 60_000;
 const usable = (k: StoredKey | null): k is StoredKey =>
   Boolean(k?.key) && Date.parse(k?.expiresAt ?? "") - Date.now() > REFRESH_WINDOW_MS;
 
+/** A key file is a few hundred bytes. Anything larger is not one, and is not parsed. */
+const MAX_KEY_FILE_BYTES = 16 * 1024;
+/** A key is a short token. */
+const MAX_KEY_LENGTH = 512;
+
 function loadStoredKey(): StoredKey | null {
   if (diskRead) return memoryKey;
   diskRead = true;
   try {
+    // Only a regular file of a plausible size is read: a symlink, a directory
+    // or a 10 MB file wearing the name is treated as no cached key at all.
+    const st = fs.lstatSync(keyFile());
+    if (!st.isFile() || st.size > MAX_KEY_FILE_BYTES) return memoryKey;
     const parsed = JSON.parse(fs.readFileSync(keyFile(), "utf8")) as Partial<StoredKey>;
-    if (typeof parsed.key === "string" && parsed.key && typeof parsed.expiresAt === "string" && Number.isFinite(Date.parse(parsed.expiresAt))) {
+    if (typeof parsed.key === "string" && parsed.key && parsed.key.length <= MAX_KEY_LENGTH && typeof parsed.expiresAt === "string" && Number.isFinite(Date.parse(parsed.expiresAt))) {
       memoryKey = {
         key: parsed.key,
         issuedAt: typeof parsed.issuedAt === "string" ? parsed.issuedAt : new Date(0).toISOString(),
@@ -136,10 +145,17 @@ function loadStoredKey(): StoredKey | null {
 function storeKey(k: StoredKey): void {
   try {
     fs.mkdirSync(keyDir(), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(keyFile(), `${JSON.stringify(k, null, 2)}\n`, { mode: 0o600 });
-    // mkdir/writeFile only apply the mode when they CREATE; an existing file
-    // from a looser umask would keep its old permissions.
-    fs.chmodSync(keyFile(), 0o600);
+    // Written to a private temporary file and renamed into place. Writing
+    // the destination in place followed whatever the name pointed at: a
+    // hard link or a symlink planted there would have had the key written
+    // through it into an unrelated file. A rename replaces the directory
+    // entry and follows nothing.
+    const tmp = `${keyFile()}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(k, null, 2)}\n`, { mode: 0o600 });
+    // writeFile only applies the mode when it CREATES; a looser umask would
+    // otherwise leave the file readable.
+    fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, keyFile());
   } catch {
     /* the key still works for this process; it is simply not remembered */
   }

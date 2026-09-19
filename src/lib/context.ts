@@ -3,7 +3,7 @@
  *
  * A client that cancels a request (a person hit stop, a host timed out) tells
  * this server through the SDK's per-request `AbortSignal`. Measured on
- * 2026-09-15 by an outside review: after the client aborted a collection sales
+ * 2026-09-15 in testing: after the client aborted a collection sales
  * read, the server still fetched offsets 500 and 1000 from Magic Eden with
  * nobody waiting, because the signal reached the handler and stopped there.
  * Threading it by hand through every source, every page loop and every gate

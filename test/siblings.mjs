@@ -1,5 +1,8 @@
 /**
- * Regressions for the round-eight outside review (2026-09-18), 18 findings.
+ * Eighteen regressions from 2026-09-18: sibling code paths that disagreed (a
+ * summary and its table built from different events, a filter applied in one
+ * mode and ignored in another, a rule enforced in one reader and missing
+ * from its twin).
  * Every block asserts the correct behaviour and every one failed before its
  * fix. Nothing here touches the network: pure functions are called directly,
  * and the three cases that need a whole tool handler run a child server whose
@@ -306,7 +309,7 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
   await c.connect(transport);
   const call = async (name, args) => (await c.callTool({ name, arguments: args }, undefined, { timeout: 30_000 })).structuredContent;
 
-  const hunt = await call("find_listings", { symbol: "r8-fixture", lowestSerials: true, nameContains: "Ohtani" });
+  const hunt = await call("find_listings", { symbol: "sibling-fixture", lowestSerials: true, nameContains: "Ohtani" });
   assert.strictEqual(hunt.mode, "lowest-serials");
   assert.strictEqual(hunt.filters.nameContains, "Ohtani");
   assert.ok(hunt.lowestSerials.length >= 1, JSON.stringify(hunt).slice(0, 300));
@@ -320,7 +323,7 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
   assert.strictEqual(hunt.lowestSerials[0].currency, "SOL");
   assert.strictEqual(hunt.floor.currency, "SOL");
 
-  const floors = await call("get_floor_prices", { symbols: ["r8-fixture"] });
+  const floors = await call("get_floor_prices", { symbols: ["sibling-fixture"] });
   assert.strictEqual(floors.floors[0].currency, "SOL");
   assert.strictEqual(floors.floors[0].source, "magiceden");
 
@@ -343,4 +346,4 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
   ok("R8-03/05/06/15/16 serial hunt filters by name and refuses a malformed ask; floors carry currency and source; counters are not burns; OpenSea always has a status");
 }
 
-console.log(`round8: ${passed} blocks pass`);
+console.log(`siblings: ${passed} blocks pass`);

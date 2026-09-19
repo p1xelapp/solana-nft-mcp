@@ -100,7 +100,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
   await saveSeen(seen);                     // save per item, not per batch:
 }                                            // a crash mid-batch must not skip`,
     beforeShipping: [
-      "Kill the process mid-batch and restart it. No sale should be double-posted or skipped.",
+      "Kill the process mid-batch and restart it. Nothing may be skipped. The one sale posted just before the crash may repeat, because post-then-save is at-least-once; if the channel cannot tolerate that single repeat, make the receiver idempotent on the identity.",
       "Point it at a deliberately misspelled collection symbol. It must fail loudly, not go quiet.",
       "Let it run through a period with zero sales and confirm it stays silent without erroring.",
       "Confirm the steady-state request rate against the source's published limit, with headroom.",

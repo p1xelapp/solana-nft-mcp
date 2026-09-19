@@ -50,8 +50,7 @@ something it simply could not see.
 plain Solana RPC and its asset index. OpenSea is the one source that wants a key, and the
 server asks OpenSea for a free one itself rather than asking you. Requests are paced per source and cached, because being a polite
 client is the only thing that keeps a keyless server viable. There is no signing code in the
-repository, so the ability to move anything was never written rather than merely disabled. It runs
-on the user's own machine, keeps no wallet data or telemetry (only the OpenSea key it issues
+repository. It runs on your own machine, keeps no wallet data or telemetry (only the OpenSea key it issues
 itself, stored locally), and asks for no account.
 
 **Refuse to guess.** The stats block will not rank a SOL floor against a USDC floor. No currency
@@ -61,7 +60,9 @@ empty history is reported as unsupported or unread, never as untraded.
 
 ### What was tested
 
-Every tool and prompt is exercised offline against captured feeds, including the wallet logic and the prompt-injection defence, and again live against the real endpoints with a real provenance trace, a real wallet and hostile inputs. The design was put through repeated hostile review rounds, and CI runs the offline suite plus a full-history secrets scan on every push. A weekly live check re-reads the real sources, and the hardest piece - extracting the new owner from a Core transfer whose account layout varies between two shapes - was verified against a live 36-pack auction, where all 36 packs traced to their winners with none left untraced.
+Every tool and prompt is exercised offline against captured feeds, including the wallet logic and the prompt-injection defence, and again live against the real endpoints with a real provenance trace, a real wallet and hostile inputs. Every defect found in review has a regression test that failed before its fix. CI runs the offline suite plus a full-history secrets scan on every push, and a weekly live check re-reads the real sources.
+
+The hardest piece was extracting the new owner from a Core transfer whose account layout varies between two shapes. I verified it against a live 36-pack auction: all 36 packs traced to their winners, none left untraced.
 
 ### Why that is worth trusting
 

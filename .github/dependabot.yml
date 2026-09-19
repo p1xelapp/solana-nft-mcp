@@ -9,8 +9,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "09:00"
-      timezone: America/Boise
+      time: "15:00"
+      timezone: Etc/UTC
     open-pull-requests-limit: 3
     # A version published in the last week is not proposed yet. Compromised
     # releases are usually caught and pulled within days, and nothing here is

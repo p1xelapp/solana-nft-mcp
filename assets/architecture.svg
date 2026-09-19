@@ -10,7 +10,7 @@
   </defs>
 
   <rect width="1180" height="432" fill="#04050a"/>
-  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">collector-mcp 1.16.0</text>
+  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">collector-mcp 1.16.1</text>
   <text x="24" y="52" font-size="11.5" fill="#5f6883">what runs where, and what it is allowed to do</text>
 
   <!-- the client -->

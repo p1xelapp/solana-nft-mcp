@@ -216,7 +216,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** a project or analyst who wants to know when two sources disagree, on purpose.
 **Ask:** "Compare supply, floor and listed counts per marketplace and flag every disagreement."
 **Server supplies:** chain supply, per-marketplace floors and counts, and the comparability verdict.
-**You build:** the job, the history table, and the alert. Disagreement is the product here, so store both numbers rather than picking one, and read the provider's usage graph 24 and 48 hours after you switch it on.
+**You build:** the job, the history table, and the alert. Disagreement is the product here, so store both numbers rather than picking one, and look at what the job actually cost after its first day or two.
 **Time:** a weekend, including testing the comparison job.
 
 ---
@@ -227,5 +227,11 @@ the time to something that works and survives a restart, not the time to a scree
 panel is usually a source outage, and a zero count is often a misspelled symbol. Show the last
 good value with its age, or say which failure happened.
 
-**Give every scheduled job an owner, a cost and an off date.** Reads here are free. Storage,
-hosting and your own database writes are not, and a job nobody remembers is the one that bills.
+**A job you forget about is the one that bills you.** Reads here are free. Storage, hosting and
+your own database writes are not, so write down what each scheduled job costs and when it stops.
+
+**MIT covers this server, not the data.** Magic Eden and OpenSea publish API terms of their own:
+[Magic Eden](https://docs.magiceden.io/reference/solana-overview) asks for attribution on a free,
+rate-limited allowance; [OpenSea](https://opensea.io/developer-terms) conditions commercial use and
+redistribution on permission and forbids working around a quota with extra keys. A product you sell
+on this data has to meet those terms; the code licence does not do it for you.

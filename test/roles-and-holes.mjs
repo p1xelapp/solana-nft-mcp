@@ -1,5 +1,7 @@
 /**
- * Regressions for the round-seven outside review (2026-09-18), 14 findings.
+ * Fourteen regressions from 2026-09-18: a fact read from the chain being
+ * turned into a story it does not tell (issuer roles, custody across holes,
+ * short credentials, unknown plugins).
  * Every block asserts the correct behaviour and every one failed before its
  * fix. Nothing here touches the network.
  */
@@ -61,9 +63,9 @@ const un58 = (s) => {
 };
 const str = (s) => { const b = Buffer.from(s); const n = Buffer.alloc(4); n.writeUInt32LE(b.length); return Buffer.concat([n, b]); };
 /** A CollectionV1 account with the given update authority, base64. */
-const collectionB64 = (authority) => { const n = Buffer.alloc(8); n.writeUInt32LE(10); n.writeUInt32LE(10, 4); return Buffer.concat([Buffer.from([5]), un58(authority), str("Round seven"), str("https://example.invalid/c"), n]).toString("base64"); };
+const collectionB64 = (authority) => { const n = Buffer.alloc(8); n.writeUInt32LE(10); n.writeUInt32LE(10, 4); return Buffer.concat([Buffer.from([5]), un58(authority), str("Roles fixture"), str("https://example.invalid/c"), n]).toString("base64"); };
 /** An AssetV1 account owned by `owner`, in `col` when given, base64. */
-const assetB64 = (owner, col) => Buffer.concat([Buffer.from([1]), un58(owner), Buffer.from([col ? 2 : 0]), ...(col ? [un58(col)] : []), str("Round seven item"), str("https://example.invalid/a"), Buffer.from([0])]).toString("base64");
+const assetB64 = (owner, col) => Buffer.concat([Buffer.from([1]), un58(owner), Buffer.from([col ? 2 : 0]), ...(col ? [un58(col)] : []), str("Roles fixture item"), str("https://example.invalid/a"), Buffer.from([0])]).toString("base64");
 
 const CORE = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
 const SYSTEM = "11111111111111111111111111111111";
@@ -74,7 +76,7 @@ const AUTH = address("r7-authority");
 const FIRST = address("r7-first");
 const LAST = address("r7-last");
 const b58data = (bytes) => base58(bytes);
-const createIx = () => ({ programId: CORE, accounts: [MINT, COL, AUTH, PAYER, FIRST, CORE, SYSTEM, CORE], data: b58data(Buffer.concat([Buffer.from([20, 0]), str("Round seven item"), str("https://example.invalid/a"), Buffer.from([0, 0])])) });
+const createIx = () => ({ programId: CORE, accounts: [MINT, COL, AUTH, PAYER, FIRST, CORE, SYSTEM, CORE], data: b58data(Buffer.concat([Buffer.from([20, 0]), str("Roles fixture item"), str("https://example.invalid/a"), Buffer.from([0, 0])])) });
 const transferIx = (to) => ({ programId: CORE, accounts: [MINT, COL, PAYER, FIRST, to, SYSTEM, CORE], data: b58data(Buffer.from([14, 0])) });
 const tx = (ixs, inner = []) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: ["Program log: Instruction: TransferV1"], innerInstructions: inner }, transaction: { message: { accountKeys: [], instructions: ixs } } });
 /** One signature, one transaction, the asset in COL whose authority is `authority` (or the read fails). */
@@ -283,4 +285,4 @@ const kinds = (r) => r.events.map((e) => e.event);
   ok("R7-14 'SMB Gen 2' finds Gen2");
 }
 
-console.log(`\nround7: ${passed} blocks passed`);
+console.log(`\nroles-and-holes: ${passed} blocks passed`);

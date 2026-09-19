@@ -541,8 +541,7 @@ export function summarizeSales(
     );
   }
   // The feed is Magic Eden's API. It has been observed carrying rows labelled
-  // with other execution venues (Tensor fills on Claynosaurz, round-eight
-  // review, 2026-09-18), so "Tensor is not in it" was false as a rule, and
+  // with other execution venues (Tensor fills on Claynosaurz, 2026-09-18), so "Tensor is not in it" was false as a rule, and
   // "Tensor is in it" would claim a coverage nobody has established. The
   // honest statement is what was observed and what was not checked.
   const observedVenues = [...venues.keys()];
@@ -984,6 +983,98 @@ export const matchesName = (listing: MeListing, needle: string): boolean => {
   const d = nameMatchDetail(listing, needle);
   return d.inItemName || d.nameTrait?.matched === true;
 };
+
+export interface TraitFilter {
+  traitType: string;
+  value: unknown;
+}
+
+/**
+ * Whether a returned listing actually carries every trait it was filtered by.
+ *
+ * The filter is sent to the marketplace, and the marketplace's answer was
+ * trusted as is: a Grade=10 filter returned a row whose own metadata said
+ * Grade 9, under a result that repeated the Grade=10 filter (2026-09-19). Each returned row is now checked against each requested trait.
+ *
+ * Normalisation, so that "Grade" and "grade", "10" and 10, and stray
+ * whitespace all compare as the same thing: trait names and values are
+ * cleaned, trimmed, lower-cased and whitespace-collapsed; two values that
+ * both read as finite numbers compare numerically.
+ *
+ * - `match`: every requested trait is present with the requested value.
+ * - `mismatch`: a requested trait is present with a different value.
+ * - `unverified`: a requested trait is absent from the row's metadata, and
+ *   no other trait mismatches. The marketplace may filter on data it does
+ *   not return; the row is kept and counted rather than judged.
+ */
+export type TraitVerdict = "match" | "mismatch" | "unverified";
+
+const normTrait = (v: unknown): string => clean(String(v)).trim().toLowerCase().replace(/\s+/g, " ");
+const sameTraitValue = (a: string, b: string): boolean => {
+  if (a === b) return true;
+  const x = Number(a);
+  const y = Number(b);
+  return a !== "" && b !== "" && Number.isFinite(x) && Number.isFinite(y) && x === y;
+};
+
+export function traitFilterVerdict(listing: MeListing, filters: readonly TraitFilter[] | undefined): TraitVerdict {
+  if (!filters || filters.length === 0) return "match";
+  let unverified = false;
+  for (const f of filters) {
+    const wantType = normTrait(f.traitType);
+    const wantValue = normTrait(f.value);
+    let present = false;
+    let matched = false;
+    for (const t of listing?.token?.attributes ?? []) {
+      if (!t || typeof t.trait_type !== "string" || normTrait(t.trait_type) !== wantType) continue;
+      present = true;
+      const raw: unknown = t.value;
+      if ((typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") && sameTraitValue(normTrait(raw), wantValue)) {
+        matched = true;
+        break;
+      }
+    }
+    if (present && !matched) return "mismatch";
+    if (!present) unverified = true;
+  }
+  return unverified ? "unverified" : "match";
+}
+
+export interface TraitCheck<T> {
+  rows: T[];
+  verified: number;
+  /** Rows the marketplace returned under the filter whose own metadata contradicts it. Excluded. */
+  mismatchedExcluded: number;
+  /** Rows whose metadata does not carry the filtered trait at all. Kept, because absence is not contradiction. */
+  unverifiedKept: number;
+  policy: string;
+}
+
+/** Apply `traitFilterVerdict` to a page of listings: drop contradictions, keep and count the unverifiable. */
+export function checkTraitFilters<T extends MeListing>(rows: readonly T[], filters: readonly TraitFilter[] | undefined): TraitCheck<T> {
+  const out: T[] = [];
+  let verified = 0;
+  let mismatchedExcluded = 0;
+  let unverifiedKept = 0;
+  for (const row of rows) {
+    const v = traitFilterVerdict(row, filters);
+    if (v === "mismatch") {
+      mismatchedExcluded++;
+      continue;
+    }
+    if (v === "unverified") unverifiedKept++;
+    else verified++;
+    out.push(row);
+  }
+  return {
+    rows: out,
+    verified,
+    mismatchedExcluded,
+    unverifiedKept,
+    policy:
+      "Each returned row was checked against every requested trait (names and values compared case-insensitively, numbers numerically). A row whose own metadata contradicts the filter is excluded and counted; a row whose metadata does not carry the trait is kept and counted as unverified.",
+  };
+}
 
 
 

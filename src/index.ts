@@ -33,7 +33,7 @@ import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeil
 import * as das from "./sources/das.js";
 import { explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
-import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter, nameMatchDetail, matchesName } from "./market.js";
+import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter, nameMatchDetail, matchesName, checkTraitFilters } from "./market.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, nameForSymbol } from "./names.js";
 import { classifyAirdrop, summariseAirdrops } from "./spam.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
@@ -638,7 +638,7 @@ registerTool(
       "Use when the user wants to BUILD something with collectible data - a sales bot, a floor " +
       "dashboard, a provenance page, a wallet tracker, a pack-pull watcher - rather than just look a " +
       "number up. Returns the verified endpoints and their real rate limits, a runnable skeleton, the " +
-      "steady-state running cost, a pre-launch checklist, and most importantly the specific ways this " +
+      "steady-state running cost, a pre-launch checklist, and the specific ways this " +
       "kind of integration fails SILENTLY. The pitfalls come from production incidents on live " +
       "trackers (a feed capped too low silently dropped 8,409 real records; an idle two-minute cron " +
       "cost $180 in a month) and are not in any API documentation. Read this BEFORE writing " +
@@ -835,7 +835,7 @@ registerTool(
         .max(120)
         .regex(/^[a-z0-9-]+$/i, "OpenSea collection slug")
         .optional()
-        .describe("Optional OpenSea slug for a cross-marketplace view (requires OPENSEA_API_KEY)"),
+        .describe("Optional OpenSea slug for a cross-marketplace view. OpenSea is read with the key the server issues itself, or OPENSEA_API_KEY if set. The slug's collection is checked against this one before floors are ranked."),
     },
   },
   guard(async ({ collection, openseaSlug }) => {
@@ -877,7 +877,7 @@ registerTool(
           // tell (2026-09-18).
           sizeDelta: acct.numMinted - acct.currentSize,
           sizeDeltaNote:
-            "numMinted minus currentSize. Burns and closures lower it, but so does an asset moved out to another collection, and an asset moved in raises currentSize without a mint. A burn count needs decoded history (get_asset_provenance), not these two counters.",
+            "numMinted minus currentSize. A burn or a closure lowers currentSize and so raises this number, but so does an asset moved out to another collection, and an asset moved in raises currentSize without a mint and lowers it. A burn count needs decoded history (get_asset_provenance), not these two counters.",
           source: "solana-rpc (Metaplex Core account, decoded locally)",
         };
       }
@@ -1043,10 +1043,58 @@ registerTool(
     if (typeof mkt?.floorPriceSol === "number" && mkt.floorPriceSol > 0) {
       quotes.push({ source: "magiceden", value: mkt.floorPriceSol, currency: "SOL", stale: Boolean(mkt.stale) });
     }
-    const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean } | undefined;
-    if (osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency) {
-      quotes.push({ source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, stale: Boolean(osBlock.stale) });
+    const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean; onchainCollection?: string | null } | undefined;
+    const osQuote: FloorQuote | null =
+      osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency
+        ? { source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, stale: Boolean(osBlock.stale) }
+        : null;
+    // A slug names an OpenSea collection. Nothing about it proves that is
+    // THIS collection, and a caller can pass any slug: one that resolved to
+    // another on-chain address had its floor ranked against this
+    // collection's as though the two were one market (2026-09-19). Same
+    // currency does not establish same identity. OpenSea's own record of the
+    // collection's chain address is compared with the requested one before
+    // the two floors are allowed to be ranked; a conflict shows both floors
+    // and refuses the comparison, and an explicit slug whose identity cannot
+    // be checked is shown beside, not ranked.
+    let identity: { verdict: "verified" | "verified-by-source" | "conflict" | "unverified"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string } | null = null;
+    if (osBlock && slug) {
+      const osChain = typeof osBlock.onchainCollection === "string" && sol.isBase58Address(osBlock.onchainCollection) ? osBlock.onchainCollection : null;
+      const requested = coreAddress ?? null;
+      if (osChain && requested) {
+        identity =
+          osChain === requested
+            ? { verdict: "verified", slug, requestedCollection: requested, openseaCollection: osChain, note: "OpenSea's record of this slug names the same on-chain collection that was asked about." }
+            : {
+                verdict: "conflict",
+                slug,
+                requestedCollection: requested,
+                openseaCollection: osChain,
+                note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, which is not ${requested}. The OpenSea figures describe a different collection and are shown for the record only; they are not compared with this collection's.`,
+              };
+      } else if (openseaSlug) {
+        identity = {
+          verdict: "unverified",
+          slug,
+          requestedCollection: requested,
+          openseaCollection: osChain,
+          note: `The slug "${slug}" was supplied by the caller and ${osChain ? "the requested collection has no on-chain address to compare it with" : "OpenSea's record of it carries no Solana collection address"}, so whether it is the same collection could not be checked. The OpenSea floor is shown beside this collection's, not ranked against it.`,
+        };
+      } else {
+        identity = {
+          verdict: "verified-by-source",
+          slug,
+          requestedCollection: requested,
+          openseaCollection: osChain,
+          note: slugNote
+            ? "The slug was found from this collection's own on-chain address or name, which is the identity check."
+            : "The slug comes from the curated registry entry for this collection.",
+        };
+      }
+      (out.opensea as Record<string, unknown>).identity = identity;
     }
+    const rankable = !identity || identity.verdict === "verified" || identity.verdict === "verified-by-source";
+    if (osQuote && rankable) quotes.push(osQuote);
 
     const extra: string[] = [];
     if (out.onchain && mkt?.floorPriceSol !== undefined) {
@@ -1054,7 +1102,22 @@ registerTool(
         "On-chain supply counts every asset that exists; a marketplace's listed count only covers what is currently for sale on that marketplace. They answer different questions and will not match.",
       );
     }
-    if (quotes.length > 0) out.reconciliation = reconcileFloors(quotes, extra);
+    if (quotes.length > 0 || osQuote) {
+      const rec = reconcileFloors(quotes, extra);
+      out.reconciliation =
+        osQuote && !rankable && identity
+          ? {
+              ...rec,
+              comparable: false,
+              verdict:
+                identity.verdict === "conflict"
+                  ? `Not compared: the OpenSea slug names a different on-chain collection (${identity.openseaCollection}), so its floor of ${osQuote.value} ${osQuote.currency} is not this collection's floor. Magic Eden's ${quotes[0] ? `${quotes[0].value} ${quotes[0].currency}` : "floor was not returned"}.`
+                  : `Not ranked: the OpenSea slug was supplied by the caller and its collection identity could not be verified. Both floors are listed; ${identity.note}`,
+              floors: [...rec.floors, osQuote],
+              identity,
+            }
+          : rec;
+    }
     out.readThis = NOT_ADVICE;
     return ok(out);
   }),
@@ -1828,7 +1891,7 @@ registerTool(
     inputSchema: {
       wallet: addressSchema.describe("Wallet address"),
       pages: z.number().int().finite().min(1).max(5).optional().describe("Magic Eden activity pages of 100 events, newest first. Default 3."),
-      includeOpenSea: z.boolean().optional().describe("Add OpenSea sales + transfers when OPENSEA_API_KEY is set. Default true."),
+      includeOpenSea: z.boolean().optional().describe("Add OpenSea sales and transfers when OpenSea can be read (self-issued key or OPENSEA_API_KEY). Default true."),
     },
   },
   guard(async ({ wallet, pages = 3, includeOpenSea = true }) => {
@@ -2131,7 +2194,10 @@ registerTool(
       // be accepted and ignored, so "lowest Ohtani serial" returned a Judge
       // card (2026-09-18).
       const serialNeedle = nameContains ? clean(nameContains).toLowerCase() : null;
-      const nameMatched = serialNeedle ? seen.filter((l) => matchesName(l, serialNeedle)) : seen;
+      // Same trait recheck as ordinary mode: the marketplace's filter is
+      // trusted for the walk, never for the row.
+      const serialTraitCheck = checkTraitFilters(seen, traits);
+      const nameMatched = serialNeedle ? serialTraitCheck.rows.filter((l) => matchesName(l, serialNeedle)) : serialTraitCheck.rows;
       // A price is money only when it is a finite amount above zero, the same
       // rule ordinary mode and every sales figure use. A -2 ask became a
       // -2x floor multiple here.
@@ -2164,7 +2230,13 @@ registerTool(
         collectionName: nameForSymbol(symbol),
         symbolKnown: true,
         mode: "lowest-serials",
-        filters: { traits: traits ?? [], nameContains: nameContains ?? null },
+        filters: {
+          traits: traits ?? [],
+          nameContains: nameContains ?? null,
+          ...(traits && traits.length > 0
+            ? { traitCheck: { verified: serialTraitCheck.verified, mismatchedExcluded: serialTraitCheck.mismatchedExcluded, unverifiedKept: serialTraitCheck.unverifiedKept, policy: serialTraitCheck.policy } }
+            : {}),
+        },
         lowestSerials: rows,
         coverage: {
           listingsRead: seen.length,
@@ -2249,10 +2321,14 @@ registerTool(
     const attrsRes = await attrsPromise;
     const attrs = attrsRes.ok ? attrsRes.value : null;
     const searchTruncated = stopReason !== "end";
+    // The marketplace filtered the book; each returned row is checked against
+    // the filter anyway, and a row whose own metadata contradicts it is
+    // dropped and counted rather than presented under the filter it fails.
+    const traitCheck = checkTraitFilters(kept, traits);
     // Both sides of a discount have to be current, and a trait index that
     // refused a refresh is not. The comparison is either made from two live
     // reads or not made at all, with the read times named.
-    const deals = bestDeals(kept.slice(0, limit), attrs?.attributes ?? [], {
+    const deals = bestDeals(traitCheck.rows.slice(0, limit), attrs?.attributes ?? [], {
       listingsStale: listings.stale,
       listingsReadAt: listings.cachedAt,
       traitFloorsStale: attrs === null || attrs.stale,
@@ -2261,9 +2337,28 @@ registerTool(
     // Second venue's trait floors, joined onto each deal's traits by name.
     // OpenSea aggregates every marketplace it indexes, so its trait floor can
     // sit below Magic Eden's; both are shown, labelled, never merged.
-    const slug = openseaSlug ?? REGISTRY.find((e) => e.meSymbol === symbol)?.openseaSlug;
+    const registryEntry = REGISTRY.find((e) => e.meSymbol === symbol);
+    const slug = openseaSlug ?? registryEntry?.openseaSlug;
     let openSeaTraitFloors: Record<string, unknown> | undefined;
-    if (slug && (await os.openSeaAvailable())) {
+    // A caller-supplied slug is checked against this collection's on-chain
+    // address before its trait floors are joined onto these rows; a slug
+    // that names another collection would put a stranger's floors beside
+    // every trait (2026-09-19). A registry slug is curated and joins as is.
+    let slugIdentity: { verdict: "verified" | "conflict" | "unverified" | "registry"; note: string } = { verdict: "registry", note: "slug from the curated registry entry for this collection" };
+    if (openseaSlug && slug && (await os.openSeaAvailable())) {
+      const detail = await os.collectionDetail(slug).catch(() => null);
+      const osChain = detail?.onchainCollection && sol.isBase58Address(detail.onchainCollection) ? detail.onchainCollection : null;
+      const expected = registryEntry?.coreCollection ?? null;
+      if (osChain && expected) {
+        slugIdentity =
+          osChain === expected
+            ? { verdict: "verified", note: "OpenSea's record of the slug names this collection's on-chain address" }
+            : { verdict: "conflict", note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, not ${expected}; its trait floors describe another collection and were not joined` };
+      } else {
+        slugIdentity = { verdict: "unverified", note: `whether "${slug}" is this collection could not be checked (${osChain ? "no on-chain address is known for this symbol" : "OpenSea's record carries no Solana collection address"}); its trait floors were not joined` };
+      }
+    }
+    if (slug && slugIdentity.verdict !== "conflict" && slugIdentity.verdict !== "unverified" && (await os.openSeaAvailable())) {
       try {
         const tf = await os.traitFloors(slug);
         for (const d of deals.deals) {
@@ -2272,10 +2367,12 @@ registerTool(
             (t as unknown as Record<string, unknown>).openSeaFloor = hit ? { price: hit.floor, currency: hit.currency } : null;
           }
         }
-        openSeaTraitFloors = { slug, count: tf.count, stale: tf.stale, cachedAt: tf.cachedAt, note: "Each deal's traits carry openSeaFloor: OpenSea's cheapest listing with that trait across the marketplaces it aggregates, in that listing's currency. traitFloorSol is Magic Eden's. Compare within one currency only." };
+        openSeaTraitFloors = { slug, identity: slugIdentity, count: tf.count, stale: tf.stale, cachedAt: tf.cachedAt, note: "Each deal's traits carry openSeaFloor: OpenSea's cheapest listing with that trait across the marketplaces it aggregates, in that listing's currency. traitFloorSol is Magic Eden's. Compare within one currency only." };
       } catch (e) {
-        openSeaTraitFloors = { slug, note: `OpenSea trait floors not read: ${e instanceof Error ? e.message : String(e)}` };
+        openSeaTraitFloors = { slug, identity: slugIdentity, note: `OpenSea trait floors not read: ${e instanceof Error ? e.message : String(e)}` };
       }
+    } else if (slug && (slugIdentity.verdict === "conflict" || slugIdentity.verdict === "unverified")) {
+      openSeaTraitFloors = { slug, identity: slugIdentity, note: `OpenSea trait floors not joined: ${slugIdentity.note}.` };
     } else if (slug) {
       openSeaTraitFloors = { slug, note: `OpenSea slug known but skipped: ${os.openSeaState().note}` };
     }
@@ -2308,7 +2405,13 @@ registerTool(
       symbol,
       collectionName: nameForSymbol(symbol),
       symbolKnown: true,
-      filters: { traits: traits ?? [], nameContains: nameContains ?? null },
+      filters: {
+        traits: traits ?? [],
+        nameContains: nameContains ?? null,
+        ...(traits && traits.length > 0
+          ? { traitCheck: { verified: traitCheck.verified, mismatchedExcluded: traitCheck.mismatchedExcluded, unverifiedKept: traitCheck.unverifiedKept, policy: traitCheck.policy } }
+          : {}),
+      },
       ...deals,
       deals: matchDetail ? fitted.rows.map((d) => ({ ...d, nameMatch: matchDetail.get(d.tokenMint ?? "") ?? null })) : fitted.rows,
       ...(fitted.note ? { answerSize: fitted.note } : {}),
@@ -2738,6 +2841,15 @@ function tolerateMissingPromptArguments(transport: StdioServerTransport): void {
 }
 
 async function main() {
+  // A client that closes its end while an answer is in flight is a normal
+  // way for a session to end, not a fault. Without this, the write lands
+  // as an unhandled EPIPE, prints a stack and exits 1.
+  const closedPipe = (e: NodeJS.ErrnoException) => {
+    if (e.code === "EPIPE" || e.code === "ERR_STREAM_DESTROYED" || e.code === "ECONNRESET") process.exit(0);
+    throw e;
+  };
+  process.stdout.on("error", closedPipe);
+  process.stdin.on("error", closedPipe);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   tolerateMissingPromptArguments(transport);

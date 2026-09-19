@@ -229,11 +229,13 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
 
   // --- OpenSea (optional) ----------------------------------------------
   //
-  // A status check is a call that needs OpenSea, so it is one of the places a
-  // free key gets issued. Reporting "off" without having tried would make this
-  // table describe the configuration rather than the venue.
+  // A status check describes; it never provisions. It used to be one of the
+  // places a free key got issued, which made a tool marked read-only the one
+  // that wrote a credential to disk. OpenSea is probed
+  // only when a key is already in hand, and otherwise the table says a key
+  // will be requested by the first question that needs one.
   const openSea = byId("opensea-v2");
-  const osReady = await os.openSeaAvailable();
+  const osReady = os.openSeaEnabled();
   const osState = os.openSeaState();
   const osPromise = !osReady
     ? Promise.resolve(unchecked(openSea, `off - ${osState.note}. Every tool still answers; the OpenSea half of cross-marketplace questions is absent and named, not silently dropped.`))

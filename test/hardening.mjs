@@ -1,5 +1,5 @@
 /**
- * Offline regressions for the hardening pass.
+ * Offline regressions for input and upstream hardening.
  *
  * One test per finding, each named with the failure it prevents rather than
  * the function it calls. Everything here runs against the BUILT output with no

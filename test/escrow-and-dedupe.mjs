@@ -1,5 +1,6 @@
 /**
- * Regressions for the round-six outside review (2026-09-18), 12 findings.
+ * Twelve regressions from 2026-09-18: credential spellings, provenance
+ * ordering, census reconciliation and wallet dedupe.
  * Every block asserts the correct behaviour and every one failed before its
  * fix. Nothing here touches the network.
  */
@@ -188,7 +189,7 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
   const k = knownIssuer(CANDY);
   assert.ok(k && k.collections >= 300, `the table knows the key that signs the Candy registry: ${JSON.stringify(k)}`);
   // The table names the key; it does not decide a role on a collection whose
-  // authority was not read (round seven).
+  // authority was not read (2026-09-18).
   assert.strictEqual(roleOf(CANDY, null).role, "unknown");
   assert.match(roleOf(CANDY, null).note, /Candy Digital/);
   assert.strictEqual(roleOf(address("someone"), CANDY).role, "wallet");
@@ -207,4 +208,4 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
   ok("R6-13 the issuer's key is a role, read from the chain, and the mint says who paid and who it was for");
 }
 
-console.log(`\nround6: ${passed} blocks passed`);
+console.log(`\nescrow-and-dedupe: ${passed} blocks passed`);

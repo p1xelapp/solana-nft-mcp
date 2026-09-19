@@ -1,5 +1,5 @@
 /**
- * Offline regressions for the pre-release gauntlet findings.
+ * Offline regressions for the defects found in the pre-release checks.
  *
  * One block per defect, named by the wrong answer it prevents rather than the
  * function it calls. Everything here runs against the BUILT output with no
@@ -206,7 +206,7 @@ await check("D3 a one-letter misspelling resolves as a close spelling, scored be
 // validate against, so an agent that pre-validates would send a 1 MB
 // "address" or 1e308 and only find out from the server.
 await check("D15 every published string bound has a maxLength and every number a maximum", async () => {
-  const client = new Client({ name: "gauntlet-test", version: "1.0.0" });
+  const client = new Client({ name: "release-checks", version: "1.0.0" });
   const env = {};
   for (const k of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "COMSPEC"]) {
     if (process.env[k]) env[k] = process.env[k];
@@ -242,7 +242,7 @@ await check("D15 every published string bound has a maxLength and every number a
   }
 });
 
-console.log(`\ngauntlet test: ${passed} groups passed (D11 x3, D8 x5, D3, D15)`);
+console.log(`\nrelease-checks: ${passed} groups passed (D11 x3, D8 x5, D3, D15)`);
 if (failures.length) {
   console.error(`FAILED: ${failures.join(", ")}`);
   process.exit(1);

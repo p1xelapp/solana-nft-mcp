@@ -1,8 +1,8 @@
 /**
- * Offline regressions for the wave-8 defects.
+ * Offline regressions for a set of wrong answers found in 1.8.x.
  *
  * Each block names the wrong ANSWER it prevents, not the function it calls,
- * and every one of them failed before the fix in this pass. Runs against the
+ * and every one of them failed before its fix. Runs against the
  * built output with no network: the status test stubs the module boundary it
  * needs and restores it afterwards.
  */
@@ -273,4 +273,4 @@ const AT = 1_700_000_000;
   ok("new 2 a slow chain endpoint cannot spend the status budget before the venues are asked");
 }
 
-console.log(`\nwave8 test: ${passed} groups passed (new 1-6, b2, b3)`);
+console.log(`\nwrong-answers: ${passed} groups passed (new 1-6, b2, b3)`);
