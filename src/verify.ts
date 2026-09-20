@@ -24,6 +24,8 @@
 
 import * as me from "./sources/magiceden.js";
 import * as sol from "./sources/solana.js";
+import { clean } from "./lib/untrusted.js";
+import { NotFoundError, WrongKindError } from "./lib/errors.js";
 
 export type Verdict = "confirmed" | "contradicted" | "unverifiable";
 
@@ -188,12 +190,16 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   // anything beyond that shows up as skipped and blocks a "confirmed").
   let prov: Awaited<ReturnType<typeof sol.getProvenance>> | null = null;
   let provError: string | undefined;
+  let provMissing = false;
   try {
     prov = await sol.getProvenance(mint, 25, { fresh: true });
   } catch (e) {
-    provError = e instanceof Error ? e.message : String(e);
+    // "Not a Core asset" and "no such account" are answers about the subject;
+    // anything else is the chain not being readable. The class says which.
+    provMissing = e instanceof NotFoundError || e instanceof WrongKindError;
+    provError = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
   }
-  if (!prov && provError && !/not a Core|does not decode|COLLECTION|not exist/i.test(provError)) {
+  if (!prov && provError && !provMissing) {
     return {
       ...base,
       verdict: "unverifiable",
@@ -395,13 +401,18 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
 
   let stats: Awaited<ReturnType<typeof me.collectionStats>> | null = null;
   let statsError: string | undefined;
+  let statsMissing = false;
   try {
     stats = await me.collectionStats(symbol, { fresh: true });
   } catch (e) {
-    statsError = e instanceof Error ? e.message : String(e);
+    // Classified on the error CLASS, never on the upstream's words: a 5xx
+    // whose body happened to contain "has no collection" was being reported
+    // as an absence, which is a claim about the market built from a failure.
+    statsMissing = e instanceof NotFoundError;
+    statsError = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
   }
   if (!stats || stats.floorPriceSol === null) {
-    const outage = statsError && !/has no collection/i.test(statsError);
+    const outage = Boolean(statsError) && !statsMissing;
     return {
       ...base,
       verdict: "unverifiable",

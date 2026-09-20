@@ -20,6 +20,11 @@
 import * as me from "./sources/magiceden.js";
 import * as das from "./sources/das.js";
 import { BoundedMap } from "./lib/bounded.js";
+import { clean } from "./lib/untrusted.js";
+import { venueAddress } from "./sources/solana.js";
+
+/** An upstream error's words, made safe to put in a `detail` a client prints. */
+const upstreamText = (e: unknown): string => clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
 
 export type SymbolVerdict = "matches" | "different" | "unknown";
 
@@ -58,7 +63,10 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
   let mint: string | undefined;
   try {
     const book = await me.collectionListings(symbol, { limit: 1 });
-    mint = book.listings.find((l) => typeof l.tokenMint === "string")?.tokenMint;
+    // Address-shaped, not merely a string: this value is interpolated into
+    // the `detail` sentence below, which the interface promises is safe to
+    // print, and it is cached for six hours.
+    mint = book.listings.map((l) => venueAddress(l.tokenMint)).find((m): m is string => m !== null);
     if (!mint) {
       return store({
         verdict: "unknown",
@@ -68,7 +76,7 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
   } catch (e) {
     return store({
       verdict: "unknown",
-      detail: `The marketplace did not answer for "${symbol}", so the symbol could not be checked against this collection: ${e instanceof Error ? e.message : String(e)}`,
+      detail: `The marketplace did not answer for "${symbol}", so the symbol could not be checked against this collection: ${upstreamText(e)}`,
     });
   }
   try {
@@ -100,7 +108,7 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
   } catch (e) {
     return store({
       verdict: "unknown",
-      detail: `The asset index did not answer for ${mint}, so the symbol could not be checked: ${e instanceof Error ? e.message : String(e)}`,
+      detail: `The asset index did not answer for ${mint ?? "the sampled item"}, so the symbol could not be checked: ${upstreamText(e)}`,
       sampledMint: mint,
     });
   }

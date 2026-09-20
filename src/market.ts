@@ -16,6 +16,10 @@
 
 import type { MeCollectionActivity, MeListing, TraitFloor, MeCollectionIndexEntry } from "./sources/magiceden.js";
 import { clean } from "./lib/untrusted.js";
+import { venueAddress } from "./sources/solana.js";
+
+/** The most traits this will read off one listing. A minter chooses how many there are. */
+const TRAITS_PER_LISTING_MAX = 64;
 import { usableBlockTime, isoFromBlockTime } from "./lib/time.js";
 
 // Re-exported so existing callers and tests keep one import path; the guard
@@ -36,7 +40,7 @@ const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
  *
  * Finite is not enough. `blockTime: 1e20` is a finite number and JavaScript's
  * Date cannot represent it, so `new Date(t * 1000).toISOString()` throws
- * RangeError. Reproduced 2026-09-15: three good sales plus ONE unrelated
+ * RangeError. Reproduced: three good sales plus ONE unrelated
  * listing row carrying 1e20 threw out of summarizeSales and destroyed the
  * whole report. One malformed upstream record must never remove an answer
  * that is otherwise correct.
@@ -541,7 +545,7 @@ export function summarizeSales(
     );
   }
   // The feed is Magic Eden's API. It has been observed carrying rows labelled
-  // with other execution venues (Tensor fills on Claynosaurz, 2026-09-18), so "Tensor is not in it" was false as a rule, and
+  // with other execution venues (Tensor fills on Claynosaurz), so "Tensor is not in it" was false as a rule, and
   // "Tensor is in it" would claim a coverage nobody has established. The
   // honest statement is what was observed and what was not checked.
   const observedVenues = [...venues.keys()];
@@ -761,7 +765,10 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
     if (priceSol === null) unpricedListings++;
 
     const traits: DealTrait[] = [];
-    for (const t of l?.token?.attributes ?? []) {
+    // Capped like every other marketplace array. The row count is bounded by
+    // the page guard; the number of traits ON a row is whatever the minter put
+    // there.
+    for (const t of (l?.token?.attributes ?? []).slice(0, TRAITS_PER_LISTING_MAX)) {
       if (!t || typeof t.trait_type !== "string") continue;
       // Trait names and values are minter-chosen text on a permissionless
       // chain, so they are cleaned before they are used as a key or shown.
@@ -796,10 +803,12 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
 
     return {
       currency: "SOL" as const,
-      tokenMint: typeof l?.tokenMint === "string" ? l.tokenMint : null,
+      // Address-shaped or null. A bare type check let marketplace-authored
+      // text sit in a field a client reads as a mint.
+      tokenMint: venueAddress(l?.tokenMint),
       name: l?.token?.name ? clean(l.token.name) : null,
       priceSol: priceSol === null ? null : round(priceSol),
-      seller: typeof l?.seller === "string" ? l.seller : null,
+      seller: venueAddress(l?.seller),
       listingVenue: clean(l?.listingSource ?? "") || "unknown",
       rarity: howrare === null && moonrank === null ? null : { howrare, moonrank },
       traits,
@@ -958,13 +967,13 @@ export interface NameMatchDetail {
  * item's full name is "... Classic Charizard & HO-Oh EX Deck" and the deck
  * title contains the word. Its "Card Name" trait says "HO-Oh EX". The filter
  * is not wrong to match it, but an answer that cannot tell the two cases apart
- * presents a Ho-Oh as the cheapest Charizard (observed 2026-09-19).
+ * presents a Ho-Oh as the cheapest Charizard, seen live.
  */
 export function nameMatchDetail(listing: MeListing, needle: string): NameMatchDetail {
   const want = String(needle ?? "").toLowerCase();
   const inItemName = (listing?.token?.name ?? "").toLowerCase().includes(want);
   let nameTrait: NameMatchDetail["nameTrait"] = null;
-  for (const t of listing?.token?.attributes ?? []) {
+  for (const t of (listing?.token?.attributes ?? []).slice(0, TRAITS_PER_LISTING_MAX)) {
     if (!t || typeof t.trait_type !== "string") continue;
     if (!NAME_TRAITS.has(t.trait_type.trim().toLowerCase())) continue;
     // Only a string or a number is a name. A trait whose value is an object
@@ -994,7 +1003,7 @@ export interface TraitFilter {
  *
  * The filter is sent to the marketplace, and the marketplace's answer was
  * trusted as is: a Grade=10 filter returned a row whose own metadata said
- * Grade 9, under a result that repeated the Grade=10 filter (2026-09-19). Each returned row is now checked against each requested trait.
+ * Grade 9, under a result that repeated the Grade=10 filter. Each returned row is now checked against each requested trait.
  *
  * Normalisation, so that "Grade" and "grade", "10" and 10, and stray
  * whitespace all compare as the same thing: trait names and values are
@@ -1092,7 +1101,7 @@ export function parseSerial(name: string | null | undefined): { serial: number; 
  * Which characters of the name the serial was read from, beside the serial.
  * `baseName` removes exactly that span and nothing else: "Superman (2023) #1
  * (4/750)" and "Superman (2023) #2 (8/750)" are two issues, and stripping
- * every hash number merged them into one row (2026-09-18).
+ * every hash number merged them into one row.
  */
 export interface SerialMatch {
   serial: number;
@@ -1111,10 +1120,20 @@ export interface SerialMatch {
  */
 const validFraction = (serial: number, of: number | null) => of === null || (of >= 1 && serial <= of);
 
+/**
+ * The most of a name this reader will look at. A serial never sits past the
+ * three hundredth character, and the patterns below scan for a tail, so a name
+ * padded to megabytes by whoever minted it would otherwise cost time
+ * proportional to its length squared - 39 seconds of a blocked event loop for
+ * a 200 KB name, measured. The cap is applied before any pattern runs, the
+ * same rule the sanitiser follows.
+ */
+const SERIAL_SCAN_MAX = 300;
+
 export function matchSerial(name: string | null | undefined): SerialMatch | null {
   if (typeof name !== "string" || !name) return null;
   const lead = name.length - name.trimStart().length;
-  const s = name.trim();
+  const s = name.trim().slice(0, SERIAL_SCAN_MAX);
   const found = (serial: number, of: number | null, format: SerialMatch["format"], m: RegExpMatchArray): SerialMatch | null =>
     validFraction(serial, of) ? { serial, of, format, start: lead + (m.index ?? 0), end: lead + (m.index ?? 0) + m[0].length } : null;
 
@@ -1148,7 +1167,9 @@ export function matchSerial(name: string | null | undefined): SerialMatch | null
   // tail of the name, optionally inside brackets - keeps "(12/250)" and
   // "12/250" working while refusing "(2011/2016) #10041" and "2011/2016 Prizm
   // Panini #5".
-  const bareFrac = s.match(/\(?\s*(\d{1,6})\s*\/\s*(\d{1,7})\s*\)?\s*$/);
+  // Anchored at both ends: the leading `[\s(]` stops the engine restarting the
+  // tail search at every offset in a long name.
+  const bareFrac = s.match(/(?:^|[\s(])(\d{1,6})\s*\/\s*(\d{1,7})\s*\)?\s*$/);
   if (bareFrac) return found(Number(bareFrac[1]), Number(bareFrac[2]), "bare-fraction", bareFrac);
 
   // 4. A non-terminal "#N" last: it is still explicit, just less certain about
@@ -1194,8 +1215,7 @@ export interface NameBreakdownRow {
  * copies count once, and a copy whose repeats disagreed about price or side
  * is a sale with no stateable amount. Built from the raw feed, this table
  * reported two sales for one repeated fill and 5 SOL for a fill whose copies
- * said 2 and 3 while the summary beside it said one sale and no volume
- * (2026-09-18).
+ * said 2 and 3 while the summary beside it said one sale and no volume.
  */
 export function breakdownByName(
   events: MeCollectionActivity[],

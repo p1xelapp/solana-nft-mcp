@@ -15,7 +15,7 @@ import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
 import { accountEventFingerprint } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
-import { knownVenueAccount } from "./sources/solana.js";
+import { knownVenueAccount, venueAddress } from "./sources/solana.js";
 import { isoFromBlockTime, usableBlockTime } from "./lib/time.js";
 
 /**
@@ -30,7 +30,7 @@ import { isoFromBlockTime, usableBlockTime } from "./lib/time.js";
 const round = (n: number, dp = 9) => Math.round(n * 10 ** dp) / 10 ** dp;
 // Never throws: a block time the Date type cannot represent (1e20 was served
 // once) is null here, and the row it sits on is counted as unusable rather
-// than costing the whole report (2026-09-18).
+// than costing the whole report.
 const iso = (t?: unknown) => isoFromBlockTime(t);
 
 /**
@@ -103,8 +103,8 @@ export function summarizeHoldings(tokens: MeWalletToken[]): HoldingsSummary {
         royaltyBps: bps.size === 1 ? [...bps][0]! : null,
         sampleMints: items
           .slice(0, 3)
-          .map((i) => i.mintAddress)
-          .filter((m): m is string => Boolean(m)),
+          .map((i) => venueAddress(i.mintAddress))
+          .filter((m): m is string => m !== null),
       };
     })
     .sort((a, b) => b.count - a.count);
@@ -171,7 +171,7 @@ export interface ActivitySummary {
      * not be measured: a leg with no usable price, or two legs whose times
      * could not be ordered. They moved inventory, so they are matched and
      * counted here rather than left open to pair a later sale with the wrong
-     * purchase (2026-09-18).
+  * purchase.
      */
     unmeasuredCycles: number;
     pnlSol: number;
@@ -256,6 +256,10 @@ export function summarizeActivity(
     const rawCol = e.collectionSymbol ?? e.collection ?? null;
     const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
+    // The mint, only if it is address-shaped. A row whose mint is
+    // marketplace-authored text is not a lot this can pair, and the value must
+    // not reach an answer as though it were an identifier.
+    const mintId = venueAddress(e.tokenMint);
     if (type === "list") lists++;
     if (type === "bid") bids++;
     if (type === "buyNow") {
@@ -278,12 +282,12 @@ export function summarizeActivity(
         buys.count++;
         if (price !== null) buys.totalSol += price;
         if (col) bump(buys.collections, col);
-        if (e.tokenMint) {
+        if (mintId) {
           purchases++;
           const lot = { e, price };
-          const q = openBuys.get(e.tokenMint);
+          const q = openBuys.get(mintId);
           if (q) q.push(lot);
-          else openBuys.set(e.tokenMint, [lot]);
+          else openBuys.set(mintId, [lot]);
         }
       } else if (side === "sell") {
         sells.count++;
@@ -293,8 +297,8 @@ export function summarizeActivity(
         // inventory moved. P&L is arithmetic on two prices and two times, so
         // the cycle is measured only when all four are usable, and counted as
         // unmeasured otherwise rather than matched against a zero.
-        const lot = e.tokenMint ? openBuys.get(e.tokenMint)?.shift() : undefined;
-        if (lot && e.tokenMint) {
+        const lot = mintId ? openBuys.get(mintId)?.shift() : undefined;
+        if (lot && mintId) {
           cyclesClosed++;
           const boughtAt = usableBlockTime(lot.e.blockTime);
           const soldAt = usableBlockTime(e.blockTime);
@@ -304,7 +308,7 @@ export function summarizeActivity(
               delta,
               flip: {
                 currency: "SOL",
-                mint: e.tokenMint,
+                mint: mintId,
                 collection: col,
                 boughtAt: iso(boughtAt),
                 soldAt: iso(soldAt),
@@ -451,7 +455,7 @@ export function summarizeActivity(
     behaviour: { boughtThenSoldPct, medianHoldDays: medianHold, label, why },
     firstBuyInWindow: firstBuy
       ? {
-          mint: firstBuy.tokenMint ?? "",
+          mint: venueAddress(firstBuy.tokenMint) ?? "",
           collection: firstBuyCol ? clean(firstBuyCol) : null,
           time: iso(firstBuy.blockTime),
           priceSol: round(firstBuy.price ?? 0),
@@ -517,7 +521,9 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
       if (e.transaction && e.nft?.identifier) saleKeys.add(`${e.transaction}\u0000${e.nft.identifier}`);
       else if (e.transaction) itemlessSaleTxs.add(e.transaction);
     }
-    if (e.nft?.collection) collections[e.nft.collection] = (Object.hasOwn(collections, e.nft.collection) ? collections[e.nft.collection]! : 0) + 1;
+    // The key is marketplace text and becomes a field name in the answer.
+    const colKey = e.nft?.collection ? clean(e.nft.collection) : "";
+    if (colKey) collections[colKey] = (Object.hasOwn(collections, colKey) ? collections[colKey]! : 0) + 1;
   }
   const received: OpenSeaWalletView["receivedWithoutSale"] = [];
   const sent: OpenSeaWalletView["sentWithoutSale"] = [];
@@ -533,7 +539,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
         continue;
       }
       if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
-        received.push({ mint: id, collection: e.nft?.collection ?? null, from: e.from_address, time: iso(e.event_timestamp), ...(knownVenueAccount(e.from_address) ? { note: "from a Magic Eden escrow account: a fill or a delisting that OpenSea recorded as a plain transfer, not a gift" } : {}) });
+        received.push({ mint: id, collection: e.nft?.collection ? clean(e.nft.collection) : null, from: venueAddress(e.from_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.from_address) ? { note: "from a Magic Eden escrow account: a fill or a delisting that OpenSea recorded as a plain transfer, not a gift" } : {}) });
       }
     } else if (e.from_address === wallet) {
       tout++;
@@ -546,7 +552,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
         continue;
       }
       if (id && !settlesASale && e.to_address && e.to_address !== wallet) {
-        sent.push({ mint: id, collection: e.nft?.collection ?? null, to: e.to_address, time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
+        sent.push({ mint: id, collection: e.nft?.collection ? clean(e.nft.collection) : null, to: venueAddress(e.to_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
       }
     }
   }

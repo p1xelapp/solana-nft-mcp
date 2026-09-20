@@ -12,7 +12,7 @@ import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
-import { isBase58Address } from "./solana.js";
+import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
@@ -38,8 +38,8 @@ function page<T>(what: string, batch: unknown): T[] {
 
 const LAMPORTS = 1_000_000_000;
 // A price is a finite amount of money at or above zero. A negative or
-// infinite lamport figure passed the shape gate and was published as a floor
-// (2026-09-16); it is unknown, not a number.
+// infinite lamport figure passed the shape gate and was published as a floor;
+// It is unknown, not a number.
 const sol = (lamports: unknown): number | null =>
   typeof lamports === "number" && Number.isFinite(lamports) && lamports >= 0 ? lamports / LAMPORTS : null;
 /** A count the venue reports: a nonnegative integer, or unknown. */
@@ -168,7 +168,9 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     await assertSymbolKnown(symbol, { signal: opts.signal });
   }
   return {
-    symbol: data.symbol,
+    // The marketplace writes this back; `collectionAttributes` already cleans
+    // the same field, and a symbol that arrives as something else is text.
+    symbol: clean(data.symbol),
     floorPriceSol: sol(data.floorPrice),
     listedCount: count(data.listedCount),
     // ME reports volumeAll in SOL for some collections and lamports for
@@ -400,9 +402,9 @@ export async function walletTokens(wallet: string, limit: number) {
     count: data.length,
     capped: data.length >= Math.min(limit, 100),
     tokens: data.map((t) => ({
-      mint: t.mintAddress ?? null,
+      mint: venueAddress(t.mintAddress),
       name: t.name ? clean(t.name) : null,
-      collection: t.collection ?? null,
+      collection: t.collection ? clean(t.collection) : null,
       collectionName: t.collectionName ? clean(t.collectionName) : null,
       // A link is venue text like any other. Only https survives: a
       // javascript: or private-network URL in a gallery is an injection.
@@ -472,7 +474,7 @@ export interface MeWalletToken {
  *
  * Offset pages OVERLAP when the wallet changes mid-walk: an item that arrives
  * during the read pushes the last row of one page onto the start of the next.
- * Reproduced 2026-09-15 with two shifting pages: 150 rows for 149 distinct
+ * Reproduced with two shifting pages: 150 rows for 149 distinct
  * mints, reported as a complete count. So rows are deduplicated on a validated
  * mint, the overlap is counted, and the caller is told that a walk which
  * overlapped can have SKIPPED an item by the same shift - deduplication fixes
@@ -546,7 +548,7 @@ export async function walletTokensAll(wallet: string, max: number) {
  * with HTTP 200, so asking for "sale" or "sold" would quietly return listings,
  * bids and pool updates, and every sales figure derived from them would be
  * wrong while looking fine. Unknown types are refused here instead.
- * (Verified 2026-09-11: `type=bogusType` answered 200 with list/bid rows.)
+ * (Verified: `type=bogusType` answered 200 with list/bid rows.)
  */
 export const ACTIVITY_TYPES = [
   "buyNow",
@@ -743,7 +745,7 @@ export interface CollectionListingsRead {
  * Live listings for a collection, cheapest first by default.
  *
  * Trait filtering: ME reads `attributes` as an array of groups, AND across
- * groups and OR inside one. Verified 2026-09-11 - two groups asking for two
+ * groups and OR inside one. Verified - two groups asking for two
  * values of the same trait returned zero rows (nothing is both), while one
  * group holding a Species and a Class returned items matching either. Each
  * filter gets its own group here, so several filters mean "all of these",
@@ -870,7 +872,9 @@ export async function collectionLeaderboard(symbol: string, limit: number): Prom
   return {
     symbol,
     traders: rows
-      .filter((r): r is MeLeaderboardRow & { wallet: string } => typeof r.wallet === "string")
+      // An address, not merely a string: the marketplace writes this field.
+      .map((r) => ({ ...r, wallet: venueAddress(r.wallet) }))
+      .filter((r): r is MeLeaderboardRow & { wallet: string } => r.wallet !== null)
       .map((r) => ({
         wallet: r.wallet,
         volumeSol: sol(r.totalVolume),
@@ -900,7 +904,7 @@ export interface PopularCollectionsRead {
  * Magic Eden's own trending list.
  *
  * `limit` is not free-form: ME rejects anything but 50 or 100. As of
- * 2026-09-11 every valid timeRange answers HTTP 200 with an empty array, so an
+ * every valid timeRange answers HTTP 200 with an empty array, so an
  * empty result means the venue published nothing, not that the market is
  * quiet. The note says so rather than letting a caller invent the second
  * reading.
@@ -992,7 +996,7 @@ const isPagingCeiling = (e: unknown): boolean =>
  *
  * Sizing this matters more than it looks. The reachable catalogue is 30,500
  * entries over 61 pages, and the big names sit deep in it - mad_lads at offset
- * 17,500, claynosaurz at 20,000 (measured 2026-09-11). A caller that budgets a
+ * 17,500, claynosaurz at 20,000 (measured). A caller that budgets a
  * handful of pages will not find them and, without `partial`, would report
  * "no such collection" about the best-known collection on the venue. Cached
  * for a day because collections get added, not reshuffled, so the full 61-page

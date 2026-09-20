@@ -5,7 +5,7 @@
  * than that, so the bundled directory snapshot is a PREFIX of the venue, never
  * the venue. The collections missing from it are not obscure ones: DeGods,
  * Okay Bears, Cets on Creck and Degenerate Ape Academy were all absent on
- * 2026-09-15 while knock-offs wearing their names (degodscasino, anti_okay_bears,
+ * while knock-offs wearing their names (degodscasino, anti_okay_bears,
  * ai_okay_bears_) were present and scored. Asking for "DeGods" therefore came
  * back with eight imitations and none of the real thing, which is worse than
  * coming back empty: a reader takes the top row.
@@ -24,6 +24,10 @@ import { collectionNameKey } from "./names.js";
 import { HttpError } from "./lib/http.js";
 import { NotFoundError } from "./lib/errors.js";
 import { BoundedMap } from "./lib/bounded.js";
+import { clean } from "./lib/untrusted.js";
+
+/** An upstream error's words, made safe for a note this server returns. */
+const upstreamText = (e: unknown): string => clean(e instanceof Error ? e.message : String(e)).slice(0, 70);
 
 /**
  * Symbols a collection with this name plausibly has, most likely first.
@@ -160,9 +164,9 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
     tried.push(symbol);
 
     // Deliberately NOT the collection metadata endpoint. Magic Eden rate
-    // limits /collections/{symbol} far harder than the rest: measured on
-    // 2026-09-15, stats and listings both answered 200 for `degods` in the
-    // same second that metadata answered 429. A probe built on the endpoint
+    // limits /collections/{symbol} far harder than the rest: stats and
+    // listings both answered 200 for `degods` in the same second that
+    // metadata answered 429. A probe built on the endpoint
     // that refuses first is a probe that never works.
     let exists = false;
     try {
@@ -171,7 +175,7 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
     } catch (e) {
       // "No such collection" is an answer. A refusal to answer is not.
       if (e instanceof NotFoundError || (e instanceof HttpError && e.status === 404)) continue;
-      unreadable.push(`${symbol} (${e instanceof Error ? e.message.slice(0, 70) : String(e)})`);
+      unreadable.push(`${symbol} (${upstreamText(e)})`);
       continue;
     }
     if (!exists) continue;
@@ -185,12 +189,18 @@ export async function findSymbolByName(name: string, opts: { signal?: AbortSigna
     try {
       const listings = await me.collectionListings(symbol, { limit: 1 });
       const token = listings.listings?.[0]?.token;
-      const named = typeof token?.collectionName === "string" && token.collectionName.trim() ? token.collectionName : null;
+      // Both of these are marketplace-authored text, and both end up quoted
+      // inside a note this server returns. Neutralised here, at the boundary,
+      // because a later equality test constrains WHICH string is emitted and
+      // not which characters it may contain.
+      const rawNamed = typeof token?.collectionName === "string" && token.collectionName.trim() ? token.collectionName : null;
+      const named = rawNamed ? clean(rawNamed).slice(0, 120) : null;
       // "DeGods #1234" -> "DeGods". Trailing serials, and nothing else.
-      const fromItem = typeof token?.name === "string" ? token.name.replace(/\s*[#(]?\s*\d+\s*(?:\/\s*\d+)?\s*\)?\s*$/, "").trim() : "";
+      const rawItem = typeof token?.name === "string" ? token.name.replace(/\s*[#(]?\s*\d+\s*(?:\/\s*\d+)?\s*\)?\s*$/, "").trim() : "";
+      const fromItem = rawItem ? clean(rawItem).slice(0, 120) : "";
       venueName = named ?? (fromItem || null);
     } catch (e) {
-      unreadable.push(`${symbol} listings (${e instanceof Error ? e.message.slice(0, 70) : String(e)})`);
+      unreadable.push(`${symbol} listings (${upstreamText(e)})`);
       continue;
     }
     // The venue's own name is the proof, and the only proof. An exact

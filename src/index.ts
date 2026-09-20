@@ -112,10 +112,10 @@ type ToolResult = {
 // so in words: the first OpenSea question may create a free OpenSea key and
 // cache it under the user's home folder, and startup asks npm for the latest
 // version. Both are this server's own housekeeping, both are opt-out, and
-// neither touches anything the tool's subject matter is about. An outside
-// review (2026-09-15) called that a disclosure gap rather than a wrong hint;
-// the disclosure is the fix chosen, because splitting key setup into its own
-// tool would make the one selling point - it works with no setup - a setup.
+// neither touches anything the tool's subject matter is about. That is a
+// disclosure gap rather than a wrong hint, and disclosure is the fix: splitting
+// key setup into its own tool would turn the one selling point - it works with
+// no setup - into a setup.
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
 
 /**
@@ -357,7 +357,7 @@ function marketView(t: Record<string, unknown>) {
   // Bounded as well as https: a venue-supplied URL is text the venue
   // controls, and a 130,000-character one turned a single asset answer into
   // 263 KB, twice (text and structured content), which a client cuts off.
-  const url = (v: unknown) => (typeof v === "string" && v.length <= 2048 && /^https:\/\//.test(v) ? v : null);
+  const url = (v: unknown) => (typeof v === "string" && v.length <= 2048 && !/\s/.test(v) && /^https:\/\//.test(v) ? v : null);
   const flags: string[] = [];
   const cl = (v: unknown, label: string) => {
     const s = str(v);
@@ -406,7 +406,12 @@ function trendingView(c: Record<string, unknown>) {
     return r.value;
   };
   const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-  const https = (v: unknown): string | null => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
+  // Bounded, https and with no whitespace in it, the same rule marketView
+  // uses: the prefix test alone accepts everything after "https://", newlines
+  // and role tags included, and a 150,000-character URL on each of fifty rows
+  // is an answer no client can read.
+  const https = (v: unknown): string | null =>
+    typeof v === "string" && v.length <= 2048 && !/\s/.test(v) && /^https:\/\//.test(v) ? v : null;
   return {
     view: {
       symbol: text(c.symbol, "symbol"),
@@ -545,11 +550,16 @@ registerTool(
       claim: z
         .enum(["supply", "never-traded", "ownership", "floor"])
         .describe("What kind of statement is being checked"),
+      // Three of the four claims take an address and one takes a marketplace
+      // symbol, so the shape is checked against the claim rather than left as
+      // any 120 characters: an unconstrained subject spends chain reads on
+      // arbitrary text and is echoed back in the receipt.
       subject: z
         .string()
         .trim()
         .min(1)
         .max(120)
+        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_]{1,64}$/i, "an address for supply, never-traded and ownership, or a marketplace symbol for floor")
         .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor"),
       value: z
         .number()
@@ -874,7 +884,7 @@ registerTool(
           // between collections and adjusts current_size without a burn, and
           // an asset moved IN makes the difference negative. The number was
           // published as burnedOrClosed, a story the two counters do not
-          // tell (2026-09-18).
+  // tell.
           sizeDelta: acct.numMinted - acct.currentSize,
           sizeDeltaNote:
             "numMinted minus currentSize. A burn or a closure lowers currentSize and so raises this number, but so does an asset moved out to another collection, and an asset moved in raises currentSize without a mint and lowers it. A burn count needs decoded history (get_asset_provenance), not these two counters.",
@@ -1051,7 +1061,7 @@ registerTool(
     // A slug names an OpenSea collection. Nothing about it proves that is
     // THIS collection, and a caller can pass any slug: one that resolved to
     // another on-chain address had its floor ranked against this
-    // collection's as though the two were one market (2026-09-19). Same
+  // collection's as though the two were one market. Same
     // currency does not establish same identity. OpenSea's own record of the
     // collection's chain address is compared with the requested one before
     // the two floors are allowed to be ranked; a conflict shows both floors
@@ -1575,7 +1585,7 @@ registerTool(
     // and a reader called it a whale that had bought eleven packs.
     // The read is kept WITH its outcome and its age. Swallowing the failure
     // turned an unreadable collection into "one collector", and a cached
-    // authority was presented as live (2026-09-18).
+  // authority was presented as live.
     const authorityRead = await sol.getCoreAccountWithMeta(collection).then(
       (r) => ({ status: "ok" as const, account: r.account, cachedAt: r.cachedAt, stale: r.stale, contextSlot: r.contextSlot, reason: null }),
       (e: unknown) => ({ status: "unavailable" as const, account: null, cachedAt: null, stale: null, contextSlot: null, reason: (e instanceof Error ? e.message : String(e)).slice(0, 160) }),
@@ -1918,7 +1928,7 @@ registerTool(
     // The OpenSea block is always present and always says which of four
     // things it is: read, disabled by the caller, not read for want of a key,
     // or failed. An absent block with a prose note beside it was a state a
-    // program had to parse English to tell apart (2026-09-18). A read that found nothing is status "ok" with zero events.
+  // program had to parse English to tell apart. A read that found nothing is status "ok" with zero events.
     let opensea: Record<string, unknown>;
     let openseaNote: string | undefined;
     if (!includeOpenSea) {
@@ -2063,7 +2073,7 @@ registerTool(
     // Same rows as the figures above it: the filtered set when a name filter
     // ran, otherwise the collection. Built from the whole window under a
     // filtered headline, this table listed Aaron Judge under "sales whose
-    // item name contains Ohtani" (2026-09-18).
+  // item name contains Ohtani".
     const byNameScope: "filtered" | "collection-wide" = filtered ? "filtered" : "collection-wide";
     const byName = names ? breakdownByName(filtered ?? windowEvents, names.names) : null;
     return ok({
@@ -2071,7 +2081,10 @@ registerTool(
       collectionName: nameForSymbol(symbol),
       symbolKnown: true,
       readThis: [`These figures are about the collection named above. Several Solana collections share a short name, so name it in your answer rather than repeating the question's words back.`, NOT_ADVICE],
-      requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString(), nameContains: nameContains ?? null },
+      // The filter is echoed as the server read it, neutralised: the caller's
+      // words come back through a model, and `search_collections` cleans its
+      // echoed query for the same reason.
+      requested: { days, from: new Date(sinceUnix * 1000).toISOString(), to: new Date(nowUnix * 1000).toISOString(), nameContains: nameContains ? clean(nameContains) : null },
       ...summary,
       /** What the figures above are actually about. */
       figuresCover: needle
@@ -2115,7 +2128,7 @@ registerTool(
                 stale: read.stale,
                 cachedAt: read.cachedAt,
               }),
-              collectionWideNote: `These are the collection's figures over the window, with no name filter applied. They answer a different question from the one asked ("${nameContains}").`,
+              collectionWideNote: `These are the collection's figures over the window, with no name filter applied. They answer a different question from the one asked ("${clean(nameContains)}").`,
             }
         : {}),
       byName: byName
@@ -2205,7 +2218,7 @@ registerTool(
       const multiplesComparable = !stale && !floorStale && typeof floor === "number" && Number.isFinite(floor) && floor > 0;
       // The name filter applies here exactly as in ordinary mode. It used to
       // be accepted and ignored, so "lowest Ohtani serial" returned a Judge
-      // card (2026-09-18).
+  // card.
       const serialNeedle = nameContains ? clean(nameContains).toLowerCase() : null;
       // Same trait recheck as ordinary mode: the marketplace's filter is
       // trusted for the walk, never for the row.
@@ -2356,7 +2369,7 @@ registerTool(
     // A caller-supplied slug is checked against this collection's on-chain
     // address before its trait floors are joined onto these rows; a slug
     // that names another collection would put a stranger's floors beside
-    // every trait (2026-09-19). A registry slug is curated and joins as is.
+  // every trait. A registry slug is curated and joins as is.
     let slugIdentity: { verdict: "verified" | "conflict" | "unverified" | "registry"; note: string } = { verdict: "registry", note: "slug from the curated registry entry for this collection" };
     if (openseaSlug && slug && openseaSlug !== registryEntry?.openseaSlug && (await os.openSeaAvailable())) {
       const detail = await os.collectionDetail(slug).catch(() => null);
@@ -2600,7 +2613,7 @@ registerTool(
           serial: s.serial,
           editionSize: s.of,
           name: clean(l.token?.name ?? ""),
-          tokenMint: l.tokenMint ?? null,
+          tokenMint: sol.venueAddress(l.tokenMint),
           priceSol: price,
           floorSol: floor,
           // Only arithmetic on two numbers from the SAME read, so it cannot
@@ -2863,6 +2876,9 @@ async function main() {
   };
   process.stdout.on("error", closedPipe);
   process.stdin.on("error", closedPipe);
+  // stderr too: a host that closes the diagnostic pipe while leaving stdout
+  // open would otherwise take the process down with an unhandled stream error.
+  process.stderr.on("error", closedPipe);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   tolerateMissingPromptArguments(transport);
