@@ -13,7 +13,7 @@
  *      billion, and it looks like a plausible large number rather than an error.
  *   3. HOSTILE UNICODE. Not hypothetical: a collection named "ꙅɿɒɘd ɘidmoƹ" -
  *      "Zombie bears" written in mirrored Cyrillic lookalikes - came back in a
- *      real search for "okay bears" during testing on 2026-09-15.
+ *      real search for "okay bears" during testing.
  *   4. OTHER STANDARDS. Compressed NFTs live only in the asset index and have
  *      no Core account at all.
  *   5. SCALE. A wallet with thousands of items, and a collection with tens of
@@ -160,7 +160,7 @@ check("W4", "units", "every currency that appears is named", async () => {
 
 // ================================================= X. hostile unicode names
 check("X1", "unicode", "a mirrored-Cyrillic imitation is not returned as a plain name", async () => {
-  // Real, seen on 2026-09-15: "ꙅɿɒɘd ɘidmoƹ" is "Zombie bears" in mirrored
+  // Real, seen in a live search: "ꙅɿɒɘd ɘidmoƹ" is "Zombie bears" in mirrored
   // lookalike glyphs, sitting in the directory beside the real Okay Bears.
   const r = await call("search_collections", { query: "okay bears" });
   if (BUSY.test(asText(r))) return SKIP;

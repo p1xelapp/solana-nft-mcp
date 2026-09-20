@@ -1,5 +1,5 @@
 /**
- * Fourteen regressions from 2026-09-18: a fact read from the chain being
+ * A fact read from the chain being
  * turned into a story it does not tell (issuer roles, custody across holes,
  * short credentials, unknown plugins).
  * Every block asserts the correct behaviour and every one failed before its

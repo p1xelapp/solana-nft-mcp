@@ -4,8 +4,8 @@
  *
  * The plain Maps this replaces expired their entries on read and never
  * removed them: a session that asked about 2,100 names nobody had heard of
- * kept 2,100 misses, and asking one more a day later made it 2,101
- * (2026-09-19). Expiry without removal bounds reuse, not memory.
+ * kept 2,100 misses, and asking one more a day later made it 2,101.
+ * Expiry without removal bounds reuse, not memory.
  *
  * Eviction is by insertion order, oldest first, which is what a cache of
  * recent lookups wants; a hit is re-inserted so it counts as recent.

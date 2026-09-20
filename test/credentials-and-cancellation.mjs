@@ -1,5 +1,5 @@
 /**
- * Thirteen regressions from 2026-09-15: credentials and bodies, cancellation,
+ * Credentials and bodies, cancellation,
  * evidence and identity.
  *
  * Every block asserts the CORRECT behaviour, and every one of them failed on
@@ -712,8 +712,8 @@ const serverEnvBase = () => {
   // Data "M" is byte 20: CreateV2.
   const other = address("some-other-asset");
   // The inner group hangs off a real outer instruction: an inner group with
-  // no parent in the outer list is malformed evidence and a hole of its own
-  // (2026-09-18), which is not what these cases test.
+  // no parent in the outer list is malformed evidence and a hole of its own,
+  // Which is not what these cases test.
   const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [{ programId: "11111111111111111111111111111111", accounts: [] }] } } });
   // (a) A decoded CreateV2 for this asset beside an undecodable Core
   // instruction on it. The undecodable one could be the transfer.

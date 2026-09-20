@@ -3,7 +3,7 @@
  *
  * A client that cancels a request (a person hit stop, a host timed out) tells
  * this server through the SDK's per-request `AbortSignal`. Measured on
- * 2026-09-15 in testing: after the client aborted a collection sales
+ * in testing: after the client aborted a collection sales
  * read, the server still fetched offsets 500 and 1000 from Magic Eden with
  * nobody waiting, because the signal reached the handler and stopped there.
  * Threading it by hand through every source, every page loop and every gate
@@ -43,7 +43,7 @@ export function withAmbient(explicit?: AbortSignal): AbortSignal | undefined {
   // AbortSignal.any holds its parents weakly, so a combination that finishes
   // leaves nothing behind on the parent that outlived it. The handwritten
   // combiner it replaced added a listener to each parent and removed neither:
-  // measured 2026-09-16, twenty combinations against one long-lived request
+  // measured: twenty combinations against one long-lived request
   // signal left twenty listeners on it for as long as the request ran.
   return AbortSignal.any([explicit, ambient]);
 }

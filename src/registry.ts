@@ -45,7 +45,7 @@ export const REGISTRY: RegistryEntry[] = [
   // The Magic Eden directory snapshot stops at the venue's 30,000-row
   // ceiling, and "Solana Monkey Business" came back as "Rare Solana Monkey
   // Business" at 0.055 SOL while the real collection sat at 12 SOL under a
-  // symbol the snapshot never reached (2026-09-18). A curated row with the
+  // symbol the snapshot never reached. A curated row with the
   // aliases people use puts the real one first. Every symbol here was
   // checked against the venue on the date in its note.
   {
@@ -348,8 +348,7 @@ REGISTRY.push(...loadCandyCollections());
 /** Simple scored search over names/keywords/ids. */
 export function searchRegistry(query: string): RegistryEntry[] {
   // "Gen 2" and "Gen2" are one token, and a one-character token that is a
-  // number is kept: dropping it ranked SMB Gen3 first for "SMB Gen 2"
-  // (2026-09-18).
+  // number is kept: dropping it ranked SMB Gen3 first for "SMB Gen 2".
   const norm = (s: string) => s.toLowerCase().replace(/\bgen\s+(\d+)\b/g, "gen$1");
   const q = norm(query).trim();
   if (!q) return REGISTRY;

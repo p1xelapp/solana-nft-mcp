@@ -357,7 +357,7 @@ async function startWith(env = {}) {
 
 // ------------------------------------------------------------------ r11
 // One malformed record must never remove a report that is otherwise correct.
-// Reproduced 2026-09-15: three good sales plus ONE unrelated listing row
+// Reproduced: three good sales plus ONE unrelated listing row
 // carrying blockTime 1e20 threw RangeError out of summarizeSales, because a
 // finite number can still be outside the range a JavaScript Date can hold.
 {

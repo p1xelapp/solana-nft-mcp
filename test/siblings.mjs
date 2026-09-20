@@ -1,5 +1,5 @@
 /**
- * Eighteen regressions from 2026-09-18: sibling code paths that disagreed (a
+ * Sibling code paths that disagreed (a
  * summary and its table built from different events, a filter applied in one
  * mode and ignored in another, a rule enforced in one reader and missing
  * from its twin).

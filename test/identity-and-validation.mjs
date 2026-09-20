@@ -1,5 +1,5 @@
 /**
- * Regressions for the defects fixed on 2026-09-19: a credential that a
+ * Cross-marketplace identity, field validation and request safety: a credential that a
  * redirect could carry to another host, a sales path that let malformed
  * provider rows through, a cross-marketplace comparison that never checked
  * the two sides were the same collection, a short credential the redaction
@@ -296,10 +296,10 @@ const realFetch = globalThis.fetch;
 // would come next, so a force-add is the only way one gets in.
 {
   const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
-  const forbidden = /^(HANDOFF|CHECKLIST|GOAL|AGENTS|NEXT-RELEASE|PRE-LAUNCH-TESTS|LAUNCH-.*|REVIEW-BRIEF-.*)\.md$|-report\.json$|^\.audit-receipt\.json$|^BACKUPS\/|^\.release\//;
+  const forbidden = /^(HANDOFF|CHECKLIST|GOAL|AGENTS|NEXT-RELEASE|NOTES-.*|PRE-LAUNCH-.*|LAUNCH-.*)\.md$|-report\.json$|^\.audit-receipt\.json$|^BACKUPS\/|^\.release\//;
   const leaked = tracked.filter((f) => forbidden.test(f));
   assert.deepStrictEqual(leaked, [], `internal files are tracked: ${leaked.join(", ")}`);
-  for (const name of ["LAUNCH-FUTURE.md", "future-report.json", "REVIEW-BRIEF-10.md", "HANDOFF.md", "BACKUPS/x.bundle"]) {
+  for (const name of ["LAUNCH-FUTURE.md", "future-report.json", "NOTES-LATER.md", "HANDOFF.md", "BACKUPS/x.bundle"]) {
     let ignored = true;
     try {
       execFileSync("git", ["check-ignore", "-q", "--no-index", name], { cwd: root, stdio: "ignore" });

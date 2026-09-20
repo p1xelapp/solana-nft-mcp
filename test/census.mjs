@@ -1,5 +1,5 @@
 /**
- * Twenty-seven regressions from 2026-09-16 and 2026-09-17: a private RPC key
+ * The collection census, and the paths around it: a private RPC key
  * that reached an answer, provenance rows out of order, a census that
  * counted copies twice, venue and wallet totals, and packaging.
  *
@@ -671,8 +671,8 @@ const kinds = (r) => r.events.map((e) => e.event);
   assert.deepStrictEqual(relativeLinks, [], `README document links must be absolute so they resolve from an installed package: ${relativeLinks.join(", ")}`);
   // IMAGES are the opposite. GitHub renders a README image through a proxy
   // that fetches with no credentials, so an absolute raw.githubusercontent
-  // URL is a 404 on a private repository and every picture breaks (observed
-  // 2026-09-19). A relative path is rewritten by GitHub to a blob served
+  // URL is a 404 on a private repository and every picture breaks.
+  // A relative path is rewritten by GitHub to a blob served
   // under the viewer's own session and renders whether the repository is
   // private or public, which is where this README is actually read.
   const absoluteImages = readme.match(/<img[^>]*src="https:\/\/raw\.githubusercontent[^"]*"/g) ?? [];
@@ -708,7 +708,7 @@ const kinds = (r) => r.events.map((e) => e.event);
   ok("R5-21/24/25/27 the documents say what the code does");
 }
 
-// ================================================================ R5-28 (live find, 2026-09-17)
+// ================================================================ R5-28
 // The Magic Eden escrow address, pasted into get_asset because it shows as
 // the owner of every listed item, came back "could not be completed, try
 // again". A known venue account is named, and a wallet is called a wallet.

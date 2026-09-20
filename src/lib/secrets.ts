@@ -5,7 +5,7 @@
  * The key this server issues ITSELF lives in memory and on disk, never in the
  * environment, so an upstream error that reflected the request header carried
  * it straight into a `get_source_status` answer - a normal result, not even an
- * error. Reproduced 2026-09-15 with a mocked OpenSea 400 over real stdio.
+ * error. Reproduced with a mocked OpenSea 400 over real stdio.
  *
  * The rule is now: whatever is attached to a request is registered here first,
  * and every string that leaves this process for a model, a log or a client
@@ -13,9 +13,9 @@
  * sent stays redacted for the life of the process, because a rotated key can
  * still be reflected by a slow upstream.
  *
- * Three spellings of every secret are looked for, not one. A second review
- * (2026-09-16) registered a key containing a double quote and watched it walk
- * through the result boundary: the boundary serialised first and searched
+ * Three spellings of every secret are looked for, not one. A key containing a
+ * double quote was registered and then watched walking straight through the
+ * result boundary: the boundary serialised first and searched
  * second, and JSON escaping had turned `"` into `\"` so the raw string was no
  * longer there. The same key percent-encoded in a URL would have passed too.
  * So the raw form, the JSON-escaped form and the URL-encoded form are all
@@ -56,8 +56,7 @@ function spellings(v: string): string[] {
  * userinfo password) is a credential at any length a redaction can still be aimed
  * at. The eight-character floor exists for path segments, where a short
  * value is as likely a route word as a key; applying it to an explicitly
- * named credential left a seven-character key unregistered and echoed
- * (2026-09-19).
+ * named credential left a seven-character key unregistered and echoed.
  */
 const MIN_NAMED_SECRET_LENGTH = 4;
 
@@ -79,7 +78,7 @@ export function registerSecret(value: string | null | undefined, minLength: numb
  * never treated as a secret. Only the URL's credential parts are registered,
  * so an ordinary path like `/v2` or `/rpc` is not redacted from every answer.
  *
- * A test on 2026-09-16 mocked an RPC that reflected the
+ * A test mocked an RPC that reflected the
  * `api-key` query value inside a JSON-RPC error message; the message became
  * `sourceErrors["solana-rpc"]` on a SUCCESSFUL `get_asset` answer. The host-
  * only endpoint label had never been the leak; the upstream's own text was.
@@ -97,7 +96,7 @@ export function registerUrlCredentials(url: string | null | undefined): number {
   // The RAW component is registered as written, as well as its decoded
   // value: `searchParams` decodes, and re-encoding it produced upper-case
   // escapes only, so a key the URL spelt with %2f or with + for a space was
-  // never protected (2026-09-18).
+  // never protected.
   const reg = (raw: string, minLength: number) => {
     if (registerSecret(raw, minLength)) n++;
     let decoded = raw;
@@ -138,7 +137,7 @@ export function registerUrlCredentials(url: string | null | undefined): number {
   // LOOKED like a token (twelve or more characters mixing letters and
   // digits), and a provider key made of letters only, of digits only, or of
   // eight characters was never registered: an upstream error that echoed the
-  // URL then put it in a successful result (2026-09-18).
+  // URL then put it in a successful result.
   // A route word is a known path component or a version tag; the rest is
   // registered in its raw and decoded spellings.
   for (const seg of u.pathname.split("/")) if (isPathCredential(seg)) reg(seg, MIN_SECRET_LENGTH);

@@ -12,7 +12,7 @@
  * separate plugin), does not say how an item came to sit there (unsold,
  * returned, bought back and refunded all look the same), and does not say
  * the key is a person or a company (a program-derived address can hold it).
- * The first version said all three from the match alone (2026-09-18); each is now left to the evidence that can carry it.
+ * The first version said all three from the match alone; each is now left to the evidence that can carry it.
  *
  * Two readers, in this order:
  *  1. The collection in front of the tool: its update authority is decoded

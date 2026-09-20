@@ -230,8 +230,7 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
       const known = rec.type < PLUGIN_NAMES.length;
       const name = known ? PLUGIN_NAMES[rec.type]! : `unknown plugin type ${rec.type}`;
       // A type this reader does not know is not "no extra permission": it
-      // was being skipped in silence and the picture called complete
-      // (2026-09-18).
+      // was being skipped in silence and the picture called complete.
       if (!known) {
         failures.push(`${name}: not decoded by this version, so what it permits is unknown`);
         out.plugins.push({ type: name, authority: rec.auth, unreadable: true, unsupported: true });
@@ -294,8 +293,8 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   }
   // A freeze blocks the HOLDER. A permanent transfer delegate's transfer is
   // force-approved by the program, frozen or not, so an absolute "cannot be
-  // transferred" beside that delegate was false reassurance (2026-09-18;
-  // Metaplex Core docs, permanent transfer delegate).
+  // transferred" beside that delegate was false reassurance
+  // (Metaplex Core docs, permanent transfer delegate).
   const forceApproved = ptd && heldByOther(ptd) ? ` The permanent transfer delegate (${ptd.authority}) is the exception: its transfers are force-approved by the program even while the asset is frozen.` : "";
   for (const p of plugins) {
     if (p.unsupported) out.warnings.push(`${p.type} is attached (authority: ${p.authority}) and this version cannot read it: it may grant a control over transfers, freezes or burns that the picture below does not show.`);
@@ -316,7 +315,7 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
 
   // Whether the picture is complete is decided BEFORE any assurance that
   // rests on absence. "No royalties plugin" beside an unread collection or an
-  // unread external adapter was a definite claim built on a hole (2026-09-18).
+  // unread external adapter was a definite claim built on a hole.
   const contextIncomplete =
     asset.externalPlugins + (collection?.externalPlugins ?? 0) > 0 ||
     Boolean(asset.decodeNote || collection?.decodeNote) ||

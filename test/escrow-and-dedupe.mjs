@@ -1,5 +1,5 @@
 /**
- * Twelve regressions from 2026-09-18: credential spellings, provenance
+ * Credential spellings, provenance
  * ordering, census reconciliation and wallet dedupe.
  * Every block asserts the correct behaviour and every one failed before its
  * fix. Nothing here touches the network.
@@ -179,7 +179,7 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
   ok("R6-08/09/10 a duplicate is exact in every claim, outgoing settlement is uncertain too, a self-fill is no first buy");
 }
 
-// ================================================================ R6-13 (live find, 2026-09-18)
+// ================================================================ R6-13
 // The issuer's own wallet led the holder list with no role on it, and a
 // reader called it a whale that had bought eleven packs. The collection's
 // update authority is the issuer's key, read from the chain.
@@ -189,7 +189,7 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
   const k = knownIssuer(CANDY);
   assert.ok(k && k.collections >= 300, `the table knows the key that signs the Candy registry: ${JSON.stringify(k)}`);
   // The table names the key; it does not decide a role on a collection whose
-  // authority was not read (2026-09-18).
+  // authority was not read.
   assert.strictEqual(roleOf(CANDY, null).role, "unknown");
   assert.match(roleOf(CANDY, null).note, /Candy Digital/);
   assert.strictEqual(roleOf(address("someone"), CANDY).role, "wallet");

@@ -65,7 +65,7 @@ function loadSnapshot(): Snapshot | null {
  * An answer carrying only `symbol: "superman_2023_1"` leaves the reader to
  * work out which Superman #1 it covers, and the directory holds eight. Two
  * assistants asked the same question on the same day answered about two
- * different collections and neither said which (observed 2026-09-19). Naming
+ * different collections and neither said which. Naming
  * the collection in the result is what lets a summary say what it read.
  *
  * Null when the snapshot does not hold the symbol. The snapshot stops at

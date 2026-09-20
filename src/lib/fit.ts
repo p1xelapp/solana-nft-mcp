@@ -7,7 +7,7 @@
  * the model reads the surviving prefix as the whole thing and then reports
  * "the 23 listings" when there were 100.
  *
- * Measured on 2026-09-15: `find_listings` with limit 100 on Mad Lads returned
+ * Measured: `find_listings` with limit 100 on Mad Lads returned
  * 247,385 characters, of which 140 KB was a full trait array repeated on every
  * row, with the same trait floors already aggregated once at the top of the
  * same answer. It was four times past what the client would keep.
@@ -43,7 +43,7 @@ export interface Fitted<T> {
  * UTF-8 bytes, not string length.
  *
  * `JSON.stringify(v).length` counts UTF-16 code units, and the budget is named
- * in bytes. Measured 2026-09-15: thirty CJK characters are 43 code units and
+ * in bytes. Measured: thirty CJK characters are 43 code units and
  * 103 UTF-8 bytes, so a 60-byte budget accepted a 103-byte payload. Any
  * collection with a non-Latin name defeated the guarantee this helper exists
  * to provide, and the venues carry plenty of them.
