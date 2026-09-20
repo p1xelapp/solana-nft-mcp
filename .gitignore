@@ -27,19 +27,17 @@ IMAGES/
 # Local working notes and run reports. Kept on disk, not published.
 LAUNCH-*.html
 LAUNCH-*.md
+PRE-LAUNCH-*.md
 HANDOFF.md
 CHECKLIST.md
-PRE-LAUNCH-*.md
-REVIEW-BRIEF-*.md
 GOAL.md
 NEXT-RELEASE.md
 AGENTS.md
+NOTES-*.md
 docs/LAUNCH-KIT.md
 docs/DEMO-SCRIPT.md
-scripts/persona-prompts.mjs
-test/persona-server.mjs
 *-report.json
 .battery-*.txt
 
-# Local safety copies of the tree taken before a fix wave. Never published.
+# Local copies of the tree, kept before a large change. Not published.
 BACKUPS/

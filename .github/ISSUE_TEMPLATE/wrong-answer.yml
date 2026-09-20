@@ -13,7 +13,7 @@ body:
     attributes:
       label: Version
       description: The line the server prints on start, or the version in package.json.
-      placeholder: "1.16.0"
+      placeholder: "the version the server prints on start"
     validations:
       required: true
   - type: textarea

@@ -152,7 +152,7 @@ export const SOURCES: readonly SourceEntry[] = [
     fallback: null,
     retention: "unknown (not documented)",
     note:
-      "Reached with the vendor's shared public token in the URL - no signup, nothing issued to this user, so the zero-key promise holds. Measured slowest of the three.",
+      "Reached with the vendor's shared public token in the URL - no signup and nothing issued to this user. Measured slowest of the three.",
   },
   {
     id: "metaplex-core",
@@ -252,7 +252,7 @@ export const SOURCES: readonly SourceEntry[] = [
       "the largest holders and their combined share of supply in get_collection_stats",
     ],
     cannotSee: [
-      "anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is simply absent",
+      "anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is absent",
       "which marketplace actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name",
     ],
     officialDocs: "https://docs.opensea.io/reference/api-overview",
@@ -306,7 +306,7 @@ export const SOURCES: readonly SourceEntry[] = [
     lastVerified: VERIFIED,
     fallback: "magiceden-v2",
     retention: "unknown (not documented)",
-    note: "Requires an issued key, so wiring it would break the zero-key promise for anyone without one. Planned as optional, like OpenSea.",
+    note: "Requires a key the user has to go and get, so it cannot be a default source. Planned as optional, like OpenSea.",
   },
   {
     id: "helius-das",

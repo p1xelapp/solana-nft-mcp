@@ -84,18 +84,18 @@ jobs:
         run: npm run lint
 
       # `npm test` builds and then runs the WHOLE offline suite: protocol,
-      # market, DAS, mechanics, http, serials. CI used to run only
-      # test/protocol.mjs, so a regression any of the others caught still went
-      # green - the suite the README promises and the suite CI ran were
-      # different suites.
+      # market, DAS, mechanics, hardening, abuse, census, siblings and the rest
+      # of test/. CI used to run only test/protocol.mjs, so a regression any of
+      # the others caught still went green - the suite the README promises and
+      # the suite CI ran were different suites.
       - name: Build + offline test suite
         run: npm test
 
-      # Publishing with ignore-scripts=true does not build for you: this proves
-      # the tarball would carry dist/index.js and the bundled snapshot.
-      - name: Images carry no generator metadata
+      - name: Image metadata check
         run: node scripts/scan-images.mjs assets
 
+      # Publishing with ignore-scripts=true does not build for you: this proves
+      # the tarball would carry dist/index.js and the bundled snapshot.
       - name: Tarball contents check
         run: node scripts/pack-check.mjs
 
