@@ -1,9 +1,52 @@
 # Changelog
 
+## 1.16.2 - 2026-09-20
+
+A pass over the boundary with the endpoints and the marketplaces, from the
+outside in. Pinned by `test/injection-and-redirects.mjs`, which fails on 1.16.1.
+
+- **A name padded to 200 KB stopped the server for 39 seconds.** The serial
+  reader looked for a tail anywhere in a name, so a name made mostly of spaces
+  cost time proportional to its length squared, and nothing can interrupt a
+  regular expression mid-match. The name is capped at 300 characters before any
+  pattern runs, and the bare-fraction pattern is anchored at both ends. A serial
+  never sat past character 300, so nothing readable was lost.
+- **The three chain reads that do not use the shared plumbing now refuse a
+  redirect too.** `fetchRetry` has refused a 3xx since 1.16.1, but the Solana
+  JSON-RPC path, the endpoint health probe and the asset-index path each call
+  `fetch` directly and were following one. A 307 keeps the method and the body,
+  so an endpoint could move a chain read to a host of its choosing and have the
+  answer read as chain state.
+- **An address field is address-shaped or it is null.** A `typeof` check is not
+  a guard: the marketplace writes those fields. `seller`, `tokenMint`, wallet
+  rows in the leaderboard and the holder list, the mints in a wallet profile and
+  in a flip, and the addresses on plain transfers all pass the base58 test that
+  `get_recent_sales` already applied, or they are dropped.
+- **An endpoint's own words are neutralised before they become a note.** The
+  RPC health probe put a raw JSON-RPC error message into `get_source_status`, on
+  a successful answer where no error path would ever have seen it. The asset
+  index did the same with a `JSON.parse` failure, which quotes the body it
+  choked on. Both go through the same neutralise, redact and cut-short rule as
+  every other upstream string.
+- **A trending row's image URL is bounded.** The prefix test accepted anything
+  after `https://`, newlines included; the same guard on an asset answer had
+  been capped at 2,048 bytes since a 130,000-character URL was found. Both now
+  also refuse whitespace.
+- Also: the OpenSea collection record validates its slug, supply, royalty and
+  on-chain address rather than trusting their declared types; the key file is
+  read through an open handle instead of a path, so a swapped name cannot defeat
+  the symlink and size checks, and its temporary file is created exclusively;
+  one transient read error no longer latches the process into "no key on disk";
+  `verify_claim` constrains its subject to an address or a symbol; a failure is
+  classified as an outage or an absence by the error's class instead of by
+  matching a phrase in the upstream's message; the trait list on one listing is
+  capped; a closed stderr exits cleanly like a closed stdout.
+
 ## 1.16.1 - 2026-09-19
 
-Nine defects fixed, each pinned by `test/identity-and-validation.mjs`, and a
-sweep of the words around the code.
+Cross-marketplace identity, request safety and field validation, each change
+pinned by `test/identity-and-validation.mjs`. The prose around the code got a
+pass of its own.
 
 - **A redirect can no longer carry a key.** Every request the server makes
   refuses a 3xx answer instead of following it. A 302 from an API host used to
@@ -84,10 +127,10 @@ The server's own words, and two ways a name search answered the wrong thing.
 
 ## 1.15.4 - 2026-09-18
 
-Eighteen defects found by reading the answers the way a bot would, none a blocker, all fixed and
-pinned by `test/siblings.mjs`. The review was about people building
-bots, trackers and dashboards on these answers, across every Solana
-collection. The theme this time was sibling code paths disagreeing: a
+This round read every answer the way a bot would, across every Solana
+collection rather than the curated ones, and fixed what a tracker or a
+dashboard would have swallowed. Pinned by `test/siblings.mjs`. The theme was
+sibling code paths disagreeing: a
 summary and the table beside it built from different events, a filter
 applied in one mode and ignored in another, a rule enforced in one reader
 and missing from its twin.
@@ -161,8 +204,7 @@ and missing from its twin.
   and carries no `structuredContent.error`; every failure inside a handler
   does. README, Trust and limits, says so.
 
-Fourteen defects, one of them a blocker, all fixed
-and pinned by `test/roles-and-holes.mjs`. The theme was interpretation: a fact read
+Pinned by `test/roles-and-holes.mjs`. The theme was interpretation: a fact read
 from the chain was being turned into a story the chain does not tell.
 
 - Credentials: a key in the PATH of a configured RPC URL is registered
@@ -212,6 +254,10 @@ instruction omitted the owner account. Filling it from the processor's
 default is an enrichment, not a correction, and needs the fixture pinned to
 a reviewed program version first.
 
+## 1.15.3 - 2026-09-18
+
+Rolled into 1.15.4; no separate build was published.
+
 ## 1.15.2 - 2026-09-18
 
 The issuer is a role, read from the chain.
@@ -260,8 +306,9 @@ gold pack returns to the treasury.
 
 ## 1.15.1 - 2026-09-17
 
-Twenty-seven defects between 1.14.3 and 1.15.0, all fixed here, each pinned by a
-test that failed on 1.15.0: census, provenance, credentials, cache and answer size.
+Everything the 1.15.0 census work disturbed, put back in order: census,
+provenance, credentials, cache and answer size. Each change is pinned by a test
+that fails on 1.15.0.
 
 The one that mattered most:
 
@@ -389,8 +436,7 @@ against the chain and the venues, gated behind `COLLECTOR_LIVE_EDGES=1`):
   annotated as a listing, a fill or a delisting, because OpenSea records
   those as transfers and a reader was calling them gifts.
 
-Twelve more defects in the fix commit itself, one a blocker. All fixed and
-pinned in `test/escrow-and-dedupe.mjs`.
+A second pass over the same paths, pinned in `test/escrow-and-dedupe.mjs`.
 
 - A private URL key spelt with lower-case percent escapes, or with `+` for
   a space, or a twelve-character path token, was not registered and could
@@ -461,8 +507,8 @@ house failure mode: an answer that is confidently incomplete.
 
 ## 1.14.3 - 2026-09-16
 
-Nine defects in the 1.14.x diff. All
-nine are fixed, each with a regression that fails on 1.14.2.
+The 1.14.x credential and cancellation work, read again from the outside. Each
+change carries a regression that fails on 1.14.2.
 
 - **A key containing a quote walked through the result boundary.** The
   boundary serialised first and searched second, and JSON escaping had
@@ -542,9 +588,9 @@ model uses the answer and were run by hand in each tested host.
 
 ## 1.14.0 - 2026-09-15
 
-Thirteen defects in 1.13.0, found with synthetic upstreams and a
-real stdio client. All thirteen are fixed here, each with a regression that
-asserts the correct behaviour on the fixture that reproduced it
+1.13.0 run against synthetic upstreams and a real stdio client, and everything
+that gave way is fixed here. Each change carries a regression that asserts the
+correct behaviour on the fixture that reproduced it
 (`test/credentials-and-cancellation.mjs`, fourteen groups, in `npm test`).
 
 Credentials and bodies:
@@ -688,7 +734,7 @@ The queue serves the person first.
 
 ## 1.12.1 - 2026-09-15
 
-Three defects and one test that could lie, all four fixed.
+Three wrong answers, and a test that would have passed either way.
 
 - **One malformed record destroyed a whole valid report.** `blockTime: 1e20` is
   a finite number that JavaScript's Date cannot hold, so `toISOString` threw
@@ -892,6 +938,10 @@ Found by sweeping 37 real collections rather than the same few fixtures.
 - One unresolvable name no longer kills a whole group scan. A name shared by two
   collections threw, and in a batch of twenty that is a row to report rather than
   a reason to abandon the other nineteen.
+
+## 1.10.5 - 2026-09-15
+
+Rolled into 1.10.6; no separate build was published.
 
 ## 1.10.4 - 2026-09-15
 
@@ -1120,8 +1170,8 @@ catalog. 20 tools, 4 resources.
 
 ## 1.7.1 - 2026-09-05
 
-Thirty defects found in review drove these;
-the important ones changed answers, not just code.
+A long pass over the trust and provenance paths. The changes that matter here
+move answers, not just code.
 
 - **`get_asset_trust` reads the collection too.** Core plugins set on a
   collection apply to every asset in it. Reading only the asset told holders
@@ -1229,7 +1279,7 @@ the important ones changed answers, not just code.
 
 ## 1.5.1 - 2026-09-01
 
-Panel-review release - positioning and the things three kinds of users asked for.
+Positioning, plus the three things users kept asking for.
 
 - `verify_claim` now returns a one-line `receipt` safe to paste into a Discord
   argument: verdict, the numbers the chain showed, and where it came from.
@@ -1348,7 +1398,8 @@ Security, verification, and protocol-currency release.
 
 ## 1.0.0 - 2026-08-24
 
-Initial public release.
+First release. `get_pack_pulls`, the `collector://registry` resource and the
+CryptoSlam source listed below were all removed in later versions.
 
 - 8 tools: search_collections, get_collection_stats, get_floor_prices,
   get_recent_sales, get_asset, get_asset_provenance, get_wallet_holdings,
