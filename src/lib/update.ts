@@ -13,6 +13,7 @@
  */
 
 import { readBoundedJson } from "./http.js";
+import { clean } from "./untrusted.js";
 
 export interface UpdateInfo {
   /** The version this process is running. */
@@ -92,7 +93,10 @@ async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> 
     const behind = compareVersions(latest, current) > 0;
     return { ...base, checked: true, latest, behind, howTo: behind ? HOW_TO : null };
   } catch (e) {
-    return { ...base, checked: true, reason: `registry not reachable (${e instanceof Error ? e.message : String(e)})` };
+    // `JSON.parse` quotes part of the body it failed on, so this text is not
+    // wholly ours when something sits between here and the registry.
+    const why = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
+    return { ...base, checked: true, reason: `registry not reachable (${why})` };
   }
 }
 

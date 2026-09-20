@@ -244,7 +244,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       // A caller that has already given up gets no further requests spent on
       // its behalf, and none of the source's rate budget either.
       if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
-      // Both waits take the signal. Measured 2026-09-15: a read aborted 10 ms
+  // Both waits take the signal. Measured: a read aborted 10 ms
       // in still settled at 356 ms, because the gate wait ignored the signal
       // and only the check AFTER it looked. A deadline consulted after the
       // waiting is not a deadline.
@@ -260,8 +260,16 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+          // A 3xx is refused rather than followed. A 307 preserves the method
+          // and the body, so an endpoint that answers one can move a chain read
+          // to a host of its choosing and have the reply read as chain state.
+          redirect: "manual",
           signal: combineSignals(12_000, signal),
         });
+        if (res.status >= 300 && res.status < 400) {
+          await res.body?.cancel().catch(() => undefined);
+          throw new EndpointError(`HTTP ${res.status} redirect refused`);
+        }
         if (!res.ok) {
           await res.body?.cancel().catch(() => undefined);
           throw new EndpointError(`HTTP ${res.status}`);
@@ -382,8 +390,13 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
           { jsonrpc: "2.0", id: 1, method: "getHealth" },
           { jsonrpc: "2.0", id: 2, method: "getSlot" },
         ]),
+        redirect: "manual",
         signal: combineSignals(timeoutMs, signal),
       });
+      if (res.status >= 300 && res.status < 400) {
+        await res.body?.cancel().catch(() => undefined);
+        throw new EndpointError(`HTTP ${res.status} redirect refused`);
+      }
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
@@ -422,9 +435,13 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
         ok: healthy && slot !== null,
         latencyMs,
         slot,
+        // The endpoint writes this text. Through `upstreamMessage` like every
+        // other RPC error in this file: neutralised, redacted and cut short,
+        // because this one lands in a SUCCESSFUL `get_source_status` answer
+        // where no error guard would ever see it.
         note: healthy && slot !== null
           ? `healthy at slot ${slot}`
-          : (health?.error?.message ?? "answered but did not report itself healthy"),
+          : (upstreamMessage(health?.error?.message) || "answered but did not report itself healthy"),
       });
     } catch (e) {
       out.push({
@@ -432,7 +449,7 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
         ok: false,
         latencyMs: Date.now() - started,
         slot: null,
-        note: e instanceof Error ? e.message : String(e),
+        note: upstreamMessage(e instanceof Error ? e.message : String(e)) || "did not answer",
       });
     }
   }
@@ -474,6 +491,21 @@ export function base58Encode(bytes: Uint8Array): string {
 /** Cheap shape check for tool inputs - full validity is proven by the RPC call. */
 export function isBase58Address(s: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+}
+
+/**
+ * An address field as a marketplace sent it, or null.
+ *
+ * A `typeof v === "string"` test is not a guard: the base58 alphabet has no
+ * newline, no angle bracket and no space in it, so a value that passes this
+ * cannot carry a turn marker or a role tag, and a value that fails it was
+ * never an address. Readers that only checked the type were relaying
+ * marketplace-authored text into fields a client reads as identifiers.
+ *
+ * Use this at every boundary where an address arrives from somebody else.
+ */
+export function venueAddress(v: unknown): string | null {
+  return typeof v === "string" && isBase58Address(v) ? v : null;
 }
 
 // ------------------------------------------------- Core account decoding
@@ -728,8 +760,7 @@ const TRANSFER_NEW_OWNER_INDEX = 4;
  * burn is a plugin, update, compress, execute or group instruction, none of
  * which changes the owner. A value ABOVE it is an instruction this version
  * does not know, and what it did to custody is unknown: it was being
- * dropped on the floor, and a never-traded claim confirmed across it
- * (2026-09-18).
+ * dropped on the floor, and a never-traded claim confirmed across it.
  */
 const IX_KNOWN_MAX = 41;
 
@@ -974,7 +1005,7 @@ export async function getProvenance(
       // one as its recipient sits in slot 4, not slot 0, and is somebody
       // else's event: it was being turned into a transfer of THIS asset by a
       // transaction-wide log line, which contradicted a true never-traded
-      // claim (2026-09-16).
+  // claim.
       const undecodable = coreIxs.filter((i) => discriminator(i.data) === null && i.accounts?.[0] === mint);
       // The asset an instruction is ABOUT sits in slot 0 for CreateV1/V2,
       // TransferV1 and BurnV1 alike. Membership anywhere in the account list
@@ -1010,7 +1041,7 @@ export async function getProvenance(
       // Counted here; each one becomes a gap row IN ITS PLACE in the walk
       // below, beside whatever readable instructions the transaction carried.
       // Returning early here threw away a decoded transfer that sat next to an
-      // undecodable sibling (2026-09-18).
+  // undecodable sibling.
       unreadable += undecodable.length;
 
       const marketplace = usable
@@ -1164,7 +1195,7 @@ export async function getProvenance(
     // OLDER than everything decoded, and belongs before it, never after: the
     // first version appended the budget gap to the end and labelled the
     // unread transactions as following the newest event, which reversed the
-    // chronology (2026-09-17). With a depth window as well,
+  // chronology. With a depth window as well,
     // the unread ranges at the old end are, oldest first: the mint anchor,
     // the depth window, then whatever newer transactions the budget dropped.
     const holes: ProvenanceEvent[] = [];
@@ -1216,7 +1247,7 @@ export async function getProvenance(
     // Read under the walk's own options, so a fresh walk does not classify
     // a recipient against a cached authority, and a rotation shows in the
     // receipt. The outcome travels with the result: a failed read used to
-    // vanish into "no issuer" (2026-09-18).
+  // vanish into "no issuer".
     let issuerKey: string | null = null;
     let issuerRead: IssuerRead;
     if (!account.collection) issuerRead = { status: "not-applicable", reason: "the asset is not in a collection" };
@@ -1237,8 +1268,7 @@ export async function getProvenance(
     // history into "into escrow", a claim about an account nothing had
     // classified; and a mint whose transaction also ran a marketplace program
     // (a mint straight into a pool, then a fill to the buyer in the same
-    // transaction) made the buyer's wallet an escrow
-    // (2026-09-18).
+    // transaction) made the buyer's wallet an escrow.
     let custody: "wallet" | "escrow" | "unknown" = "unknown";
     for (const e of events) {
       if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {

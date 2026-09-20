@@ -26,6 +26,18 @@ import { isBase58Address } from "./solana.js";
 import { DasUnsupported } from "../lib/errors.js";
 import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
 
+/**
+ * An error whose text an endpoint may have written, made safe to return.
+ *
+ * `JSON.parse` embeds a snippet of the body it choked on, so a `SyntaxError`
+ * from a hostile endpoint carries that endpoint's bytes, newlines and role
+ * tags included. Neutralised, redacted and cut short, like every other
+ * upstream string that leaves this process.
+ */
+function upstreamText(e: unknown): string {
+  return redactSecrets(clean(e instanceof Error ? e.message : String(e))).slice(0, 300);
+}
+
 const PUBLIC_DAS = "https://api.mainnet-beta.solana.com";
 const SOURCE = "the public Solana RPC asset index (DAS)";
 
@@ -97,8 +109,16 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
         method: "POST",
         headers: { "content-type": "application/json", "user-agent": "collector-mcp/1.0 (+https://github.com/p1xelapp/collector-mcp)" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        // Never follow a 3xx: a 307 keeps the method and the body, so an
+        // endpoint answering one could point an index read at another host.
+        redirect: "manual",
         signal: combineSignals(20_000, signal),
       });
+      if (r.status >= 300 && r.status < 400) {
+        await r.body?.cancel().catch(() => undefined);
+        last = `${ep.id} answered HTTP ${r.status}, a redirect this server refuses to follow`;
+        continue;
+      }
       if (r.status === 429 || r.status >= 500) {
         last = `${ep.id} answered HTTP ${r.status}`;
         continue;
@@ -108,7 +128,10 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       j = await readBoundedJson<{ result?: T; error?: RpcError }>(r, ep.id);
     } catch (e) {
       if (e instanceof OversizedBodyError) throw e;
-      last = `${ep.id} ${e instanceof Error ? e.message : String(e)}`;
+      // `JSON.parse` puts a slice of the offending body into its own message,
+      // so this text is partly written by the endpoint. It travels into the
+      // capability note and from there into a successful status answer.
+      last = `${ep.id} ${upstreamText(e)}`;
       continue;
     }
     // A JSON-RPC response is an object. An endpoint answering the literal
@@ -206,7 +229,7 @@ export async function capability(opts: { fresh?: boolean; signal?: AbortSignal }
             available: false,
             state: "temporarily-unreachable",
             endpoint: null,
-            note: `the asset index did not answer just now (${e instanceof Error ? e.message : String(e)}); that is the free endpoint being busy, not the methods being withdrawn`,
+            note: `the asset index did not answer just now (${upstreamText(e)}); that is the free endpoint being busy, not the methods being withdrawn`,
             checkedAt,
           };
   }
@@ -331,7 +354,7 @@ const MAX_BATCH_IDS = 5000;
 const READ_DEADLINE_MS = 25_000;
 /**
  * A census reads whole 1,000-row pages, and the public index answered one in
- * about a second on a quiet day and in twelve on a busy one (2026-09-18, the
+ * about a second on a quiet day and in twelve on a busy one (the
  * 2,000-row read was abandoned at 25 s). Clients allow four minutes; a
  * census that takes one of them is still an answer.
  */
@@ -400,7 +423,7 @@ const TRAIT_ROWS_MAX = 64;
  *
  * Invalid rows are dropped BEFORE the cap: sixty-four empty entries ahead of
  * the one real trait used to push it off the end and turn a match into a
- * confident zero (2026-09-17).
+ * confident zero.
  */
 export function normaliseTraits(raw: unknown): { rows: DasTrait[]; omitted: number } {
   const list = Array.isArray(raw) ? raw : [];
@@ -752,7 +775,7 @@ export async function getAssetsByGroup(
       // A copy already turned away for naming another collection, followed
       // by a copy that claims this one, is the same contradiction as the
       // reverse order, which was already caught. The first version forgot
-      // the rejected copy and let the second one count (2026-09-18).
+  // the rejected copy and let the second one count.
       if (rejected.has(a.id)) {
         duplicateRows++;
         conflictingRows++;

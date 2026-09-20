@@ -26,7 +26,7 @@ import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
 import { registerSecret } from "../lib/secrets.js";
 import { isoFromBlockTime } from "../lib/time.js";
-import { isBase58Address } from "./solana.js";
+import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
@@ -117,13 +117,26 @@ const MAX_KEY_LENGTH = 512;
 
 function loadStoredKey(): StoredKey | null {
   if (diskRead) return memoryKey;
-  diskRead = true;
   try {
     // Only a regular file of a plausible size is read: a symlink, a directory
     // or a 10 MB file wearing the name is treated as no cached key at all.
-    const st = fs.lstatSync(keyFile());
-    if (!st.isFile() || st.size > MAX_KEY_FILE_BYTES) return memoryKey;
-    const parsed = JSON.parse(fs.readFileSync(keyFile(), "utf8")) as Partial<StoredKey>;
+    //
+    // The checks are made against the OPEN HANDLE, not against the path.
+    // Testing a path and then opening it again is two different files if the
+    // name is swapped in between, which defeats both the symlink test and the
+    // size cap. O_NOFOLLOW refuses a symlink outright where the platform has it.
+    const fd = fs.openSync(keyFile(), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    let text: string;
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || st.size > MAX_KEY_FILE_BYTES) return memoryKey;
+      const buf = Buffer.alloc(st.size);
+      fs.readSync(fd, buf, 0, st.size, 0);
+      text = buf.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+    const parsed = JSON.parse(text) as Partial<StoredKey>;
     if (typeof parsed.key === "string" && parsed.key && parsed.key.length <= MAX_KEY_LENGTH && typeof parsed.expiresAt === "string" && Number.isFinite(Date.parse(parsed.expiresAt))) {
       memoryKey = {
         key: parsed.key,
@@ -132,9 +145,14 @@ function loadStoredKey(): StoredKey | null {
         source: "opensea-agent-key",
       };
     }
-  } catch {
-    // No file, unreadable file, or garbage in it: all mean "no cached key".
+  } catch (e) {
+    // "No such file" is an answer and latches. A transient failure - the file
+    // busy, the process out of descriptors - is not, and latching on one used
+    // to cost a fresh key against a limit OpenSea sets at about two a day.
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code && code !== "ENOENT" && code !== "ELOOP" && code !== "EACCES" && code !== "EPERM") return memoryKey;
   }
+  diskRead = true;
   return memoryKey;
 }
 
@@ -151,7 +169,16 @@ function storeKey(k: StoredKey): void {
     // through it into an unrelated file. A rename replaces the directory
     // entry and follows nothing.
     const tmp = `${keyFile()}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify(k, null, 2)}\n`, { mode: 0o600 });
+    // Remove anything already sitting at the temporary name, then create it
+    // exclusively: "wx" is O_CREAT|O_EXCL, which fails rather than writing the
+    // key through a symlink somebody pre-planted there. The destination rename
+    // already follows nothing; this closes the same hole on the way in.
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* nothing there, which is the normal case */
+    }
+    fs.writeFileSync(tmp, `${JSON.stringify(k, null, 2)}\n`, { mode: 0o600, flag: "wx" });
     // writeFile only applies the mode when it CREATES; a looser umask would
     // otherwise leave the file readable.
     fs.chmodSync(tmp, 0o600);
@@ -529,7 +556,7 @@ export async function recentSales(slug: string, limit: number) {
 }
 
 // ------------------------------------------------------- Solana on OpenSea
-// OpenSea opened Solana trading on 2026-08-31. Its collection index is the
+// OpenSea opened Solana trading. Its collection index is the
 // only keyed source that maps a slug to the on-chain collection address,
 // total supply, and the royalty the project asks for - so with a key set,
 // name search and supply questions get a second, independent answer.
@@ -657,13 +684,21 @@ export async function collectionDetail(slug: string) {
   // fees absent = OpenSea did not say; only an explicit list with no creator
   // entry means "no creator royalty". Do not turn silence into a zero.
   const royalty = data.fees ? data.fees.filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient)) : null;
+  // Every field below is OpenSea's text or OpenSea's number. The slug and the
+  // date are neutralised, the supply and the royalty have to BE numbers (a
+  // string `fee` was concatenating into a percentage), and the on-chain
+  // address has to look like one, because a later check compares it to the
+  // collection the caller asked about and decides whether two floors may be
+  // ranked together.
+  const supply = typeof data.total_supply === "number" && Number.isFinite(data.total_supply) ? data.total_supply : null;
   return {
-    slug: data.collection,
+    slug: clean(data.collection).slice(0, 120),
     name: data.name ? clean(data.name) : null,
-    totalSupply: data.total_supply ?? null,
-    onchainCollection: data.contracts?.find((c) => c.chain === "solana")?.address ?? null,
-    creatorRoyaltyPct: royalty === null ? null : royalty.reduce((s, f) => s + (f.fee ?? 0), 0),
-    listedOn: data.created_date ?? null,
+    totalSupply: supply,
+    onchainCollection: venueAddress(data.contracts?.find((c) => c.chain === "solana")?.address),
+    creatorRoyaltyPct:
+      royalty === null ? null : royalty.reduce((sum, f) => sum + (typeof f.fee === "number" && Number.isFinite(f.fee) ? f.fee : 0), 0),
+    listedOn: typeof data.created_date === "string" ? clean(data.created_date).slice(0, 40) : null,
     url: typeof data.opensea_url === "string" && /^https:\/\/opensea\.io\//.test(data.opensea_url) ? data.opensea_url : null,
     stale,
     cachedAt,
@@ -854,7 +889,10 @@ export async function holders(slug: string, limit = 10, totalSupply: number | nu
   const rows = data.holders
     // A holding is a positive whole number of items. A negative quantity was
     // producing a negative share of supply.
-    .filter((h) => typeof h.address === "string" && typeof h.quantity === "number" && Number.isInteger(h.quantity) && h.quantity > 0)
+    // The address has to look like one. A holder row is marketplace-authored
+    // text, and this wallet is handed on to a chain read as though it were an
+    // identifier.
+    .filter((h) => venueAddress(h.address) !== null && typeof h.quantity === "number" && Number.isInteger(h.quantity) && h.quantity > 0)
     .map((h) => ({
       wallet: h.address as string,
       items: h.quantity as number,

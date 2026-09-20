@@ -121,7 +121,7 @@ function commit(key: string, data: unknown, at = Date.now()) {
  * WAITER instead races the shared promise against its own signal, so a caller's
  * deadline ends that caller's wait and nobody else's.
  *
- * The producer is not immortal either. Measured 2026-09-15 over real stdio: a
+ * The producer is not immortal either. Measured over real stdio: a
  * client cancelled a sales read after the first page, and the producer went on
  * to fetch offsets 500 and 1000 with nobody waiting. So the producer runs
  * under its own signal as the AMBIENT deadline for everything it awaits (see
@@ -161,7 +161,7 @@ export async function cached<T>(
     entry = inflight.get(key);
     // A producer whose last waiter has already left is on its way out, not
     // work to join: a fresh caller that joined one inherited its AbortedError
-    // and never got a fetch of its own (reproduced 2026-09-16). It is replaced;
+    // and never got a fetch of its own. It is replaced;
     // its own cleanup below only deletes the entry it created, so the
     // replacement survives the old one finally settling.
     if (entry && entry.producer.signal.aborted) entry = undefined;
@@ -183,14 +183,14 @@ export async function cached<T>(
       // The commit belongs to the producer that still OWNS the key. One whose
       // last waiter left was replaced (below); if it goes on to settle after
       // its replacement, its older answer must not overwrite the newer one.
-      // Reproduced 2026-09-16: an abandoned owner read at slot 100 replaced
+  // Reproduced: an abandoned owner read at slot 100 replaced
       // slot 200 in the cache. The identity check on cleanup was never enough.
       // `entry` is assigned just below and read here only after the fetch
       // settles, so the closure sees this call's own entry.
       const promise = runWithSignal(producer.signal, () => fetcher(producer.signal)).then((data) => {
         // One observation, one timestamp. The first waiter used to stamp its
         // own return time, so the same data carried two cachedAt values ten
-        // milliseconds apart (2026-09-18).
+  // milliseconds apart.
         const at = Date.now();
         if (entry) entry.observedAt = at;
         if (!producer.signal.aborted && inflight.get(key) === entry) commit(key, data, at);
@@ -302,7 +302,7 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
    * The queue used to be a promise chain, which made it strictly FIFO. That
    * was fine until the background directory refresh started putting 61 pages
    * into it at once: a question a person had just asked then queued behind all
-   * of them. Measured 2026-09-15 at a 200 ms interval, a foreground call
+  * of them. Measured at a 200 ms interval, a foreground call
    * waited 4.1 s behind twenty background turns; at the real 600 ms pace and
    * 61 pages that is about 36 seconds of somebody staring at a spinner.
    *
@@ -549,7 +549,7 @@ export async function fetchRetry(
       //
       // The ATTEMPT's own deadline goes into the gate, not just the caller's.
       // Passing only the caller's signal meant timeoutMs never bounded the
-      // queue wait: measured 2026-09-15, a 10 ms timeout against a 100 ms gate
+      // queue wait: a 10 ms timeout against a 100 ms gate
       // took ~103 ms to reject, because the clock was only consulted after the
       // queue tail had already been waited out. A deadline checked after the
       // waiting is not a deadline.
