@@ -78,7 +78,7 @@ const manifest = {
   long_description:
     "Ask your AI about any Solana collectible and get the answer from the chain: who owned it, who can still freeze or burn it, " +
     "what actually sold, and where the deals are. It decodes Metaplex Core ownership history byte by byte, the history mainstream " +
-    "NFT APIs hand back empty, and labels every number with its venue, its currency and the moment it was read, so nothing gets " +
+    "NFT APIs hand back empty, and labels every number with its marketplace, its currency and the moment it was read, so nothing gets " +
     "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
     "without writing a parser. 21 tools, no sign-up, no telemetry, and no signing code exists in it, so it cannot touch your wallet. The one file it may write is a free OpenSea key in your home folder, and that can be switched off.",
   author: { name: "p1xel", url: "https://p1xel.app" },
