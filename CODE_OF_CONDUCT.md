@@ -21,8 +21,8 @@ discussed.
 
 ## Reporting
 
-Open a private security advisory on this repository, or contact me through the address on
-the profile that owns it. Reports come to me and nobody else.
+Open a private security advisory on this repository, or email the address on the GitHub
+profile that owns it. Reports come to me and nobody else.
 
 A report gets an answer. Depending on what happened, the response ranges from a request to edit
 a comment, through a warning, to a block from the repository. Repeated or severe behaviour skips

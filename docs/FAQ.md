@@ -50,7 +50,7 @@ It never fills a gap with a guess.
 **What if a number is wrong?**
 Then a source was wrong, late, or unreachable, and the answer will have said which
 source and when it was read. Chain reads are authoritative. Marketplace reads are that
-marketplace's index. The tool reports those conditions instead of smoothing them over.
+marketplace's index. The tool says which source was late, and how late.
 See docs/TRUST-AND-LIMITS.md for what that sounds like in practice.
 
 **Why not just ask ChatGPT or Claude directly?**
@@ -104,7 +104,7 @@ RPC will get throttled; set `SOLANA_RPC_URL` to any endpoint you have and it use
 Still no key required by this server.
 
 **Can it move my NFTs? Does it need my wallet?**
-No and no. There is no signing code in the repository. Every tool declares
+No and no. Nothing in it can sign a transaction; that code was never written. Every tool declares
 `readOnlyHint` in the protocol. Wallet questions take a public address, the same one
 anyone can paste into an explorer.
 
@@ -169,7 +169,7 @@ Solana in August 2026 and often prices the same item in USDC, so its floor is no
 comparable to a SOL floor and the server refuses to merge them; you get both, each in
 its own currency. Magic Eden also fills from its own pools beside the ordinary order
 book, and every sale names the program that executed it, so a pool fill is never
-reported as an order-book fill. Tensor is a real venue the server cannot read, so a
+reported as an order-book fill. Tensor is a real marketplace the server cannot read, so a
 market that looks quiet here may be busier there, and the coverage note says so instead
 of implying the market is dead.
 

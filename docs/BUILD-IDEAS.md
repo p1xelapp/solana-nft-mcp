@@ -106,7 +106,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** a project dev whose community asked for one.
 **Ask:** "Floor dashboard for our collection across Magic Eden and OpenSea. How do I not make a fool of myself?"
 **Server supplies:** floors per marketplace with currencies, the reconciliation block that says whether the two are comparable, and a spread only when they are.
-**You build:** the page. Copy the reconciliation rule verbatim: Collector Crypt has been 0.053 SOL on one marketplace and 9 USDC on the other, and merging those gives a 170x gap that does not exist.
+**You build:** the page. Copy the reconciliation rule verbatim: a SOL floor and a USDC floor are two numbers, not one, and merging them invents a gap nobody can trade.
 **What the recipe saves you:** a blank panel when a source is down reads as an empty market, so serve the last good value with its age visible. And label a sale by the program that executed the transaction, because one marketplace has been observed reporting another marketplace's fills as its own.
 **Time:** an evening for one collection, a weekend for a real watchlist.
 
@@ -221,7 +221,7 @@ the time to something that works and survives a restart, not the time to a scree
 
 ---
 
-## Two rules that apply to every build on this page
+## Three rules that apply to every build on this page
 
 **Never render a blank as a fact.** An empty history is usually an unsupported asset type, a blank
 panel is usually a source outage, and a zero count is often a misspelled symbol. Show the last

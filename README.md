@@ -4,7 +4,7 @@
 
 # collector-mcp
 
-**The NFT APIs I tried return an empty ownership history for a Metaplex Core asset, and an AI asked cold will grind through tokens and costly mistakes on the way to the truth, or just make one up.** collector-mcp gets to the truth for Solana collectors: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
+**The NFT APIs I tried return an empty ownership history for a Metaplex Core asset, and an AI reading that empty answer tells you the card has never traded.** collector-mcp reads the chain itself: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://github.com/p1xelapp/collector-mcp/blob/main/tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
@@ -236,7 +236,7 @@ without raising an error.
 Three, and none of them asks you to fill in a box. `getting_started` says what the server
 answers and hands you five questions to try. `collection_report` and `wallet_report` ask which
 collection or wallet you mean and then run the whole sequence: identifiers, supply, floor, what
-actually sold, and one item's story.
+sold, and one item's story.
 
 There are deliberately no MCP resources. A client shows those to you as files to attach beside
 your message, and nobody wants to attach a glossary to ask what a card is worth. Everything they

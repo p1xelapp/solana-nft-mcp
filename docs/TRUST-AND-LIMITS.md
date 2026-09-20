@@ -6,8 +6,7 @@ what to try next.
 
 Attribution is evidence, not a default. A provider outage, a local queue giving up on a deadline,
 a bug in our own adapter and an invalid identifier are four different events and need four
-different sentences. This file used to say "name the upstream, never blame the tool", which reads
-as a rule to point elsewhere whatever happened - it would have had us blame Magic Eden for a
+different sentences. A rule that always points at the upstream would blame Magic Eden for a
 timestamp our own code could not parse, and for a deadline our own gate enforced. If the cause is
 ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
@@ -95,7 +94,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 ---
 
-## Eight lines of site and README copy
+## Eight things it will always tell you
 
 1. It reports what the sources say and names each one. It does not decide what a number means for you.
 2. Every answer carries three things: where it came from, when it was read, and what it could not see.
@@ -103,8 +102,8 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 4. A floor is one seller's ask. It is displayed as an ask, next to what buyers actually paid.
 5. Cached values are served labelled stale rather than shown as fresh or hidden behind an error.
 6. Unverifiable is a real verdict here, alongside confirmed and contradicted.
-7. Read-only by construction. There is no signing code in the repository, so there is nothing to misuse.
-8. Runs on your machine, reads public data, keeps no wallet data or telemetry. No account, no sign-in, no key to go and get: the one free key it uses, it requests for you and stores under your home folder, and you can turn that off.
+7. Read-only by construction. Nothing in it can sign a transaction, so there is nothing to misuse.
+8. Runs on your machine and reads public data. Nothing about you is stored or sent. The one free key it uses, it requests for you and keeps under your home folder, and you can turn that off.
 
 ---
 
@@ -112,7 +111,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 
 - **Sign, buy, sell, list or transfer anything.** There is no such code in it.
 - **Ask for a private key, a seed phrase or a wallet connection.** Wallet questions take a public address, the same one anyone can paste into a block explorer.
-- **Collect anything.** No accounts, no telemetry, no logs sent anywhere. It runs locally and talks to three public sources.
+- **Collect anything.** Nothing is stored or sent. It runs locally and reads public sources.
 - **Call a floor a valuation.** Floor times count comes back labelled a ceiling, with the items it could not price counted.
 - **Convert currencies.** A SOL floor and a USDC floor are each shown as their marketplace quoted them.
 - **Rank two numbers that are not comparable.** It says not comparable as printed and shows both.

@@ -11,7 +11,7 @@ not covered by that annotation and are listed instead. Against the chain and
 the marketplaces, the failure to plan for is a wrong or stale number, and the
 server is built to label those rather than hide them.
 
-That is the boundary against the chain and the venues. Two things this server
+That is the boundary against the chain and the marketplaces. Two things this server
 does on the machine it runs on are worth knowing about, because "read-only"
 does not describe them:
 
@@ -20,7 +20,7 @@ does not describe them:
   and keeps it in `~/.collector-mcp/opensea-key.json` at permissions 600 so the
   next session does not spend another. Set `OPENSEA_API_KEY` and it uses yours
   instead; set `COLLECTOR_MCP_NO_AUTO_KEYS=1` and it never asks. A refused
-  issue is remembered for a cooldown and any `Retry-After` the venue sends is
+  issue is remembered for a cooldown and any `Retry-After` the marketplace sends is
   honoured, so a failing endpoint is not asked again on every call. The
   status tool (`get_source_status`) describes this state and never requests a
   key itself.

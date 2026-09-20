@@ -2,7 +2,8 @@
 
 Generated from `src/sources/catalog.ts` by `scripts/sources-md.mjs` - edit the catalog, not this file.
 
-Every row below was fetched and seen to answer on 2026-09-11, 2026-09-12. Tier 1 is an account read
+Every row below was fetched and seen to answer on 2026-09-11, 2026-09-12. The weekly live check re-proves
+the ones this server calls. Tier 1 is an account read
 straight from the chain and settles ownership. Tier 2 is somebody else's database - a
 marketplace's view of the market, or an index's view of the chain, either of which can lag
 it. Tier 3 is secondary or optional colour. Tier 4 is a link a person can open; this server
@@ -33,16 +34,16 @@ Listed in the order they are tried.
 ## What each wired source cannot see
 
 A healthy source still has a horizon. These are the gaps that stay gaps, and the reason
-one venue's number is never presented as the market's.
+one marketplace's number is never presented as the market's.
 
 - **Your own Solana RPC endpoint** cannot see: marketplace listings, offers or floor prices - those never touch the chain until a trade settles. Optional. Set SOLANA_RPC_URL and it is tried first, then the public list. The URL is never printed back: status and provenance report the host only, so a key in a query string cannot leak into a transcript.
 - **Solana public mainnet RPC** cannot see: listings, offers, floor prices or sale prices - a marketplace holds those off chain until settlement; which collection a name belongs to; the chain has addresses, not search. Rate-limited hard on bursts. This is the default first endpoint because it is the canonical one, not the fastest.
 - **PublicNode Solana RPC** cannot see: the same off-chain market data no RPC node can see.
-- **LeoRPC public Solana endpoint** cannot see: the same off-chain market data no RPC node can see. Reached with the vendor's shared public token in the URL - no signup, nothing issued to this user, so the zero-key promise holds. Measured slowest of the three.
+- **LeoRPC public Solana endpoint** cannot see: the same off-chain market data no RPC node can see. Reached with the vendor's shared public token in the URL - no signup and nothing issued to this user. Measured slowest of the three.
 - **Metaplex Core program and docs** cannot see: anything about a specific asset - it is a specification, not a data feed. We decode the layout by hand rather than pulling the SDK, so a Core upgrade that moves a field is a silent-wrong-answer risk. The pin is the discriminator set in src/sources/solana.ts (AssetV1 = 1, CollectionV1 = 5, TransferV1 = 14); the live check re-reads a known asset every week to catch a move.
 - **Asset index (DAS) on the public Solana RPC** cannot see: prices, listings, sales - it is an index of assets, not of trades; ownership history; only the state the index last wrote down; assets the index has not picked up yet; coverage is not documented and was seen to differ from Magic Eden's for the same wallet; anything it has not re-indexed since the last transfer - an index lags the chain, and how far is not published. An INDEX of the chain, not the chain: it runs on the same host as the tier-1 endpoint but answers from a database somebody else maintains, so it never settles ownership - the byte-level Core account read does that, and a disagreement is reported rather than resolved. The Solana Foundation endpoint answers getAsset, getAssetsByOwner and searchAssets without a key, but does not document it and calls the endpoint unfit for production. A -32601 'Method not found' is the canary that the capability was withdrawn, and the tools then say so and carry on without it. Set DAS_RPC_URL to any DAS provider you have to put it first.
 - **Magic Eden v2** cannot see: trades that happened on any other marketplace - a Magic Eden floor is one marketplace's ask, not the market's; Metaplex Core ownership history; the API returns it empty, which is why this server reads the chain instead; wallets Magic Eden blocks, including its own escrow accounts. Keyless and generous, so it is the default market source. The docs site refuses automated clients - open the link in a browser.
-- **OpenSea v2** cannot see: anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is simply absent; which marketplace actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name. No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and replaces it on the first call made within a day of its expiry; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.
+- **OpenSea v2** cannot see: anything at all when no key is in hand - if the self-issued key is refused and OPENSEA_API_KEY is unset, every OpenSea-backed field is absent; which marketplace actually executed a fill; OpenSea has been observed reporting Magic Eden fills under its own name. No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and replaces it on the first call made within a day of its expiry; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.
 
 ## How a source is retired or added
 
@@ -52,9 +53,9 @@ one venue's number is never presented as the market's.
    document it, never a guess.
 2. **Live check.** Add it to `test/live.mjs` if it is keyless, or to `test/smoke.mjs` if
    it needs a key. The assertion names the source, because the only useful failure message
-   is which venue moved.
+   is which marketplace moved.
 3. **Fixture.** Capture one real response under `test/fixtures/` so `test/protocol.mjs`
-   can keep proving the decode offline when the venue is down. Fixtures are public
+   can keep proving the decode offline when the marketplace is down. Fixtures are public
    marketplace data and are allowlisted in `.gitleaks.toml`.
 4. **CHANGELOG.** Adding or retiring a source changes what an answer means, so it is a
    user-visible change and gets an entry.
@@ -66,8 +67,8 @@ one, and silence reads as coverage.
 ## How we notice change
 
 - **Weekly live check.** `.github/workflows/live-check.yml` runs `test/live.mjs` every
-  Monday with no secrets. It makes three real calls - one marketplace, one chain read, one
-  routing call - and fails naming the source. Nothing in the repo changes between runs, so a
+  Monday with no secrets. It makes five real calls across the marketplace, the chain and the
+  name-routing path, and fails naming the source. Nothing in the repo changes between runs, so a
   red run is the outside world moving.
 - **Shape guards.** Every array page from a source passes a guard before it is read. A
   non-array is an outage or an API change and is raised as one; it is never treated as "no
@@ -83,4 +84,4 @@ one, and silence reads as coverage.
   cannot stop existing, so a failure there is the layout, not the data.
 - **Live status on demand.** `get_source_status` pings every wired source once and returns
   a plain line such as "3 of 4 sources answering; OpenSea off (no key)", so an agent can tell
-  a user which venue is missing instead of reporting that the tool is broken.
+  a user which marketplace is missing instead of reporting that the tool is broken.

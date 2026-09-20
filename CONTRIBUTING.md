@@ -10,7 +10,7 @@ Edit `src/registry.ts` and open a PR with:
 1. **Identifiers, verified live:**
    - `meSymbol` - confirm `https://api-mainnet.magiceden.dev/v2/collections/<symbol>/stats` returns a floor or volume (a bare `{symbol, listedCount: 0}` echo means the symbol does NOT exist - the phantom-200 trap).
    - `coreCollection` - confirm the address decodes as a Core collection: `get_collection_stats` on it must return `onchain.name`.
-2. **Keywords** collectors would actually type.
+2. **Keywords** collectors would type.
 3. In the PR description: one line on why this collection matters + the command output proving each identifier.
 
 Licensed/official collections (sports, entertainment, branded drops) are the
@@ -26,8 +26,9 @@ priority; blue-chip Solana collections are welcome when they help demos.
   files hold one block per closed defect, named by the wrong answer it
   prevents; add to them rather than editing what a block asserts. `npm run test:smoke` is the live
   smoke test that makes real calls to the sources, and `npm run test:live` is
-  the weekly keyless source check. All of them must pass before a release;
-  `npm run lint` (eslint) and strict tsc are enforced in CI.
+  the weekly keyless source check; both are useful locally and neither is a
+  release gate, because a marketplace being slow is not a reason to hold a
+  build. `npm run lint` (eslint) and strict tsc are enforced in CI.
 - Every fetch goes through the shared plumbing in `src/lib/http.ts` (rate gate,
   retry, bounded body read, stale-on-error cache) - no bare `fetch` in source
   modules.

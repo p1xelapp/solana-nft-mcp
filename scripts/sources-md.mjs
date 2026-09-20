@@ -57,7 +57,8 @@ const md = `# Sources
 
 Generated from \`src/sources/catalog.ts\` by \`scripts/sources-md.mjs\` - edit the catalog, not this file.
 
-Every row below was fetched and seen to answer on ${verified}. Tier 1 is an account read
+Every row below was fetched and seen to answer on ${verified}. The weekly live check re-proves
+the ones this server calls. Tier 1 is an account read
 straight from the chain and settles ownership. Tier 2 is somebody else's database - a
 marketplace's view of the market, or an index's view of the chain, either of which can lag
 it. Tier 3 is secondary or optional colour. Tier 4 is a link a person can open; this server
@@ -72,7 +73,7 @@ ${rows.join("\n")}
 ## What each wired source cannot see
 
 A healthy source still has a horizon. These are the gaps that stay gaps, and the reason
-one venue's number is never presented as the market's.
+one marketplace's number is never presented as the market's.
 
 ${cannotSee.join("\n")}
 
@@ -84,9 +85,9 @@ ${cannotSee.join("\n")}
    document it, never a guess.
 2. **Live check.** Add it to \`test/live.mjs\` if it is keyless, or to \`test/smoke.mjs\` if
    it needs a key. The assertion names the source, because the only useful failure message
-   is which venue moved.
+   is which marketplace moved.
 3. **Fixture.** Capture one real response under \`test/fixtures/\` so \`test/protocol.mjs\`
-   can keep proving the decode offline when the venue is down. Fixtures are public
+   can keep proving the decode offline when the marketplace is down. Fixtures are public
    marketplace data and are allowlisted in \`.gitleaks.toml\`.
 4. **CHANGELOG.** Adding or retiring a source changes what an answer means, so it is a
    user-visible change and gets an entry.
@@ -98,8 +99,8 @@ one, and silence reads as coverage.
 ## How we notice change
 
 - **Weekly live check.** \`.github/workflows/live-check.yml\` runs \`test/live.mjs\` every
-  Monday with no secrets. It makes three real calls - one marketplace, one chain read, one
-  routing call - and fails naming the source. Nothing in the repo changes between runs, so a
+  Monday with no secrets. It makes five real calls across the marketplace, the chain and the
+  name-routing path, and fails naming the source. Nothing in the repo changes between runs, so a
   red run is the outside world moving.
 - **Shape guards.** Every array page from a source passes a guard before it is read. A
   non-array is an outage or an API change and is raised as one; it is never treated as "no
@@ -115,7 +116,7 @@ one, and silence reads as coverage.
   cannot stop existing, so a failure there is the layout, not the data.
 - **Live status on demand.** \`get_source_status\` pings every wired source once and returns
   a plain line such as "3 of 4 sources answering; OpenSea off (no key)", so an agent can tell
-  a user which venue is missing instead of reporting that the tool is broken.
+  a user which marketplace is missing instead of reporting that the tool is broken.
 `;
 
 writeFileSync(out, md, "utf8");

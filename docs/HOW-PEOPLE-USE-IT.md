@@ -1,7 +1,8 @@
-# How people actually use collector-mcp
+# Fifteen ways people use it
 
-Invented setups built from questions people actually ask. Install the server, then try one of these
-with your own wallet address or a collection name.
+Worked examples. The names, wallets and numbers are invented; the mistakes behind them are
+ones I have watched happen. Install the server, then try one with your own wallet address
+or a collection name.
 
 The short version: you install it once, then you talk to your AI like a person. It picks
 the tool. You never type a tool name.
@@ -56,13 +57,14 @@ Click it: 21 collector tools.
 
 **3. Ask something**
 
-*"What's in wallet 7HHs3…?"* or *"search collections for claynosaurz"*. If you get real
+*"What's in wallet 7HHs3...?"* or *"search collections for claynosaurz"*. If you get real
 numbers back, everything works. No account, no key, no `.env`.
 
-**Optional, one line:** an OpenSea key adds OpenSea floors, sales, plain transfers
-(airdrops and gifts) and a searchable index of every Solana collection OpenSea lists. Free
-keys: `curl -X POST https://api.opensea.io/api/v2/auth/keys`. Put it in the `env` block of
-the JSON above, not your shell. Without it, nothing asks and nothing breaks.
+**OpenSea turns itself on.** The first question that needs it asks OpenSea for one of its
+free agent keys and stores it under your home folder, so a second marketplace arrives with
+no sign-up: OpenSea floors, sales, plain transfers (airdrops and gifts) and a searchable
+index of every Solana collection OpenSea lists. Set `COLLECTOR_MCP_NO_AUTO_KEYS=1` to stop
+it. When OpenSea is off, nothing breaks and every answer names it as the missing half.
 
 ---
 
@@ -76,7 +78,7 @@ Say them in your own words. Roughly grouped by who tends to ask.
 - How many of X do they own, and what share of the whole supply is that?
 - Do they flip or hold? Median hold time? Best and worst flip?
 - Are they buying or selling lately? Net SOL in or out?
-- Magic Eden order book, AMM pools, or OpenSea? (with the key: plain transfers too)
+- Magic Eden order book, AMM pools, or OpenSea? Plain transfers as well as fills?
 - Was this airdropped, gifted, or bought?
 - How old is this wallet? How many transactions? Fresh wallet holding a grail?
 - What is it worth at floor? (you get a ceiling, labelled as one, with the assumptions)
@@ -108,9 +110,7 @@ Say them in your own words. Roughly grouped by who tends to ask.
 
 ## The people
 
-The personas below are illustrations, not real people. Each one is built around a mistake I
-have actually watched someone make. The names, wallets, and numbers are invented to show the
-flow; treat every figure in this section as an example, not a measurement.
+Fifteen people, each built around one mistake I have watched someone make.
 
 ### 1. Sam, first week in Solana
 
@@ -159,7 +159,7 @@ address, read like any other.)
 
 **What happens:** `get_wallet_profile`: 61 items across 9 collections, Mad Lads 41% of
 the wallet, 4 items listed (two she forgot), 3 compressed airdrops she never asked for,
-Mad Lads share of supply 0.25% (supply from OpenSea's index with her key, or the chain
+Mad Lads share of supply 0.25% (supply from OpenSea's index, or the chain
 for registry collections). Floor ceiling 214 SOL, called a ceiling, with a line saying
 her Mad Lads position is small versus what is listed so it would not move the floor.
 Wallet age 2 years 8 months, 4,100+ transactions ("at least", the walk was bounded).
@@ -174,14 +174,14 @@ held by the issuer. Worth knowing before listing it.
 wallets that seem to know things. **Why collector-mcp:** wallet-tracker sites show
 transactions; he wants behaviour.
 
-**Asks:** *"Is 9taD9… a flipper or a holder? What do they trade and where?"*
+**Asks:** *"Is 9taD9... a flipper or a holder? What do they trade and where?"*
 
 **What happens:** `get_wallet_activity` reads 300 Magic Eden events: 48 buys totalling
 131 SOL, 39 sells totalling 158 SOL, net +27 SOL, label **flipper** (33 of 48 purchases
 resold inside the window, median hold 2.1 days), 71% order book / 29% AMM pools, top
 collections listed, best flip +6.2 SOL on a Claynosaurz held four days. The caveats say
-this is Magic Eden's API feed and OpenSea was not read without a key, so Rio adds his
-OpenSea key and the OpenSea side shows up with plain transfers included.
+this is Magic Eden's API feed. OpenSea answered too, so plain transfers are in the
+picture and an airdropped item is not counted as a buy.
 
 **What he does not get:** a signal. The tool describes; it does not recommend.
 
@@ -225,11 +225,11 @@ after.
 raffles, gets sybil-farmed constantly. **Why collector-mcp:** she needs a fast, fair
 check she can explain.
 
-**Asks:** *"Winner is wallet Cbj…. Is this a real collector or a fresh wallet made for
+**Asks:** *"Winner is wallet Cbj.... Is this a real collector or a fresh wallet made for
 raffles?"*
 
 **What happens:** `get_wallet_profile`: created 6 days ago, 11 transactions, holds 1
-item. `get_wallet_activity` with her OpenSea key: the one item arrived by plain
+item. `get_wallet_activity`, with OpenSea read as well: the one item arrived by plain
 transfer from another wallet that entered the same raffle. She has an explanation in
 plain language, not an accusation: "received without a recorded sale, from wallet X, 6
 days old". She re-rolls.
@@ -243,7 +243,7 @@ space is quoted without a unit or a marketplace.
 **Asks:** *"Collector Crypt: floor, volume, supply, and is the floor the same on
 Magic Eden and OpenSea?"*
 
-**What happens:** `get_collection_stats` returns 0.053 SOL on Magic Eden and 9 USDC on
+**What happens:** `get_collection_stats` returns a SOL floor on Magic Eden and a USDC floor on
 OpenSea and says **not comparable as printed**. No conversion, on purpose, because a
 price feed that has gone stale gives a wrong number with no warning. The glossary reminds
 the assistant that gacha odds are an operator claim the chain cannot verify. Jordan
@@ -326,10 +326,9 @@ less. Kofi already knew how to read that; he just did not want to open four tabs
 
 **What happens:** `get_wallet_activity` with five pages: every Magic Eden buy and sell,
 dated, priced, flips paired with hold time. The caveats say what is missing:
-OpenSea without a key, fees and royalties, anything older than the window, and that
-coverage of marketplaces outside Magic Eden's feed is not established. She adds the
-OpenSea key and re-runs. It is a record with its gaps labelled, which is more than the
-alternatives gave her. It is not tax advice and says so.
+fees and royalties, anything older than the window, and that coverage of marketplaces
+outside Magic Eden's feed is not established. It is a record with its gaps labelled,
+which is more than the alternatives gave her. It is not tax advice and says so.
 
 ### 15. Oren, project dev building a dashboard
 

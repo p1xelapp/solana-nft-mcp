@@ -84,7 +84,7 @@ collection name or address.
 | "do I have anything listed that I forgot about" | Listed items surfaced first in the wallet profile, with marketplace | ANSWERS NOW |
 | "are these two wallets the same person" | Shared counterparties and transfer patterns can be described; identity linkage is not something the chain proves | NOT YET (no address clustering, and on-chain evidence cannot establish identity) |
 | "what percent of the supply does this wallet hold" | Holdings count against chain supply, or OpenSea supply with a key | ANSWERS NOW |
-| "list everything I bought and sold this year" | Paged wallet activity, dated and priced, with the missing marketplaces named | PARTIAL (Magic Eden by default, OpenSea with a key; coverage of other venues not established) |
+| "list everything I bought and sold this year" | Paged wallet activity, dated and priced, with the missing marketplaces named | PARTIAL (Magic Eden by default, OpenSea when it is reachable; coverage of other marketplaces not established) |
 | "where do they trade, order book or pools" | Marketplace split in the activity breakdown | ANSWERS NOW |
 | "this wallet has 400 items, did you see all of them" | The page cap is disclosed in the result rather than the total being quietly short | ANSWERS NOW |
 | "what was their best flip" | Flip list sorted by profit, each with hold time | ANSWERS NOW |

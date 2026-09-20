@@ -1,6 +1,6 @@
 # collector-mcp - Under the hood
 
-Start with the layer diagram below to see where a tool call actually goes.
+Start with the layer diagram below to see where a tool call goes.
 
 ---
 
@@ -10,11 +10,11 @@ collector-mcp is an open-source [Model Context Protocol](https://modelcontextpro
 
 ## 2. The problem it solves
 
-**Gap 1 - AI agents are blind to collectibles.** MCP directories list thousands of servers. The Solana ones are wallet/DeFi agent kits: they want your *private key* so an agent can trade, and an RPC provider API key before anything works. If you just want your AI to *answer questions* about collectibles - "what's my collection worth?", "who owned this card?" - there was nothing. You'd be pasting screenshots into chat.
+**Gap 1 - AI agents are blind to collectibles.** MCP directories list thousands of servers. The Solana ones are wallet/DeFi agent kits: they want your *private key* so an agent can trade, and an RPC provider API key before anything works. If you just want your AI to *answer questions* about collectibles - "what's my collection worth?", "who owned this card?" - there was nothing. You would be pasting screenshots into chat.
 
 **Gap 2 - Metaplex Core assets have invisible history.** Candy Digital (and a fast-growing share of Solana collectibles) mint **Metaplex Core** assets, not SPL tokens. Core stores ownership inside the asset account itself, not in token accounts. Consequence: enhanced-transaction APIs - including major indexers - parse Core transfers as `type: "UNKNOWN"` with **empty `tokenTransfers`**. Tools built on those APIs report *zero provenance* for these assets. The history exists on-chain; almost nothing reads it.
 
-**Gap 3 - keys are friction and risk.** Every key requirement kills a percentage of installs, adds a credential to leak, and couples your agent to a provider's billing. For read-only collectible data, none of that is necessary - if you're disciplined about which endpoints you use and polite about how you use them.
+**Gap 3 - keys are friction and risk.** Every key requirement kills a percentage of installs, adds a credential to leak, and couples your agent to a provider's billing. For read-only collectible data, none of that is necessary - if you are disciplined about which endpoints you use and polite about how you use them.
 
 ## 3. How it works - layer by layer
 
@@ -59,7 +59,7 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 - **Rate gates**: serialized limiters per source (Magic Eden ~1.6 req/s, Solana RPC 1 per 350ms). Public endpoints throttle bursts, so requests are spaced out.
 - **Retries**: network errors, 5xx, and 429s retry with escalating backoff (slower for 429).
 - **Never-blank caching**: every remote read is cached with a per-kind TTL. If a refresh fails and a previous good value exists, the server returns it **labeled `stale: true`** instead of erroring. An agent mid-conversation is better served by 90-second-old floor prices marked stale than by an exception.
-- **Bounded memory**: the cache is capped (oldest-evicted) so a long-lived session can't grow unbounded.
+- **Bounded memory**: every cache is capped and drops expired entries, so a long-lived session cannot grow unbounded.
 - **Honest degradation**: results that are partial say so (`skippedTransactions`, `activitiesScanned`, quiet-market notes). Silent truncation is treated as a bug class.
 
 ## 4. The tools, in depth
@@ -67,11 +67,11 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 | Tool | Sources | Notes |
 |---|---|---|
 | `search_collections` | registry | Scored free-text search; returns identifiers + hints when empty |
-| `get_collection_stats` | ME + chain | The only tool of its kind that answers for collections *no marketplace indexes* by decoding the Core collection account (name, minted, current size, burned) |
+| `get_collection_stats` | ME + chain | Answers for collections *no marketplace indexes*, by decoding the Core collection account (name, minted, current size, burned) |
 | `get_floor_prices` | ME | Batch of up to 10, sequential through one gate |
 | `get_recent_sales` | ME | Walks up to 500 activity events for true sales (`buyNow`); reports how much it scanned so quiet markets are explainable |
 | `get_asset` | ME + chain | Marketplace view AND authoritative on-chain owner side by side; flags possible escrow ownership |
-| `get_asset_provenance` | chain | The party trick (see above); depth-capped with explicit skip counts |
+| `get_asset_provenance` | chain | Decoded ownership history; depth-capped, with the transactions it could not read counted |
 | `get_wallet_holdings` | ME + chain | Two independent readers, the gap between them named, and airdrop spam labelled with the reason it was labelled |
 | `find_in_group` | ME + chain | One edition number hunted across a whole family of collections in batches, each match measured against that collection's own floor |
 
@@ -80,9 +80,9 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 - **Read-only**: no signing, no transactions, no wallet material anywhere in the codebase.
 - **No secrets**: nothing to configure means nothing to leak; `.gitignore` still guards the usual suspects.
 - **Input validation** at the tool boundary (zod), **output shape-checking** at the source boundary.
-- **Prompt-injection stance**: returned metadata (asset names, descriptions) is third-party content. The server returns it as data; agent frameworks must not execute instructions found in it. Called out in the README so integrators think about it.
-- **No telemetry**: three data sources, nothing else, auditable in an afternoon.
+- **Prompt-injection stance**: a name or description comes from whoever minted the item. Turn markers, role tags and invisible characters are stripped before that text is returned, and the field is labelled as untrusted so the client can treat it as data.
+- **No telemetry**: four data sources, nothing else, auditable in an afternoon.
 
-## 6. The origin story (for the curious)
+## 6. Where it came from
 
-This server open-sources the keyless half of a live production pipeline: [p1xel.app/candymigration](https://p1xel.app/candymigration), a tracker that has followed Candy Digital's migration to Solana since mid-2026 - including tracing a 36-pack Gold Series auction to every winner, reconciling marketplace escrows, and surviving multiple RPC-provider incidents. The lessons (never-blank caching, escrow attribution, Core decoding, polite pacing) are baked into this codebase.
+The keyless half of a live pipeline behind [CandyScan](https://candyscan.p1xel.app), which has followed Candy Digital's move to Solana since mid-2026. The lessons it carries over: never-blank caching, escrow attribution, Core decoding, polite pacing.
