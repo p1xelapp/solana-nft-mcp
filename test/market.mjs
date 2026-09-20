@@ -542,8 +542,12 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
   assert.strictEqual(unknownTrait.traitsUnmatched, 1);
 
   // An unpriced listing must sort last, never to the front as a zero would.
-  const withUnpriced = bestDeals([{ tokenMint: "free", price: null, token: { name: "n" } }, ...listings], attributes);
-  assert.strictEqual(withUnpriced.deals[withUnpriced.deals.length - 1].tokenMint, "free");
+  // The mint here is address-shaped because that is the only kind that
+  // survives to an answer: a marketplace writes this field, and anything that
+  // is not base58 is dropped rather than relayed as an identifier.
+  const UNPRICED_MINT = "So11111111111111111111111111111111111111112";
+  const withUnpriced = bestDeals([{ tokenMint: UNPRICED_MINT, price: null, token: { name: "n" } }, ...listings], attributes);
+  assert.strictEqual(withUnpriced.deals[withUnpriced.deals.length - 1].tokenMint, UNPRICED_MINT);
   assert.strictEqual(withUnpriced.unpricedListings, 1);
   assert.ok(withUnpriced.readThis.some((r) => /rather than treated as free/.test(r)));
 

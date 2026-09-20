@@ -128,7 +128,8 @@ export function summarizeHoldings(tokens: MeWalletToken[]): HoldingsSummary {
 
 export interface Flip {
   currency: "SOL";
-  mint: string;
+  /** The mint, when the marketplace gave one that is address-shaped. */
+  mint: string | null;
   collection: string | null;
   boughtAt: string | null;
   soldAt: string | null;
@@ -188,7 +189,7 @@ export interface ActivitySummary {
     label: "flipper" | "mixed" | "holder" | "seller" | "lister" | "bidder" | "quiet" | "unknown";
     why: string;
   };
-  firstBuyInWindow: { mint: string; collection: string | null; time: string | null; priceSol: number } | null;
+  firstBuyInWindow: { mint: string | null; collection: string | null; time: string | null; priceSol: number } | null;
   caveats: string[];
 }
 
@@ -256,9 +257,12 @@ export function summarizeActivity(
     const rawCol = e.collectionSymbol ?? e.collection ?? null;
     const col = rawCol ? clean(rawCol) : null;
     if (col) bump(perCollection, col);
-    // The mint, only if it is address-shaped. A row whose mint is
-    // marketplace-authored text is not a lot this can pair, and the value must
-    // not reach an answer as though it were an identifier.
+    // Two different jobs, so two different values. Pairing a buy with a sell
+    // needs a stable key and nothing more, so the marketplace's own string is
+    // used for that and never leaves this function. What goes INTO an answer
+    // has to be address-shaped, because a client reads that field as a mint
+    // and the marketplace writes it.
+    const mintKey = typeof e.tokenMint === "string" && e.tokenMint ? e.tokenMint : null;
     const mintId = venueAddress(e.tokenMint);
     if (type === "list") lists++;
     if (type === "bid") bids++;
@@ -282,12 +286,12 @@ export function summarizeActivity(
         buys.count++;
         if (price !== null) buys.totalSol += price;
         if (col) bump(buys.collections, col);
-        if (mintId) {
+        if (mintKey) {
           purchases++;
           const lot = { e, price };
-          const q = openBuys.get(mintId);
+          const q = openBuys.get(mintKey);
           if (q) q.push(lot);
-          else openBuys.set(mintId, [lot]);
+          else openBuys.set(mintKey, [lot]);
         }
       } else if (side === "sell") {
         sells.count++;
@@ -297,8 +301,8 @@ export function summarizeActivity(
         // inventory moved. P&L is arithmetic on two prices and two times, so
         // the cycle is measured only when all four are usable, and counted as
         // unmeasured otherwise rather than matched against a zero.
-        const lot = mintId ? openBuys.get(mintId)?.shift() : undefined;
-        if (lot && mintId) {
+        const lot = mintKey ? openBuys.get(mintKey)?.shift() : undefined;
+        if (lot && mintKey) {
           cyclesClosed++;
           const boughtAt = usableBlockTime(lot.e.blockTime);
           const soldAt = usableBlockTime(e.blockTime);
@@ -455,7 +459,7 @@ export function summarizeActivity(
     behaviour: { boughtThenSoldPct, medianHoldDays: medianHold, label, why },
     firstBuyInWindow: firstBuy
       ? {
-          mint: venueAddress(firstBuy.tokenMint) ?? "",
+          mint: venueAddress(firstBuy.tokenMint),
           collection: firstBuyCol ? clean(firstBuyCol) : null,
           time: iso(firstBuy.blockTime),
           priceSol: round(firstBuy.price ?? 0),
