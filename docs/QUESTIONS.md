@@ -1,5 +1,9 @@
 # Questions people actually ask
 
+What this server can and cannot answer, question by question. For questions
+about the server itself (what it reads, what it costs, whether it can touch a
+wallet), see [FAQ.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md).
+
 Every line is phrased the way someone types it, not the way a tool is named. Try any of them with your own
 collection name or address.
 

@@ -9,62 +9,12 @@ the tool. You never type a tool name.
 
 ---
 
-## Setup, once (any client, about 3 minutes)
+## Setup, once
 
-The server is a small Node program. Your AI client starts it in the background and talks
-to it over stdin/stdout. Nothing runs on my side. Nothing phones home. It cannot sign,
-send or spend anything; there is no such code in it.
-
-**1. Get the code**
-
-```bash
-git clone https://github.com/p1xelapp/collector-mcp.git
-cd collector-mcp
-npm install && npm run build
-```
-
-You now have `dist/index.js`. Note its full path. You need it once.
-
-**2. Tell your client about it**
-
-*Claude Code (terminal):*
-
-```bash
-claude mcp add collector -- node /absolute/path/to/collector-mcp/dist/index.js
-```
-
-*Claude Desktop:* Settings → Developer → Edit Config. That opens
-`claude_desktop_config.json`. Paste:
-
-```json
-{
-  "mcpServers": {
-    "collector": {
-      "command": "node",
-      "args": ["/absolute/path/to/collector-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-Save, fully quit Claude Desktop, reopen. A small tools icon appears under the chat box.
-Click it: 21 collector tools.
-
-*Cursor:* Settings → MCP → Add new global MCP server. Same JSON.
-
-*Anything else that speaks MCP* (Windsurf, Zed, Cline, your own agent): same JSON shape,
-`command: node`, `args: [path to dist/index.js]`.
-
-**3. Ask something**
-
-*"What's in wallet 7HHs3...?"* or *"search collections for claynosaurz"*. If you get real
-numbers back, everything works. No account, no key, no `.env`.
-
-**OpenSea turns itself on.** The first question that needs it asks OpenSea for one of its
-free agent keys and stores it under your home folder, so a second marketplace arrives with
-no sign-up: OpenSea floors, sales, plain transfers (airdrops and gifts) and a searchable
-index of every Solana collection OpenSea lists. Set `COLLECTOR_MCP_NO_AUTO_KEYS=1` to stop
-it. When OpenSea is off, nothing breaks and every answer names it as the missing half.
+Install steps for Claude Desktop, Claude Code and every other MCP client are in
+the [README](https://github.com/p1xelapp/collector-mcp#install), kept in one place
+so they cannot drift apart. It takes about three minutes and needs no account and
+no key. Everything below assumes it is running.
 
 ---
 

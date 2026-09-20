@@ -1,5 +1,9 @@
 # FAQ
 
+Questions about the server itself. For the other kind, what it can and cannot
+answer about a collection, a wallet or a card, see
+[QUESTIONS.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md).
+
 **Do I have to type tool names like `verify_claim`?**
 No. Ask the way you would ask a person: "is it true this card never traded", "what is
 this wallet worth", "find me the cheapest Rex". Your assistant reads the tool

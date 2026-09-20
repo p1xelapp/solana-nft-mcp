@@ -694,7 +694,7 @@ const kinds = (r) => r.events.map((e) => e.event);
   const deep = doc("docs/DEEP-DIVE.md");
   assert.ok(!deep.includes("new owner as the last instruction account"), "the decoded path uses slot 4");
   assert.ok(deep.includes("account slot 4"));
-  for (const p of ["docs/FAQ.md", "docs/HOW-IT-WAS-BUILT.md", "docs/TRUST-AND-LIMITS.md"]) {
+  for (const p of ["docs/FAQ.md", "docs/DEEP-DIVE.md", "docs/TRUST-AND-LIMITS.md"]) {
     assert.ok(!/keeps nothing(?: of yours)?[.,]/i.test(doc(p)), `${p}: the self-issued key is stored locally, so "keeps nothing" is false`);
   }
   assert.ok(!doc("docs/SOURCES.md").includes("renews it weekly"), "refresh is on demand near expiry");

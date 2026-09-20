@@ -303,15 +303,14 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 
 ## Docs
 
-- [How it was built, and why](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-IT-WAS-BUILT.md)
-- [Under the hood](https://github.com/p1xelapp/collector-mcp/blob/main/docs/DEEP-DIVE.md)
+- [Under the hood: why it exists, how it works, what was tested](https://github.com/p1xelapp/collector-mcp/blob/main/docs/DEEP-DIVE.md)
 - [Every data source, tiered](https://github.com/p1xelapp/collector-mcp/blob/main/docs/SOURCES.md)
 - [Trust language and limits](https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
 - [Questions people ask, and which ones it can answer](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md)
-- [How people use it, by persona](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
+- [Fifteen ways people use it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
 - [Things people build with it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/BUILD-IDEAS.md)
 - [What can change under this server, and what happens when it does](https://github.com/p1xelapp/collector-mcp/blob/main/docs/MAINTENANCE.md)
-- [FAQ](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
+- [FAQ: questions about the server itself](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
 - [Contributing](https://github.com/p1xelapp/collector-mcp/blob/main/CONTRIBUTING.md) and [Security policy](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md)
 
 ## Why I built this

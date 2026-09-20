@@ -1,6 +1,8 @@
 # collector-mcp - Under the hood
 
-Start with the layer diagram below to see where a tool call goes.
+Where a tool call goes, why each layer is shaped the way it is, and what was
+checked before any of it was published. Start with the layer diagram in
+section 3.
 
 ---
 
@@ -8,15 +10,68 @@ Start with the layer diagram below to see where a tool call goes.
 
 collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, asks you for **no account, no wallet and no configuration**, and is read-only by design. The default sources need no key at all; OpenSea is reached with a free key the server issues itself and keeps on your machine. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
 
-## 2. The problem it solves
+## 2. Why it exists
 
-**Gap 1 - AI agents are blind to collectibles.** MCP directories list thousands of servers. The Solana ones are wallet/DeFi agent kits: they want your *private key* so an agent can trade, and an RPC provider API key before anything works. If you just want your AI to *answer questions* about collectibles - "what's my collection worth?", "who owned this card?" - there was nothing. You would be pasting screenshots into chat.
+It started with a 36-pack Candy Digital auction and a simple question: which
+wallets won the cards. Every NFT API asked handed back an empty ownership
+history. Not an error and not a warning, an empty array, which anything reading
+it takes to mean the card has never traded. Those cards had changed hands six
+times, and the transfers had been on chain the whole time.
 
-**Gap 2 - Metaplex Core assets have invisible history.** Candy Digital (and a fast-growing share of Solana collectibles) mint **Metaplex Core** assets, not SPL tokens. Core stores ownership inside the asset account itself, not in token accounts. Consequence: enhanced-transaction APIs - including major indexers - parse Core transfers as `type: "UNKNOWN"` with **empty `tokenTransfers`**. Tools built on those APIs report *zero provenance* for these assets. The history exists on-chain; almost nothing reads it.
+The cause is a format difference nobody surfaces. Candy Digital, and a growing
+share of Solana collectibles, mint **Metaplex Core** assets rather than SPL
+tokens, and Core stores ownership inside the asset account itself instead of in
+token accounts. Enhanced-transaction APIs, including the major indexers, parse
+a Core transfer as `type: "UNKNOWN"` with an empty `tokenTransfers` list. The
+history is there; almost nothing reads it. What made that worth building
+around was not the missing data but the shape of the failure: the wrong answer
+arrived with exactly as much confidence as a right one.
 
-**Gap 3 - keys are friction and risk.** Every key requirement kills a percentage of installs, adds a credential to leak, and couples your agent to a provider's billing. For read-only collectible data, none of that is necessary - if you are disciplined about which endpoints you use and polite about how you use them.
+The same shape turned up everywhere once it had a name. A SOL floor put beside
+a USDC floor and called a multiple. A floor times an item count, presented as a
+portfolio value, built on a book three listings deep. A fuzzy name match on a
+different collection, answered as though it were the one you asked about. Counts
+that disagree because they were taken by place rather than by state: a listed
+item has left the wallet on chain and has not been sold, and a tool that counts
+where an asset sits produces totals that are confidently wrong and internally
+consistent with each other.
 
-## 3. How it works - layer by layer
+Meanwhile the Solana servers in the MCP directories are wallet and DeFi agent
+kits. They want a private key so an agent can trade, and an RPC provider key
+before anything works at all. If you only want your AI to answer questions
+about collectibles, there was nothing, and every key requirement kills a share
+of installs, adds a credential to leak and couples the agent to somebody's
+billing. For read-only data none of it is necessary, as long as you are
+disciplined about which endpoints you use and polite about how you use them.
+
+## 3. The design choices
+
+**Chain first.** Supply comes from the collection account. Current owner comes
+from a hand-decoded asset account, not from an indexer's opinion. Ownership
+history comes from walking the transfer instructions in each transaction. There
+is no indexer in the path and no key required to do it.
+
+**Marketplace labelled, always.** Marketplace data is that marketplace's index,
+and it is returned saying so. Each number carries its marketplace, its currency
+and its read time. When two marketplaces disagree, both are returned. One
+marketplace has been observed reporting another marketplace's fills as its own,
+so events are labelled by the program that executed the transaction rather than
+by who reported it.
+
+**Evidence-shaped output.** Every result is typed rather than prose a model has
+to scrape numbers out of. Partial results report what they skipped: how many
+older events were not read, how many activity events were scanned to find the
+sales, whether a wallet page hit its cap. Claim checks return three verdicts,
+because a tool with only true and false will eventually return false for
+something it could not see.
+
+**Refuse to guess.** The stats block will not rank a SOL floor against a USDC
+floor. No currency conversion happens, on purpose, because it would mean
+depending on a second price feed nobody here can check. A floor-times-count
+figure is returned as a ceiling with its assumptions attached. An empty history
+is reported as unsupported or unread, never as untraded.
+
+## 4. How it works - layer by layer
 
 ```
 Claude / MCP client
@@ -62,7 +117,7 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 - **Bounded memory**: every cache is capped and drops expired entries, so a long-lived session cannot grow unbounded.
 - **Honest degradation**: results that are partial say so (`skippedTransactions`, `activitiesScanned`, quiet-market notes). Silent truncation is treated as a bug class.
 
-## 4. The tools, in depth
+## 5. The tools, in depth
 
 | Tool | Sources | Notes |
 |---|---|---|
@@ -75,7 +130,9 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 | `get_wallet_holdings` | ME + chain | Two independent readers, the gap between them named, and airdrop spam labelled with the reason it was labelled |
 | `find_in_group` | ME + chain | One edition number hunted across a whole family of collections in batches, each match measured against that collection's own floor |
 
-## 5. Security model
+The full list of 21 is in the README.
+
+## 6. Security model
 
 - **Read-only**: no signing, no transactions, no wallet material anywhere in the codebase.
 - **No secrets**: nothing to configure means nothing to leak; `.gitignore` still guards the usual suspects.
@@ -83,6 +140,29 @@ The output is a story: `minted -> listed (Magic Eden) -> transferred -> current 
 - **Prompt-injection stance**: a name or description comes from whoever minted the item. Turn markers, role tags and invisible characters are stripped before that text is returned, and the field is labelled as untrusted so the client can treat it as data.
 - **No telemetry**: four data sources, nothing else, auditable in an afternoon.
 
-## 6. Where it came from
+The reporting route and the full threat model are in
+[SECURITY.md](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md).
+
+## 7. What was tested
+
+Every tool and prompt is exercised offline against captured feeds, including
+the wallet logic and the prompt-injection defence, and again live against the
+real endpoints with a real provenance trace, a real wallet and hostile inputs.
+Each defect this server has had is pinned by a test that failed before its fix.
+CI runs the offline suite plus a full-history secrets scan on every push, and a
+weekly live check re-reads the real sources.
+
+The hardest piece was extracting the new owner from a Core transfer whose
+account layout varies between two shapes. It was verified against a live
+36-pack auction: all 36 packs traced to their winners, none left untraced.
+
+None of that makes it always right. Sources lag, marketplaces go down, public
+RPC throttles. What it does mean is that those conditions are said out loud
+instead of smoothed over: cached values come back labelled stale rather than
+erroring mid-conversation, caps are disclosed, disagreements are shown rather
+than resolved by a coin flip, and every claim check hands back a line telling
+you how to reproduce it without trusting this server at all.
+
+## 8. Where it came from
 
 The keyless half of a live pipeline behind [CandyScan](https://candyscan.p1xel.app), which has followed Candy Digital's move to Solana since mid-2026. The lessons it carries over: never-blank caching, escrow attribution, Core decoding, polite pacing.
