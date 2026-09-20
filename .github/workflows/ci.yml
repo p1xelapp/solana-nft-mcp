@@ -60,14 +60,26 @@ jobs:
   check:
     # Tests and build: main and pull requests only, on purpose.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    # The floor is 22 and the current LTS is 24: both are tested, so the
-    # engines field promises nothing the suite has not run on.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    # The floor is 22 and the current LTS is 24: both are tested on Linux, so
+    # the engines field promises nothing the suite has not run on.
+    #
+    # macOS is here because a third of the people who install a Claude Desktop
+    # extension are on it, and nothing else in this project ever runs there.
+    # It is deliberately ONE job rather than two: GitHub bills macOS minutes at
+    # ten times the Linux rate on a private repository, and this suite takes
+    # about nine minutes, so a second macOS job would cost another ninety
+    # billed minutes for every push. On a public repository all of it is free,
+    # and the `exclude` below can go.
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
+        exclude:
+          - os: macos-latest
+            node: 22
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
