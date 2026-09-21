@@ -3,7 +3,7 @@
  * tests. The asset index is a synthetic DAS at DAS_RPC_URL, keyed by the
  * collection address asked for; every other upstream is refused. The home
  * folder is redirected so nothing here can touch a real key file, and every
- * JSON-RPC method the server sends is appended to COLLECTOR_TEST_LOG, so a
+ * JSON-RPC method the server sends is appended to SOLANA_NFT_MCP_TEST_LOG, so a
  * test can prove a request was NOT made.
  */
 import fs from "node:fs";
@@ -11,11 +11,11 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
 
-const home = process.env.COLLECTOR_TEST_HOME;
-if (!home) throw new Error("COLLECTOR_TEST_HOME is required so the test cannot touch the real key file");
+const home = process.env.SOLANA_NFT_MCP_TEST_HOME;
+if (!home) throw new Error("SOLANA_NFT_MCP_TEST_HOME is required so the test cannot touch the real key file");
 os.homedir = () => home;
 syncBuiltinESMExports();
-const log = process.env.COLLECTOR_TEST_LOG;
+const log = process.env.SOLANA_NFT_MCP_TEST_LOG;
 
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58(bytes) {

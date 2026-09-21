@@ -27,7 +27,7 @@
 
   <!-- the server -->
   <rect x="320" y="86" width="340" height="188" rx="14" fill="#070b16" stroke="url(#mcp)" stroke-width="1.6"/>
-  <text x="344" y="110" font-size="10.5" letter-spacing="1.4" fill="#a78bfa" font-family="'IBM Plex Mono',ui-monospace,monospace">COLLECTOR-MCP</text>
+  <text x="344" y="110" font-size="10.5" letter-spacing="1.4" fill="#a78bfa" font-family="'IBM Plex Mono',ui-monospace,monospace">SOLANA-NFT-MCP</text>
   <text x="344" y="134" font-size="14.5" font-weight="600" fill="#f2f4fb">Runs on your machine</text>
   <text x="344" y="158" font-size="12.5" fill="#dfe4f2" font-family="'IBM Plex Mono',ui-monospace,monospace">21 tools · 3 prompts · 0 resources</text>
   <text x="344" y="180" font-size="12" fill="#14f195">21 of 21 declare readOnlyHint</text>

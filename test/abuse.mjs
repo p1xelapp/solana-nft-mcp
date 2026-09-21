@@ -34,7 +34,7 @@ for (const k of Object.keys(base)) if (base[k] === undefined) delete base[k];
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: ["--import", preload, path.join(root, "dist", "index.js")],
-  env: { ...base, COLLECTOR_TEST_HOME: home, COLLECTOR_TEST_CANARY: CANARY, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://abuse-rpc.invalid", DAS_RPC_URL: "https://abuse-rpc.invalid" },
+  env: { ...base, SOLANA_NFT_MCP_TEST_HOME: home, SOLANA_NFT_MCP_TEST_CANARY: CANARY, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://abuse-rpc.invalid", DAS_RPC_URL: "https://abuse-rpc.invalid" },
   stderr: "ignore",
 });
 const client = new Client({ name: "abuse", version: "1" }, { capabilities: {} });

@@ -521,8 +521,8 @@ const kinds = (r) => r.events.map((e) => e.event);
     args: ["--import", preload, path.join(root, "dist", "index.js")],
     env: {
       ...serverEnvBase(),
-      COLLECTOR_TEST_HOME: home,
-      COLLECTOR_TEST_LOG: log,
+      SOLANA_NFT_MCP_TEST_HOME: home,
+      SOLANA_NFT_MCP_TEST_LOG: log,
       DAS_RPC_URL: "https://census.invalid",
       SOLANA_NFT_MCP_NO_AUTO_KEYS: "1",
       SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1",
@@ -626,8 +626,8 @@ const kinds = (r) => r.events.map((e) => e.event);
     args: ["--import", preload, path.join(root, "dist", "index.js")],
     env: {
       ...serverEnvBase(),
-      COLLECTOR_TEST_HOME: home,
-      COLLECTOR_TEST_CANARY: canary,
+      SOLANA_NFT_MCP_TEST_HOME: home,
+      SOLANA_NFT_MCP_TEST_CANARY: canary,
       SOLANA_RPC_URL: `https://private-rpc.invalid/?api-key=${canary}`,
       SOLANA_NFT_MCP_NO_AUTO_KEYS: "1",
       SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1",

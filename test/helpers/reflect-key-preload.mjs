@@ -11,13 +11,13 @@
 import os from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 
-const home = process.env.COLLECTOR_TEST_HOME;
-if (!home) throw new Error("COLLECTOR_TEST_HOME is required so the test cannot touch the real key file");
+const home = process.env.SOLANA_NFT_MCP_TEST_HOME;
+if (!home) throw new Error("SOLANA_NFT_MCP_TEST_HOME is required so the test cannot touch the real key file");
 os.homedir = () => home;
 syncBuiltinESMExports();
 
-const canary = process.env.COLLECTOR_TEST_CANARY;
-if (!canary) throw new Error("COLLECTOR_TEST_CANARY is required");
+const canary = process.env.SOLANA_NFT_MCP_TEST_CANARY;
+if (!canary) throw new Error("SOLANA_NFT_MCP_TEST_CANARY is required");
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 

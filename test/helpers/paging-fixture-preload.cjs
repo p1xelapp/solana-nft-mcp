@@ -3,7 +3,7 @@
  *
  * A synthetic Magic Eden that serves as many activity pages as it is asked
  * for, 100 ms apart, and logs every request with a timestamp to the file
- * named by COLLECTOR_TEST_FIXTURE_LOG. The test cancels the client's call
+ * named by SOLANA_NFT_MCP_TEST_FIXTURE_LOG. The test cancels the client's call
  * after the first page and reads the log to see whether the server kept
  * paging with nobody waiting. Real sockets are refused, so a request that
  * slipped past the stub fails loudly rather than reaching the venue.
@@ -12,8 +12,8 @@ const fs = require("node:fs");
 const net = require("node:net");
 const tls = require("node:tls");
 
-const logFile = process.env.COLLECTOR_TEST_FIXTURE_LOG;
-if (!logFile) throw new Error("COLLECTOR_TEST_FIXTURE_LOG is required");
+const logFile = process.env.SOLANA_NFT_MCP_TEST_FIXTURE_LOG;
+if (!logFile) throw new Error("SOLANA_NFT_MCP_TEST_FIXTURE_LOG is required");
 
 net.Socket.prototype.connect = () => {
   throw new Error("network refused by the test fixture");

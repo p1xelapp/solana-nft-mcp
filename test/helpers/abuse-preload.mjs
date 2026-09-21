@@ -11,8 +11,8 @@
 import os from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 
-const home = process.env.COLLECTOR_TEST_HOME;
-if (!home) throw new Error("COLLECTOR_TEST_HOME is required");
+const home = process.env.SOLANA_NFT_MCP_TEST_HOME;
+if (!home) throw new Error("SOLANA_NFT_MCP_TEST_HOME is required");
 os.homedir = () => home;
 syncBuiltinESMExports();
 
@@ -27,7 +27,7 @@ export const PAYLOADS = {
   controls: `Card #4${String.fromCharCode(7)}${String.fromCharCode(8)}${String.fromCharCode(27)}[31m${String.fromCharCode(0)} red`,
 };
 
-const CANARY = process.env.COLLECTOR_TEST_CANARY ?? "ABUSE-CANARY-KEY-0123456789";
+const CANARY = process.env.SOLANA_NFT_MCP_TEST_CANARY ?? "ABUSE-CANARY-KEY-0123456789";
 
 const listing = (name, i) => ({
   tokenMint: ["7chErGXMoYARjjmj9ZWrv7H415Bx1F3WrQt1nVFihuEa", "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2", "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n", "BA56URSgTmXFdh83i125szydnvVTuN8U1VSQSckqcnP2", "2GGzww6NPSUkcfJM5LmwCcjAhYWsfJyLWvsSzBM4TgaR"][i],

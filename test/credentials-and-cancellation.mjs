@@ -144,7 +144,7 @@ const serverEnvBase = () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", preload, path.join(root, "dist", "index.js")],
-    env: { ...serverEnvBase(), COLLECTOR_TEST_HOME: home, COLLECTOR_TEST_CANARY: canary },
+    env: { ...serverEnvBase(), SOLANA_NFT_MCP_TEST_HOME: home, SOLANA_NFT_MCP_TEST_CANARY: canary },
     stderr: "ignore",
   });
   const c = new Client({ name: "audit2-secret", version: "1" }, { capabilities: {} });
@@ -448,7 +448,7 @@ const serverEnvBase = () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [path.join(root, "dist", "index.js")],
-    env: { ...serverEnvBase(), COLLECTOR_TEST_FIXTURE_LOG: log, NODE_OPTIONS: `--require="${preload}"` },
+    env: { ...serverEnvBase(), SOLANA_NFT_MCP_TEST_FIXTURE_LOG: log, NODE_OPTIONS: `--require="${preload}"` },
     stderr: "ignore",
   });
   const c = new Client({ name: "audit2-cancel", version: "1" }, { capabilities: {} });

@@ -137,7 +137,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
 
   <!-- the server -->
   <rect x="320" y="${midY - 64}" width="340" height="188" rx="14" fill="#070b16" stroke="url(#mcp)" stroke-width="1.6"/>
-  <text x="344" y="${midY - 40}" font-size="10.5" letter-spacing="1.4" fill="#a78bfa" font-family="'IBM Plex Mono',ui-monospace,monospace">COLLECTOR-MCP</text>
+  <text x="344" y="${midY - 40}" font-size="10.5" letter-spacing="1.4" fill="#a78bfa" font-family="'IBM Plex Mono',ui-monospace,monospace">SOLANA-NFT-MCP</text>
   <text x="344" y="${midY - 16}" font-size="14.5" font-weight="600" fill="#f2f4fb">Runs on your machine</text>
   <text x="344" y="${midY + 8}" font-size="12.5" fill="#dfe4f2" font-family="'IBM Plex Mono',ui-monospace,monospace">${tools.length} tools · ${prompts.length} prompts · ${resources.length} resources</text>
   <text x="344" y="${midY + 30}" font-size="12" fill="#14f195">${readOnly} of ${tools.length} declare readOnlyHint</text>

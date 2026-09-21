@@ -15,8 +15,8 @@ import os from "node:os";
 import path from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 
-const home = process.env.COLLECTOR_TEST_HOME;
-if (!home) throw new Error("COLLECTOR_TEST_HOME is required so the test cannot touch the real profile");
+const home = process.env.SOLANA_NFT_MCP_TEST_HOME;
+if (!home) throw new Error("SOLANA_NFT_MCP_TEST_HOME is required so the test cannot touch the real profile");
 os.homedir = () => home;
 syncBuiltinESMExports();
 

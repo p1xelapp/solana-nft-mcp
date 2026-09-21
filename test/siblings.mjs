@@ -302,7 +302,7 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", preload, path.join(root, "dist", "index.js")],
-    env: { ...env, COLLECTOR_TEST_HOME: home, SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://r8-rpc.invalid", DAS_RPC_URL: "https://r8-rpc.invalid" },
+    env: { ...env, SOLANA_NFT_MCP_TEST_HOME: home, SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://r8-rpc.invalid", DAS_RPC_URL: "https://r8-rpc.invalid" },
     stderr: "ignore",
   });
   const c = new Client({ name: "round8", version: "1" }, { capabilities: {} });

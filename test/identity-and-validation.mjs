@@ -215,7 +215,7 @@ const realFetch = globalThis.fetch;
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--import", preload, path.join(root, "dist", "index.js")],
-      env: { ...base, COLLECTOR_TEST_HOME: home, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://identity-rpc.invalid", DAS_RPC_URL: "https://identity-rpc.invalid", ...extraEnv },
+      env: { ...base, SOLANA_NFT_MCP_TEST_HOME: home, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://identity-rpc.invalid", DAS_RPC_URL: "https://identity-rpc.invalid", ...extraEnv },
       stderr: "ignore",
     });
     const client = new Client({ name: "identity", version: "1" }, { capabilities: {} });

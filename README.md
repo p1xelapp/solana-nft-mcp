@@ -71,8 +71,8 @@ Quit the app fully and reopen it.
 ### Other MCP clients
 
 Tested hosts, with the version each was tested on: Claude Desktop (the `.mcpb` bundle), Claude
-Code, and Codex CLI 0.153.4 (`codex exec -c 'mcp_servers.collector.command="node"' -c
-'mcp_servers.collector.args=["/absolute/path/to/dist/index.js"]'`). Cursor, Windsurf, Gemini CLI,
+Code, and Codex CLI 0.153.4 (`codex exec -c 'mcp_servers.solana-nft.command="node"' -c
+'mcp_servers.solana-nft.args=["/absolute/path/to/dist/index.js"]'`). Cursor, Windsurf, Gemini CLI,
 Zed, Cline and VS Code take the same `command` / `args` pair in their own MCP config and should
 run it, because the server speaks plain stdio and holds no client-specific code, but they have
 not been tested here and each host's config syntax differs. ChatGPT on the web and Grok cannot

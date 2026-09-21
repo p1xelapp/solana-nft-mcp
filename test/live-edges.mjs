@@ -1,7 +1,7 @@
 /**
  * Live edge cases: the questions that made the server hit a wall in the real
  * world, and their siblings. Reads the real chain and the real venues, so it
- * is gated: COLLECTOR_LIVE_EDGES=1 node test/live-edges.mjs
+ * is gated: SOLANA_NFT_MCP_LIVE_EDGES=1 node test/live-edges.mjs
  *
  * Every case prints one line. PASS means the assertion held; CHECK means the
  * server answered but a person should read the numbers; FAIL means the
@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-if (process.env.COLLECTOR_LIVE_EDGES !== "1") {
-  console.error("live-edges reads live venues. Set COLLECTOR_LIVE_EDGES=1 to run it.");
+if (process.env.SOLANA_NFT_MCP_LIVE_EDGES !== "1") {
+  console.error("live-edges reads live venues. Set SOLANA_NFT_MCP_LIVE_EDGES=1 to run it.");
   process.exit(2);
 }
 const here = path.dirname(fileURLToPath(import.meta.url));
