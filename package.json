@@ -1,6 +1,6 @@
 {
   "name": "solana-nft-mcp",
-  "version": "1.17.1",
+  "version": "1.17.2",
   "description": "Read-only MCP server for Solana NFTs and digital collectibles: Metaplex Core ownership history, who can freeze or burn an item, marketplace sales and floors that keep their currency and source. No sign-up.",
   "homepage": "https://p1xel.app/solana-nft-mcp/",
   "bugs": {
@@ -8,6 +8,7 @@
   },
   "author": "p1xel (https://p1xel.app)",
   "license": "MIT",
+  "mcpName": "io.github.p1xelapp/solana-nft-mcp",
   "type": "module",
   "bin": {
     "solana-nft-mcp": "dist/index.js"

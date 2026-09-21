@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.p1xelapp/solana-nft-mcp",
+  "description": "Read-only Solana NFT data for AI: ownership history, custody rules, marketplace sales and floors.",
+  "repository": {
+    "url": "https://github.com/p1xelapp/solana-nft-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://p1xel.app/solana-nft-mcp/",
+  "version": "1.17.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "solana-nft-mcp",
+      "version": "1.17.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OPENSEA_API_KEY",
+          "description": "Optional. Your own OpenSea API key; without it the server issues a free one on first use.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SOLANA_NFT_MCP_NO_AUTO_KEYS",
+          "description": "Optional. Set to 1 to stop the server from issuing an OpenSea key for you.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "SOLANA_NFT_MCP_NO_UPDATE_CHECK",
+          "description": "Optional. Set to 1 to skip the once-per-start npm version check.",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

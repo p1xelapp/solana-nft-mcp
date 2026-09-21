@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.2 - 2026-09-21
+
+Listing release. `package.json` now carries `mcpName` (`io.github.p1xelapp/solana-nft-mcp`), which the official MCP registry requires before it will accept the server, and `server.json` describes the package for that registry. Nothing the server does has changed.
+
 ## 1.17.1 - 2026-09-21
 
 An outside review of 1.17.0, run against OpenSea's published API definition
