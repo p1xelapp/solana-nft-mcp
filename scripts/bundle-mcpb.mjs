@@ -77,11 +77,10 @@ const manifest = {
   version: pkg.version,
   description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No sign-up, read-only, runs on your machine.",
   long_description:
-    "Ask your AI about any Solana collectible and get the answer from the chain: who owned it, who can still freeze or burn it, " +
-    "what actually sold, and where the deals are. It decodes Metaplex Core ownership history byte by byte, the history mainstream " +
-    "NFT APIs hand back empty, and labels every number with its marketplace, its currency and the moment it was read, so nothing gets " +
-    "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
-    "without writing a parser. 21 tools, no sign-up, no telemetry, and no signing code exists in it, so it cannot touch your wallet. The one file it may write is a free OpenSea key in your home folder, and that can be switched off.",
+    "Ask your AI about any Solana NFT or collectible and get an answer from the chain and the marketplaces, not from memory. " +
+    "Who owned it, what it sold for, where the floor is, whether it can still be frozen or burned. Every number says which " +
+    "marketplace it came from and when it was read. Builders get the same answers as clean, typed data, so an agent, a bot or a " +
+    "dashboard can use them without a parser. 21 tools. No sign-up, no telemetry, read-only: it cannot touch a wallet.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/solana-nft-mcp/",
   documentation: "https://github.com/p1xelapp/solana-nft-mcp#readme",
