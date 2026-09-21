@@ -795,7 +795,10 @@ export async function collectionListings(
     ),
   );
   const served = page<MeListing>("collection listings", data);
-  assertPageSize("Magic Eden", "collection listings", served, venueLimit);
+  // The venue has answered 41 rows to a request for 25. Over-delivery below
+  // its documented page cap is the venue's habit, not a shape change; past
+  // the cap it is one, and the guard still refuses it.
+  assertPageSize("Magic Eden", "collection listings", served, LISTING_PAGE_MAX);
   const listings = served.slice(0, appliedLimit);
   const more = served.length > appliedLimit || served.length >= venueLimit;
   return { listings, more, venueReportedEnd: !more, requestedLimit, appliedLimit, offset, stale, cachedAt };

@@ -258,7 +258,8 @@ await check("a small listing limit is served from the venue's floor page and tri
     if (!url.includes("/listings")) throw new Error(`unexpected ${url}`);
     const asked = Number(new URL(url).searchParams.get("limit"));
     assert.ok(asked >= 25, `the venue was asked for ${asked}; a request below its floor page comes back larger than asked`);
-    return { json: Array.from({ length: 21 }, (_, i) => ({ tokenMint: `M${i}`, price: 1 + i, token: { name: `Item ${i}` } })) };
+    // 41 rows to a request for 25 was seen on a real collection.
+    return { json: Array.from({ length: 41 }, (_, i) => ({ tokenMint: `M${i}`, price: 1 + i, token: { name: `Item ${i}` } })) };
   };
   const r = await me.collectionListings("smallpage", { limit: 3 });
   assert.strictEqual(r.listings.length, 3, "the caller's limit is applied");

@@ -1241,9 +1241,15 @@ registerTool(
     let discovered = false;
     const core = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
     if (!slug && core && (await os.openSeaAvailable())) {
-      const found =
-        (await os.slugForOnchainCollection(core).catch(() => null)) ??
-        (typeof r.name === "string" && r.name ? await os.slugByNameForCollection(r.name, core).catch(() => null) : null);
+      // The on-chain name is what OpenSea's slug is usually built from, and
+      // it differs from the registry's display name (which carries the
+      // issuer as a prefix); the stats tool tries it, so this does too.
+      const chainName = await sol.getCoreAccount(core).then((a) => (a?.kind === "collection" ? a.name : null)).catch(() => null);
+      let found: { slug: string } | null = await os.slugForOnchainCollection(core).catch(() => null);
+      for (const candidate of [chainName, typeof r.name === "string" ? r.name : null]) {
+        if (found || !candidate) continue;
+        found = await os.slugByNameForCollection(candidate, core).catch(() => null);
+      }
       if (found) {
         slug = found.slug;
         discovered = true;

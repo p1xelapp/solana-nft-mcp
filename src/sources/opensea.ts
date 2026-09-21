@@ -536,10 +536,13 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   const dust = volume !== null && volume > 0 && volume < 1e-9;
   return {
     slug,
-    floor: num(t.floor_price),
+    // OpenSea answers a collection with nothing listed as floor 0 and no
+    // currency. That is "no floor", not a price of zero in an unknown unit.
+    floor: num(t.floor_price) === 0 && ticker(t.floor_price_symbol) === null ? null : num(t.floor_price),
     // A currency symbol is venue-supplied text printed next to a number: it
     // has to be ticker-shaped, and an absent one is unknown, never assumed.
     floorCurrency: ticker(t.floor_price_symbol),
+    ...(num(t.floor_price) === 0 && ticker(t.floor_price_symbol) === null ? { floorNote: "OpenSea reports no floor for this collection: nothing is listed there right now." } : {}),
     totalVolume: dust ? 0 : volume,
     volumeCurrency: ticker(t.volume_symbol),
     ...(dust
