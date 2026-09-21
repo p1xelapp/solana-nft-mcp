@@ -64,5 +64,13 @@ Three signals, none of which need you to remember to look:
 - `assets/banner.png`, `assets/architecture.svg` and `assets/using/candyscan.png` are the README's
   pictures. The diagram is generated: `npm run docs:architecture` redraws it from the running
   server and `--check` fails CI when it drifts.
+- `assets/icon-512.png` is the icon the install bundle carries, so it is what a client shows beside
+  the server in its extension list.
+- Four of those are derived from two pieces of source artwork that are NOT in the repository, in a
+  local `IMAGES/` folder: the hero image behind `banner.png`, `og.png` and `social-preview.png`, and
+  the square logo behind `icon-512.png` and the site's header logo. Redraw the source, then resize
+  from it rather than upscaling a shipped file.
+- Every shipped image is written without metadata on purpose. `npm run check:images` runs in CI and
+  fails on an embedded C2PA, XMP or editor block, so export clean or strip it on the way in.
 - `npm run test:compat` includes one group (x7, answer sizes) that reads real collections, so it
   needs the network; the other groups are offline. `npm test` does not run it.
