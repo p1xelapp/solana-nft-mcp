@@ -214,10 +214,18 @@ tarball check and `npm audit` on `main`, pull requests and release tags; and the
 ## About
 
 Built and maintained by P1xel ([p1xel.app](https://p1xel.app),
-[@P1xelCollector](https://x.com/P1xelCollector)), a long-time Solana collector. The Core
-decoding was written first for [CandyScan](https://candyscan.p1xel.app), which tracks the Candy
-Digital collections; this repository is the keyless half of that pipeline. The story of why it
+[@P1xelCollector](https://x.com/P1xelCollector)), a long-time Solana collector. The story of why it
 exists is in [docs/DEEP-DIVE.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/DEEP-DIVE.md).
+
+### Running on the same decoding
+
+<a href="https://candyscan.p1xel.app"><img src="assets/using/candyscan.png" width="86" alt="CandyScan" /></a>
+
+**[CandyScan](https://candyscan.p1xel.app)** tracks the Candy Digital collections on Solana:
+supply, holders, migrations and sales, kept current. It is where the Core decoding was written
+first, and this repository is the keyless half of that pipeline. Each project shaped the other.
+
+Shipped something on top of solana-nft-mcp? Open an issue and it goes here.
 
 **Independent project, not affiliated with the Solana Foundation.** SOLANA and SOL are trademarks
 of the Solana Foundation. They appear in this project's name and documentation for one reason
