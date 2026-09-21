@@ -1,5 +1,5 @@
 /**
- * Is a newer collector-mcp published?
+ * Is a newer solana-nft-mcp published?
  *
  * A server that runs on someone else's machine has no way to tell them it has
  * fallen behind unless it checks. So it asks the npm registry once per process
@@ -8,8 +8,8 @@
  * stdout, never asks more than once, and stays silent when it cannot reach
  * the registry: an update notice is a courtesy, not a dependency.
  *
- * Off switches: COLLECTOR_MCP_OFFLINE=1 (the offline test suite) and
- * COLLECTOR_MCP_NO_UPDATE_CHECK=1 (someone who does not want the request made).
+ * Off switches: SOLANA_NFT_MCP_OFFLINE=1 (the offline test suite) and
+ * SOLANA_NFT_MCP_NO_UPDATE_CHECK=1 (someone who does not want the request made).
  */
 
 import { readBoundedJson } from "./http.js";
@@ -31,10 +31,10 @@ export interface UpdateInfo {
   checkedAt: string;
 }
 
-const REGISTRY = "https://registry.npmjs.org/collector-mcp/latest";
+const REGISTRY = "https://registry.npmjs.org/solana-nft-mcp/latest";
 /** A complete semantic version, bounded: digits, dots, an optional short pre-release tag, nothing else. */
 const SEMVER = /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:-[0-9A-Za-z.-]{1,32})?$/;
-const HOW_TO = "git pull && npm install && npm run build (or npm i -g collector-mcp@latest if installed from npm), then restart your AI app";
+const HOW_TO = "git pull && npm install && npm run build (or npm i -g solana-nft-mcp@latest if installed from npm), then restart your AI app";
 
 /** Numeric semver compare on the dotted core only: 1 if a > b, -1 if a < b, 0 if equal or unreadable. */
 export function compareVersions(a: string, b: string): number {
@@ -70,11 +70,11 @@ export function resetUpdateCheck(): void {
 async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> {
   const checkedAt = new Date().toISOString();
   const base: UpdateInfo = { current, latest: null, behind: false, checked: false, reason: null, howTo: null, checkedAt };
-  if (process.env.COLLECTOR_MCP_OFFLINE === "1") return { ...base, reason: "offline mode" };
-  if (process.env.COLLECTOR_MCP_NO_UPDATE_CHECK === "1") return { ...base, reason: "disabled by COLLECTOR_MCP_NO_UPDATE_CHECK" };
+  if (process.env.SOLANA_NFT_MCP_OFFLINE === "1") return { ...base, reason: "offline mode" };
+  if (process.env.SOLANA_NFT_MCP_NO_UPDATE_CHECK === "1") return { ...base, reason: "disabled by SOLANA_NFT_MCP_NO_UPDATE_CHECK" };
   try {
     const res = await doFetch(REGISTRY, {
-      headers: { accept: "application/json", "user-agent": `collector-mcp/${current}` },
+      headers: { accept: "application/json", "user-agent": `solana-nft-mcp/${current}` },
       signal: AbortSignal.timeout(2500),
     });
     if (!res.ok) {
@@ -103,5 +103,5 @@ async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> 
 /** The one line a person sees at startup, or null when there is nothing to say. */
 export function updateNotice(u: UpdateInfo): string | null {
   if (!u.behind || !u.latest) return null;
-  return `collector-mcp ${u.current} is behind: ${u.latest} is published. Update: ${u.howTo}`;
+  return `solana-nft-mcp ${u.current} is behind: ${u.latest} is published. Update: ${u.howTo}`;
 }

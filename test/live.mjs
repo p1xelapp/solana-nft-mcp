@@ -68,7 +68,7 @@ function parse(res) {
   return JSON.parse(text);
 }
 
-const client = new Client({ name: "collector-mcp-live", version: "1.0.0" });
+const client = new Client({ name: "solana-nft-mcp-live", version: "1.0.0" });
 await client.connect(
   new StdioClientTransport({
     command: process.execPath,
@@ -77,7 +77,7 @@ await client.connect(
     // The two off switches are explicit, so a CI run can neither request a
     // key nor ask npm for a version: this child reads the sources and nothing
     // else.
-    env: { ...getDefaultEnvironment(), COLLECTOR_MCP_NO_AUTO_KEYS: "1", COLLECTOR_MCP_NO_UPDATE_CHECK: "1" },
+    env: { ...getDefaultEnvironment(), SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1" },
   }),
 );
 console.log(`connected over stdio (${elapsed()})\n`);

@@ -68,7 +68,7 @@ ours, say so: hiding it makes the same failure cost somebody a second afternoon.
 ### 9. A request needs a key that is not configured
 
 > This one needs an OpenSea key. The server normally issues itself a free one, but auto-issue was
-> disabled here (`COLLECTOR_MCP_NO_AUTO_KEYS`) or OpenSea refused the request, and no
+> disabled here (`SOLANA_NFT_MCP_NO_AUTO_KEYS`) or OpenSea refused the request, and no
 > `OPENSEA_API_KEY` is set, so OpenSea floors, sales, plain transfers and the Solana collection
 > index are all out of view for now. Everything keyless still works and is above. A free key is one
 > request to OpenSea's auth endpoint, and it goes in the `env` block of the config, not your shell.

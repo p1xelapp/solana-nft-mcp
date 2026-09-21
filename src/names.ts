@@ -105,7 +105,7 @@ function warmLive(): void {
   if (liveWarming) return;
   // The offline suite must stay offline; a background walk started by a
   // pure-logic search would be the one network call nobody asked for.
-  if (process.env.COLLECTOR_MCP_OFFLINE === "1") return;
+  if (process.env.SOLANA_NFT_MCP_OFFLINE === "1") return;
   liveWarming = me
     .collectionsIndex(LIVE_PAGES)
     .then((r) => {

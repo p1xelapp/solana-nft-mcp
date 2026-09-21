@@ -2,7 +2,7 @@
 
 ## The security model in one page
 
-collector-mcp reads. It has no signing code, no wallet code and no transaction
+solana-nft-mcp reads. It has no signing code, no wallet code and no transaction
 path: it cannot buy, sell, list, transfer or spend anything, and that is true
 because the ability was never written, not because it is switched off. Every
 tool declares `readOnlyHint` in the protocol, which here means that nothing on
@@ -17,16 +17,16 @@ does not describe them:
 
 - **It may create and store one credential.** The first question that needs
   OpenSea asks OpenSea's instant-key endpoint for a free key, with no sign-up,
-  and keeps it in `~/.collector-mcp/opensea-key.json` at permissions 600 so the
+  and keeps it in `~/.solana-nft-mcp/opensea-key.json` at permissions 600 so the
   next session does not spend another. Set `OPENSEA_API_KEY` and it uses yours
-  instead; set `COLLECTOR_MCP_NO_AUTO_KEYS=1` and it never asks. A refused
+  instead; set `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` and it never asks. A refused
   issue is remembered for a cooldown and any `Retry-After` the marketplace sends is
   honoured, so a failing endpoint is not asked again on every call. The
   status tool (`get_source_status`) describes this state and never requests a
   key itself.
 - **It asks npm once at startup** whether a newer version exists, sending the
   package name and version as a user-agent and nothing else. Off with
-  `COLLECTOR_MCP_NO_UPDATE_CHECK=1`; `COLLECTOR_MCP_OFFLINE=1` stops every
+  `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1`; `SOLANA_NFT_MCP_OFFLINE=1` stops every
   request the server would make on its own.
 
 Whichever key is in use, it is sent only to `api.opensea.io`, and never across
@@ -72,7 +72,7 @@ the query string.
 ## Reporting a vulnerability
 
 Open a GitHub security advisory on this repository
-(https://github.com/p1xelapp/collector-mcp/security/advisories/new), or a plain
+(https://github.com/p1xelapp/solana-nft-mcp/security/advisories/new), or a plain
 issue if the finding is not sensitive. Realistic classes worth reporting:
 
 - a credential, a file path or an environment value reaching an answer or a log
@@ -96,7 +96,7 @@ rule that misreads base58 chain addresses in `test/fixtures`, not to those
 paths wholesale - a real credential committed there still fails the scan.
 
 The offline suite (`npm test`) runs every child server with
-`COLLECTOR_MCP_OFFLINE=1` or with every upstream stubbed by a preload, so a
+`SOLANA_NFT_MCP_OFFLINE=1` or with every upstream stubbed by a preload, so a
 test that reaches the network fails loudly rather than passing against live
 data. `test/credentials-and-cancellation.mjs` holds one regression per fixed
 credential and cancellation defect, each asserting the correct behaviour on

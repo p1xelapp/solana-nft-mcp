@@ -1,14 +1,14 @@
-# collector-mcp - Under the hood
+# solana-nft-mcp - Under the hood
 
 Where a tool call goes, why each layer is shaped the way it is, and what was
 checked before any of it was published. Start with the layer diagram in
-section 3.
+section 4.
 
 ---
 
 ## 1. What it is
 
-collector-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, asks you for **no account, no wallet and no configuration**, and is read-only by design. The default sources need no key at all; OpenSea is reached with a free key the server issues itself and keeps on your machine. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
+solana-nft-mcp is an open-source [Model Context Protocol](https://modelcontextprotocol.io) server that gives any AI agent (Claude Desktop, Claude Code, Cursor, or anything MCP-compatible) live, structured access to Solana digital-collectibles data: floor prices, sales, wallet holdings, listings and full on-chain ownership history. It runs locally over stdio, asks you for **no account, no wallet and no configuration**, and is read-only by design. The default sources need no key at all; OpenSea is reached with a free key the server issues itself and keeps on your machine. It is built for **licensed digital collectibles** - Candy Digital (official MLB and DC licenses) - and works with any Metaplex Core or Magic Eden collection on Solana.
 
 ## 2. Why it exists
 
@@ -141,7 +141,7 @@ The full list of 21 is in the README.
 - **No telemetry**: four data sources, nothing else, auditable in an afternoon.
 
 The reporting route and the full threat model are in
-[SECURITY.md](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md).
+[SECURITY.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/SECURITY.md).
 
 ## 7. What was tested
 

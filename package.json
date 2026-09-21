@@ -1,16 +1,16 @@
 {
-  "name": "collector-mcp",
-  "version": "1.16.2",
-  "description": "Read-only MCP server for Solana collectibles: Metaplex Core ownership history, who can freeze or burn an item, marketplace sales and floors that keep their currency and source. No sign-up.",
-  "homepage": "https://p1xel.app/collector-mcp/",
+  "name": "solana-nft-mcp",
+  "version": "1.17.0",
+  "description": "Read-only MCP server for Solana NFTs and digital collectibles: Metaplex Core ownership history, who can freeze or burn an item, marketplace sales and floors that keep their currency and source. No sign-up.",
+  "homepage": "https://p1xel.app/solana-nft-mcp/",
   "bugs": {
-    "url": "https://github.com/p1xelapp/collector-mcp/issues"
+    "url": "https://github.com/p1xelapp/solana-nft-mcp/issues"
   },
   "author": "p1xel (https://p1xel.app)",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "collector-mcp": "dist/index.js"
+    "solana-nft-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [
@@ -50,17 +50,20 @@
     "mcp",
     "model-context-protocol",
     "solana",
+    "solana-nft",
     "nft",
+    "nft-data",
     "digital-collectibles",
     "candy-digital",
     "metaplex-core",
     "magic-eden",
+    "web3",
     "claude",
     "ai-agent"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/p1xelapp/collector-mcp.git"
+    "url": "git+https://github.com/p1xelapp/solana-nft-mcp.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

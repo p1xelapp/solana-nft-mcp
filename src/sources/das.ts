@@ -107,7 +107,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     try {
       const r = await fetch(ep.url, {
         method: "POST",
-        headers: { "content-type": "application/json", "user-agent": "collector-mcp/1.0 (+https://github.com/p1xelapp/collector-mcp)" },
+        headers: { "content-type": "application/json", "user-agent": "solana-nft-mcp/1.0 (+https://github.com/p1xelapp/solana-nft-mcp)" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         // Never follow a 3xx: a 307 keeps the method and the body, so an
         // endpoint answering one could point an index read at another host.

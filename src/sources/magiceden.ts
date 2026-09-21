@@ -16,7 +16,7 @@ import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
-  "User-Agent": "collector-mcp/1.0 (+https://github.com/p1xelapp/collector-mcp)",
+  "User-Agent": "solana-nft-mcp/1.0 (+https://github.com/p1xelapp/solana-nft-mcp)",
   Accept: "application/json",
 };
 

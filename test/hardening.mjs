@@ -366,15 +366,15 @@ const jsonResponse = (body, headers = {}) =>
   // goes through the same bounded reader as every other body, and a stand-in
   // that only knew json() was asserting against a fetch that does not exist.
   const stub = (version, status = 200) => async () => new Response(JSON.stringify({ version }), { status, headers: { "content-type": "application/json" } });
-  const saved = process.env.COLLECTOR_MCP_OFFLINE;
+  const saved = process.env.SOLANA_NFT_MCP_OFFLINE;
 
-  process.env.COLLECTOR_MCP_OFFLINE = "1";
+  process.env.SOLANA_NFT_MCP_OFFLINE = "1";
   resetUpdateCheck();
   let u = await checkForUpdate("1.8.2", { fetch: () => { throw new Error("must not be called offline"); } });
   assert.strictEqual(u.checked, false);
   assert.strictEqual(u.behind, false);
   assert.strictEqual(updateNotice(u), null);
-  delete process.env.COLLECTOR_MCP_OFFLINE;
+  delete process.env.SOLANA_NFT_MCP_OFFLINE;
 
   resetUpdateCheck();
   u = await checkForUpdate("1.8.2", { fetch: stub("1.9.0") });
@@ -399,7 +399,7 @@ const jsonResponse = (body, headers = {}) =>
   const second = checkForUpdate("1.8.2", { fetch: () => { throw new Error("asked twice"); } });
   assert.strictEqual(await first, await second, "one process asks the registry once");
 
-  if (saved !== undefined) process.env.COLLECTOR_MCP_OFFLINE = saved;
+  if (saved !== undefined) process.env.SOLANA_NFT_MCP_OFFLINE = saved;
   resetUpdateCheck();
   ok("b16 the update check speaks only when the registry is newer, never offline, never twice, never by throwing");
 }
@@ -495,13 +495,13 @@ const jsonResponse = (body, headers = {}) =>
 }
 
 // ------------------------------------------------------------------ b19
-// COLLECTOR_MCP_LOG=1 writes one JSON line per tool call to stderr, with the
+// SOLANA_NFT_MCP_LOG=1 writes one JSON line per tool call to stderr, with the
 // tool name, timing, outcome and argument NAMES only. Nothing reaches stdout.
 {
   const { spawn } = await import("node:child_process");
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1", COLLECTOR_MCP_LOG: "1" };
+  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, COMSPEC: process.env.COMSPEC, SOLANA_NFT_MCP_OFFLINE: "1", SOLANA_NFT_MCP_LOG: "1" };
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env, stderr: "pipe" });
   let stderr = "";
@@ -522,7 +522,7 @@ const jsonResponse = (body, headers = {}) =>
   const failed = lines.find((l) => l.tool === "get_asset");
   assert.ok(failed && failed.ok === false && typeof failed.kind === "string", "a failed call logs ok:false with a kind");
   void spawn;
-  ok("b19 COLLECTOR_MCP_LOG=1 writes one JSON line per call with the tool, timing, outcome and argument names only");
+  ok("b19 SOLANA_NFT_MCP_LOG=1 writes one JSON line per call with the tool, timing, outcome and argument names only");
 }
 
 // c1 - a collection the registry knows only by name and chain address has to
@@ -618,7 +618,7 @@ const jsonResponse = (body, headers = {}) =>
 {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1" };
+  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, SOLANA_NFT_MCP_OFFLINE: "1" };
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   const client = new Client({ name: "manifest-test", version: "1.0.0" });
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));

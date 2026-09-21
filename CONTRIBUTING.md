@@ -37,7 +37,7 @@ priority; blue-chip Solana collections are welcome when they help demos.
 
 `.npmrc` sets `ignore-scripts=true` as supply-chain hardening, and npm applies
 that to this project's lifecycle scripts too - so `npm publish` on a fresh clone can ship a
-package with no `dist/` in it, and `npx collector-mcp` dies with
+package with no `dist/` in it, and `npx solana-nft-mcp` dies with
 MODULE_NOT_FOUND for every user. Build explicitly, prove the tarball, then
 publish with scripts enabled for that one command:
 
@@ -60,4 +60,4 @@ read, so a failed run leaves the existing data alone.
 ## Conduct
 
 Short version: be straight with people, argue with the work rather than the person.
-The full text is in [CODE_OF_CONDUCT.md](https://github.com/p1xelapp/collector-mcp/blob/main/CODE_OF_CONDUCT.md).
+The full text is in [CODE_OF_CONDUCT.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/CODE_OF_CONDUCT.md).

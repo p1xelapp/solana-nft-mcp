@@ -108,7 +108,7 @@ const NASTY = [
 // ---------------------------------------------------- 2. broken install
 
 async function startWith(env = {}) {
-  const base = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1" };
+  const base = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, SOLANA_NFT_MCP_OFFLINE: "1" };
   for (const k of Object.keys(base)) if (base[k] === undefined) delete base[k];
   const c = new Client({ name: "robust", version: "1.0.0" });
   await c.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env: { ...base, ...env }, stderr: "ignore" }));
@@ -337,7 +337,7 @@ async function startWith(env = {}) {
     try {
       const r = await c.callTool({ name: t.name, arguments: args }, undefined, { timeout: 30_000 });
       if (!r.isError) outcome.answered++;
-      else if (/offline mode|COLLECTOR_MCP_OFFLINE|not reached|refused to contact/i.test(r.content?.[0]?.text ?? "")) outcome.sourceUnavailable++;
+      else if (/offline mode|SOLANA_NFT_MCP_OFFLINE|not reached|refused to contact/i.test(r.content?.[0]?.text ?? "")) outcome.sourceUnavailable++;
       else outcome.otherError.push(`${t.name}: ${(r.content?.[0]?.text ?? "").replace(/\s+/g, " ").slice(0, 100)}`);
     } catch (e) {
       if (/validation|invalid_type|nonoptional|Required/i.test(String(e.message))) {

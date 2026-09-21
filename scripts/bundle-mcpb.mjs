@@ -7,7 +7,7 @@
  * and a manifest; Claude Desktop reads the manifest and registers the server.
  *
  *   npm run build && node scripts/bundle-mcpb.mjs
- *   -> .release/collector-mcp-<version>.mcpb
+ *   -> .release/solana-nft-mcp-<version>.mcpb
  *
  * Needs the mcpb CLI once: npm install -g @anthropic-ai/mcpb
  */
@@ -23,7 +23,7 @@ import { PROMPT_TEXTS, PROMPT_LIST } from "../dist/prompts.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const stage = path.join(root, ".release", "mcpb");
-const out = path.join(root, ".release", `collector-mcp-${pkg.version}.mcpb`);
+const out = path.join(root, ".release", `solana-nft-mcp-${pkg.version}.mcpb`);
 
 if (!existsSync(path.join(root, "dist", "index.js"))) {
   console.error("dist/index.js is missing: run `npm run build` first");
@@ -71,8 +71,8 @@ rmSync(path.join(stage, ".npmrc"), { force: true });
 
 const manifest = {
   manifest_version: "0.2",
-  name: "collector-mcp",
-  display_name: "collector-mcp",
+  name: "solana-nft-mcp",
+  display_name: "solana-nft-mcp",
   version: pkg.version,
   description: "Solana collectibles for your AI: ownership history, custody rules, floors, sales and deals. No sign-up, read-only, runs on your machine.",
   long_description:
@@ -82,9 +82,9 @@ const manifest = {
     "compared that should not be. Builders get the same reads as typed results with the raw fields intact, ready for an agent " +
     "without writing a parser. 21 tools, no sign-up, no telemetry, and no signing code exists in it, so it cannot touch your wallet. The one file it may write is a free OpenSea key in your home folder, and that can be switched off.",
   author: { name: "p1xel", url: "https://p1xel.app" },
-  homepage: "https://p1xel.app/collector-mcp/",
-  documentation: "https://github.com/p1xelapp/collector-mcp#readme",
-  support: "https://github.com/p1xelapp/collector-mcp/issues",
+  homepage: "https://p1xel.app/solana-nft-mcp/",
+  documentation: "https://github.com/p1xelapp/solana-nft-mcp#readme",
+  support: "https://github.com/p1xelapp/solana-nft-mcp/issues",
   icon: "icon.png",
   server: {
     type: "node",

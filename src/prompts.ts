@@ -28,7 +28,7 @@
  */
 export const PROMPT_TEXTS = {
   getting_started:
-    "I just installed collector-mcp and I do not know what to ask yet. Use its own tools, not your memory.\n" +
+    "I just installed solana-nft-mcp and I do not know what to ask yet. Use its own tools, not your memory.\n" +
     "Call get_source_status and tell me which sources are live right now and whether OpenSea is on.\n" +
     "Say in plain language what this server can answer: the history of a single card, who can freeze or burn it, " +
     "what a collection is worth at floor and what actually sold, the cheapest listings and low serial numbers, " +
@@ -37,14 +37,14 @@ export const PROMPT_TEXTS = {
     "Then give me five questions I can copy, using real collections you can resolve with search_collections.\n" +
     "Keep it short and skip the tool names.",
   collection_report:
-    "Build a market report with the collector-mcp tools.\n" +
+    "Build a market report with the solana-nft-mcp tools.\n" +
     "If I have already named a collection in this conversation, use that one and start now. " +
     "Only ask me which collection I mean if I have not named one yet, and do not offer a list of guesses.\n" +
     "Resolve the identifiers first, then supply and floor, then what actually sold recently with the price range and how many changed hands.\n" +
     "Then pick one recently traded item and show its ownership history as a short story.\n" +
     "Close with what a buyer would want to know next. Label anything stale, and never call a floor a valuation.",
   wallet_report:
-    "Profile a wallet as a collector with the collector-mcp tools.\n" +
+    "Profile a wallet as a collector with the solana-nft-mcp tools.\n" +
     "If I have already pasted a wallet address in this conversation, use that one and start now. " +
     "Only ask me for an address if I have not given one yet.\n" +
     "Lead with what it collects, how much of the wallet each collection is, how old the wallet is, " +
@@ -56,7 +56,7 @@ export const PROMPT_TEXTS = {
 
 /** Name, title and one line of description, in the order a person should meet them. */
 export const PROMPT_LIST = [
-  ["getting_started", "Start here: what can I ask?", "New to collector-mcp? What it answers, and five questions to try."],
+  ["getting_started", "Start here: what can I ask?", "New to solana-nft-mcp? What it answers, and five questions to try."],
   ["collection_report", "Collection market report", "Supply, floor, what sold, and one item's story, for a collection you name."],
   ["wallet_report", "Wallet report", "What a wallet collects, how it trades, and what it is worth at floor as a ceiling."],
 ] as const satisfies readonly (readonly [keyof typeof PROMPT_TEXTS, string, string])[];

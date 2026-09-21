@@ -211,7 +211,7 @@ await check("D15 every published string bound has a maxLength and every number a
   for (const k of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "COMSPEC"]) {
     if (process.env[k]) env[k] = process.env[k];
   }
-  env.COLLECTOR_MCP_OFFLINE = "1";
+  env.SOLANA_NFT_MCP_OFFLINE = "1";
   await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
   try {
     const { tools } = await client.listTools();

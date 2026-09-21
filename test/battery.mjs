@@ -625,7 +625,7 @@ check("K7", "numbers", "a share of supply is never above 100 per cent", async ()
 async function offlineClient() {
   const { Client: C } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport: T } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, COLLECTOR_MCP_OFFLINE: "1" };
+  const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, SOLANA_NFT_MCP_OFFLINE: "1" };
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   const c = new C({ name: "offline", version: "1" });
   await c.connect(new T({ command: process.execPath, args: ["dist/index.js"], env, stderr: "ignore" }));

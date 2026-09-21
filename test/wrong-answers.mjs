@@ -242,8 +242,8 @@ const AT = 1_700_000_000;
   let firstVenueRequestAt = 0;
   // Offline mode refuses before a request is built, so it is lifted for this
   // one test and every request is answered by the stub - nothing leaves.
-  const wasOffline = process.env.COLLECTOR_MCP_OFFLINE;
-  delete process.env.COLLECTOR_MCP_OFFLINE;
+  const wasOffline = process.env.SOLANA_NFT_MCP_OFFLINE;
+  delete process.env.SOLANA_NFT_MCP_OFFLINE;
   globalThis.fetch = async (url) => {
     if (!firstVenueRequestAt) firstVenueRequestAt = Date.now();
     const body = String(url).includes("magiceden")
@@ -257,7 +257,7 @@ const AT = 1_700_000_000;
     report = await sourceStatus({ rpcHealth: slowHealth });
   } finally {
     globalThis.fetch = realFetch;
-    if (wasOffline !== undefined) process.env.COLLECTOR_MCP_OFFLINE = wasOffline;
+    if (wasOffline !== undefined) process.env.SOLANA_NFT_MCP_OFFLINE = wasOffline;
   }
 
   assert.ok(healthFinished - healthStarted >= HEALTH_MS - 100, "the chain check really was slow");

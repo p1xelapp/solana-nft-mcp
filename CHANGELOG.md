@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.17.0 - 2026-09-20
+
+Renamed from `collector-mcp` to `solana-nft-mcp`, before the first public
+release rather than after it.
+
+The old name said nothing about the chain, the assets or the people it was
+built for. Somebody looking for a way to let an agent read Solana NFT data
+searches for those words, and `collector-mcp` matched none of them. Everything
+the server does is unchanged; only the name it answers to has moved.
+
+- The package is `solana-nft-mcp` on npm, the repository is
+  `p1xelapp/solana-nft-mcp`, and the binary is `solana-nft-mcp`.
+- The environment switches are now `SOLANA_NFT_MCP_NO_AUTO_KEYS`,
+  `SOLANA_NFT_MCP_NO_UPDATE_CHECK`, `SOLANA_NFT_MCP_OFFLINE` and
+  `SOLANA_NFT_MCP_LOG`.
+- The self-issued OpenSea key moves from `~/.collector-mcp/` to
+  `~/.solana-nft-mcp/`. Nothing migrates the old folder: a fresh key is
+  requested on the first question that needs OpenSea, and the old folder can be
+  deleted.
+- Install examples now register the server under the key `solana-nft` rather
+  than `collector`, which is the name that appears in a client's tool list.
+- `collector-mcp` on npm keeps its reserved placeholder and is deprecated with
+  a pointer here, so anyone who lands on the old name is sent to the new one.
+
+Earlier entries keep the old name. They describe what was true when they were
+written, and rewriting them would be tidier and less honest.
+
+SOLANA and SOL are trademarks of the Solana Foundation, used here only to say
+which chain this server reads. This project is independent and unaffiliated.
+
 ## 1.16.2 - 2026-09-20
 
 A pass over the boundary with the endpoints and the marketplaces, from the

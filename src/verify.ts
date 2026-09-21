@@ -489,11 +489,11 @@ export function buildReceipt(r: Omit<VerificationResult, "receipt">, at = new Da
   const onChain = r.evidence.length > 0 && r.evidence.every((e) => /Solana|Core|account|transaction/i.test(e.source));
   const venue = (src: string) => src.split(/ (collection|stats|account|for) /)[0] ?? src;
   const srcLabel = r.evidence.length === 0 ? "" : onChain ? "chain shows" : `${[...new Set(r.evidence.map((e) => venue(e.source)))].join(" + ")} shows`;
-  const how = r.evidence.length === 0 ? "" : onChain ? " · checked on-chain via collector-mcp, reproducible with no key" : ` · marketplace read via collector-mcp at ${at.toISOString().slice(0, 16)}Z, reproducible with no key`;
+  const how = r.evidence.length === 0 ? "" : onChain ? " · checked on-chain via solana-nft-mcp, reproducible with no key" : ` · marketplace read via solana-nft-mcp at ${at.toISOString().slice(0, 16)}Z, reproducible with no key`;
   return (
     `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
     (observed ? ` - ${srcLabel} ${observed}` : "") +
-    `${how} · github.com/p1xelapp/collector-mcp`
+    `${how} · github.com/p1xelapp/solana-nft-mcp`
   );
 }
 

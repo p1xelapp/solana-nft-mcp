@@ -23,8 +23,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
 // A throwaway home so this run cannot touch the real key file; OpenSea stays
 // off unless the server issues itself a key, which is its normal behaviour.
-const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-live-edges-"));
-const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, HOME: home, USERPROFILE: home, COLLECTOR_MCP_NO_UPDATE_CHECK: "1" };
+const home = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-live-edges-"));
+const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC, HOME: home, USERPROFILE: home, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1" };
 for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
 
 const ACES = "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K"; // Candy Digital Gold Series - Aces (Core collection)

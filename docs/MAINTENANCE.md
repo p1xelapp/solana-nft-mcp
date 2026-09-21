@@ -60,7 +60,7 @@ Three signals, none of which need you to remember to look:
 
 - `assets/social-preview.png` (1280x640) is the image to upload under Settings > Social preview on
   GitHub; the repository cannot reference it, GitHub serves it.
-- `assets/og.png` is the source of the share image the site at p1xel.app/collector-mcp serves.
+- `assets/og.png` is the source of the share image the site at p1xel.app/solana-nft-mcp serves.
 - `assets/banner.png`, `assets/architecture.svg` and `assets/using/candyscan.png` are the README's
   pictures. The diagram is generated: `npm run docs:architecture` redraws it from the running
   server and `--check` fails CI when it drifts.

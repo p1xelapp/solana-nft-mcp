@@ -101,7 +101,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       floors: allQuotes,
       caveats: [
         ...caveats,
-        "collector-mcp does not convert currencies on purpose - a stale price feed produces confident wrong answers, so the mismatch is reported instead of papered over.",
+        "solana-nft-mcp does not convert currencies on purpose - a stale price feed produces confident wrong answers, so the mismatch is reported instead of papered over.",
       ],
     };
   }

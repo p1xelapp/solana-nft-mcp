@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 
 // The name-resolution layer is imported below; without this it would start a
 // live directory walk from a test suite that must make no network calls.
-process.env.COLLECTOR_MCP_OFFLINE = "1";
+process.env.SOLANA_NFT_MCP_OFFLINE = "1";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = (f) => JSON.parse(readFileSync(join(here, "fixtures", f), "utf8"));

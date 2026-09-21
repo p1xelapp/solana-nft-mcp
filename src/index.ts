@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * collector-mcp - no-sign-up MCP server for Solana digital collectibles.
+ * solana-nft-mcp - no-sign-up MCP server for Solana digital collectibles.
  *
  * Runs over stdio. Nothing to sign up for and no wallet: the default sources are
  * public and keyless (Magic Eden v2, the public Solana RPC and its asset index),
@@ -71,10 +71,10 @@ const INSTRUCTIONS = [
   "",
   "Every figure comes back with its marketplace, its currency and the time it was read. Keep those when you summarise. Never add figures from two marketplaces together, never call a floor a valuation, and never turn an empty result into \"it does not exist\": each result says what was searched and what could not be seen.",
   "",
-  "Every tool is read-only against the chain and the marketplaces: nothing here can sign, buy, sell, list or transfer. Two things do leave a trace on the machine it runs on, and both can be turned off: the first question that needs OpenSea may create a free OpenSea API key and store it in the user's home folder (COLLECTOR_MCP_NO_AUTO_KEYS=1 prevents that), and startup asks npm once whether a newer version exists (COLLECTOR_MCP_NO_UPDATE_CHECK=1 prevents that).",
+  "Every tool is read-only against the chain and the marketplaces: nothing here can sign, buy, sell, list or transfer. Two things do leave a trace on the machine it runs on, and both can be turned off: the first question that needs OpenSea may create a free OpenSea API key and store it in the user's home folder (SOLANA_NFT_MCP_NO_AUTO_KEYS=1 prevents that), and startup asks npm once whether a newer version exists (SOLANA_NFT_MCP_NO_UPDATE_CHECK=1 prevents that).",
 ].join("\n");
 
-const server = new McpServer({ name: "collector-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "solana-nft-mcp", version: VERSION }, { instructions: INSTRUCTIONS });
 
 // Counted, not hand-written. The banner said "8 tools" for two releases after
 // the ninth was added - a stale count is a small lie that erodes trust in the
@@ -176,12 +176,12 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   // outage and not the person's mistake. It used to surface under "could not
   // be completed, try again", which is advice to repeat a request the setting
   // will refuse again.
-  if (/offline mode \(COLLECTOR_MCP_OFFLINE=1\)/.test(msg)) {
+  if (/offline mode \(SOLANA_NFT_MCP_OFFLINE=1\)/.test(msg)) {
     const host = /refused to contact (\S+)/.exec(msg)?.[1];
     return {
       kind: "offline",
-      headline: `This server is running in offline mode (COLLECTOR_MCP_OFFLINE=1) and did not contact ${host ?? "the source"}.`,
-      next: "Nothing was read. Start the server without COLLECTOR_MCP_OFFLINE to ask live sources.",
+      headline: `This server is running in offline mode (SOLANA_NFT_MCP_OFFLINE=1) and did not contact ${host ?? "the source"}.`,
+      next: "Nothing was read. Start the server without SOLANA_NFT_MCP_OFFLINE to ask live sources.",
     };
   }
   // Which venue this was is OUR label, taken from the source name this server
@@ -250,11 +250,11 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   return { kind: "error", headline: "That request could not be completed.", next: "Try again, or try a narrower request." };
 }
 
-// Structured logging, opt in: COLLECTOR_MCP_LOG=1 writes one JSON line per
+// Structured logging, opt in: SOLANA_NFT_MCP_LOG=1 writes one JSON line per
 // tool call to stderr (never stdout, which is the protocol channel). Argument
 // NAMES are logged, never values: a wallet address in a log file is somebody's
 // data. Bot builders read these to see which call was slow or failed at 3am.
-const LOG_CALLS = process.env.COLLECTOR_MCP_LOG === "1";
+const LOG_CALLS = process.env.SOLANA_NFT_MCP_LOG === "1";
 const logCall = (tool: string, args: unknown, ms: number, outcome: { ok: true } | { ok: false; kind: string }) => {
   if (!LOG_CALLS) return;
   const argNames = args && typeof args === "object" ? Object.keys(args) : [];
@@ -2887,7 +2887,7 @@ async function main() {
   // never ask an OpenSea question at all.
   const osState = os.openSeaState();
   console.error(
-    `collector-mcp v${VERSION} ready (stdio) - ${toolCount} tools, 0 required API keys` +
+    `solana-nft-mcp v${VERSION} ready (stdio) - ${toolCount} tools, 0 required API keys` +
       (osState.source === "env"
         ? ", OpenSea enabled with the configured key"
         : osState.source === "auto"
@@ -2905,6 +2905,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("collector-mcp fatal:", err);
+  console.error("solana-nft-mcp fatal:", err);
   process.exit(1);
 });

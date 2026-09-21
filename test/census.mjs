@@ -39,8 +39,8 @@ const ok = (what) => {
 };
 
 delete process.env.OPENSEA_API_KEY;
-delete process.env.COLLECTOR_MCP_NO_AUTO_KEYS;
-delete process.env.COLLECTOR_MCP_OFFLINE;
+delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
+delete process.env.SOLANA_NFT_MCP_OFFLINE;
 delete process.env.SOLANA_RPC_URL;
 delete process.env.DAS_RPC_URL;
 
@@ -73,7 +73,7 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
 
 const homes = [];
 const freshHome = () => {
-  const dir = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-round5-"));
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-round5-"));
   homes.push(dir);
   return dir;
 };
@@ -524,8 +524,8 @@ const kinds = (r) => r.events.map((e) => e.event);
       COLLECTOR_TEST_HOME: home,
       COLLECTOR_TEST_LOG: log,
       DAS_RPC_URL: "https://census.invalid",
-      COLLECTOR_MCP_NO_AUTO_KEYS: "1",
-      COLLECTOR_MCP_NO_UPDATE_CHECK: "1",
+      SOLANA_NFT_MCP_NO_AUTO_KEYS: "1",
+      SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1",
     },
     stderr: "pipe",
   });
@@ -629,8 +629,8 @@ const kinds = (r) => r.events.map((e) => e.event);
       COLLECTOR_TEST_HOME: home,
       COLLECTOR_TEST_CANARY: canary,
       SOLANA_RPC_URL: `https://private-rpc.invalid/?api-key=${canary}`,
-      COLLECTOR_MCP_NO_AUTO_KEYS: "1",
-      COLLECTOR_MCP_NO_UPDATE_CHECK: "1",
+      SOLANA_NFT_MCP_NO_AUTO_KEYS: "1",
+      SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1",
     },
     stderr: "pipe",
   });
@@ -700,7 +700,7 @@ const kinds = (r) => r.events.map((e) => e.event);
   assert.ok(!doc("docs/SOURCES.md").includes("renews it weekly"), "refresh is on demand near expiry");
   const trust = doc("docs/TRUST-AND-LIMITS.md");
   const section = trust.slice(trust.indexOf("### 9."), trust.indexOf("### 10."));
-  assert.ok(/COLLECTOR_MCP_NO_AUTO_KEYS/.test(section), "the missing-key example states the auto-issue precondition");
+  assert.ok(/SOLANA_NFT_MCP_NO_AUTO_KEYS/.test(section), "the missing-key example states the auto-issue precondition");
   // The launch checklist is a private, untracked file; CI has no copy.
   if (fs.existsSync(path.join(root, "PRE-LAUNCH-TESTS.md"))) {
     assert.ok(!doc("PRE-LAUNCH-TESTS.md").includes("Every tool should refuse by name."), "local tools answer offline by design");

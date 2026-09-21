@@ -12,7 +12,7 @@ the tool. You never type a tool name.
 ## Setup, once
 
 Install steps for Claude Desktop, Claude Code and every other MCP client are in
-the [README](https://github.com/p1xelapp/collector-mcp#install), kept in one place
+the [README](https://github.com/p1xelapp/solana-nft-mcp#install), kept in one place
 so they cannot drift apart. It takes about three minutes and needs no account and
 no key. Everything below assumes it is running.
 
@@ -65,7 +65,7 @@ Fifteen people, each built around one mistake I have watched someone make.
 ### 1. Sam, first week in Solana
 
 **Level:** newbie. **Background:** bought a Claynosaurz on OpenSea because a friend
-said so. Has a Phantom wallet and a lot of questions. **Why collector-mcp:** every
+said so. Has a Phantom wallet and a lot of questions. **Why solana-nft-mcp:** every
 answer online is either a shill or a scam warning.
 
 **Asks:** *"I just bought this. What is it, is it real, and did I overpay?"* and pastes
@@ -85,7 +85,7 @@ just storefronts.
 ### 2. Marcus, spends real money on Candy cards
 
 **Level:** experienced collector. **Background:** three Candy Digital Discords, checks
-them between meetings. **Why collector-mcp:** ChatGPT confidently made up a card's history
+them between meetings. **Why solana-nft-mcp:** ChatGPT confidently made up a card's history
 once and it cost him.
 
 **Asks:** someone posts *"James Wood /250, never traded, straight from the pack."*
@@ -101,7 +101,7 @@ Core assets. A plain AI reads empty as "never traded" and agrees with the seller
 ### 3. Lena, long-term holder wondering what she has
 
 **Level:** intermediate. **Background:** has been buying Mad Lads and a few smaller
-collections since 2023, never sold, never counted. **Why collector-mcp:** she wants a
+collections since 2023, never sold, never counted. **Why solana-nft-mcp:** she wants a
 profile of her own wallet without connecting it to anything.
 
 **Asks:** *"Profile my wallet"* + address. (No signing, no connection. It is a public
@@ -121,7 +121,7 @@ held by the issuer. Worth knowing before listing it.
 ### 4. Rio, trader who studies other wallets
 
 **Level:** advanced. **Background:** flips mid-tier Solana collections, follows six
-wallets that seem to know things. **Why collector-mcp:** wallet-tracker sites show
+wallets that seem to know things. **Why solana-nft-mcp:** wallet-tracker sites show
 transactions; he wants behaviour.
 
 **Asks:** *"Is 9taD9... a flipper or a holder? What do they trade and where?"*
@@ -138,7 +138,7 @@ picture and an airdropped item is not counted as a buy.
 ### 5. Priya, solo dev, sales bot by Friday
 
 **Level:** senior dev, new to Solana. **Background:** built an Ethereum sales bot once;
-the painful part was month three, not day one. **Why collector-mcp:** she wants the
+the painful part was month three, not day one. **Why solana-nft-mcp:** she wants the
 traps before she hits them.
 
 **Asks:** *"Discord sales bot for Claynosaurz. Endpoints, rate limits, where does this
@@ -153,7 +153,7 @@ because the recipe told her to.
 ### 6. Tomas, founder launching a Core collection
 
 **Level:** technical founder. **Background:** launching packs that open into cards, has
-a dev but wants to check the dev's work. **Why collector-mcp:** one wrong plugin and
+a dev but wants to check the dev's work. **Why solana-nft-mcp:** one wrong plugin and
 holders cannot transfer their cards.
 
 **Asks:** *"Here is a test pack and a test card from our devnet-to-mainnet dry run.
@@ -172,7 +172,7 @@ after.
 ### 7. Maya, community mod running giveaways
 
 **Level:** non-technical. **Background:** moderates a 20k-member Discord, runs weekly
-raffles, gets sybil-farmed constantly. **Why collector-mcp:** she needs a fast, fair
+raffles, gets sybil-farmed constantly. **Why solana-nft-mcp:** she needs a fast, fair
 check she can explain.
 
 **Asks:** *"Winner is wallet Cbj.... Is this a real collector or a fresh wallet made for
@@ -187,7 +187,7 @@ days old". She re-rolls.
 ### 8. Jordan, writing about the Solana card boom
 
 **Level:** analyst / journalist. **Background:** covering the gacha-card wave
-(Collector Crypt, Jupiter Gacha, Candy). **Why collector-mcp:** every number in the
+(Collector Crypt, Jupiter Gacha, Candy). **Why solana-nft-mcp:** every number in the
 space is quoted without a unit or a marketplace.
 
 **Asks:** *"Collector Crypt: floor, volume, supply, and is the floor the same on
@@ -203,7 +203,7 @@ writes both numbers with their marketplaces and one sentence about odds.
 
 **Level:** business, not technical. **Background:** the company's IP is about to be
 minted by a partner platform. Legal wants to know what the platform can do to the
-items after fans buy them. **Why collector-mcp:** the platform's deck says "true
+items after fans buy them. **Why solana-nft-mcp:** the platform's deck says "true
 ownership". Chen wants the bytes.
 
 **Asks:** *"Take three items from the partner's existing collection. Can they freeze,
@@ -218,7 +218,7 @@ server.
 ### 10. Ava, building an autonomous research agent
 
 **Level:** AI engineer. **Background:** her agent reads marketplaces all day and has
-been prompt-injected twice by NFT names. **Why collector-mcp:** she needs data that is
+been prompt-injected twice by NFT names. **Why solana-nft-mcp:** she needs data that is
 typed and defanged.
 
 **What she gets:** every tool result carries `structuredContent` (no number scraped out
@@ -230,7 +230,7 @@ boundaries, bidi tricks, imperative phrasing flagged), every tool declares
 ### 11. Diego, hobbyist with a messy wallet
 
 **Level:** casual. **Background:** minted a hundred things in 2022, mostly forgot.
-**Why collector-mcp:** spring cleaning.
+**Why solana-nft-mcp:** spring cleaning.
 
 **Asks:** *"What's in here that I should deal with?"*
 
@@ -243,7 +243,7 @@ today.
 ### 12. Grace, about to buy a "1 of 1 legendary"
 
 **Level:** intermediate. **Background:** the price is a month's rent. **Why
-collector-mcp:** she wants to check the seller's claims before she pays.
+solana-nft-mcp:** she wants to check the seller's claims before she pays.
 
 **Asks:** the OpenSea link + *"Everything I should know before I pay for this."*
 
@@ -258,7 +258,7 @@ the receipt.
 ### 13. Kofi, reads floors for a living
 
 **Level:** power trader. **Background:** Tensor and Magic Eden all day. **Why
-collector-mcp:** "floor" lies more than any other number in the hobby.
+solana-nft-mcp:** "floor" lies more than any other number in the hobby.
 
 **Asks:** *"Is the Bulltoshi floor real?"*
 
@@ -270,7 +270,7 @@ less. Kofi already knew how to read that; he just did not want to open four tabs
 ### 14. Nadia, needs her year in one table
 
 **Level:** intermediate. **Background:** did a lot of trading, needs a record of it.
-**Why collector-mcp:** every explorer export is either raw or paywalled.
+**Why solana-nft-mcp:** every explorer export is either raw or paywalled.
 
 **Asks:** *"List every NFT I bought and sold this year with dates and prices."*
 
@@ -284,7 +284,7 @@ which is more than the alternatives gave her. It is not tax advice and says so.
 
 **Level:** dev at a Solana project. **Background:** the community wants a floor
 dashboard that shows both marketplaces now that the collection is on OpenSea. **Why
-collector-mcp:** he wants to get cross-marketplace right the first time.
+solana-nft-mcp:** he wants to get cross-marketplace right the first time.
 
 **Asks:** *"Floor dashboard for our collection across Magic Eden and OpenSea. How do I
 not make a fool of myself?"*

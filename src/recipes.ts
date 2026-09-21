@@ -53,7 +53,7 @@ export const RECIPES: Record<string, Recipe> = {
       ME_SOURCE,
       RPC_SOURCE,
       {
-        name: "collector-mcp get_recent_sales",
+        name: "solana-nft-mcp get_recent_sales",
         use: "The read path, already rate-gated and cached. Use it rather than calling marketplaces directly.",
         auth: "None.",
         rateLimit: "Inherits the source gates.",
@@ -120,7 +120,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
         rateLimit: "Read the X-RateLimit-Remaining header rather than hardcoding a number; free-tier limits change.",
       },
       {
-        name: "collector-mcp get_floor_prices",
+        name: "solana-nft-mcp get_floor_prices",
         use: "Several collections in one call, already gated.",
         auth: "None.",
         rateLimit: "Inherits source gates.",
@@ -173,7 +173,7 @@ const panels = results.map((r, i) =>
     dataSources: [
       RPC_SOURCE,
       {
-        name: "collector-mcp get_asset_provenance",
+        name: "solana-nft-mcp get_asset_provenance",
         use: "The whole job in one call - Core account decode plus the transfer trail, with marketplaces named.",
         auth: "None.",
         rateLimit: "Serialised RPC. One asset at a time.",
@@ -216,7 +216,7 @@ if (isEscrow(p.currentOwner)) renderNotice("Currently listed - held in marketpla
       ME_SOURCE,
       RPC_SOURCE,
       {
-        name: "collector-mcp get_wallet_holdings",
+        name: "solana-nft-mcp get_wallet_holdings",
         use: "Holdings as the marketplace indexes them, with escrow addresses explained.",
         auth: "None.",
         rateLimit: "Inherits source gates.",
@@ -271,7 +271,7 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
           "public endpoint, so a watcher diffs ids it has already seen rather than asking for the newest.",
       },
       {
-        name: "collector-mcp get_asset_provenance",
+        name: "solana-nft-mcp get_asset_provenance",
         use: "The story behind any single pull: mint, pack open, transfers, sales.",
         auth: "None.",
         rateLimit: "Inherits source gates.",

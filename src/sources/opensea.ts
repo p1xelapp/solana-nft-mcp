@@ -10,7 +10,7 @@
  * actually needs OpenSea asks for one, keeps it in the user's own home folder,
  * and reuses it until it is close to expiring. The key is the user's; it never
  * leaves their machine and is never printed. OPENSEA_API_KEY, when set, wins
- * over all of it, and COLLECTOR_MCP_NO_AUTO_KEYS=1 turns the self-issue off.
+ * over all of it, and SOLANA_NFT_MCP_NO_AUTO_KEYS=1 turns the self-issue off.
  *
  * Every failure here is a shrug, not an error: no key means the OpenSea half
  * of an answer is named as missing, exactly as it was before any of this.
@@ -60,10 +60,10 @@ export interface OpenSeaState {
 // Paths are resolved per call, never captured at import time: the home folder
 // is environment, and a module-level constant cannot be driven through the
 // states this has to survive (unwritable home, a different user).
-const keyDir = (): string => path.join(homedir(), ".collector-mcp");
+const keyDir = (): string => path.join(homedir(), ".solana-nft-mcp");
 const keyFile = (): string => path.join(keyDir(), "opensea-key.json");
 /** What the user is told the file is called. The real path carries their username; the shape is the useful part. */
-const KEY_FILE_LABEL = "~/.collector-mcp/opensea-key.json";
+const KEY_FILE_LABEL = "~/.solana-nft-mcp/opensea-key.json";
 
 /**
  * Refresh this long before expiry.
@@ -76,7 +76,7 @@ const REFRESH_WINDOW_MS = 24 * 60 * 60_000;
 /** Assumed life when OpenSea's response does not say. Observed: 7 days. */
 const ASSUMED_LIFE_MS = 7 * 24 * 60 * 60_000;
 
-const autoKeysOff = (): boolean => process.env.COLLECTOR_MCP_NO_AUTO_KEYS === "1";
+const autoKeysOff = (): boolean => process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS === "1";
 
 let memoryKey: StoredKey | null = null;
 let diskRead = false;
@@ -284,7 +284,7 @@ export async function ensureKey(): Promise<string | null> {
     return env;
   }
   if (autoKeysOff()) {
-    keyState = "off (COLLECTOR_MCP_NO_AUTO_KEYS=1)";
+    keyState = "off (SOLANA_NFT_MCP_NO_AUTO_KEYS=1)";
     return null;
   }
   const cachedKey = loadStoredKey();
@@ -316,7 +316,7 @@ export function openSeaState(): OpenSeaState {
       enabled: false,
       source: "none",
       expiresAt: null,
-      note: "off - automatic key issue is disabled by COLLECTOR_MCP_NO_AUTO_KEYS=1. Set OPENSEA_API_KEY to turn OpenSea back on.",
+      note: "off - automatic key issue is disabled by SOLANA_NFT_MCP_NO_AUTO_KEYS=1. Set OPENSEA_API_KEY to turn OpenSea back on.",
     };
   }
   const stored = loadStoredKey();
@@ -369,7 +369,7 @@ async function os<T>(route: string, signal?: AbortSignal): Promise<T> {
       headers: {
         "x-api-key": key,
         Accept: "application/json",
-        "User-Agent": "collector-mcp/1.1 (+https://github.com/p1xelapp/collector-mcp)",
+        "User-Agent": "solana-nft-mcp/1.1 (+https://github.com/p1xelapp/solana-nft-mcp)",
       },
     },
     { gate, signal },

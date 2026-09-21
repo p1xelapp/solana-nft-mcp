@@ -130,5 +130,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "$HOOK" ]; then echo "no LIVE_CHECK_WEBHOOK secret set; skipping the webhook ping"; exit 0; fi
-          payload="$(node -e 'const [v,u]=process.argv.slice(1);process.stdout.write(JSON.stringify({content:`collector-mcp weekly source check: ${v}\n${u}`}))' "$VERDICT" "$RUN_URL")"
+          payload="$(node -e 'const [v,u]=process.argv.slice(1);process.stdout.write(JSON.stringify({content:`solana-nft-mcp weekly source check: ${v}\n${u}`}))' "$VERDICT" "$RUN_URL")"
           curl -fsS -H 'Content-Type: application/json' -d "$payload" "$HOOK" >/dev/null && echo "webhook pinged"

@@ -50,7 +50,7 @@ const { prompts } = await client.listPrompts();
   assert.deepStrictEqual(bad.map((t) => t.name), [], "a tool name a strict client will reject");
   // A client prefixes the server name onto each tool. 64 is the ceiling for
   // the whole thing in Anthropic's directory, so the prefix has to fit too.
-  const prefix = "mcp__collector-mcp__";
+  const prefix = "mcp__solana-nft-mcp__";
   const tooLong = tools.filter((t) => (prefix + t.name).length > 64);
   assert.deepStrictEqual(tooLong.map((t) => t.name), [], `a prefixed tool name over 64 characters`);
   const longest = tools.reduce((a, b) => (a.name.length > b.name.length ? a : b));

@@ -44,8 +44,8 @@ const ok = (what) => {
 // This suite must never see the real key, and must never be refused by
 // offline mode before its stubs run.
 delete process.env.OPENSEA_API_KEY;
-delete process.env.COLLECTOR_MCP_NO_AUTO_KEYS;
-delete process.env.COLLECTOR_MCP_OFFLINE;
+delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
+delete process.env.SOLANA_NFT_MCP_OFFLINE;
 
 const realFetch = globalThis.fetch;
 /** Deny by default. A block that needs an upstream installs its own stub and gets this back afterwards. */
@@ -89,7 +89,7 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
 /** Point the OpenSea module's idea of "home" at a fresh empty directory, so no test can touch a real key file. */
 const homes = [];
 function freshHome() {
-  const dir = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-audit2-"));
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-audit2-"));
   homes.push(dir);
   process.env.HOME = dir;
   process.env.USERPROFILE = dir;
@@ -131,7 +131,7 @@ const serverEnvBase = () => {
 
 {
   // The same through a real server over stdio, which is where the audit saw it.
-  const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-audit2-home-"));
+  const home = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-audit2-home-"));
   homes.push(home);
   // Short enough to survive the status note's 16-character currency cap
   // whole, and carrying a quote so JSON escaping changes its spelling: the
@@ -168,12 +168,12 @@ const serverEnvBase = () => {
   // SEC-04: the side effect the read-only hint does not cover is disclosed in
   // the server's own instructions, where every client's model reads it.
   const instructions = c.getInstructions() ?? "";
-  assert.ok(instructions.includes("COLLECTOR_MCP_NO_AUTO_KEYS"), "server instructions disclose the automatic OpenSea key and how to turn it off");
-  assert.ok(instructions.includes("COLLECTOR_MCP_NO_UPDATE_CHECK"), "server instructions disclose the update check and how to turn it off");
+  assert.ok(instructions.includes("SOLANA_NFT_MCP_NO_AUTO_KEYS"), "server instructions disclose the automatic OpenSea key and how to turn it off");
+  assert.ok(instructions.includes("SOLANA_NFT_MCP_NO_UPDATE_CHECK"), "server instructions disclose the update check and how to turn it off");
   await c.close();
   assert.deepStrictEqual(leaks, [], `the self-issued key reached a tool result: ${leaks.join(", ")}`);
   assert.ok(redactedSeen, "at least one answer carried the redaction marker, so the reflecting path was really exercised");
-  const keyFile = path.join(home, ".collector-mcp", "opensea-key.json");
+  const keyFile = path.join(home, ".solana-nft-mcp", "opensea-key.json");
   assert.ok(fs.existsSync(keyFile), "the key was stored under the TEST home, proving the real home folder was never in play");
   ok("SEC-01 over real stdio, no tool answer carries the self-issued key in any spelling, including a normal answer; SEC-04 the key and update side effects are disclosed in the instructions");
 }
@@ -423,18 +423,18 @@ const serverEnvBase = () => {
   // F06: the raw RPC path refuses in offline mode by name, before any gate or
   // fetch. An offline suite used to send real chain reads and report the
   // answer as an outage.
-  process.env.COLLECTOR_MCP_OFFLINE = "1";
+  process.env.SOLANA_NFT_MCP_OFFLINE = "1";
   let fetched = 0;
   globalThis.fetch = async () => {
     fetched++;
     throw new Error("must not be reached");
   };
-  await assert.rejects(sol.getCoreAccount(address("offline-probe")), /offline mode \(COLLECTOR_MCP_OFFLINE=1\)/, "a raw chain read refuses by name");
+  await assert.rejects(sol.getCoreAccount(address("offline-probe")), /offline mode \(SOLANA_NFT_MCP_OFFLINE=1\)/, "a raw chain read refuses by name");
   assert.strictEqual(fetched, 0, "nothing was sent");
   const health = await sol.rpcHealth(200);
   assert.ok(health.length > 0 && health.every((h) => !h.ok && /offline/i.test(h.note)), "every health row says offline, none was contacted");
   assert.strictEqual(fetched, 0);
-  delete process.env.COLLECTOR_MCP_OFFLINE;
+  delete process.env.SOLANA_NFT_MCP_OFFLINE;
   globalThis.fetch = denied;
   ok("F06 raw RPC reads and the health check refuse by name in offline mode");
 }
@@ -442,7 +442,7 @@ const serverEnvBase = () => {
 {
   // Over real stdio: the client cancels a paged read after the first page and
   // the server must not request another page with nobody waiting.
-  const log = path.join(fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-audit2-cancel-")), "fixture.log");
+  const log = path.join(fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-audit2-cancel-")), "fixture.log");
   fs.writeFileSync(log, "");
   const preload = path.join(here, "helpers", "paging-fixture-preload.cjs").replaceAll("\\", "/");
   const transport = new StdioClientTransport({

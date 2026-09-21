@@ -24,10 +24,10 @@ const ok = (what) => {
 
 // This suite must never see the real one.
 delete process.env.OPENSEA_API_KEY;
-delete process.env.COLLECTOR_MCP_NO_AUTO_KEYS;
+delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
 // The stubbed fetch stands in for the network; offline mode would refuse the
 // call before the stub ever ran.
-delete process.env.COLLECTOR_MCP_OFFLINE;
+delete process.env.SOLANA_NFT_MCP_OFFLINE;
 
 const os = await import("../dist/sources/opensea.js");
 
@@ -36,7 +36,7 @@ const homes = [];
 
 /** Point the module's idea of "home" at a fresh empty directory. */
 function freshHome() {
-  const dir = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-key-"));
+  const dir = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-key-"));
   homes.push(dir);
   useHome(dir);
   return dir;
@@ -47,7 +47,7 @@ function useHome(dir) {
   process.env.USERPROFILE = dir;
 }
 
-const keyFileIn = (home) => path.join(home, ".collector-mcp", "opensea-key.json");
+const keyFileIn = (home) => path.join(home, ".solana-nft-mcp", "opensea-key.json");
 
 /** A stubbed OpenSea key endpoint. Returns the calls it saw. */
 function stubIssuer(respond) {
@@ -160,7 +160,7 @@ const DAY = 24 * 60 * 60_000;
 // A read-only or unwritable home folder must cost the user nothing but a fresh
 // key next restart.
 {
-  const parent = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-ro-"));
+  const parent = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-ro-"));
   homes.push(parent);
   const notADirectory = path.join(parent, "blocker");
   fs.writeFileSync(notADirectory, "this is a file, so nothing can be created under it");
@@ -180,10 +180,10 @@ const DAY = 24 * 60 * 60_000;
 // discarded.
 {
   freshHome();
-  process.env.COLLECTOR_MCP_NO_AUTO_KEYS = "1";
+  process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS = "1";
   os.resetKeyCache();
   const calls = stubIssuer(() => {
-    throw new Error("COLLECTOR_MCP_NO_AUTO_KEYS=1 must prevent the request itself");
+    throw new Error("SOLANA_NFT_MCP_NO_AUTO_KEYS=1 must prevent the request itself");
   });
 
   const key = await os.ensureKey();
@@ -191,9 +191,9 @@ const DAY = 24 * 60 * 60_000;
   assert.strictEqual(calls.length, 0, "nothing was contacted");
   const state = os.openSeaState();
   assert.strictEqual(state.enabled, false);
-  assert.ok(state.note.includes("COLLECTOR_MCP_NO_AUTO_KEYS=1"), `the note must name the opt-out, got: ${state.note}`);
-  delete process.env.COLLECTOR_MCP_NO_AUTO_KEYS;
-  ok("key 6: COLLECTOR_MCP_NO_AUTO_KEYS=1 stops the request, not just the storage");
+  assert.ok(state.note.includes("SOLANA_NFT_MCP_NO_AUTO_KEYS=1"), `the note must name the opt-out, got: ${state.note}`);
+  delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
+  ok("key 6: SOLANA_NFT_MCP_NO_AUTO_KEYS=1 stops the request, not just the storage");
 }
 
 // ------------------------------------------------------------------ key 7

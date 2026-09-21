@@ -18,14 +18,14 @@ const client = new Client({ name: "protocol-test", version: "1.0.0" });
 // stopped being offline - and still passed, because the assertion could be
 // satisfied from the registry when that request failed.
 //
-// COLLECTOR_MCP_OFFLINE=1 is the other half: it keeps the name search from
+// SOLANA_NFT_MCP_OFFLINE=1 is the other half: it keeps the name search from
 // starting its background directory walk AND makes any attempted network read
 // throw, so an accidental live call fails the run instead of passing.
 const offlineEnv = {};
 for (const k of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "COMSPEC"]) {
   if (process.env[k]) offlineEnv[k] = process.env[k];
 }
-offlineEnv.COLLECTOR_MCP_OFFLINE = "1";
+offlineEnv.SOLANA_NFT_MCP_OFFLINE = "1";
 for (const k of ["OPENSEA_API_KEY", "DAS_RPC_URL", "SOLANA_RPC_URL"]) {
   assert.ok(!(k in offlineEnv), `${k} must never reach the offline server`);
 }
@@ -223,7 +223,7 @@ assert.deepStrictEqual(
 const { buildReceipt } = await import("../dist/verify.js");
 const r1 = buildReceipt({ claim: "floor is 1 SOL", subject: "definitely_not_real_xyz123", verdict: "unverifiable", explanation: "", evidence: [], caveats: [], reproduce: "" });
 assert.ok(!/[\r\n]/.test(r1), "receipt must be one line");
-assert.ok(/UNVERIFIABLE/.test(r1) && /collector-mcp/.test(r1), "receipt must carry verdict + source");
+assert.ok(/UNVERIFIABLE/.test(r1) && /solana-nft-mcp/.test(r1), "receipt must carry verdict + source");
 assert.ok(!/chain shows/.test(r1), "no evidence, no attribution");
 const r2 = buildReceipt({ claim: "floor is 1 SOL", subject: "mad_lads", verdict: "confirmed", explanation: "", evidence: [{ source: "Magic Eden collection stats for mad_lads", method: "", observed: "1.01 SOL" }], caveats: [], reproduce: "" });
 assert.ok(/Magic Eden shows 1\.01 SOL/.test(r2) && !/checked on-chain/.test(r2), "a marketplace-only check must name the venue, not the chain: " + r2);

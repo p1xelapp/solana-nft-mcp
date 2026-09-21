@@ -260,7 +260,7 @@ export const SOURCES: readonly SourceEntry[] = [
     lastVerified: VERIFIED,
     fallback: "magiceden-v2",
     retention: "unknown (not documented)",
-    note: "No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and replaces it on the first call made within a day of its expiry; OPENSEA_API_KEY overrides it and COLLECTOR_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.",
+    note: "No configuration needed: the first call that needs OpenSea issues a free agent key (POST /api/v2/auth/keys), stores it under the user's home folder and replaces it on the first call made within a day of its expiry; OPENSEA_API_KEY overrides it and SOLANA_NFT_MCP_NO_AUTO_KEYS=1 disables it. Key CREATION is rate-limited to about two per day per IP, so on a busy address OpenSea can stay off - every tool still answers, with the OpenSea half named as missing rather than dropped.",
   },
 
   // ------------------------------------------------------------- tier 3

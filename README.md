@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="collector-mcp" width="100%" />
+<img src="assets/banner.png" alt="solana-nft-mcp" width="100%" />
 
-# collector-mcp
+# solana-nft-mcp
 
-**The NFT APIs I tried return an empty ownership history for a Metaplex Core asset, and an AI reading that empty answer tells you the card has never traded.** collector-mcp reads the chain itself: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
+**The NFT APIs I tried return an empty ownership history for a Metaplex Core asset, and an AI reading that empty answer tells you the card has never traded.** solana-nft-mcp reads the chain itself: who owned it, who can freeze it, what sold and for how much, and where the deals are. Read-only, no sign-up, nothing collected, runs on your machine.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://github.com/p1xelapp/collector-mcp/blob/main/tsconfig.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://github.com/p1xelapp/solana-nft-mcp/blob/main/tsconfig.json)
 [![MCP](https://img.shields.io/badge/MCP-official%20SDK-8b5cf6)](https://modelcontextprotocol.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](https://github.com/p1xelapp/collector-mcp/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](https://github.com/p1xelapp/solana-nft-mcp/blob/main/LICENSE)
 [![Sign-up](https://img.shields.io/badge/sign--up-none-f59e0b)](#what-it-reads)
 
 </div>
@@ -22,14 +22,14 @@ card "never traded", because the mainstream enhanced-transaction APIs return an 
 for Metaplex Core assets while the transfers sit on chain the whole time. It will compare two
 floors quoted in two currencies as if they were one.
 
-collector-mcp hands the same assistant live, labelled data instead: the chain for supply,
+solana-nft-mcp hands the same assistant live, labelled data instead: the chain for supply,
 ownership, provenance and custody rules, Magic Eden without a key, and OpenSea
 through a free key the server issues itself. Each number comes back with its marketplace, its currency, its read time, and what the
 source could not see.
 
 ## How it fits together
 
-<img src="assets/architecture.svg" alt="Your AI app talks to collector-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
+<img src="assets/architecture.svg" alt="Your AI app talks to solana-nft-mcp over stdio; the server reads the Solana chain, the asset index, Magic Eden and OpenSea" width="100%" />
 
 The server runs on your machine and your AI app starts it. Nothing here is a hosted
 service, and there is no account between you and the data. This picture is generated
@@ -41,14 +41,14 @@ code: `npm test` fails if they do.
 Requires Node 22 or newer (tested on 22 and 24; Node 20 is end of life). Build once:
 
 ```bash
-git clone https://github.com/p1xelapp/collector-mcp.git
-cd collector-mcp && npm install && npm run build
+git clone https://github.com/p1xelapp/solana-nft-mcp.git
+cd solana-nft-mcp && npm install && npm run build
 ```
 
 ### Claude Code
 
 ```bash
-claude mcp add collector -- node /absolute/path/to/collector-mcp/dist/index.js
+claude mcp add solana-nft -- node /absolute/path/to/solana-nft-mcp/dist/index.js
 ```
 
 ### Claude Desktop
@@ -58,9 +58,9 @@ Settings -> Developer -> Edit Config, then add:
 ```json
 {
   "mcpServers": {
-    "collector": {
+    "solana-nft": {
       "command": "node",
-      "args": ["/absolute/path/to/collector-mcp/dist/index.js"]
+      "args": ["/absolute/path/to/solana-nft-mcp/dist/index.js"]
     }
   }
 }
@@ -100,7 +100,7 @@ marketplace was not read and why, which is a gap in what was searched rather tha
 collection is absent from OpenSea.
 
 There is nothing to sign up for. The first time a question needs OpenSea, the server asks
-OpenSea for one of its free agent keys and stores it in `~/.collector-mcp/opensea-key.json` on
+OpenSea for one of its free agent keys and stores it in `~/.solana-nft-mcp/opensea-key.json` on
 your own machine, renewing it before it expires. The key stays in that file: never logged,
 never printed into an answer, and never requested at all by a session that asks no OpenSea
 question. OpenSea caps new keys at about two a day per IP address, so if yours is refused,
@@ -113,16 +113,16 @@ OpenSea stays off and every answer names it as the missing half.
 ```json
 {
   "mcpServers": {
-    "collector": {
+    "solana-nft": {
       "command": "node",
-      "args": ["/absolute/path/to/collector-mcp/dist/index.js"],
+      "args": ["/absolute/path/to/solana-nft-mcp/dist/index.js"],
       "env": { "OPENSEA_API_KEY": "..." }
     }
   }
 }
 ```
 
-- `COLLECTOR_MCP_NO_AUTO_KEYS=1` - never request a key. OpenSea is then off unless you set
+- `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` - never request a key. OpenSea is then off unless you set
   `OPENSEA_API_KEY` yourself.
 
 `SOLANA_RPC_URL` and `DAS_RPC_URL` swap in a private endpoint if one is available, and neither
@@ -183,13 +183,13 @@ Precisely what leaves the machine, and nothing else:
   it: Solana RPC, the asset index, Magic Eden, and OpenSea when it is on.
 - One request to `registry.npmjs.org` at startup to see whether a newer version exists. It sends
   the package name and the version you are running as a user-agent, and nothing about you or your
-  question. Turn it off with `COLLECTOR_MCP_NO_UPDATE_CHECK=1`, or `COLLECTOR_MCP_OFFLINE=1` to
+  question. Turn it off with `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1`, or `SOLANA_NFT_MCP_OFFLINE=1` to
   stop every background request.
 - One request to OpenSea to issue a free agent key, made only the first time a question actually
   needs OpenSea, and not at all if you set `OPENSEA_API_KEY` yourself or
-  `COLLECTOR_MCP_NO_AUTO_KEYS=1`.
+  `SOLANA_NFT_MCP_NO_AUTO_KEYS=1`.
 
-One file is written on your machine: `~/.collector-mcp/opensea-key.json`, holding that self-issued
+One file is written on your machine: `~/.solana-nft-mcp/opensea-key.json`, holding that self-issued
 key at permissions 600. It is never logged and never printed into an answer: every key this
 process has sent is registered, and every result is scrubbed against that registry before it
 leaves, so even an upstream that echoes the request header back cannot carry it into a reply.
@@ -197,9 +197,9 @@ Nothing else is written to disk. An in-memory cache of recent answers lives for 
 gone when it exits, and no question you ask is written anywhere. Your AI client and its model
 provider have their own data practices, which this server cannot speak for.
 
-To remove it: `npm uninstall -g collector-mcp` if it was installed from npm, delete the clone if
+To remove it: `npm uninstall -g solana-nft-mcp` if it was installed from npm, delete the clone if
 it was built from source, or remove the extension in Claude Desktop; then delete
-`~/.collector-mcp/` if it exists. npm keeps its own download cache, which
+`~/.solana-nft-mcp/` if it exists. npm keeps its own download cache, which
 `npm cache clean --force` clears.
 
 ## Tools
@@ -277,15 +277,15 @@ with the rules for presenting this data), `get_source_status` for the source cat
   carries `historyComplete` and `skippedTransactions`, so a partial trail is never presented as
   the whole story.
 - Public RPC throttles bursts, and cached values come back labelled `stale: true` rather than
-  erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
-  and [docs/SOURCES.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/SOURCES.md).
+  erroring mid-conversation. Full detail in [docs/TRUST-AND-LIMITS.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
+  and [docs/SOURCES.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/SOURCES.md).
 
 ## Security
 
 Minting is permissionless, so a collection name is attacker-controlled text. Every name from a
 chain or a marketplace is neutralised before a model sees it: invisible and bidi characters
 stripped, newlines collapsed, delimiter markup defanged, instruction-shaped phrasing flagged.
-This is covered by the offline test suite. Reporting: [SECURITY.md](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md).
+This is covered by the offline test suite. Reporting: [SECURITY.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/SECURITY.md).
 
 ## Development
 
@@ -303,15 +303,15 @@ tarball check and `npm audit` on `main` and pull requests, and the live check we
 
 ## Docs
 
-- [Under the hood: why it exists, how it works, what was tested](https://github.com/p1xelapp/collector-mcp/blob/main/docs/DEEP-DIVE.md)
-- [Every data source, tiered](https://github.com/p1xelapp/collector-mcp/blob/main/docs/SOURCES.md)
-- [Trust language and limits](https://github.com/p1xelapp/collector-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
-- [Questions people ask, and which ones it can answer](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md)
-- [Fifteen ways people use it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
-- [Things people build with it](https://github.com/p1xelapp/collector-mcp/blob/main/docs/BUILD-IDEAS.md)
-- [What can change under this server, and what happens when it does](https://github.com/p1xelapp/collector-mcp/blob/main/docs/MAINTENANCE.md)
-- [FAQ: questions about the server itself](https://github.com/p1xelapp/collector-mcp/blob/main/docs/FAQ.md)
-- [Contributing](https://github.com/p1xelapp/collector-mcp/blob/main/CONTRIBUTING.md) and [Security policy](https://github.com/p1xelapp/collector-mcp/blob/main/SECURITY.md)
+- [Under the hood: why it exists, how it works, what was tested](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/DEEP-DIVE.md)
+- [Every data source, tiered](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/SOURCES.md)
+- [Trust language and limits](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/TRUST-AND-LIMITS.md)
+- [Questions people ask, and which ones it can answer](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/QUESTIONS.md)
+- [Fifteen ways people use it](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/HOW-PEOPLE-USE-IT.md)
+- [Things people build with it](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/BUILD-IDEAS.md)
+- [What can change under this server, and what happens when it does](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/MAINTENANCE.md)
+- [FAQ: questions about the server itself](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/FAQ.md)
+- [Contributing](https://github.com/p1xelapp/solana-nft-mcp/blob/main/CONTRIBUTING.md) and [Security policy](https://github.com/p1xelapp/solana-nft-mcp/blob/main/SECURITY.md)
 
 ## Why I built this
 
@@ -330,7 +330,7 @@ put beside a USDC floor and called 170x. A floor multiplied by an item count and
 portfolio. A fuzzy name match on a different collection, answered as though it were the one you
 asked about. Every one of them confident, every one of them wrong.
 
-collector-mcp is that decoder plus the rules I had to learn the hard way. Chain first. Label
+solana-nft-mcp is that decoder plus the rules I had to learn the hard way. Chain first. Label
 the marketplace. Say what you could not see. Refuse to guess.
 
 ## Running on the same decoding
@@ -341,21 +341,28 @@ the marketplace. Say what you could not see. Refuse to guess.
 supply, holders, migrations and sales, kept current. It is where the Core decoding was written
 first, and this repository is the keyless half of that pipeline.
 
-Shipped something on top of collector-mcp? Open an issue and it goes here.
+Shipped something on top of solana-nft-mcp? Open an issue and it goes here.
 
 ## About
 
 Built and maintained by P1xel ([p1xel.app](https://p1xel.app),
-[@P1xelCollector](https://x.com/P1xelCollector)).
+[@P1xelCollector](https://x.com/P1xelCollector)), a long-time Solana collector.
+
+**Independent project, not affiliated with the Solana Foundation.** SOLANA and SOL
+are trademarks of the Solana Foundation. They appear in this project's name and
+documentation for one reason only: to say which chain the server reads. Nothing
+here is endorsed, sponsored or reviewed by the Solana Foundation, and no
+affiliation is claimed or implied.
 
 ## License
 
-MIT. See [LICENSE](https://github.com/p1xelapp/collector-mcp/blob/main/LICENSE).
+MIT. See [LICENSE](https://github.com/p1xelapp/solana-nft-mcp/blob/main/LICENSE).
 
 MIT covers this code, not the data it reads. Magic Eden and OpenSea publish API terms of their
 own (attribution, permission for commercial use and redistribution, no working around a quota
 with extra keys), and the collections' names and artwork belong to their issuers. A dashboard or
 bot you sell on top of this server has to meet those terms itself.
 
-Not affiliated with Candy Digital, MLB, DC Comics, Magic Eden or OpenSea, and
-nothing here is financial advice.
+Not affiliated with the Solana Foundation, Candy Digital, MLB, DC Comics, Magic
+Eden or OpenSea. Every product name used here belongs to its owner and is used
+only to say what the server reads. Nothing here is financial advice.

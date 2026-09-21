@@ -434,19 +434,19 @@ export function originGate(url: string, minIntervalMs: number): Gate {
  *
  * The offline test suite used to rely on "nothing here should call out";
  * whether it really stayed offline depended on which environment variables
- * happened to be set. A call attempted with COLLECTOR_MCP_OFFLINE=1 now fails
+ * happened to be set. A call attempted with SOLANA_NFT_MCP_OFFLINE=1 now fails
  * loudly and names the host, so an accidental live read fails the run instead
  * of quietly passing against real data.
  */
 export function assertOnline(url: string): void {
-  if (process.env.COLLECTOR_MCP_OFFLINE !== "1") return;
+  if (process.env.SOLANA_NFT_MCP_OFFLINE !== "1") return;
   let host = url;
   try {
     host = new URL(url).host;
   } catch {
     /* not a parseable URL - report it as given */
   }
-  throw new Error(`offline mode (COLLECTOR_MCP_OFFLINE=1): refused to contact ${host}`);
+  throw new Error(`offline mode (SOLANA_NFT_MCP_OFFLINE=1): refused to contact ${host}`);
 }
 
 /**

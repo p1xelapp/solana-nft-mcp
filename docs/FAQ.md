@@ -2,7 +2,7 @@
 
 Questions about the server itself. For the other kind, what it can and cannot
 answer about a collection, a wallet or a card, see
-[QUESTIONS.md](https://github.com/p1xelapp/collector-mcp/blob/main/docs/QUESTIONS.md).
+[QUESTIONS.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/QUESTIONS.md).
 
 **Do I have to type tool names like `verify_claim`?**
 No. Ask the way you would ask a person: "is it true this card never traded", "what is
@@ -20,7 +20,7 @@ If a name matches several collections you get the list and a question, not a gue
 **Does it collect anything about me?**
 No. It runs on your machine, talks to public data sources, and keeps no wallet data,
 no questions and no telemetry. The one thing it may write is the free OpenSea key it issues
-itself, stored in `~/.collector-mcp/` so it is not re-issued every start (`COLLECTOR_MCP_NO_AUTO_KEYS=1`
+itself, stored in `~/.solana-nft-mcp/` so it is not re-issued every start (`SOLANA_NFT_MCP_NO_AUTO_KEYS=1`
 turns that off). No
 account, no sign-in, no telemetry, no log sent anywhere. The only thing that leaves your
 computer is the public address or name you asked about, sent to the public source that
@@ -60,14 +60,14 @@ See docs/TRUST-AND-LIMITS.md for what that sounds like in practice.
 **Why not just ask ChatGPT or Claude directly?**
 A plain model cannot read a chain or a marketplace. It answers from memory, which for
 NFTs means from months-old training data plus whatever tone the question had. It will
-tell you a card "never traded" because it cannot see that it did. collector-mcp gives
+tell you a card "never traded" because it cannot see that it did. solana-nft-mcp gives
 the same model live data, typed, with the vocabulary to read it correctly (a floor is an
 ask, a listed item's owner is the escrow, a returned pack is not burned) and receipts
 you can paste to someone who does not trust either of you.
 
 **OpenSea has its own MCP server now. Why use this one?**
 Use both if you like. OpenSea's server is OpenSea's view: its listings, its sales, its
-portfolio numbers, behind its key and login. collector-mcp is nobody's view. It reads
+portfolio numbers, behind its key and login. solana-nft-mcp is nobody's view. It reads
 the chain directly for supply, provenance, custody rules and wallet age; reads Magic Eden
 keylessly; adds OpenSea through a free key it issues itself; and then reconciles them and refuses to
 rank a SOL floor against a USDC floor. It also does things no marketplace server does:
@@ -81,7 +81,7 @@ Magic Eden's MCP is keyless too and it covers Magic Eden's data. Same answer.
 Yes, including OpenSea. Magic Eden and plain Solana RPC need no key at all.
 OpenSea does, so the server issues itself one: the first question that actually needs
 OpenSea asks OpenSea for one of its free weekly agent keys, keeps it in
-`~/.collector-mcp/opensea-key.json` on your own machine, and renews it a day before it
+`~/.solana-nft-mcp/opensea-key.json` on your own machine, and renews it a day before it
 expires. That key is yours - it never leaves your computer and is never printed into a log
 or an answer - and a session that never asks an OpenSea question never requests one.
 
@@ -94,7 +94,7 @@ quietly dropped. `get_source_status` says which key is in use and when it expire
 **Can I use my own OpenSea key, or none at all?**
 Yes. `OPENSEA_API_KEY` (from the OpenSea developer portal) overrides the self-issued key
 completely - put it in the MCP config's `env` block, since clients launch servers with a
-clean environment. `COLLECTOR_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
+clean environment. `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
 **What about Tensor and Rarible?**
 Neither is read. Tensor has no self-serve API keys. Rarible relaunched a Solana marketplace in

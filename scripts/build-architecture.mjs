@@ -34,8 +34,8 @@ const env = {};
 for (const k of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE", "COMSPEC"]) {
   if (process.env[k]) env[k] = process.env[k];
 }
-env.COLLECTOR_MCP_OFFLINE = "1";
-env.COLLECTOR_MCP_NO_UPDATE_CHECK = "1";
+env.SOLANA_NFT_MCP_OFFLINE = "1";
+env.SOLANA_NFT_MCP_NO_UPDATE_CHECK = "1";
 
 const client = new Client({ name: "architecture-builder", version: "1.0.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: ["dist/index.js"], env }));
@@ -120,7 +120,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
   </defs>
 
   <rect width="${W}" height="${H}" fill="#04050a"/>
-  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">collector-mcp ${esc(version)}</text>
+  <text x="24" y="34" font-size="15" font-weight="700" fill="#f2f4fb">solana-nft-mcp ${esc(version)}</text>
   <text x="24" y="52" font-size="11.5" fill="#5f6883">what runs where, and what it is allowed to do</text>
 
   <!-- the client -->

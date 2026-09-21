@@ -34,7 +34,7 @@ function parse(res) {
   return JSON.parse(text);
 }
 
-const client = new Client({ name: "collector-mcp-smoke", version: "1.0.0" });
+const client = new Client({ name: "solana-nft-mcp-smoke", version: "1.0.0" });
 await client.connect(
   // A stdio MCP server does NOT inherit the parent's environment - the SDK
   // passes a small safe allowlist, so OPENSEA_API_KEY has to be forwarded by
@@ -49,7 +49,7 @@ await client.connect(
     },
   }),
 );
-console.log("connected to collector-mcp over stdio\n");
+console.log("connected to solana-nft-mcp over stdio\n");
 
 // -- protocol surface ---------------------------------------------------
 try {

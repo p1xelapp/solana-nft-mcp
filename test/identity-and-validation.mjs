@@ -165,17 +165,17 @@ const realFetch = globalThis.fetch;
 // The key file: a 10 MB file wearing the name is not a key, and persistence
 // never writes through a hard link.
 {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-keyfile-"));
+  const home = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-keyfile-"));
   os.homedir = () => home;
   syncBuiltinESMExports();
   const osx = await import(dist("sources/opensea.js"));
-  const dir = path.join(home, ".collector-mcp");
+  const dir = path.join(home, ".solana-nft-mcp");
   const file = path.join(dir, "opensea-key.json");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ key: "K".repeat(10 * 1024 * 1024), expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString() }));
   osx.resetKeyCache();
   delete process.env.OPENSEA_API_KEY;
-  delete process.env.COLLECTOR_MCP_NO_AUTO_KEYS;
+  delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
   assert.strictEqual(osx.openSeaState().enabled, false, "a 10 MB key file was accepted");
   fs.rmSync(file);
 
@@ -207,7 +207,7 @@ const realFetch = globalThis.fetch;
 // ================================================================ 8, 9, 10
 // Whole tool handlers over stdio against the identity preload.
 {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-identity-"));
+  const home = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-identity-"));
   const preload = pathToFileURL(path.join(here, "helpers", "identity-preload.mjs")).href;
   const base = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC };
   for (const k of Object.keys(base)) if (base[k] === undefined) delete base[k];
@@ -215,7 +215,7 @@ const realFetch = globalThis.fetch;
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--import", preload, path.join(root, "dist", "index.js")],
-      env: { ...base, COLLECTOR_TEST_HOME: home, COLLECTOR_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://identity-rpc.invalid", DAS_RPC_URL: "https://identity-rpc.invalid", ...extraEnv },
+      env: { ...base, COLLECTOR_TEST_HOME: home, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://identity-rpc.invalid", DAS_RPC_URL: "https://identity-rpc.invalid", ...extraEnv },
       stderr: "ignore",
     });
     const client = new Client({ name: "identity", version: "1" }, { capabilities: {} });
@@ -255,7 +255,7 @@ const realFetch = globalThis.fetch;
 
   // 10: a returned row that contradicts the trait filter is excluded, in both modes.
   {
-    const c = await spawnClient({ COLLECTOR_MCP_NO_AUTO_KEYS: "1" });
+    const c = await spawnClient({ SOLANA_NFT_MCP_NO_AUTO_KEYS: "1" });
     const r = parse(await call(c, "find_listings", { symbol: "trait-fixture", traits: [{ traitType: "Grade", value: "10" }], limit: 10 }));
     const names = r.deals.map((d) => d.name);
     assert.ok(!names.some((n) => /CGC 9 /.test(n)), `a Grade 9 row survived a Grade 10 filter: ${names.join(", ")}`);
@@ -274,7 +274,7 @@ const realFetch = globalThis.fetch;
 // A client that closes the pipe mid-answer is a clean exit, not a stack.
 {
   const child = spawn(process.execPath, [path.join(root, "dist", "index.js")], {
-    env: { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COLLECTOR_MCP_NO_UPDATE_CHECK: "1", COLLECTOR_MCP_NO_AUTO_KEYS: "1", COLLECTOR_MCP_OFFLINE: "1" },
+    env: { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_OFFLINE: "1" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let stderr = "";

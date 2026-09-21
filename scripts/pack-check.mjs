@@ -6,7 +6,7 @@
  * supply-chain safety, and npm applies that to OUR OWN lifecycle scripts too.
  * In a fresh clone `dist/` does not exist, `prepare` never runs, and the
  * published package can ship with no `dist/index.js` at all - `npx
- * collector-mcp` then dies with MODULE_NOT_FOUND for everyone who installs it.
+ * solana-nft-mcp` then dies with MODULE_NOT_FOUND for everyone who installs it.
  *
  * So this asks npm exactly what would go into the tarball and fails unless the
  * two files the package cannot work without are in it: the entry point the
@@ -69,7 +69,7 @@ const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 // Every file the published package is useless without. The bin target first:
 // that is the one an `ignore-scripts` publish silently drops.
 const REQUIRED = [
-  pkg.bin?.["collector-mcp"] ?? "dist/index.js",
+  pkg.bin?.["solana-nft-mcp"] ?? "dist/index.js",
   "data/me-collections.json.gz",
   "package.json",
   "README.md",
@@ -134,12 +134,12 @@ console.log(`\n   file list ok. Installing the tarball and starting it...`);
  * missing runtime dependency, a bad import path or an ESM/CJS mismatch all
  * ship a perfectly complete file list and then die with MODULE_NOT_FOUND on
  * the user's machine. So the tarball is installed into a throwaway directory
- * exactly as `npm i collector-mcp` would, and the installed binary is started
+ * exactly as `npm i solana-nft-mcp` would, and the installed binary is started
  * offline: the server prints its banner to stderr and is then killed. Reaching
  * the banner proves the entry point, its imports and its dependencies all
  * resolve from a clean install.
  */
-const tmp = mkdtempSync(path.join(os.tmpdir(), "collector-mcp-pack-"));
+const tmp = mkdtempSync(path.join(os.tmpdir(), "solana-nft-mcp-pack-"));
 let startupOk = false;
 let startupDetail = "";
 let tarball;
@@ -151,13 +151,13 @@ try {
   // --ignore-scripts: installing a package here must never run its lifecycle
   // scripts. This check is about what the packed FILES do on their own.
   npmSync(["install", "--no-audit", "--no-fund", "--ignore-scripts", tarball], { cwd: tmp, stdio: "ignore" });
-  const installedBin = path.join(tmp, "node_modules", pkg.name, pkg.bin?.["collector-mcp"] ?? "dist/index.js");
+  const installedBin = path.join(tmp, "node_modules", pkg.name, pkg.bin?.["solana-nft-mcp"] ?? "dist/index.js");
   startupDetail = await new Promise((resolve) => {
     const child = spawn(process.execPath, [installedBin], {
       cwd: tmp,
       // Offline: a startup check must never depend on a venue being up, and
       // must never spend anybody's rate limit.
-      env: { ...process.env, COLLECTOR_MCP_OFFLINE: "1" },
+      env: { ...process.env, SOLANA_NFT_MCP_OFFLINE: "1" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let err = "";
@@ -172,7 +172,7 @@ try {
       err += String(b);
       // The banner names the package and its version; anything less is not a
       // server that started.
-      if (/collector-mcp v\d+\.\d+\.\d+ ready/.test(err)) {
+      if (/solana-nft-mcp v\d+\.\d+\.\d+ ready/.test(err)) {
         startupOk = true;
         done((err.split("\n").find((l) => l.includes("ready")) ?? "").trim());
       }

@@ -295,14 +295,14 @@ const signature = (label) => base58(createHash("sha512").update(label).digest())
 // two counters are not a burn count, and the OpenSea block always says what
 // it is.
 {
-  const home = fs.mkdtempSync(path.join(tmpdir(), "collector-mcp-round8-"));
+  const home = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-round8-"));
   const preload = pathToFileURL(path.join(here, "helpers", "siblings-preload.mjs")).href;
   const env = { PATH: process.env.PATH, Path: process.env.Path, SystemRoot: process.env.SystemRoot, COMSPEC: process.env.COMSPEC };
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", preload, path.join(root, "dist", "index.js")],
-    env: { ...env, COLLECTOR_TEST_HOME: home, COLLECTOR_MCP_NO_AUTO_KEYS: "1", COLLECTOR_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://r8-rpc.invalid", DAS_RPC_URL: "https://r8-rpc.invalid" },
+    env: { ...env, COLLECTOR_TEST_HOME: home, SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", SOLANA_RPC_URL: "https://r8-rpc.invalid", DAS_RPC_URL: "https://r8-rpc.invalid" },
     stderr: "ignore",
   });
   const c = new Client({ name: "round8", version: "1" }, { capabilities: {} });
