@@ -200,6 +200,24 @@ only thing that leaves your machine is the public address or name you asked abou
 No. Agents reference them in prompts and a rename breaks integrations silently. New
 tools get added; existing names stay.
 
+**I point it at a private RPC. Is my key safe in the answers?**
+Yes, and the rule is worth knowing exactly. Every credential this process sends is
+registered before it is sent, and every string that leaves for a client, a model or a
+log is checked against that registry. From a `SOLANA_RPC_URL` or `DAS_RPC_URL` the
+server registers the userinfo password and any query field whose NAME says credential
+(`?api-key=`, `?token=`) from four characters up, and any path segment of eight or
+more characters that is not a known route word. The eight-character floor on path
+segments is deliberate: a shorter one is as likely to be a route word as a key, and
+redacting `main` would eat the word out of `mainnet` in every answer. A key shorter
+than eight characters sitting in a PATH is the one shape not covered, so put it in a
+query field or the userinfo instead, where the four-character floor applies.
+
+**How do I remove it completely?**
+`npm uninstall -g solana-nft-mcp` if you installed from npm, delete the clone if you
+built from source, or remove the extension in Claude Desktop. Then delete
+`~/.solana-nft-mcp/` if it exists, which is the one folder this server ever writes to.
+npm keeps its own download cache separately; `npm cache clean --force` clears that.
+
 **Something is wrong or missing.**
 Open an issue with the tool name and the input. If it is a security matter, see
 SECURITY.md instead.
