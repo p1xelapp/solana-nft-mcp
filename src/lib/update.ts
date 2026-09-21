@@ -76,7 +76,17 @@ async function run(current: string, doFetch: typeof fetch): Promise<UpdateInfo> 
     const res = await doFetch(REGISTRY, {
       headers: { accept: "application/json", "user-agent": `solana-nft-mcp/${current}` },
       signal: AbortSignal.timeout(2500),
+      // The same rule as every other request this server makes: no redirect
+      // is followed. This path carries no credential, but a proxy or captive
+      // portal that answered 307 used to have its second host's body read
+      // as the registry's answer, and the policy in SECURITY.md says "every
+      // request", which this one was the exception to.
+      redirect: "manual",
     });
+    if (res.status >= 300 && res.status < 400) {
+      await res.body?.cancel().catch(() => undefined);
+      return { ...base, checked: true, reason: `registry answered with a redirect (HTTP ${res.status}), which this server does not follow` };
+    }
     if (!res.ok) {
       await res.body?.cancel().catch(() => undefined);
       return { ...base, checked: true, reason: `registry answered HTTP ${res.status}` };

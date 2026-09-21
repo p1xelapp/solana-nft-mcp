@@ -11,7 +11,7 @@
  *
  * Needs the mcpb CLI once: npm install -g @anthropic-ai/mcpb
  */
-import { execFileSync } from "node:child_process";
+import { npmSync, mcpbSync } from "./npm-cli.mjs";
 import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,8 +43,9 @@ cpSync(path.join(root, "assets", "icon-512.png"), path.join(stage, "icon.png"));
 // Production dependencies only, from the lockfile, no lifecycle scripts:
 // `npm ci` refuses to run when package.json and the lock disagree, which is
 // the check that the bundle carries what the suite tested.
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-execFileSync(npm, ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: stage, stdio: "ignore", shell: process.platform === "win32" });
+// No shell on any platform: npm runs as its own JavaScript entry under this
+// node binary (see scripts/npm-cli.mjs), so nothing here is parsed by cmd.exe.
+npmSync(["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: stage, stdio: "ignore" });
 // Prove it: every production dependency in the staged tree is at the version
 // the root lock names. A mismatch here is a build bug, not a warning.
 {
@@ -116,7 +117,6 @@ const manifest = {
 writeFileSync(path.join(stage, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 
 rmSync(out, { force: true });
-const mcpb = process.platform === "win32" ? "mcpb.cmd" : "mcpb";
-execFileSync(mcpb, ["validate", path.join(stage, "manifest.json")], { stdio: "inherit", shell: process.platform === "win32" });
-execFileSync(mcpb, ["pack", stage, out], { stdio: "inherit", shell: process.platform === "win32" });
+mcpbSync(["validate", path.join(stage, "manifest.json")], { stdio: "inherit" });
+mcpbSync(["pack", stage, out], { stdio: "inherit" });
 console.log(`\nbundle: ${path.relative(root, out)} (${(statSync(out).size / 1048576).toFixed(1)} MB)`);

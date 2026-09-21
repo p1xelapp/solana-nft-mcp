@@ -149,8 +149,11 @@ Every tool and prompt is exercised offline against captured feeds, including
 the wallet logic and the prompt-injection defence, and again live against the
 real endpoints with a real provenance trace, a real wallet and hostile inputs.
 Each defect this server has had is pinned by a test that failed before its fix.
-CI runs the offline suite plus a full-history secrets scan on every push, and a
-weekly live check re-reads the real sources.
+CI runs a full-history secrets scan on every push to every branch; the offline
+suite, lint, the tarball check and the dependency audit on `main`, on pull
+requests and on release tags; and a weekly live check that re-reads the real
+sources. Linux covers every run, and macOS is added on a release tag and on a
+manual run.
 
 The hardest piece was extracting the new owner from a Core transfer whose
 account layout varies between two shapes. It was verified against a live

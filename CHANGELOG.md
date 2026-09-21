@@ -1,5 +1,109 @@
 # Changelog
 
+## 1.17.1 - 2026-09-21
+
+An outside review of 1.17.0, run against OpenSea's published API definition
+rather than against this server's own tests, found that the OpenSea adapters
+did not keep every promise the README makes. None of it had reached anyone,
+because nothing had been published, and all of it is fixed and pinned by a
+new suite, `test/opensea-contract.mjs`, whose thirty-one blocks all failed on
+1.17.0. The suite runs in `npm test`.
+
+Wrong answers, fixed:
+
+- **A transfer's item identifier reached wallet answers unvalidated.** The
+  OpenSea account feed's `nft.identifier` was shown as the `mint` of an item
+  received or sent without a sale. It is marketplace-authored text, and role
+  markup in it went straight through. The identifier still pairs a transfer
+  with the sale it settles, but the `mint` a reader sees is an address or
+  null, and `malformedItemIdentifiers` counts the rows that were not.
+- **Volume was labelled with the floor's currency.** OpenSea's stats carry
+  `volume_symbol` and `floor_price_symbol` separately and say they can
+  differ. `volumeCurrency` is now read on its own, and is null when absent.
+- **Floor history was always called SOL.** The currency now comes from the
+  sampled points themselves, is null when they name none, and a window whose
+  points are in more than one currency returns no summary rather than a
+  change computed across units.
+- **A trait floor with no currency was called SOL.** It is now skipped and
+  counted (`skippedNoCurrency`). A trait listed in two currencies keeps both:
+  the SOL price is shown and the others ride along as `otherCurrencies`
+  rather than being dropped in silence.
+- **The seven-day history asked for the wrong window.** The request sent
+  `interval=7d`, a parameter OpenSea's contract does not have; the endpoint
+  takes `timeframe=seven_days`. A server ignoring the unknown parameter would
+  have answered its default one-day window under a seven-day label.
+- **A short page ended the feed.** The account-event and collection-index
+  walks stopped at the first page shorter than the limit, discarding a valid
+  `next` cursor after a short or empty page, and reported `truncated: false`.
+  The only end-of-feed signal is the absence of a cursor; a cursor left
+  unconsumed at the page budget is reported as truncation, and a cursor that
+  repeats itself stops the walk with a note instead of spinning.
+- **Two traits could share one price.** The trait-floor join key was built
+  from cleaned, clipped display text with `::` as the separator, so
+  `("A::B","C")` and `("A","B::C")` collided, as did two values sharing their
+  first 64 characters. Keys are now built from the complete text with a NUL
+  separator, and the join goes through the same function on both sides.
+- **A failed refresh looked current.** When the OpenSea account feed could
+  not be refreshed, the cached feed was returned as `status: "ok"` with no
+  sign it described an earlier moment. The block now carries `stale`,
+  `readAt` and a `staleNote`.
+- **Recent sales lost the item's identity.** Two sales of different items
+  with the same name were indistinguishable. Each row now carries a
+  validated `mint` and `eventType`, and a row the venue served in its
+  sale-filtered feed that is not a sale is counted in `otherEventTypes`
+  rather than published as one.
+- **A caller's slug was trusted in `get_recent_sales`.** An explicit
+  `openseaSlug` had its sales placed beside the requested collection's with
+  no check. The same identity check the stats and listings tools make now
+  runs here, and the verdict (`verified`, `conflict`, `unverified`,
+  `registry`) travels with the block.
+- **Holder shares could exceed 100%.** A wallet repeated across a page was
+  summed twice, and a count above the venue's own supply became 110%. Exact
+  repeats are dropped and counted, disagreeing repeats are a conflict with no
+  share, and holder counts above the supply report the conflict instead of a
+  percentage.
+- **Negative numbers passed as values.** A supply of -2, a creator fee of -5
+  and a floor point of -3 were finite and so were published. Counts,
+  percentages and prices now have domains, invalid ones are null and named in
+  `malformedFields`, and null entries inside lists no longer throw.
+- **Listings with more than 64 traits said nothing about it.** Each deal row
+  now carries `traitsTotal`, `traitsInspected`, `traitsOmitted` and a
+  `traitCoverage` sentence, and the name traits (`Card Name`, `Player`) are
+  looked for further into the list than the per-row cap.
+
+Security and operations, fixed:
+
+- **A short `OPENSEA_API_KEY` was sent unregistered.** The secret registry
+  refused keys under eight characters and the refusal was ignored, so a
+  seven-character key echoed by an upstream 400 reached a normal answer. An
+  explicitly named credential is now registered from four characters, and
+  one shorter than that is refused rather than sent.
+- **The update check followed redirects.** Every other request already
+  refused a 3xx; this one did not. It does now.
+- **A read-side 429 restrained nothing.** OpenSea's `Retry-After` on a read
+  stopped only that request; the next tool call read the next slug two
+  seconds later. Reads now pause across tool calls for the time the venue
+  asked, inside a one-minute floor and a 24-hour ceiling, and the pause is
+  visible in `get_source_status` as `pausedUntil`. The rate-limit advice
+  quotes the actual wait when it is known.
+- **A key that failed to persist was reported as stored.** `get_source_status`
+  now says when a self-issued key lives in memory only and why, carries
+  `persisted`, and a temporary file created by a failed write is removed.
+- **The gitleaks fixture allowlist was a path exception.** Gitleaks treats
+  listed conditions as alternatives unless told otherwise, so the path alone
+  disabled the rule for every fixture and a generic key planted there passed.
+  The allowlist now requires both the path and a base58-address-shaped
+  match, verified with planted controls.
+- **The serial-scan regression test could not fail.** Its hostile name was
+  `#` followed by spaces, which `trim()` removes before the scan cap sees
+  it, so removing the cap left the test green. The corpus is now padding
+  that cannot be trimmed, in the shape each pattern looks for, and the cap is
+  pinned by its boundary: a serial past it is not read, one inside it is.
+- **The bundle scripts spawned a shell on Windows** and the bundle verifier
+  could only run on Windows. npm and the mcpb CLI now run as their own
+  JavaScript entry under this node binary with no shell, and the verifier
+  reads the archive with Node alone, so it runs the same on every platform.
+
 ## 1.17.0 - 2026-09-20
 
 Renamed from `collector-mcp` to `solana-nft-mcp`, before the first public

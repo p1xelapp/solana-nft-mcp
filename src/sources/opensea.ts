@@ -24,7 +24,7 @@ import { cached, fetchJson, rateLimiter, HttpError } from "../lib/http.js";
 import { clean } from "../lib/untrusted.js";
 import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
-import { registerSecret } from "../lib/secrets.js";
+import { registerSecret, MIN_NAMED_SECRET_LENGTH } from "../lib/secrets.js";
 import { isoFromBlockTime } from "../lib/time.js";
 import { isBase58Address, venueAddress } from "./solana.js";
 
@@ -32,6 +32,26 @@ const BASE = "https://api.opensea.io/api/v2";
 
 // Free tier is ~hundreds of reads/hour: pace conservatively at 1 req/2s.
 const gate = rateLimiter(2000, "OpenSea");
+
+// ------------------------------------------------------- read pause
+// A 429 on a READ used to stop only the request that met it. The next tool
+// call read the next slug straight away, so a venue that had just asked for
+// an hour's pause was asked again two seconds later. The pause a venue names
+// is honoured across tool calls, inside a floor (a 429 with no header still
+// means "not now") and a ceiling (a hostile header cannot park OpenSea off
+// for a year). Key ISSUE has its own cooldown below; this one is for reads.
+let nextReadAfter = 0;
+const READ_PAUSE_DEFAULT_MS = 60_000;
+const READ_PAUSE_MAX_MS = 24 * 60 * 60_000;
+/** Test seam: forget a read pause. */
+export function clearReadPauseForTests(): void {
+  nextReadAfter = 0;
+}
+function notePause(e: unknown): void {
+  if (!(e instanceof HttpError) || e.status !== 429) return;
+  const hinted = typeof e.retryAfterMs === "number" ? e.retryAfterMs : 0;
+  nextReadAfter = now() + Math.min(Math.max(hinted, READ_PAUSE_DEFAULT_MS), READ_PAUSE_MAX_MS);
+}
 
 // ------------------------------------------------------- self-issued key
 
@@ -55,6 +75,14 @@ export interface OpenSeaState {
    * that reports the first as the second invents a failure.
    */
   unavailableReason?: string | null;
+  /**
+   * For a self-issued key: true when it was written to the key file, false
+   * when it lives in this process's memory only because the write failed.
+   * Null for an env key, which is never written, and when off.
+   */
+  persisted?: boolean | null;
+  /** ISO time until which reads are paused after the venue asked for one, or null when reading normally. */
+  pausedUntil?: string | null;
 }
 
 // Paths are resolved per call, never captured at import time: the home folder
@@ -80,6 +108,8 @@ const autoKeysOff = (): boolean => process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS === "
 
 let memoryKey: StoredKey | null = null;
 let diskRead = false;
+/** Whether the key in memory is also on disk. Null until a key exists. */
+let persisted: boolean | null = null;
 /** Why the last self-issue attempt produced nothing. Shown instead of silence. */
 let keyState: string | null = null;
 let issuing: Promise<string | null> | null = null;
@@ -144,6 +174,7 @@ function loadStoredKey(): StoredKey | null {
         expiresAt: parsed.expiresAt,
         source: "opensea-agent-key",
       };
+      persisted = true;
     }
   } catch (e) {
     // "No such file" is an answer and latches. A transient failure - the file
@@ -158,9 +189,15 @@ function loadStoredKey(): StoredKey | null {
 
 /**
  * Best-effort persistence. A read-only home folder must cost the user nothing
- * but a fresh key next restart, so every failure here is swallowed.
+ * but a fresh key next restart, so every failure here is swallowed, and the
+ * OUTCOME is returned so the status report can say "in memory only" rather
+ * than claiming a file that does not exist. A restart after a silent failure
+ * spends another of the day's two keys, and a person reading "stored in
+ * ~/.solana-nft-mcp" would never look for that.
  */
-function storeKey(k: StoredKey): void {
+function storeKey(k: StoredKey): boolean {
+  const tmp = `${keyFile()}.${process.pid}.tmp`;
+  let created = false;
   try {
     fs.mkdirSync(keyDir(), { recursive: true, mode: 0o700 });
     // Written to a private temporary file and renamed into place. Writing
@@ -168,7 +205,7 @@ function storeKey(k: StoredKey): void {
     // hard link or a symlink planted there would have had the key written
     // through it into an unrelated file. A rename replaces the directory
     // entry and follows nothing.
-    const tmp = `${keyFile()}.${process.pid}.tmp`;
+    //
     // Remove anything already sitting at the temporary name, then create it
     // exclusively: "wx" is O_CREAT|O_EXCL, which fails rather than writing the
     // key through a symlink somebody pre-planted there. The destination rename
@@ -179,12 +216,23 @@ function storeKey(k: StoredKey): void {
       /* nothing there, which is the normal case */
     }
     fs.writeFileSync(tmp, `${JSON.stringify(k, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    created = true;
     // writeFile only applies the mode when it CREATES; a looser umask would
     // otherwise leave the file readable.
     fs.chmodSync(tmp, 0o600);
     fs.renameSync(tmp, keyFile());
+    return true;
   } catch {
-    /* the key still works for this process; it is simply not remembered */
+    // The key still works for this process; it is simply not remembered. A
+    // temporary file this attempt created must not be left holding it.
+    if (created) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* the rename may have consumed it, or the folder is gone */
+      }
+    }
+    return false;
   }
 }
 
@@ -245,11 +293,17 @@ async function issueKey(): Promise<string | null> {
       return null;
     }
     // Registered BEFORE it is sent anywhere, so an upstream that reflects the
-    // header can never carry it back into an answer.
-    registerSecret(issued.key);
+    // header can never carry it back into an answer. A key too short to be
+    // protected is not used at all: sending an unregistered credential is the
+    // one thing this module exists to prevent.
+    if (!registerSecret(issued.key, MIN_NAMED_SECRET_LENGTH)) {
+      nextIssueAfter = now() + ISSUE_COOLDOWN_FAILED_MS;
+      keyState = `unavailable (OpenSea issued a ${issued.key.length}-character key, too short to redact from answers, so it was not used; set OPENSEA_API_KEY to use OpenSea)`;
+      return null;
+    }
     memoryKey = issued;
     diskRead = true;
-    storeKey(issued);
+    persisted = storeKey(issued);
     keyState = null;
     return issued.key;
   } catch (e) {
@@ -280,7 +334,15 @@ export function issueCooldownUntil(): number {
 export async function ensureKey(): Promise<string | null> {
   const env = process.env.OPENSEA_API_KEY;
   if (env) {
-    registerSecret(env);
+    // An explicitly named credential is protected from four characters; one
+    // shorter than that cannot be redacted without eating ordinary words, so
+    // it is refused rather than sent unregistered. The false return used to be
+    // ignored here, and a seven-character key was echoed by a 400 into a
+    // normal answer.
+    if (!registerSecret(env, MIN_NAMED_SECRET_LENGTH)) {
+      keyState = envKeyTooShort(env);
+      return null;
+    }
     return env;
   }
   if (autoKeysOff()) {
@@ -289,7 +351,10 @@ export async function ensureKey(): Promise<string | null> {
   }
   const cachedKey = loadStoredKey();
   if (usable(cachedKey)) {
-    registerSecret(cachedKey.key);
+    if (!registerSecret(cachedKey.key, MIN_NAMED_SECRET_LENGTH)) {
+      keyState = `unavailable (the stored key in ${KEY_FILE_LABEL} is too short to redact from answers and was not used; delete the file to request a new one, or set OPENSEA_API_KEY)`;
+      return null;
+    }
     return cachedKey.key;
   }
   // A refusal is remembered. Asking again inside the cooldown would only
@@ -308,36 +373,54 @@ export async function ensureKey(): Promise<string | null> {
  * startup banner and the status table; it never issues a key.
  */
 export function openSeaState(): OpenSeaState {
-  if (process.env.OPENSEA_API_KEY) {
-    return { enabled: true, source: "env", expiresAt: null, note: "using the OPENSEA_API_KEY set in this server's environment" };
+  const pausedUntil = now() < nextReadAfter ? new Date(nextReadAfter).toISOString() : null;
+  const env = process.env.OPENSEA_API_KEY;
+  if (env) {
+    if (env.trim().length < MIN_NAMED_SECRET_LENGTH) {
+      return { enabled: false, source: "none", expiresAt: null, persisted: null, pausedUntil, unavailableReason: envKeyTooShort(env), note: `off - ${envKeyTooShort(env)}` };
+    }
+    return { enabled: true, source: "env", expiresAt: null, persisted: null, pausedUntil, note: "using the OPENSEA_API_KEY set in this server's environment" };
   }
   if (autoKeysOff()) {
     return {
       enabled: false,
       source: "none",
       expiresAt: null,
+      persisted: null,
+      pausedUntil,
       note: "off - automatic key issue is disabled by SOLANA_NFT_MCP_NO_AUTO_KEYS=1. Set OPENSEA_API_KEY to turn OpenSea back on.",
     };
   }
   const stored = loadStoredKey();
   if (usable(stored)) {
+    const where =
+      persisted === false
+        ? `held in this process's memory only, because writing ${KEY_FILE_LABEL} failed (check that the folder can be created and written); the next restart will request another key`
+        : `stored in ${KEY_FILE_LABEL}`;
     return {
       enabled: true,
       source: "auto",
       expiresAt: stored.expiresAt,
-      note: `using a free key this server requested from OpenSea and stored in ${KEY_FILE_LABEL}; it expires ${stored.expiresAt.slice(0, 10)} and is renewed automatically`,
+      persisted: persisted !== false,
+      pausedUntil,
+      note: `using a free key this server requested from OpenSea, ${where}; it expires ${stored.expiresAt.slice(0, 10)} and is renewed automatically`,
     };
   }
   return {
     enabled: false,
     source: "none",
     expiresAt: null,
+    persisted: null,
+    pausedUntil,
     unavailableReason: keyState,
     note: keyState
       ? `off - a free OpenSea key could not be issued: ${keyState}. Every other source still answers; set OPENSEA_API_KEY to add OpenSea now.`
       : "no key yet - one free key is requested from OpenSea the first time a tool actually needs OpenSea, so nothing is spent on a session that never asks",
   };
 }
+
+const envKeyTooShort = (env: string): string =>
+  `OPENSEA_API_KEY is ${env.trim().length} character(s), too short to redact from answers, so it was not sent; a real OpenSea key is far longer`;
 
 /** True when an OpenSea request can be made right now WITHOUT issuing anything. */
 export const openSeaEnabled = (): boolean => openSeaState().enabled;
@@ -354,33 +437,68 @@ export async function openSeaAvailable(): Promise<boolean> {
 export function resetKeyCache(): void {
   memoryKey = null;
   diskRead = false;
+  persisted = null;
   keyState = null;
   issuing = null;
   nextIssueAfter = 0;
+  nextReadAfter = 0;
 }
 
 async function os<T>(route: string, signal?: AbortSignal): Promise<T> {
+  if (now() < nextReadAfter) {
+    const secs = Math.ceil((nextReadAfter - now()) / 1000);
+    throw new HttpError(
+      `OpenSea asked this server to pause its reads; they resume in ${secs}s (${new Date(nextReadAfter).toISOString()}). Every other source still answers.`,
+      429,
+      "rate limited",
+      nextReadAfter - now(),
+    );
+  }
   const key = await ensureKey();
   if (!key) throw new Error(`OpenSea is not answering for this server: ${openSeaState().note}`);
-  return fetchJson<T>(
-    "OpenSea",
-    `${BASE}${route}`,
-    {
-      headers: {
-        "x-api-key": key,
-        Accept: "application/json",
-        "User-Agent": "solana-nft-mcp/1.1 (+https://github.com/p1xelapp/solana-nft-mcp)",
+  try {
+    return await fetchJson<T>(
+      "OpenSea",
+      `${BASE}${route}`,
+      {
+        headers: {
+          "x-api-key": key,
+          Accept: "application/json",
+          "User-Agent": "solana-nft-mcp/1.1 (+https://github.com/p1xelapp/solana-nft-mcp)",
+        },
       },
-    },
-    { gate, signal },
-  );
+      { gate, signal },
+    );
+  } catch (e) {
+    notePause(e);
+    throw e;
+  }
+}
+
+/**
+ * Two rows describe one trait identity only when their complete, cleaned
+ * type and value agree. NUL is the separator: it survives no venue's JSON as
+ * text, so a value that itself contains "::" cannot forge another key, and
+ * nothing is clipped on the way in, so two long values that share a prefix
+ * stay two values. The DISPLAY fields are clipped separately.
+ */
+export function traitKey(traitType: string, value: string): string {
+  return `${clean(traitType)}\u0000${clean(value)}`;
 }
 
 interface OsStats {
-  total?: { floor_price?: number; floor_price_symbol?: string; volume?: number; sales?: number; num_owners?: number };
+  total?: { floor_price?: number; floor_price_symbol?: string; volume?: number; volume_symbol?: string; sales?: number; num_owners?: number };
 }
 
-/** Collection stats by OpenSea slug. Floor is in the listing currency (SOL for Solana collections). */
+/** A venue-supplied ticker, neutralised and short, or null. A ticker is a short token, not a sentence. */
+const ticker = (v: unknown): string | null => (typeof v === "string" && CURRENCY_SYMBOL.test(v.trim()) ? v.trim() : null);
+
+/**
+ * Collection stats by OpenSea slug. The floor and the volume each carry
+ * their OWN currency: OpenSea's contract names `floor_price_symbol` and
+ * `volume_symbol` separately and says they can differ. A volume printed
+ * beside the floor's ticker was labelling one number with another's unit.
+ */
 export async function collectionStats(slug: string, opts: { fresh?: boolean; signal?: AbortSignal } = {}) {
   // `fresh` = contact OpenSea now. A health check served from cache reports a
   // venue answering while it is down, which is the one thing it must not do.
@@ -419,10 +537,11 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   return {
     slug,
     floor: num(t.floor_price),
-    // The currency symbol is venue-supplied text that is printed next to a
-    // number; it is neutralised and kept short rather than relayed.
-    floorCurrency: typeof t.floor_price_symbol === "string" ? clean(t.floor_price_symbol).slice(0, 16) || null : null,
+    // A currency symbol is venue-supplied text printed next to a number: it
+    // has to be ticker-shaped, and an absent one is unknown, never assumed.
+    floorCurrency: ticker(t.floor_price_symbol),
     totalVolume: dust ? 0 : volume,
+    volumeCurrency: ticker(t.volume_symbol),
     ...(dust
       ? {
           volumeNote:
@@ -503,7 +622,18 @@ export async function recentSales(slug: string, limit: number) {
   const events = objectRows<OsEvent>("OpenSea", "collection sale events", data?.asset_events);
   assertPageSize("OpenSea", "collection sale events", events, Math.min(limit, 50));
   let malformedRows = 0;
-  const sales = events.slice(0, limit).map((e) => {
+  // The request asked the venue for sales only; the answer is checked anyway.
+  // A transfer with payment-shaped fields in a sale-filtered feed used to be
+  // published as a sale, and the venue's filter is not this server's
+  // guarantee. Rows of any other type are counted by type, not shown.
+  const otherEventTypes: Record<string, number> = {};
+  const saleRows = events.filter((e) => {
+    if (e.event_type === "sale") return true;
+    const kind = typeof e.event_type === "string" ? clean(e.event_type).slice(0, 24) || "unknown" : "unknown";
+    otherEventTypes[kind] = (Object.hasOwn(otherEventTypes, kind) ? otherEventTypes[kind]! : 0) + 1;
+    return false;
+  });
+  const sales = saleRows.slice(0, limit).map((e) => {
     const malformed: string[] = [];
     const absent = (v: unknown) => v === undefined || v === null || v === "";
     const time = isoFromBlockTime(e.event_timestamp);
@@ -526,13 +656,22 @@ export async function recentSales(slug: string, limit: number) {
       if (typeof e.transaction === "string" && TX_SIGNATURE.test(e.transaction)) transaction = e.transaction;
       else malformed.push("transaction (not a signature)");
     }
+    // The item's identity, separate from its display name. Two items with the
+    // same name serialised identically, so a bot could neither deduplicate
+    // nor link the sold item; a mint is the identity, and it is an address
+    // or nothing.
+    const identifier = e.nft?.identifier;
+    const mint = absent(identifier) ? null : typeof identifier === "string" && isBase58Address(identifier) ? identifier : null;
+    if (!absent(identifier) && mint === null) malformed.push("mint (identifier is not a Solana address)");
     if (malformed.length > 0) malformedRows++;
     return {
+      eventType: "sale" as const,
       time,
       price: pay.price,
       rawQuantity: pay.rawQuantity,
       decimals: pay.decimals,
       currency,
+      mint,
       item: e.nft?.name || e.nft?.identifier ? clean(e.nft?.name ?? e.nft?.identifier) : null,
       buyer,
       seller,
@@ -549,10 +688,45 @@ export async function recentSales(slug: string, limit: number) {
     slug,
     sales,
     ...(malformedRows > 0 ? { malformedRows } : {}),
+    ...(Object.keys(otherEventTypes).length > 0
+      ? { otherEventTypes, otherEventTypesNote: "Rows the venue served in its sale-filtered feed that are not sales. They are counted here and not shown as sales." }
+      : {}),
     stale,
     cachedAt,
     source: "opensea",
   };
+}
+
+/**
+ * Walk a cursor-paged OpenSea feed.
+ *
+ * The only end-of-feed signal the contract gives is the absence of `next`.
+ * A short page is not one: the walk used to stop at the first page with
+ * fewer than the limit, and a valid cursor after a short or empty page was
+ * thrown away, so events past it vanished behind `truncated: false`. A page
+ * count is a budget, and a cursor left unconsumed at the budget means the
+ * feed is a prefix, which is what `truncated` says. A cursor that repeats
+ * itself is a loop, and the walk stops on it rather than spinning.
+ */
+async function walkCursor<R>(
+  pages: number,
+  read: (next: string | undefined) => Promise<{ rows: R[]; next?: unknown }>,
+  onRows: (rows: R[]) => void,
+): Promise<{ truncated: boolean; walkNote?: string; pagesRead: number }> {
+  let next: string | undefined;
+  const seenCursors = new Set<string>();
+  for (let p = 0; p < pages; p++) {
+    const res = await read(next);
+    onRows(res.rows);
+    const cursor = typeof res.next === "string" && res.next.length > 0 && res.next.length <= 2048 ? res.next : undefined;
+    if (!cursor) return { truncated: false, pagesRead: p + 1 };
+    if (seenCursors.has(cursor)) {
+      return { truncated: true, pagesRead: p + 1, walkNote: "OpenSea handed back a page cursor it had already served, so the walk stopped there rather than looping; the feed past that point was not read." };
+    }
+    seenCursors.add(cursor);
+    next = cursor;
+  }
+  return { truncated: true, pagesRead: pages, walkNote: `${pages} page(s) were read and OpenSea still had more; the feed past that point was not read.` };
 }
 
 // ------------------------------------------------------- Solana on OpenSea
@@ -577,19 +751,20 @@ export interface OsSolanaCollection {
 export async function solanaCollections() {
   const { data, stale, cachedAt } = await cached("os:solana-index", 3_600_000, async () => {
     const out: OsSolanaCollection[] = [];
-    let next: string | undefined;
-    for (let page = 0; page < 5; page++) {
-      const q = `/collections?chain=solana&limit=100&order_by=seven_day_volume${next ? `&next=${encodeURIComponent(next)}` : ""}`;
-      const res = await os<{ collections?: OsSolanaCollection[]; next?: string }>(q);
-      const rows = objectRows<OsSolanaCollection>("OpenSea", "Solana collection index", res.collections);
-      assertPageSize("OpenSea", "Solana collection index", rows, 100);
-      appendAll(out, rows);
-      if (!res.next || rows.length < 100) break;
-      next = res.next;
-    }
-    return out;
+    const walk = await walkCursor<OsSolanaCollection>(
+      5,
+      async (next) => {
+        const q = `/collections?chain=solana&limit=100&order_by=seven_day_volume${next ? `&next=${encodeURIComponent(next)}` : ""}`;
+        const res = await os<{ collections?: OsSolanaCollection[]; next?: string }>(q);
+        const rows = objectRows<OsSolanaCollection>("OpenSea", "Solana collection index", res.collections);
+        assertPageSize("OpenSea", "Solana collection index", rows, 100);
+        return { rows, next: res.next };
+      },
+      (rows) => appendAll(out, rows),
+    );
+    return { rows: out, ...walk };
   });
-  return { collections: data, stale, cachedAt };
+  return { collections: data.rows, truncated: data.truncated, walkNote: data.walkNote, stale, cachedAt };
 }
 
 /**
@@ -681,25 +856,42 @@ export async function collectionDetail(slug: string) {
     os<OsSolanaCollection>(`/collections/${encodeURIComponent(slug)}`),
   );
   if (!data?.collection) throw new NotFoundError(`OpenSea has no collection "${slug}"`);
+  // Every field below is OpenSea's text or OpenSea's number, and each has a
+  // DOMAIN, not just a type. A supply is a whole count at or above zero; a
+  // fee is a percentage between 0 and 100; a list can carry null entries.
+  // "Finite" alone let a supply of -2 and a fee of -5 through as typed
+  // output. An invalid value becomes null and is named, never a zero.
+  const malformed: string[] = [];
+  const supply = typeof data.total_supply === "number" && Number.isInteger(data.total_supply) && data.total_supply >= 0 ? data.total_supply : null;
+  if (data.total_supply !== undefined && data.total_supply !== null && supply === null) malformed.push("total_supply (not a whole count at or above zero)");
   // fees absent = OpenSea did not say; only an explicit list with no creator
   // entry means "no creator royalty". Do not turn silence into a zero.
-  const royalty = data.fees ? data.fees.filter((f) => f.recipient && !OPENSEA_FEE_RECIPIENT.test(f.recipient)) : null;
-  // Every field below is OpenSea's text or OpenSea's number. The slug and the
-  // date are neutralised, the supply and the royalty have to BE numbers (a
-  // string `fee` was concatenating into a percentage), and the on-chain
-  // address has to look like one, because a later check compares it to the
-  // collection the caller asked about and decides whether two floors may be
-  // ranked together.
-  const supply = typeof data.total_supply === "number" && Number.isFinite(data.total_supply) ? data.total_supply : null;
+  let creatorRoyaltyPct: number | null = null;
+  if (Array.isArray(data.fees)) {
+    const rows = data.fees.filter((f): f is NonNullable<typeof f> => Boolean(f) && typeof f === "object");
+    const creator = rows.filter((f) => typeof f.recipient === "string" && !OPENSEA_FEE_RECIPIENT.test(f.recipient));
+    let sum = 0;
+    let bad = 0;
+    for (const f of creator) {
+      if (typeof f.fee === "number" && Number.isFinite(f.fee) && f.fee >= 0 && f.fee <= 100) sum += f.fee;
+      else bad++;
+    }
+    if (bad > 0) malformed.push(`fees (${bad} entr${bad === 1 ? "y" : "ies"} not a percentage between 0 and 100)`);
+    creatorRoyaltyPct = bad > 0 ? null : sum;
+  }
+  const contracts = Array.isArray(data.contracts) ? data.contracts.filter((c): c is NonNullable<typeof c> => Boolean(c) && typeof c === "object") : [];
   return {
     slug: clean(data.collection).slice(0, 120),
     name: data.name ? clean(data.name) : null,
     totalSupply: supply,
-    onchainCollection: venueAddress(data.contracts?.find((c) => c.chain === "solana")?.address),
-    creatorRoyaltyPct:
-      royalty === null ? null : royalty.reduce((sum, f) => sum + (typeof f.fee === "number" && Number.isFinite(f.fee) ? f.fee : 0), 0),
+    // The on-chain address has to look like one, because a later check
+    // compares it to the collection the caller asked about and decides
+    // whether two floors may be ranked together.
+    onchainCollection: venueAddress(contracts.find((c) => c.chain === "solana")?.address),
+    creatorRoyaltyPct,
     listedOn: typeof data.created_date === "string" ? clean(data.created_date).slice(0, 40) : null,
     url: typeof data.opensea_url === "string" && /^https:\/\/opensea\.io\//.test(data.opensea_url) ? data.opensea_url : null,
+    ...(malformed.length > 0 ? { malformedFields: malformed } : {}),
     stale,
     cachedAt,
     source: "opensea",
@@ -744,31 +936,34 @@ export async function accountEvents(wallet: string, pages: number) {
     const out: OsAccountEvent[] = [];
     const seenEvents = new Set<string>();
     let duplicates = 0;
-    let next: string | undefined;
-    for (let p = 0; p < pages; p++) {
-      const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
-        `/events/accounts/${wallet}?chain=solana&limit=50${next ? `&next=${encodeURIComponent(next)}` : ""}`,
-      );
-      const rows = objectRows<OsAccountEvent>("OpenSea", "account events", res.asset_events);
-      assertPageSize("OpenSea", "account events", rows, 50);
-      // Exact copies only. A page overlap repeats a row byte for byte, and
-      // counting it twice doubled a wallet's buys; two rows that DIFFER are
-      // kept, because a different price or side is a different claim.
-      for (const r of rows) {
-        const id = accountEventFingerprint(r);
-        if (seenEvents.has(id)) {
-          duplicates++;
-          continue;
+    const walk = await walkCursor<OsAccountEvent>(
+      pages,
+      async (next) => {
+        const res = await os<{ asset_events?: OsAccountEvent[]; next?: string }>(
+          `/events/accounts/${wallet}?chain=solana&limit=50${next ? `&next=${encodeURIComponent(next)}` : ""}`,
+        );
+        const rows = objectRows<OsAccountEvent>("OpenSea", "account events", res.asset_events);
+        assertPageSize("OpenSea", "account events", rows, 50);
+        return { rows, next: res.next };
+      },
+      (rows) => {
+        // Exact copies only. A page overlap repeats a row byte for byte, and
+        // counting it twice doubled a wallet's buys; two rows that DIFFER are
+        // kept, because a different price or side is a different claim.
+        for (const r of rows) {
+          const id = accountEventFingerprint(r);
+          if (seenEvents.has(id)) {
+            duplicates++;
+            continue;
+          }
+          seenEvents.add(id);
+          appendAll(out, [r]);
         }
-        seenEvents.add(id);
-        appendAll(out, [r]);
-      }
-      if (!res.next || rows.length < 50) break;
-      next = res.next;
-    }
-    return { rows: out, duplicates };
+      },
+    );
+    return { rows: out, duplicates, ...walk };
   });
-  return { events: data.rows, duplicates: data.duplicates, truncated: data.rows.length + data.duplicates >= pages * 50, stale, cachedAt };
+  return { events: data.rows, duplicates: data.duplicates, truncated: data.truncated, walkNote: data.walkNote, pagesRead: data.pagesRead, stale, cachedAt };
 }
 
 // ------------------------------------------------- newer OpenSea reads (2026)
@@ -785,75 +980,150 @@ interface OsTraitFloor {
 }
 
 export interface TraitFloorEntry {
+  /** Display form, clipped. The join key is built from the complete text, not from this. */
   traitType: string;
   value: string;
   floor: number;
   currency: string;
 }
 
+/** What a join returns for one trait: the entry chosen and every other currency it was also listed in. */
+export interface TraitFloorHit {
+  floor: number;
+  currency: string;
+  /** Present when the same trait was listed in other currencies too; those prices are not comparable with `floor`. */
+  otherCurrencies?: { floor: number; currency: string }[];
+}
+
+/**
+ * The floor to show for one trait, chosen by a stated policy: SOL when the
+ * trait is listed in SOL, otherwise the first currency the venue served. Every
+ * other currency the trait was listed in rides along, because dropping it
+ * silently turned "cheapest in SOL" into "cheapest", and a USDC ask can sit
+ * below the SOL one.
+ */
+export function traitFloorFor(floors: Map<string, TraitFloorEntry[]>, traitType: string, value: string): TraitFloorHit | null {
+  const rows = floors.get(traitKey(traitType, value));
+  if (!rows || rows.length === 0) return null;
+  const chosen = rows.find((r) => r.currency === "SOL") ?? rows[0]!;
+  const others = rows.filter((r) => r !== chosen).map((r) => ({ floor: r.floor, currency: r.currency }));
+  return others.length > 0 ? { floor: chosen.floor, currency: chosen.currency, otherCurrencies: others } : { floor: chosen.floor, currency: chosen.currency };
+}
+
 /**
  * Cheapest active listing for every text trait value in a collection, across
- * every marketplace OpenSea aggregates. Keyed "type::value" for a direct join
- * against Magic Eden's per-trait floor on the same listing.
+ * every marketplace OpenSea aggregates. Keyed by `traitKey` for a direct join
+ * against Magic Eden's per-trait floor on the same listing; one key holds
+ * every currency the trait was listed in, because OpenSea's contract serves
+ * a value once per currency and converts nothing.
  */
 export async function traitFloors(slug: string) {
   const { data, stale, cachedAt } = await cached(`os:traitfloors:${slug}`, 300_000, () =>
-    os<{ chain?: string; floors?: OsTraitFloor[] }>(`/traits/${encodeURIComponent(slug)}/floors`),
+    os<{ chain?: string; floors?: (OsTraitFloor | null)[] }>(`/traits/${encodeURIComponent(slug)}/floors`),
   );
   if (!data || !Array.isArray(data.floors)) throw new Error(`OpenSea returned no trait floor list for "${slug}" (outage or API change)`);
-  const byKey = new Map<string, TraitFloorEntry>();
+  const byKey = new Map<string, TraitFloorEntry[]>();
+  let skippedNoCurrency = 0;
+  let skippedNotAnAsk = 0;
   for (const f of data.floors) {
-    if (typeof f.trait_type !== "string" || typeof f.value !== "string") continue;
+    if (!f || typeof f !== "object" || typeof f.trait_type !== "string" || typeof f.value !== "string") continue;
     // A trait floor is an ASK: a finite amount above zero. Zero is "nobody
     // has priced it" on this venue and negative is corrupt; neither is a
     // price a reader can be offered.
-    if (typeof f.floor_price !== "number" || !Number.isFinite(f.floor_price) || f.floor_price <= 0) continue;
-    const entry: TraitFloorEntry = {
-      traitType: clean(f.trait_type).slice(0, 64),
-      value: clean(f.value).slice(0, 64),
-      floor: f.floor_price,
-      currency: typeof f.payment_token_symbol === "string" ? clean(f.payment_token_symbol).slice(0, 16) : "SOL",
-    };
-    const key = `${entry.traitType}::${entry.value}`;
-    // A value listed in two currencies appears twice; keep the SOL one, else the first.
-    const prev = byKey.get(key);
-    if (!prev || (prev.currency !== "SOL" && entry.currency === "SOL")) byKey.set(key, entry);
+    if (typeof f.floor_price !== "number" || !Number.isFinite(f.floor_price) || f.floor_price <= 0) {
+      skippedNotAnAsk++;
+      continue;
+    }
+    // The currency is part of the contract and part of the price. A row
+    // without one used to be labelled SOL by default, which is an invented
+    // unit on a real number; it is not a floor this server can relay.
+    const currency = ticker(f.payment_token_symbol);
+    if (!currency) {
+      skippedNoCurrency++;
+      continue;
+    }
+    const entry: TraitFloorEntry = { traitType: clean(f.trait_type).slice(0, 64), value: clean(f.value).slice(0, 64), floor: f.floor_price, currency };
+    const key = traitKey(f.trait_type, f.value);
+    const rows = byKey.get(key);
+    if (!rows) byKey.set(key, [entry]);
+    else if (!rows.some((r) => r.currency === currency)) rows.push(entry);
   }
-  return { slug, chain: typeof data.chain === "string" ? clean(data.chain) : null, floors: byKey, count: byKey.size, stale, cachedAt, source: "opensea" as const };
+  return {
+    slug,
+    chain: typeof data.chain === "string" ? clean(data.chain) : null,
+    floors: byKey,
+    count: byKey.size,
+    ...(skippedNoCurrency > 0 ? { skippedNoCurrency } : {}),
+    ...(skippedNotAnAsk > 0 ? { skippedNotAnAsk } : {}),
+    stale,
+    cachedAt,
+    source: "opensea" as const,
+  };
 }
 
 interface OsFloorPoint {
   time?: number;
   token_unit?: number;
   usd_price?: string | number;
+  symbol?: string;
+  chain?: string;
 }
 
 export type FloorInterval = "1d" | "7d" | "30d";
 
 /**
+ * The query parameter OpenSea documents for each window. The adapter used to
+ * send `interval=7d`, a parameter the contract does not have: a server that
+ * ignored it answered the default one-day window, which this tool then
+ * labelled seven days.
+ */
+const TIMEFRAME: Record<FloorInterval, string> = { "1d": "one_day", "7d": "seven_days", "30d": "thirty_days" };
+
+/**
  * Floor price over time, as OpenSea sampled it. Returned as a summary a person
  * can read (start, end, low, high, change) plus the sampled points, in the
- * listing currency. It is OpenSea's floor series, not Magic Eden's.
+ * currency the points themselves name. It is OpenSea's floor series, not
+ * Magic Eden's, and it is summarised only when every point is in one
+ * currency: a start in SOL and an end in USDC is not a change.
  */
 export async function floorHistory(slug: string, interval: FloorInterval = "7d") {
-  const { data, stale, cachedAt } = await cached(`os:floorhist:${slug}:${interval}`, 600_000, () =>
-    os<{ floor_prices?: OsFloorPoint[] }>(`/collections/${encodeURIComponent(slug)}/floor_prices?interval=${interval}`),
+  const { data, stale, cachedAt } = await cached(`os:floorhist:v2:${slug}:${interval}`, 600_000, () =>
+    os<{ floor_prices?: (OsFloorPoint | null)[] }>(`/collections/${encodeURIComponent(slug)}/floor_prices?timeframe=${TIMEFRAME[interval]}`),
   );
   if (!data || !Array.isArray(data.floor_prices)) throw new Error(`OpenSea returned no floor history for "${slug}" (outage or API change)`);
-  const points = data.floor_prices
-    .filter((p) => typeof p.time === "number" && typeof p.token_unit === "number" && Number.isFinite(p.token_unit))
-    .map((p) => ({ at: isoFromBlockTime(p.time), floor: p.token_unit as number, usd: typeof p.usd_price === "string" ? Number(p.usd_price) : typeof p.usd_price === "number" ? p.usd_price : null }))
-    // A point whose time cannot be a date is not a point on a time series.
-    .filter((p): p is { at: string; floor: number; usd: number | null } => p.at !== null)
-    .sort((a, b) => a.at.localeCompare(b.at));
-  if (points.length === 0) return { slug, interval, points: [], summary: null, stale, cachedAt, source: "opensea" as const };
+  let droppedPoints = 0;
+  const points: { at: string; floor: number; usd: number | null; currency: string | null }[] = [];
+  for (const p of data.floor_prices) {
+    // A floor is an amount at or above zero at a time that can be a date.
+    // A negative point passed the finite check and was published as a low.
+    if (!p || typeof p !== "object" || typeof p.time !== "number" || typeof p.token_unit !== "number" || !Number.isFinite(p.token_unit) || p.token_unit < 0) {
+      droppedPoints++;
+      continue;
+    }
+    const at = isoFromBlockTime(p.time);
+    if (at === null) {
+      droppedPoints++;
+      continue;
+    }
+    const usdRaw = typeof p.usd_price === "string" ? Number(p.usd_price) : typeof p.usd_price === "number" ? p.usd_price : null;
+    points.push({ at, floor: p.token_unit, usd: usdRaw !== null && Number.isFinite(usdRaw) && usdRaw >= 0 ? usdRaw : null, currency: ticker(p.symbol) });
+  }
+  points.sort((a, b) => a.at.localeCompare(b.at));
+  const base = { slug, interval, points, ...(droppedPoints > 0 ? { droppedPoints } : {}), stale, cachedAt, source: "opensea" as const };
+  if (points.length === 0) return { ...base, summary: null };
+  const currencies = new Set(points.map((p) => p.currency ?? "unknown"));
+  if (currencies.size > 1) {
+    return {
+      ...base,
+      summary: null,
+      note: `OpenSea's samples for this window are in more than one currency (${[...currencies].join(", ")}), so no start, end, low or high is given: those would compare amounts in different units.`,
+    };
+  }
   const floors = points.map((p) => p.floor);
   const first = floors[0] as number;
   const last = floors[floors.length - 1] as number;
   return {
-    slug,
-    interval,
-    points,
+    ...base,
     summary: {
       start: first,
       end: last,
@@ -861,11 +1131,10 @@ export async function floorHistory(slug: string, interval: FloorInterval = "7d")
       high: Math.max(...floors),
       changePct: first > 0 ? Math.round(((last - first) / first) * 1000) / 10 : null,
       samples: points.length,
-      currency: "SOL",
+      // The points' own currency. Null when OpenSea named none, which is
+      // reported as unknown rather than assumed.
+      currency: points[0]!.currency,
     },
-    stale,
-    cachedAt,
-    source: "opensea" as const,
   };
 }
 
@@ -886,24 +1155,54 @@ export async function holders(slug: string, limit = 10, totalSupply: number | nu
     os<{ holders?: OsHolder[] }>(`/collections/${encodeURIComponent(slug)}/holders?limit=${n}`),
   );
   if (!data || !Array.isArray(data.holders)) throw new Error(`OpenSea returned no holder list for "${slug}" (outage or API change)`);
-  const rows = data.holders
-    // A holding is a positive whole number of items. A negative quantity was
-    // producing a negative share of supply.
-    // The address has to look like one. A holder row is marketplace-authored
-    // text, and this wallet is handed on to a chain read as though it were an
-    // identifier.
-    .filter((h) => venueAddress(h.address) !== null && typeof h.quantity === "number" && Number.isInteger(h.quantity) && h.quantity > 0)
-    .map((h) => ({
-      wallet: h.address as string,
-      items: h.quantity as number,
-      sharePct: totalSupply && totalSupply > 0 ? Math.round(((h.quantity as number) / totalSupply) * 10000) / 100 : null,
-    }));
-  const topItems = rows.reduce((s, r) => s + r.items, 0);
+  // A holding is a positive whole number of items. A negative quantity was
+  // producing a negative share of supply. The address has to look like one:
+  // a holder row is marketplace-authored text, and this wallet is handed on
+  // to a chain read as though it were an identifier.
+  //
+  // One wallet, one row. The feed has repeated a wallet across a page
+  // boundary; summing both copies gave a top ten whose shares came to 120%.
+  // An exact repeat is dropped and counted; two rows that DISAGREE about the
+  // same wallet are a conflict, and that wallet's share is not computed.
+  const byWallet = new Map<string, { wallet: string; items: number; conflict: boolean }>();
+  let duplicateRowsDropped = 0;
+  let conflictingRows = 0;
+  for (const h of data.holders) {
+    if (!h || typeof h !== "object") continue;
+    const wallet = venueAddress(h.address);
+    if (wallet === null || typeof h.quantity !== "number" || !Number.isInteger(h.quantity) || h.quantity <= 0) continue;
+    const prev = byWallet.get(wallet);
+    if (!prev) byWallet.set(wallet, { wallet, items: h.quantity, conflict: false });
+    else if (prev.items === h.quantity) duplicateRowsDropped++;
+    else {
+      conflictingRows++;
+      prev.conflict = true;
+    }
+  }
+  const supplyKnown = typeof totalSupply === "number" && totalSupply > 0;
+  const topItems = [...byWallet.values()].reduce((s, r) => s + r.items, 0);
+  // A share above 100% is not a share, it is two sources disagreeing: the
+  // venue's holder counts and its own supply figure. When they do, no share
+  // is computed for any row, and the disagreement is what is reported.
+  const supplyConflict = supplyKnown && (topItems > totalSupply || [...byWallet.values()].some((r) => r.items > totalSupply));
+  const shareOf = (items: number): number | null => (supplyKnown && !supplyConflict ? Math.round((items / totalSupply) * 10000) / 100 : null);
+  const rows = [...byWallet.values()].map((r) => ({
+    wallet: r.wallet,
+    items: r.items,
+    sharePct: r.conflict ? null : shareOf(r.items),
+    ...(r.conflict ? { note: "OpenSea served two different item counts for this wallet; the first is shown and no share is computed from it." } : {}),
+  }));
   return {
     slug,
     top: rows,
-    topCombinedSharePct: totalSupply && totalSupply > 0 ? Math.round((topItems / totalSupply) * 10000) / 100 : null,
-    shareBasis: totalSupply ? `share of OpenSea's total supply (${totalSupply})` : "no total supply known, so no share was computed",
+    topCombinedSharePct: rows.some((r) => r.sharePct === null) ? null : shareOf(topItems),
+    shareBasis: !supplyKnown
+      ? "no total supply known, so no share was computed"
+      : supplyConflict
+        ? `conflict: OpenSea's holder counts (${topItems} items across the rows shown) exceed OpenSea's total supply (${totalSupply}), so no share of supply was computed; one of the two figures is wrong`
+        : `share of OpenSea's total supply (${totalSupply})`,
+    ...(duplicateRowsDropped > 0 ? { duplicateRowsDropped } : {}),
+    ...(conflictingRows > 0 ? { conflictingRows } : {}),
     stale,
     cachedAt,
     source: "opensea" as const,

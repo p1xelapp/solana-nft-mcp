@@ -58,7 +58,7 @@ function spellings(v: string): string[] {
  * value is as likely a route word as a key; applying it to an explicitly
  * named credential left a seven-character key unregistered and echoed.
  */
-const MIN_NAMED_SECRET_LENGTH = 4;
+export const MIN_NAMED_SECRET_LENGTH = 4;
 
 /** Remember a credential that is about to be sent somewhere. Idempotent. False when it is too short to protect. */
 export function registerSecret(value: string | null | undefined, minLength: number = MIN_SECRET_LENGTH): boolean {

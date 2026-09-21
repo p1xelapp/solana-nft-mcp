@@ -1,6 +1,6 @@
 {
   "name": "solana-nft-mcp",
-  "version": "1.17.0",
+  "version": "1.17.1",
   "description": "Read-only MCP server for Solana NFTs and digital collectibles: Metaplex Core ownership history, who can freeze or burn an item, marketplace sales and floors that keep their currency and source. No sign-up.",
   "homepage": "https://p1xel.app/solana-nft-mcp/",
   "bugs": {
@@ -30,7 +30,7 @@
     "pack-check": "node scripts/pack-check.mjs",
     "prepublishOnly": "node scripts/pack-check.mjs",
     "start": "node dist/index.js",
-    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/roles-and-holes.mjs && node test/siblings.mjs && node test/abuse.mjs && node test/identity-and-validation.mjs && node test/injection-and-redirects.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
+    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/roles-and-holes.mjs && node test/siblings.mjs && node test/abuse.mjs && node test/identity-and-validation.mjs && node test/injection-and-redirects.mjs && node test/opensea-contract.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
     "test:smoke": "npm run build && node test/smoke.mjs",
     "test:live": "npm run build && node test/live.mjs",
     "test:battery": "npm run build && node test/battery.mjs && node test/battery2.mjs && node test/battery3.mjs",

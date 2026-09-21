@@ -5,22 +5,27 @@
 # default rule reads those as credentials: `generic-api-key` (measured - 126
 # findings, all of them that rule, and no other rule fires on the fixtures).
 #
-# The allowlist is scoped to that rule and those paths, and to nothing else.
-# The previous path-wide form suppressed EVERY default rule for every JSON file
-# under test/fixtures, so a real GitHub PAT committed as test/fixtures/leak.json
-# passed a full-history scan clean. Verified both ways with gitleaks 8.30.1:
-# under the old config a planted `ghp_...` in that directory was "no leaks
-# found"; under this one it is caught, while the 126 address false positives
-# stay suppressed.
+# The allowlist below admits a finding only when BOTH hold: the file is a
+# fixture, AND the matched secret is shaped like a base58 address (32 to 44
+# characters of the base58 alphabet, which has no 0, O, I or l). `condition =
+# "AND"` is what makes that two conditions rather than either one: without it
+# gitleaks allows a finding that meets ANY listed condition, so the path alone
+# disabled the rule for every fixture, and a generic key planted in a fixture
+# passed a full-history scan clean. Verified both ways with gitleaks 8.30.1
+# and planted controls: a base58 address in a fixture field named api_key is
+# allowed; a forty-character lower-case key in the same field is caught.
 #
-# `[[allowlists]]` with `targetRules` needs gitleaks >= 8.27, which is why the
-# binary pinned in CI is 8.30.1. Do not lower it without re-checking that a
-# planted secret in test/fixtures still fails the scan.
+# `[[allowlists]]` with `targetRules` and `condition` needs gitleaks >= 8.27,
+# which is why the binary pinned in CI is 8.30.1. Do not lower it without
+# re-checking that a planted generic key in test/fixtures still fails the scan.
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Offline test fixtures: captured public marketplace responses (base58 chain addresses, not secrets)"
+description = "Offline test fixtures: captured public marketplace responses. Only a base58 chain address, in a fixture, for the one rule that misreads it."
+condition = "AND"
 targetRules = ["generic-api-key"]
 paths = ['''test/fixtures/.*\.json$''']
+regexTarget = "secret"
+regexes = ['''^[1-9A-HJ-NP-Za-km-z]{32,44}$''']

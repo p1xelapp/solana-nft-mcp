@@ -16,9 +16,8 @@
  * Run before publishing:
  *   npm run build && node scripts/pack-check.mjs && npm publish --ignore-scripts=false
  */
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,33 +34,7 @@ import { fileURLToPath } from "node:url";
  * without a shell at all on current Node, so if it is all we have the check
  * says so rather than pretending.
  */
-function resolveNpm() {
-  try {
-    return { file: process.execPath, lead: [createRequire(import.meta.url).resolve("npm/bin/npm-cli.js")] };
-  } catch {
-    // npm is not a resolvable dependency of this project - normal.
-  }
-  // The npm that ships with this very node binary, next to it on disk.
-  for (const guess of [
-    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
-    path.join(path.dirname(process.execPath), "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-  ]) {
-    if (existsSync(guess)) return { file: process.execPath, lead: [guess] };
-  }
-  if (process.platform !== "win32") return { file: "npm", lead: [] };
-  const found = execFileSync("where", ["npm"], { encoding: "utf8", shell: false })
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const cmd = found.find((p) => p.toLowerCase().endsWith(".cmd")) ?? found[0];
-  if (!cmd) throw new Error("npm could not be located: neither npm-cli.js nor npm.cmd was found");
-  return { file: cmd, lead: [] };
-}
-
-const NPM = resolveNpm();
-
-/** Every npm call in this file goes through here: one place, no shell, ever. */
-const npmSync = (args, opts = {}) => execFileSync(NPM.file, [...NPM.lead, ...args], { ...opts, shell: false });
+import { npmSync } from "./npm-cli.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));

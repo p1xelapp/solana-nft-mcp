@@ -26,13 +26,29 @@ const { venueAddress } = await import("../dist/sources/solana.js");
 // tail, so an unanchored scan over a long name costs time proportional to its
 // length squared: 200 KB of spaces measured 39 seconds, during which a
 // single-threaded server answers nobody and no deadline can interrupt it.
+//
+// Two protections stand between a name and that: the tail pattern is
+// anchored, and the scan is capped at SERIAL_SCAN_MAX characters before any
+// pattern runs. Speed alone cannot prove the cap is there, because the
+// anchor makes the engine fast on its own and trim() shortens a padding of
+// spaces before the cap sees it. The cap is pinned by its BOUNDARY instead:
+// a serial past it is not read, one inside it is. Remove the cap and this
+// block fails; remove the anchor and the timing corpus below fails.
 {
-  const hostile = `#${" ".repeat(200_000)}`;
-  const started = Date.now();
-  const got = matchSerial(hostile);
-  const took = Date.now() - started;
-  assert.ok(took < 500, `a 200 KB name took ${took} ms to scan`);
-  assert.strictEqual(got, null);
+  const pad = " ".repeat(200_000);
+  // Padding that trim() cannot remove, in the shapes each pattern looks for.
+  const corpus = [`#${pad}x`, `x#${pad}x`, `1/${pad}x`, `x 1${pad}/2 y`, `Card${pad}(12/250)`, `${"#1 ".repeat(60_000)}x`, `${"(1/".repeat(60_000)}x`, `x ${"12/250 ".repeat(25_000)}`];
+  let worst = 0;
+  for (const hostile of corpus) {
+    const started = Date.now();
+    matchSerial(hostile);
+    const took = Date.now() - started;
+    worst = Math.max(worst, took);
+    assert.ok(took < 500, `a 200 KB name ${JSON.stringify(hostile.slice(0, 8))}... took ${took} ms to scan`);
+  }
+  const took = worst;
+  assert.strictEqual(matchSerial(`${"a".repeat(350)} (12/250)`), null, "a serial past the scan cap was read, so the cap is not applied before the patterns run");
+  assert.strictEqual(matchSerial(`${"a".repeat(250)} (12/250)`)?.of, 250, "a serial inside the scan cap must still be read");
 
   // And the cap did not cost the parsing that matters.
   assert.deepStrictEqual(

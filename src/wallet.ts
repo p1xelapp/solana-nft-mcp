@@ -479,14 +479,16 @@ export interface OpenSeaWalletView {
   transfersIn: number;
   transfersOut: number;
   /** Items that arrived by plain transfer with no sale recorded for them: gift, airdrop, self-transfer, or a trade elsewhere. */
-  receivedWithoutSale: { mint: string; collection: string | null; from: string; time: string | null; note?: string }[];
+  receivedWithoutSale: { mint: string | null; collection: string | null; from: string; time: string | null; note?: string }[];
   /** Items that LEFT by plain transfer with no sale recorded: consolidation, gift, or a trade elsewhere. Itemised, because a count alone left a reader unable to follow one. */
-  sentWithoutSale: { mint: string; collection: string | null; to: string; time: string | null; note?: string }[];
+  sentWithoutSale: { mint: string | null; collection: string | null; to: string; time: string | null; note?: string }[];
   collections: Record<string, number>;
   /** Transfers in or out sharing a transaction with a sale that named no item: neither a settlement nor a gift can be proven. */
   settlementUncertain: number;
   /** Exact duplicate rows the feed served and this view dropped before counting. */
   duplicateRowsDropped: number;
+  /** Transfer rows whose item identifier was not a Solana address. They are counted as transfers; their `mint` is null. */
+  malformedItemIdentifiers: number;
   caveat: string;
 }
 
@@ -532,6 +534,18 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
   const received: OpenSeaWalletView["receivedWithoutSale"] = [];
   const sent: OpenSeaWalletView["sentWithoutSale"] = [];
   let settlementUncertain = 0;
+  let malformedItemIdentifiers = 0;
+  // The item identifier does two jobs, and they are kept apart on purpose.
+  // As a MATCH KEY it pairs a transfer with the sale it settles, and any
+  // string will do for that because the key never leaves this function. As
+  // the `mint` a reader is shown it has to be an address, because the
+  // marketplace authors it: role markup in that field reached the answer
+  // through the incoming and the outgoing branch alike.
+  const shownMint = (id: string): string | null => {
+    const v = venueAddress(id);
+    if (v === null) malformedItemIdentifiers++;
+    return v;
+  };
   for (const e of events) {
     if (e.event_type !== "transfer") continue;
     if (e.to_address === wallet) {
@@ -543,7 +557,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
         continue;
       }
       if (id && !settlesASale && e.from_address && e.from_address !== wallet) {
-        received.push({ mint: id, collection: e.nft?.collection ? clean(e.nft.collection) : null, from: venueAddress(e.from_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.from_address) ? { note: "from a Magic Eden escrow account: a fill or a delisting that OpenSea recorded as a plain transfer, not a gift" } : {}) });
+        received.push({ mint: shownMint(id), collection: e.nft?.collection ? clean(e.nft.collection) : null, from: venueAddress(e.from_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.from_address) ? { note: "from a Magic Eden escrow account: a fill or a delisting that OpenSea recorded as a plain transfer, not a gift" } : {}) });
       }
     } else if (e.from_address === wallet) {
       tout++;
@@ -556,7 +570,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
         continue;
       }
       if (id && !settlesASale && e.to_address && e.to_address !== wallet) {
-        sent.push({ mint: id, collection: e.nft?.collection ? clean(e.nft.collection) : null, to: venueAddress(e.to_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
+        sent.push({ mint: shownMint(id), collection: e.nft?.collection ? clean(e.nft.collection) : null, to: venueAddress(e.to_address) ?? "", time: iso(e.event_timestamp), ...(knownVenueAccount(e.to_address) ? { note: "to a Magic Eden escrow account: a listing, not a sale or a gift" } : {}) });
       }
     }
   }
@@ -572,6 +586,7 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
     collections,
     settlementUncertain,
     duplicateRowsDropped,
+    malformedItemIdentifiers,
     caveat:
       "OpenSea's account feed on Solana includes plain transfers, which Magic Eden's does not. A transfer-in with no sale can be a gift, an airdrop, a move between the owner's own wallets, or a purchase OpenSea did not see (e.g. a Magic Eden fill) - the chain records the movement, not the reason. OpenSea has also been observed labelling Magic Eden fills as its own sales.",
   };

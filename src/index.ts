@@ -206,7 +206,14 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
     return { kind: "timeout", headline: "That request ran past its time budget and was abandoned rather than left running.", next: "Ask again, or narrow the request (fewer pages, fewer collections) so it fits the budget." };
   if (err instanceof HttpError) {
     const who = venue() ?? "the upstream source";
-    if (err.status === 429) return { kind: "upstream-rate-limit", headline: `${who} is pausing requests for a moment (their limit, not a problem on your side).`, next: "Wait about a minute and ask again. Smaller requests (fewer pages, fewer collections priced) also help." };
+    if (err.status === 429) {
+      // The pause the venue actually asked for, when it said. "About a
+      // minute" against a Retry-After of an hour sent callers back fifty-nine
+      // times too early.
+      const wait = typeof err.retryAfterMs === "number" && err.retryAfterMs > 0 ? Math.ceil(err.retryAfterMs / 1000) : null;
+      const when = wait === null ? "about a minute" : wait >= 120 ? `about ${Math.ceil(wait / 60)} minutes` : `about ${wait} seconds`;
+      return { kind: "upstream-rate-limit", headline: `${who} is pausing requests for a moment (their limit, not a problem on your side).`, next: `Wait ${when} and ask again. Smaller requests (fewer pages, fewer collections priced) also help.`, ...(wait !== null ? { retryAfterMs: err.retryAfterMs } : {}) };
+    }
     if (err.status >= 500) return { kind: "upstream-unavailable", headline: `${who} did not answer just now (their service, not your setup).`, next: "Try again shortly. If it keeps happening, the other sources still work - ask for what they can answer." };
     if (err.status === 404) return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
     return { kind: "upstream-refused", headline: `${who} refused that request (HTTP ${err.status}).`, next: "Check the identifier, or try again shortly - a refusal from a marketplace is theirs, not a fault in your setup." };
@@ -963,8 +970,24 @@ registerTool(
       const floor7d = "error" in history
         ? { note: `OpenSea floor history not read: ${history.error}` }
         : history.summary
-          ? { ...history.summary, at: history.cachedAt, stale: history.stale, note: "OpenSea's sampled floor over 7 days, in the listing currency; Magic Eden's floor is in market.floorPriceSol." }
-          : { note: "OpenSea has no floor samples for this collection in the last 7 days." };
+          ? {
+              ...history.summary,
+              at: history.cachedAt,
+              stale: history.stale,
+              // OpenSea's history samples for Solana collections have been
+              // observed with `symbol: null` on every point, so the currency
+              // is unknown by the venue's own account. The reader gets the
+              // evidence beside the gap rather than a guess in its place.
+              ...(history.summary.currency === null && !("error" in stats) && typeof stats.floorCurrency === "string" && typeof stats.floor === "number"
+                ? {
+                    currencyNote:
+                      `OpenSea's history samples name no currency. The same venue's current floor is ${stats.floor} ${stats.floorCurrency}` +
+                      `${stats.floor === history.summary.end ? " and the last sample equals it" : ""}, which is evidence, not a statement by the venue; the series is not labelled ${stats.floorCurrency} here on that basis.`,
+                  }
+                : {}),
+              note: "OpenSea's sampled floor over 7 days, in the currency its samples name (currency; null means OpenSea named none); Magic Eden's floor is in market.floorPriceSol.",
+            }
+          : { note: ("note" in history && typeof history.note === "string" ? history.note : null) ?? "OpenSea has no floor samples for this collection in the last 7 days.", ...(history.droppedPoints ? { droppedPoints: history.droppedPoints } : {}) };
       // The largest holder of a collection is often a marketplace escrow, and
       // "top holder" printed next to a share of supply reads as a whale. The
       // chain answers it structurally: a person's wallet is owned by the
@@ -1205,11 +1228,35 @@ registerTool(
   },
   guard(async ({ collection, limit = 10, openseaSlug }) => {
     const r = resolve(collection);
-    const slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
-    const openseaPart =
-      slug && (await os.openSeaAvailable())
-        ? await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
-        : undefined;
+    const curatedSlug = "openseaSlug" in r ? r.openseaSlug : undefined;
+    const slug = openseaSlug ?? curatedSlug;
+    // A slug the caller supplied is a request to read that slug, not proof
+    // that it is this collection. Its sales used to be placed beside the
+    // requested collection's with no check at all, so a lookalike slug or a
+    // typo put a stranger's sales under the collection's name. The same
+    // identity check the stats and listings tools make runs here: the slug's
+    // OpenSea record is compared with the collection's on-chain address,
+    // and the verdict travels with the block.
+    const callerOverride = Boolean(openseaSlug) && openseaSlug !== curatedSlug;
+    let openseaPart: Record<string, unknown> | undefined;
+    if (slug && (await os.openSeaAvailable())) {
+      const sales = await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+      let identity: { verdict: "verified" | "conflict" | "unverified" | "registry"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string };
+      if (!callerOverride) {
+        identity = { verdict: "registry", slug, requestedCollection: null, openseaCollection: null, note: "The slug comes from the curated registry entry for this collection." };
+      } else {
+        const expected = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
+        const detail = await os.collectionDetail(slug).catch(() => null);
+        const osChain = detail?.onchainCollection ?? null;
+        identity =
+          osChain && expected
+            ? osChain === expected
+              ? { verdict: "verified", slug, requestedCollection: expected, openseaCollection: osChain, note: "OpenSea's record of this slug names the same on-chain collection that was asked about." }
+              : { verdict: "conflict", slug, requestedCollection: expected, openseaCollection: osChain, note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, which is not ${expected}. These sales describe a different collection and are shown for the record only, not as this collection's.` }
+            : { verdict: "unverified", slug, requestedCollection: expected, openseaCollection: osChain, note: `The slug "${slug}" was supplied by the caller and ${expected ? "OpenSea's record of it carries no Solana collection address" : "this collection has no on-chain address on record to compare it with"}, so whether these are the same collection could not be checked. Treat the OpenSea sales as sales of that slug, not proven to be this collection's.` };
+      }
+      openseaPart = { ...sales, identity };
+    }
     if (!r.meSymbol) {
       if (openseaPart) return ok({ requested: collection, opensea: openseaPart });
       throw new Error(
@@ -1936,7 +1983,20 @@ registerTool(
     } else if (await os.openSeaAvailable()) {
       try {
         const ev = await os.accountEvents(wallet, 2);
-        opensea = { status: "ok", ...summarizeOpenSeaEvents(wallet, ev.events, ev.truncated, ev.duplicates) };
+        // The reader's freshness and read time travel with the block. They
+        // used to be dropped here, so a feed served from cache after a
+        // failed refresh arrived as "ok" with no sign it described an
+        // earlier moment, and a tracker treated an old count as current.
+        opensea = {
+          status: "ok",
+          stale: ev.stale,
+          readAt: ev.cachedAt,
+          ...(ev.stale
+            ? { staleNote: `OpenSea could not be refreshed, so this block is the feed as read at ${ev.cachedAt}; anything since then is not in it.` }
+            : {}),
+          ...(ev.walkNote ? { walkNote: ev.walkNote } : {}),
+          ...summarizeOpenSeaEvents(wallet, ev.events, ev.truncated, ev.duplicates),
+        };
       } catch (e) {
         openseaNote = `OpenSea account feed unavailable: ${e instanceof Error ? e.message : String(e)}`;
         opensea = { status: "unavailable", reason: "upstream", note: openseaNote };
@@ -2389,11 +2449,25 @@ registerTool(
         const tf = await os.traitFloors(slug);
         for (const d of deals.deals) {
           for (const t of d.traits) {
-            const hit = tf.floors.get(`${t.traitType}::${t.value}`);
-            (t as unknown as Record<string, unknown>).openSeaFloor = hit ? { price: hit.floor, currency: hit.currency } : null;
+            // Joined by trait IDENTITY through the same key function that
+            // built the map, never by display text: two traits whose cleaned,
+            // clipped text collided were being handed each other's price.
+            const hit = os.traitFloorFor(tf.floors, t.traitType, t.value);
+            (t as unknown as Record<string, unknown>).openSeaFloor = hit ? { price: hit.floor, currency: hit.currency, ...(hit.otherCurrencies ? { otherCurrencies: hit.otherCurrencies } : {}) } : null;
           }
         }
-        openSeaTraitFloors = { slug, identity: slugIdentity, count: tf.count, stale: tf.stale, cachedAt: tf.cachedAt, note: "Each deal's traits carry openSeaFloor: OpenSea's cheapest listing with that trait across the marketplaces it aggregates, in that listing's currency. traitFloorSol is Magic Eden's. Compare within one currency only." };
+        openSeaTraitFloors = {
+          slug,
+          identity: slugIdentity,
+          count: tf.count,
+          ...(tf.skippedNoCurrency ? { skippedNoCurrency: tf.skippedNoCurrency } : {}),
+          stale: tf.stale,
+          cachedAt: tf.cachedAt,
+          note:
+            "Each deal's traits carry openSeaFloor: OpenSea's cheapest listing with that trait across the marketplaces it aggregates, in that listing's currency. " +
+            "Where a trait is listed in more than one currency, the SOL price is shown and the others ride along as otherCurrencies. " +
+            "traitFloorSol is Magic Eden's. Compare within one currency only.",
+        };
       } catch (e) {
         openSeaTraitFloors = { slug, identity: slugIdentity, note: `OpenSea trait floors not read: ${e instanceof Error ? e.message : String(e)}` };
       }

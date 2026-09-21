@@ -91,9 +91,12 @@ reports get fixed and credited in the changelog.
 Two runtime dependencies (`@modelcontextprotocol/sdk`, `zod`), lockfile
 committed, install scripts disabled via `.npmrc`. CI runs a full-history secrets
 scan (gitleaks) on every push to every branch, and `npm audit` plus the offline
-suite on `main` and pull requests. The gitleaks allowlist is scoped to the one
-rule that misreads base58 chain addresses in `test/fixtures`, not to those
-paths wholesale - a real credential committed there still fails the scan.
+suite on `main` and pull requests. The gitleaks allowlist admits a finding only
+when two conditions hold together: the file is under `test/fixtures` AND the
+matched value is shaped like a base58 chain address. It is not a path
+exception. This was checked with planted controls: a base58 address in a
+fixture field named `api_key` is allowed through, and a forty-character
+generic key in the same field is caught.
 
 The offline suite (`npm test`) runs every child server with
 `SOLANA_NFT_MCP_OFFLINE=1` or with every upstream stubbed by a preload, so a

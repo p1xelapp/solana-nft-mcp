@@ -10,8 +10,8 @@
  *
  * Usage: node scripts/verify-bundle.mjs [path-to.mcpb]   (default: newest)
  */
-import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { unzipSync } from "./unzip.mjs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,10 +29,10 @@ const pick = () => {
 
 const bundle = process.argv[2] ? join(process.cwd(), process.argv[2]) : pick();
 const work = mkdtempSync(join(tmpdir(), "mcpb-verify-"));
-const asZip = join(work, "bundle.zip");
-copyFileSync(bundle, asZip);
-// Expand-Archive insists on the .zip extension, which is why the copy exists.
-execFileSync("powershell", ["-NoProfile", "-Command", "Expand-Archive", "-LiteralPath", asZip, "-DestinationPath", work, "-Force"], { stdio: "pipe" });
+// A .mcpb is a zip. Read with Node alone (scripts/unzip.mjs) so this check
+// runs the same on macOS and Linux as on Windows; it used to shell out to
+// PowerShell and could only be run here.
+unzipSync(bundle, work);
 
 const manifest = JSON.parse(readFileSync(join(work, "manifest.json"), "utf8"));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

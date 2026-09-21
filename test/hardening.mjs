@@ -406,10 +406,11 @@ const jsonResponse = (body, headers = {}) =>
 
 // ------------------------------------------------------------------ b17
 // The three OpenSea reads added in 1.8.4 parse defensively: a missing list is
-// a shape change (throw, named), a bad row is skipped, a duplicate trait value
-// in two currencies keeps the SOL one, OpenSea's own percentage is ignored in
-// favour of a share computed from a supply the caller vouches for, and an
-// empty floor series is a null summary rather than NaN arithmetic.
+// a shape change (throw, named), a bad row is skipped, a trait value listed
+// in two currencies shows the SOL one and carries the other beside it rather
+// than dropping it, OpenSea's own percentage is ignored in favour of a share
+// computed from a supply the caller vouches for, and an empty floor series is
+// a null summary rather than NaN arithmetic.
 {
   const os = await import("../dist/sources/opensea.js");
   const realFetch = globalThis.fetch;
@@ -432,7 +433,12 @@ const jsonResponse = (body, headers = {}) =>
     ] });
     const tf = await os.traitFloors("tf-test");
     assert.strictEqual(tf.count, 1, "one usable trait value survives");
-    assert.deepStrictEqual(tf.floors.get("Hat::Crown"), { traitType: "Hat", value: "Crown", floor: 0.01, currency: "SOL" }, "the SOL quote wins over the USDC one");
+    assert.deepStrictEqual(
+      os.traitFloorFor(tf.floors, "Hat", "Crown"),
+      { floor: 0.01, currency: "SOL", otherCurrencies: [{ floor: 2.5, currency: "USDC" }] },
+      "the SOL quote is shown and the USDC quote rides beside it, not dropped",
+    );
+    assert.strictEqual(os.traitFloorFor(tf.floors, "Hat", "None"), null, "a row with a non-numeric floor is not a price");
 
     routes.set("/traits/tf-empty/floors", { chain: "solana" });
     await assert.rejects(os.traitFloors("tf-empty"), /no trait floor list/, "a missing list is a named shape change");

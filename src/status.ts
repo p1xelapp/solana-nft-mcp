@@ -30,6 +30,13 @@ export interface SourceStatusRow {
   /** Plain words: what happened, or why nothing was tried. */
   note: string;
   catalog: SourceEntry;
+  /**
+   * For a keyed source, the state of its credential as structured fields, so
+   * a program does not have to parse the note: where the key came from, when
+   * a self-issued one expires, whether it reached disk or lives in memory
+   * only, and until when reads are paused after the venue asked for one.
+   */
+  credential?: { source: "env" | "auto" | "none"; expiresAt: string | null; persisted: boolean | null; pausedUntil: string | null };
 }
 
 export interface SourceStatusReport {
@@ -295,6 +302,11 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
     }
   }
   for (const row of probed) rows.push(row);
+  // Read again AFTER the probe: a 429 met during it sets a read pause that
+  // the state read before the probe cannot know about.
+  const osAfter = os.openSeaState();
+  const osRow = rows.find((r) => r.id === "opensea-v2");
+  if (osRow) osRow.credential = { source: osAfter.source, expiresAt: osAfter.expiresAt, persisted: osAfter.persisted ?? null, pausedUntil: osAfter.pausedUntil ?? null };
   clearTimeout(deadline);
   controller.abort();
 

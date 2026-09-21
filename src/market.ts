@@ -699,6 +699,12 @@ export interface Deal {
   /** Rank from the rarity providers ME echoes. Absent for most collections, including every Core one seen. */
   rarity: { howrare: number | null; moonrank: number | null } | null;
   traits: DealTrait[];
+  /** How many traits the listing carries, how many were inspected, and how many were past the cap. */
+  traitsTotal: number;
+  traitsInspected: number;
+  traitsOmitted: number;
+  /** "complete" when every trait was inspected; otherwise says the comparison used a partial set. */
+  traitCoverage: string;
   /** The dearest trait floor this item carries: the trait that most argues the ask is low. */
   strongestTraitFloorSol: number | null;
   strongestTrait: string | null;
@@ -767,8 +773,13 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
     const traits: DealTrait[] = [];
     // Capped like every other marketplace array. The row count is bounded by
     // the page guard; the number of traits ON a row is whatever the minter put
-    // there.
-    for (const t of (l?.token?.attributes ?? []).slice(0, TRAITS_PER_LISTING_MAX)) {
+    // there. The cap is stated on the row: a discount argued from 64 of 70
+    // traits is a partial argument, and the reader could not tell that from
+    // an item with no traits at all.
+    const allTraits = Array.isArray(l?.token?.attributes) ? l.token.attributes : [];
+    const traitsTotal = allTraits.length;
+    const traitsInspected = Math.min(traitsTotal, TRAITS_PER_LISTING_MAX);
+    for (const t of allTraits.slice(0, TRAITS_PER_LISTING_MAX)) {
       if (!t || typeof t.trait_type !== "string") continue;
       // Trait names and values are minter-chosen text on a permissionless
       // chain, so they are cleaned before they are used as a key or shown.
@@ -812,6 +823,13 @@ export function bestDeals(listings: MeListing[], attributes: TraitFloor[], fresh
       listingVenue: clean(l?.listingSource ?? "") || "unknown",
       rarity: howrare === null && moonrank === null ? null : { howrare, moonrank },
       traits,
+      traitsTotal,
+      traitsInspected,
+      traitsOmitted: traitsTotal - traitsInspected,
+      traitCoverage:
+        traitsTotal === traitsInspected
+          ? "complete"
+          : `partial: ${traitsInspected} of ${traitsTotal} traits were inspected, so the trait floors and the strongest trait below were argued from a partial set; get_asset on this mint returns the whole list`,
       strongestTraitFloorSol: strongestFloor,
       strongestTrait: strongest ? `${strongest.traitType}: ${strongest.value}` : null,
       // The number IS the comparison. When the comparison is unavailable the
@@ -969,11 +987,21 @@ export interface NameMatchDetail {
  * is not wrong to match it, but an answer that cannot tell the two cases apart
  * presents a Ho-Oh as the cheapest Charizard, seen live.
  */
+/**
+ * How far into a listing's trait list the NAME traits are looked for. Wider
+ * than the per-row trait cap on purpose: a "Card Name" sitting sixty-sixth
+ * in a seventy-trait list was outside the scan, so the item's own identity
+ * trait went unread while a title-only match stood in for it. The name
+ * traits are a fixed short set, so this scan does bounded, cheap work per
+ * row however long the list is.
+ */
+const NAME_TRAIT_SCAN_MAX = 256;
+
 export function nameMatchDetail(listing: MeListing, needle: string): NameMatchDetail {
   const want = String(needle ?? "").toLowerCase();
   const inItemName = (listing?.token?.name ?? "").toLowerCase().includes(want);
   let nameTrait: NameMatchDetail["nameTrait"] = null;
-  for (const t of (listing?.token?.attributes ?? []).slice(0, TRAITS_PER_LISTING_MAX)) {
+  for (const t of (listing?.token?.attributes ?? []).slice(0, NAME_TRAIT_SCAN_MAX)) {
     if (!t || typeof t.trait_type !== "string") continue;
     if (!NAME_TRAITS.has(t.trait_type.trim().toLowerCase())) continue;
     // Only a string or a number is a name. A trait whose value is an object

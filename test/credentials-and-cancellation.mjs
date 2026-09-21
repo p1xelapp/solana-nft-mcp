@@ -498,7 +498,8 @@ const serverEnvBase = () => {
         {
           event_type: "sale",
           payment: { quantity: "2000000000", decimals: 9, symbol: "SOL" },
-          nft: { identifier: "2", name: "clean item" },
+          // A clean Solana row: the identifier is a mint, so it is an address.
+          nft: { identifier: address("clean-item"), name: "clean item" },
           buyer: address("buyer"),
           seller: address("seller"),
           transaction: signature("tx"),
@@ -529,7 +530,10 @@ const serverEnvBase = () => {
   assert.strictEqual(bad.seller, null);
   assert.strictEqual(bad.transaction, null);
   assert.strictEqual(bad.price, 1.5, "the amount itself was valid and is kept");
-  assert.ok(bad.malformedFields.length === 4, `every bad field is named: ${bad.malformedFields.join("; ")}`);
+  // Five fields: the item identifier is validated too now, so instruction
+  // text in it becomes a null mint and a named field, never a relayed string.
+  assert.strictEqual(bad.mint, null, "an identifier that is not an address is not a mint");
+  assert.ok(bad.malformedFields.length === 5, `every bad field is named: ${bad.malformedFields.join("; ")}`);
   assert.strictEqual(r.malformedRows, 1);
   assert.strictEqual(good.currency, "SOL");
   assert.strictEqual(good.buyer, address("buyer"));
