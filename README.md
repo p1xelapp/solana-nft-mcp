@@ -35,7 +35,16 @@ counts cannot drift from the code: `npm test` fails if they do.
 
 ## Install
 
-Node 22 or newer. Build once:
+Node 22 or newer. Two ways to run it.
+
+**From npm, no clone.** Wherever a client asks for a command, give it `npx` with the arguments
+`-y solana-nft-mcp`. The first start downloads the package; later starts reuse it.
+
+```bash
+claude mcp add solana-nft -- npx -y solana-nft-mcp
+```
+
+**From source.** Build once, then point the client at `dist/index.js`:
 
 ```bash
 git clone https://github.com/p1xelapp/solana-nft-mcp.git
