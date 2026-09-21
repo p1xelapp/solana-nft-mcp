@@ -71,6 +71,10 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Okay Bears",
     platform: "Solana community collection (Token Metadata)",
     meSymbol: "okay_bears",
+    // Confirmed on OpenSea as a Solana collection (9,858 items). The other big
+    // Token Metadata PFPs (DeGods, y00ts, SMB) bridged away, and their OpenSea
+    // slugs now name Base, Ethereum or Somnia collections, so they carry none.
+    openseaSlug: "okay-bears",
     keywords: ["okay", "bears", "bear"],
     aliases: ["Okay Bears", "OKB"],
     notes: "Well-known Solana collection. Symbol answered Magic Eden's floor endpoint on 2026-09-18. Listed here because the marketplace's directory snapshot stops short of its catalogue and a name search for it returned a lookalike first.",

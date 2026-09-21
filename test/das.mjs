@@ -249,6 +249,23 @@ await check("listings page by offset, and each page is its own cache entry", asy
   );
 });
 
+// Magic Eden does not honour a small page: asked for 3 listings it answered 6
+// and 21 on real collections, and the page guard refused the whole answer as
+// a shape change. The venue is asked for a floor page and the caller's limit
+// is applied here.
+await check("a small listing limit is served from the venue's floor page and trimmed, never refused", async () => {
+  handler = async ({ url }) => {
+    if (!url.includes("/listings")) throw new Error(`unexpected ${url}`);
+    const asked = Number(new URL(url).searchParams.get("limit"));
+    assert.ok(asked >= 25, `the venue was asked for ${asked}; a request below its floor page comes back larger than asked`);
+    return { json: Array.from({ length: 21 }, (_, i) => ({ tokenMint: `M${i}`, price: 1 + i, token: { name: `Item ${i}` } })) };
+  };
+  const r = await me.collectionListings("smallpage", { limit: 3 });
+  assert.strictEqual(r.listings.length, 3, "the caller's limit is applied");
+  assert.strictEqual(r.more, true, "more rows exist past the three returned");
+  assert.strictEqual(r.appliedLimit, 3);
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log(`failures: ${failures.join(", ")}`);

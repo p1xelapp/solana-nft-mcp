@@ -688,6 +688,8 @@ export async function collectionActivities(
  * collection endpoints take 500. Asking for more is a 400, not a silent cap.
  */
 const LISTING_PAGE_MAX = 100;
+/** The smallest page the venue actually serves; a smaller request comes back larger than asked. */
+const LISTING_PAGE_MIN = 25;
 
 export type ListingSort = "listPrice" | "updatedAt";
 export type SortDirection = "asc" | "desc";
@@ -780,15 +782,22 @@ export async function collectionListings(
       .map((f) => [f.traitType, f.value] as const)
       .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1])),
   );
-  const key = `me:clist:${symbol}:${offset}:${appliedLimit}:${sort}:${direction}:${canonicalFilters}`;
+  // Magic Eden does not honour a small page: asked for 3 listings it has
+  // answered 6, and 21, on real collections, and the page guard then refused
+  // the whole answer as a shape change. The venue is asked for at least a
+  // floor page and the caller's limit is applied here, so a small request is
+  // served from a page the venue is willing to give.
+  const venueLimit = Math.max(appliedLimit, LISTING_PAGE_MIN);
+  const key = `me:clist:${symbol}:${offset}:${venueLimit}:${sort}:${direction}:${canonicalFilters}`;
   const { data, stale, cachedAt } = await cached(key, 30_000, () =>
     me<unknown>(
-      `/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${appliedLimit}&sort=${sort}&sort_direction=${direction}${attrParam}`,
+      `/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${venueLimit}&sort=${sort}&sort_direction=${direction}${attrParam}`,
     ),
   );
-  const listings = page<MeListing>("collection listings", data);
-  assertPageSize("Magic Eden", "collection listings", listings, appliedLimit);
-  const more = listings.length >= appliedLimit;
+  const served = page<MeListing>("collection listings", data);
+  assertPageSize("Magic Eden", "collection listings", served, venueLimit);
+  const listings = served.slice(0, appliedLimit);
+  const more = served.length > appliedLimit || served.length >= venueLimit;
   return { listings, more, venueReportedEnd: !more, requestedLimit, appliedLimit, offset, stale, cachedAt };
 }
 

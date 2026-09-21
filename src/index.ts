@@ -960,13 +960,16 @@ registerTool(
     }
     if (slug && (await os.openSeaAvailable())) {
       const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
-      const [stats, detail, history] = await Promise.all([
+      // The detail read goes first on its own: it is cached for an hour and
+      // the holder share needs its supply. The other three then run together,
+      // so the holder list is not queued behind stats and history the way it
+      // was when it waited for all three.
+      const detail = await os.collectionDetail(slug).catch(() => null);
+      const [stats, history, top] = await Promise.all([
         os.collectionStats(slug).catch((e: unknown) => ({ error: errText(e) })),
-        os.collectionDetail(slug).catch(() => null),
         os.floorHistory(slug, "7d").catch((e: unknown) => ({ error: errText(e) })),
+        os.holders(slug, 10, detail?.totalSupply ?? null).catch((e: unknown) => ({ error: errText(e) })),
       ]);
-      // Holders need the supply for a share, so they wait for the detail read.
-      const top = await os.holders(slug, 10, detail?.totalSupply ?? null).catch((e: unknown) => ({ error: errText(e) }));
       const floor7d = "error" in history
         ? { note: `OpenSea floor history not read: ${history.error}` }
         : history.summary
@@ -1229,7 +1232,23 @@ registerTool(
   guard(async ({ collection, limit = 10, openseaSlug }) => {
     const r = resolve(collection);
     const curatedSlug = "openseaSlug" in r ? r.openseaSlug : undefined;
-    const slug = openseaSlug ?? curatedSlug;
+    let slug = openseaSlug ?? curatedSlug;
+    // The same discovery the stats tool does: a Core collection's slug is
+    // found from its on-chain address against OpenSea's Solana index, or by
+    // name and proved against that address. Without this, every Candy
+    // collection (no Magic Eden symbol, no curated slug) answered "pass an
+    // openseaSlug" while OpenSea had its sales the whole time.
+    let discovered = false;
+    const core = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
+    if (!slug && core && (await os.openSeaAvailable())) {
+      const found =
+        (await os.slugForOnchainCollection(core).catch(() => null)) ??
+        (typeof r.name === "string" && r.name ? await os.slugByNameForCollection(r.name, core).catch(() => null) : null);
+      if (found) {
+        slug = found.slug;
+        discovered = true;
+      }
+    }
     // A slug the caller supplied is a request to read that slug, not proof
     // that it is this collection. Its sales used to be placed beside the
     // requested collection's with no check at all, so a lookalike slug or a
@@ -1242,7 +1261,9 @@ registerTool(
     if (slug && (await os.openSeaAvailable())) {
       const sales = await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
       let identity: { verdict: "verified" | "conflict" | "unverified" | "registry"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string };
-      if (!callerOverride) {
+      if (discovered) {
+        identity = { verdict: "verified", slug, requestedCollection: core, openseaCollection: core, note: "The slug was found from this collection's own on-chain address or name, and OpenSea's record of it carries that address." };
+      } else if (!callerOverride) {
         identity = { verdict: "registry", slug, requestedCollection: null, openseaCollection: null, note: "The slug comes from the curated registry entry for this collection." };
       } else {
         const expected = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;

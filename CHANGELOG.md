@@ -71,6 +71,30 @@ Wrong answers, fixed:
   `traitCoverage` sentence, and the name traits (`Card Name`, `Player`) are
   looked for further into the list than the per-row cap.
 
+Found by running twenty-one real collections through every OpenSea-backed tool
+after the fixes above, and fixed in the same release:
+
+- **`get_recent_sales` never looked for a Candy collection's OpenSea slug.**
+  The stats tool finds a slug from the collection's on-chain address; the
+  sales tool only knew curated slugs, so every Candy collection answered "pass
+  an openseaSlug" while OpenSea had its sales. It now does the same discovery,
+  and a discovered slug is marked `verified`.
+- **A small `find_listings` limit could fail outright.** Magic Eden does not
+  honour a page below about twenty: asked for 3 listings it answered 6 on one
+  collection and 21 on another, and the page guard refused the answer as a
+  shape change. The venue is now asked for a floor page of 25 and the caller's
+  limit is applied locally.
+- **Okay Bears carries its OpenSea slug.** The other large Token Metadata
+  collections (DeGods, y00ts, Solana Monkey Business) have bridged, and their
+  OpenSea slugs now name Base, Ethereum or Somnia collections, so they carry
+  none rather than a wrong one.
+- **`get_collection_stats` reads OpenSea's holder list alongside stats and
+  history** instead of after them, so the OpenSea half of a collection answer
+  is not queued behind two reads it never needed.
+- **CI runs Windows on a release tag and a manual run**, on the same gate as
+  macOS, so the one platform-specific path (the key file opens without
+  `O_NOFOLLOW` there) is proved before a release.
+
 Security and operations, fixed:
 
 - **A short `OPENSEA_API_KEY` was sent unregistered.** The secret registry
