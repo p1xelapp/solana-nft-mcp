@@ -42,7 +42,7 @@ collection name or address.
 | "find #1390" | Name search across the Magic Eden index, then the asset lookup | ANSWERS NOW |
 | "what's the cheapest Rex" | Per-trait floor for that trait, plus the listings at it | ANSWERS NOW |
 | "is anything listed below floor right now" | Best deals compares listing price against the relevant trait floor, not just the collection floor | ANSWERS NOW |
-| "show me every listing under 2 SOL with gold background" | Trait filter plus price bound over the listing set | ANSWERS NOW |
+| "show me every listing under 2 SOL with gold background" | Trait filter plus price bound over the cheapest listings, up to 100 a call; the answer says how much of the book it read | PARTIAL (cheapest first, not exhaustive) |
 | "what does a low serial usually go for" | Recent sales can be read for comparable serials; there is no automatic serial-tier pricing | PARTIAL (sales shown, comparison is manual) |
 | "is this a good buy" | Floor, recent sales, supply and custody facts are given; the recommendation is not | PARTIAL (facts yes, verdict never) |
 | "alert me when something drops under 1 SOL" | The data for the check is available; the watching loop is something you build, with a recipe | PARTIAL (data now, scheduling is yours) |
@@ -63,7 +63,7 @@ collection name or address.
 | "is this legit" | Identify plus collection stats plus the custody decode; the answer describes, it does not certify | ANSWERS NOW |
 | "did I overpay" | Recent sales and the floor at the time of asking, against what was paid | ANSWERS NOW |
 | "can they take this back from me" | Custody decode: permanent transfer, freeze and burn delegates read from the asset bytes | ANSWERS NOW (Core only) |
-| "is the royalty actually enforced or just written down" | Royalty plugin decode: enforced by the program versus advisory metadata | ANSWERS NOW (Core only) |
+| "is the royalty actually enforced or just written down" | Royalty plugin decode: the rate, and whether a program rule set limits where the item can trade. No on-chain rule checks that the fee is paid, and the answer says so | ANSWERS NOW (Core only) |
 | "can they change the art after I buy it" | Metadata mutability flag from the asset account | ANSWERS NOW (Core only) |
 | "is this a 1 of 1 for real" | Chain supply for the collection plus on-chain edition data where it exists, versus a number typed into the name | ANSWERS NOW |
 | "why does the owner show as some random address" | Escrow detection: a listed item is held by the marketplace escrow, and the answer says so | ANSWERS NOW |
@@ -106,10 +106,10 @@ collection name or address.
 | "are holders concentrated in a few wallets" | `get_collection_holders` reads every asset in the collection from the chain's asset index and ranks holders by count and share, listed or not, with the issuer's own key and marketplace escrows called out as roles so neither is mistaken for a collector | ANSWERS NOW (one collection at a time; no cross-collection ranking) |
 | "has anyone traded this in the last month" | Recent sales plus window sales count | ANSWERS NOW |
 | "can the team still mint more" | Update authority and collection state from the chain; mint authority behaviour is read from the collection account | PARTIAL (authority visible, future intent is not) |
-| "did they burn the supply they said they burned" | Collection account reports minted versus current size, which exposes burns | ANSWERS NOW |
-| "is the royalty they advertise real" | Royalty plugin decode, enforced versus advisory | ANSWERS NOW (Core only) |
+| "did they burn the supply they said they burned" | Collection account reports minted versus current size. The difference also moves when assets change collection, so it is a size difference, not a burn count; burns need each asset's decoded history | PARTIAL |
+| "is the royalty they advertise real" | Royalty plugin decode: the declared rate and any program rule set, versus advisory only | ANSWERS NOW (Core only) |
 | "are they listed on both marketplaces" | Collection stats reports presence per marketplace, plus the OpenSea Solana index with a key | ANSWERS NOW |
-| "what happened to the floor after the announcement" | Daily series over the window around the date | ANSWERS NOW |
+| "what happened to the floor after the announcement" | Daily series of completed sales around the date. Sale prices are not past asks, so it shows what sold, not where the floor sat; OpenSea's floor history covers recent windows only | PARTIAL |
 | "how many unique buyers this month" | Top buyers and window sales give the buyer side; unique-buyer count is derived from the same window | ANSWERS NOW |
 | "is this collection even real or did someone fake the name" | Identify plus the curated registry plus chain supply; a name alone proves nothing and the answer says so | ANSWERS NOW |
 
@@ -147,7 +147,7 @@ collection name or address.
 | "how do marketplaces actually work on Solana" | Marketplace mechanics explainer covering escrow, order book, pools, fills and fees | ANSWERS NOW |
 | "who can freeze my item" | Freeze delegate holder read from the asset bytes | ANSWERS NOW (Core only) |
 | "is my serial number on chain or just printed in the name" | Edition data on chain versus a number inside the name string, distinguished in the answer | ANSWERS NOW (Core only) |
-| "what is the difference between minted and existing supply" | Collection account exposes both, and burns are the difference | ANSWERS NOW |
+| "what is the difference between minted and existing supply" | Collection account exposes both counters; the gap is burns plus assets moved out, less assets moved in | ANSWERS NOW |
 | "should I sell" | Not a data question; facts are given, advice is declined | NOT YET (never, by design) |
 
 ---
@@ -199,8 +199,8 @@ collection name or address.
 | "how many of this card exist" | Chain supply for the card's collection, plus the population printed on the card where present | ANSWERS NOW |
 | "trace these auction packs to their winners" | Transfer decoding walks each pack to its final owner | ANSWERS NOW (Core only) |
 | "is the announced print run accurate" | Claim verification against the collection account | ANSWERS NOW |
-| "show me every card in this set" | The asset index pages a Metaplex Core collection in full | ANSWERS NOW (by collection address) |
-| "how many were burned" | Minted minus current size from the collection account | ANSWERS NOW |
+| "show me every card in this set" | The asset index pages a Metaplex Core collection in full; the answer is size-capped and says how many rows it left out | PARTIAL (by collection address) |
+| "how many were burned" | Minted minus current size is a size difference, not a burn count: moves between collections change it too. A burn count needs decoded history | PARTIAL |
 
 ---
 
@@ -217,7 +217,7 @@ collection name or address.
 | "rank these by holder concentration" | Share of supply per wallet you name; there is no automatic ranking across collections | PARTIAL (manual, wallet by wallet) |
 | "which of my collections has the deepest book" | Listed count and recent sales per collection | ANSWERS NOW |
 | "compare this Solana collection to an Ethereum one" | Solana only; keyless indexed NFT data on other chains is gone | NOT YET (no keyless multi-chain source survives) |
-| "which project's royalties are actually enforced" | Royalty plugin decode per collection's assets, one at a time | PARTIAL (per asset, not a sweep) |
+| "which project's royalties are actually enforced" | Royalty rule set per asset, one at a time; no rule checks that the fee is paid | PARTIAL (per asset, not a sweep) |
 
 ---
 
@@ -228,7 +228,7 @@ collection name or address.
 | "make me a chart of sales this month" | Daily series with count and volume per day | ANSWERS NOW |
 | "break my wallet down by collection" | Wallet profile grouping with share of wallet per collection | ANSWERS NOW |
 | "show me price distribution of current listings" | Listings with prices and traits, ready to bucket | ANSWERS NOW |
-| "floor per trait, as a table" | Per-trait floors | ANSWERS NOW |
+| "floor per trait, as a table" | Each listing carries the floor of each of its traits; the collection's full trait-floor table is used, counted and dated, not returned as one table | PARTIAL |
 | "buyers ranked by spend" | Top buyers over the window | ANSWERS NOW |
 | "volume by day for the last 30 days" | Daily series over a 30-day window, subject to what the marketplace retains | PARTIAL (window limited by marketplace retention) |
 | "hold time distribution for this wallet" | Every flip carries hold time; the distribution is yours to bucket | ANSWERS NOW |
