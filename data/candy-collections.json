@@ -1,9 +1,9 @@
 {
  "source": "CandyScan tracker (p1xel.app/candymigration), reconciled against the chain daily",
- "takenAt": "2026-09-15",
- "count": 398,
+ "takenAt": "2026-10-08",
+ "count": 401,
  "categories": {
-  "MLB": 100,
+  "MLB": 103,
   "Other": 26,
   "DC": 272
  },
@@ -514,6 +514,11 @@
    "category": "MLB"
   },
   {
+   "address": "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX",
+   "name": "2026 MLB All-Star Game ICONs",
+   "category": "MLB"
+  },
+  {
    "address": "68RmmVKLMSNoh6vJdfTvkQBabg4m4zfCNfDP8W9nhekg",
    "name": "2026 MLB Base Icons - Prototype 2",
    "category": "MLB"
@@ -817,6 +822,16 @@
    "address": "FkWXCpzeDQJ22s5dJP55c83MrQoLPXEaDrSweByMRi5s",
    "name": "Bank of America",
    "category": "Other"
+  },
+  {
+   "address": "BYSfa4LYpChyhLqvcB9o1vPp9riGUECPuaQ8tkw1ii5G",
+   "name": "Base Series - Collection Quests",
+   "category": "MLB"
+  },
+  {
+   "address": "HsBQUnEYazNyBAgBBbHQiux28gThnoozqz4f3PPQrTpH",
+   "name": "Base Series - Rainbow Rewards",
+   "category": "MLB"
   },
   {
    "address": "B9bCpzeQHqudVddYYQBE8CTVRzqTJruXEqbK4F7JNvFn",

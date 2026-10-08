@@ -1,13 +1,13 @@
 {
-  "derivedAt": "2026-09-18T08:40:58.298Z",
-  "collectionsRead": 398,
+  "derivedAt": "2026-10-08T10:31:15.788Z",
+  "collectionsRead": 401,
   "collectionsUnreadable": 0,
   "issuers": [
     {
       "address": "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2",
       "issuer": "Candy Digital",
       "role": "update authority of the collections listed in data/candy-collections.json; signs the mints",
-      "collections": 398,
+      "collections": 401,
       "sample": [
         {
           "address": "5LQ7jqaxRFYmnsk72ejFZ2cuGRABuky9Rik5bY9KGrCr",
