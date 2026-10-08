@@ -12,7 +12,7 @@
  */
 
 /** The failure kinds the public error layer can word specifically. */
-export type FailureKind = "not-found" | "wrong-kind" | "escrow" | "unsupported" | "bad-input";
+export type FailureKind = "not-found" | "wrong-kind" | "escrow" | "unsupported" | "bad-input" | "chain-unavailable";
 
 /** Base class carrying the kind, so one `instanceof` covers every typed failure. */
 export class TypedError extends Error {
@@ -64,6 +64,18 @@ export class DasUnsupported extends TypedError {
 export class AmbiguousError extends TypedError {
   constructor(msg: string) {
     super(msg, "bad-input");
+  }
+}
+
+/**
+ * Every Solana endpoint that could serve this read failed. Typed, because the
+ * wording layer otherwise had only "could not be completed, try a narrower
+ * request" for it, which is the wrong advice: nothing about the request was
+ * too broad, the free public RPC was busy.
+ */
+export class ChainUnavailableError extends TypedError {
+  constructor(msg: string) {
+    super(msg, "chain-unavailable");
   }
 }
 

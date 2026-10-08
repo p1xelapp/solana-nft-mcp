@@ -668,7 +668,7 @@ class RedirectRefused extends Error {
 }
 
 /** Thrown to leave the retry loop immediately. */
-class StopError extends Error {
+export class StopError extends Error {
   constructor(msg: string, public retryAfterMs = 0) {
     super(msg);
   }
@@ -739,12 +739,34 @@ async function upstreamReason(res: Response, source: string): Promise<string> {
 }
 
 /** Fetch JSON with a clean error naming the upstream when the shape is wrong. */
+/**
+ * A route built from a caller's identifier must stay on the route it names.
+ * encodeURIComponent leaves "." and ".." untouched, and the URL parser then
+ * resolves them, so a collection argument of ".." turned
+ * /v2/collections/../stats into /v2/stats. Checked here, on the raw string,
+ * because every marketplace read passes through this function.
+ */
+export function assertNoDotSegments(url: string): void {
+  const rest = url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+  const path = rest.split(/[?#]/, 1)[0] ?? "";
+  for (const seg of path.split("/")) {
+    let s = seg;
+    try {
+      s = decodeURIComponent(seg);
+    } catch {
+      /* a malformed escape is not a dot segment; the request will fail on its own */
+    }
+    if (s === "." || s === "..") throw new Error(`refused a request path containing a "${s}" segment`);
+  }
+}
+
 export async function fetchJson<T>(
   source: string,
   url: string,
   opts: RequestInit = {},
   retryOpts?: { retries?: number; timeoutMs?: number; gate?: (signal?: AbortSignal, opts?: GateOptions) => Promise<void>; signal?: AbortSignal; background?: boolean },
 ): Promise<T> {
+  assertNoDotSegments(url);
   const res = await fetchRetry(url, opts, retryOpts);
   if (!res.ok) {
     const reason = await upstreamReason(res, source);

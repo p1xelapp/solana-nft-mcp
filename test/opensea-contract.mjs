@@ -335,6 +335,11 @@ await block("S7 a short explicit key is still registered before it is sent, or r
 // ================================================================ S10: persistence status
 await block("S10 a key that could not be written to disk is reported as memory-only, and no temporary file is left behind", async () => {
   delete process.env.OPENSEA_API_KEY;
+  // This block exercises issuance, so it states its own precondition rather
+  // than inheriting it: with the opt-out set (as an isolated audit run sets
+  // it) the server correctly issues nothing and the test failed for that.
+  const optOut = process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
+  delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
   osrc.resetKeyCache();
   // The key folder's name is taken by a regular file, so nothing can be created under it.
   const dir = path.join(home, ".solana-nft-mcp");
@@ -352,6 +357,7 @@ await block("S10 a key that could not be written to disk is reported as memory-o
   fs.rmSync(dir, { force: true });
   osrc.resetKeyCache();
   process.env.OPENSEA_API_KEY = TEST_KEY;
+  if (optOut !== undefined) process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS = optOut;
 });
 
 // ================================================================ S8: the update check

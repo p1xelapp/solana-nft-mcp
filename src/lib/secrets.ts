@@ -24,6 +24,37 @@
  */
 
 const secrets = new Map<string, string[]>();
+/**
+ * One pattern per credential that contains a character a URL or form body
+ * may escape. The fixed spellings above cover the common encoders; this
+ * covers the rest: mixed-case hex (%2f next to %2F), a form encoder that
+ * escapes characters encodeURIComponent leaves alone, and a body that escapes
+ * some characters and not others. Each non-alphanumeric character may appear
+ * literally or as its UTF-8 percent escape in either case; a space may also be
+ * a plus. Built from alternations only, so matching stays linear.
+ */
+const patterns = new Map<string, RegExp>();
+
+function encodedPattern(v: string): RegExp | null {
+  if (/^[A-Za-z0-9]*$/.test(v)) return null;
+  const hexClass = (d: string) => (/[0-9]/.test(d) ? d : `[${d}${d.toLowerCase()}]`);
+  let src = "";
+  for (const ch of v) {
+    if (/[A-Za-z0-9]/.test(ch)) {
+      src += ch;
+      continue;
+    }
+    const pct = [...new TextEncoder().encode(ch)]
+      .map((b) => {
+        const h = b.toString(16).toUpperCase().padStart(2, "0");
+        return `%${hexClass(h[0]!)}${hexClass(h[1]!)}`;
+      })
+      .join("");
+    const lit = ch.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+    src += ch === " " ? `(?:${lit}|\\+|${pct})` : `(?:${lit}|${pct})`;
+  }
+  return new RegExp(src, "g");
+}
 
 /**
  * Too short to be a credential, and long enough that redacting it would eat
@@ -65,7 +96,11 @@ export function registerSecret(value: string | null | undefined, minLength: numb
   if (typeof value !== "string") return false;
   const v = value.trim();
   if (v.length < minLength) return false;
-  if (!secrets.has(v)) secrets.set(v, spellings(v));
+  if (!secrets.has(v)) {
+    secrets.set(v, spellings(v));
+    const p = encodedPattern(v);
+    if (p) patterns.set(v, p);
+  }
   return true;
 }
 
@@ -176,6 +211,14 @@ export function redactSecrets(text: string): string {
   for (const forms of secrets.values()) {
     for (const s of forms) if (out.includes(s)) out = out.split(s).join("[REDACTED]");
   }
+  // Only text with an escape or a plus can hold an encoded spelling the
+  // fixed forms missed; skip the patterns on everything else.
+  if (patterns.size > 0 && /[%+]/.test(out)) {
+    for (const p of patterns.values()) {
+      p.lastIndex = 0;
+      out = out.replace(p, "[REDACTED]");
+    }
+  }
   return out;
 }
 
@@ -183,6 +226,12 @@ export function redactSecrets(text: string): string {
 export function containsSecret(text: string): boolean {
   if (secrets.size === 0 || !text) return false;
   for (const forms of secrets.values()) for (const s of forms) if (text.includes(s)) return true;
+  if (patterns.size > 0 && /[%+]/.test(text)) {
+    for (const p of patterns.values()) {
+      p.lastIndex = 0;
+      if (p.test(text)) return true;
+    }
+  }
   return false;
 }
 
@@ -209,4 +258,5 @@ export function redactDeep<T>(value: T): T {
 /** Test seam. Forget everything, so one suite's canary cannot mask another's. */
 export function resetSecrets(): void {
   secrets.clear();
+  patterns.clear();
 }

@@ -542,15 +542,22 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       if ("err" in osOutcome) throw osOutcome.err;
       const stats = osOutcome;
       // OpenSea answers 200 for slugs that do not really exist, returning an
-      // empty shell. Judge the payload, never the status code.
-      if ((stats.floor ?? 0) > 0 || (stats.owners ?? 0) > 1) {
+      // empty shell. Judge the payload, never the status code. ANY owner, sale
+      // or volume is evidence the collection exists; a floor only says
+      // something is listed right now, and its absence proves nothing about
+      // existence. (One owner plus no listings used to be called a placeholder.)
+      const exists = (stats.owners ?? 0) > 0 || (stats.totalSales ?? 0) > 0 || (stats.totalVolume ?? 0) > 0 || (stats.floor ?? 0) > 0;
+      if (exists) {
         identifiers.openseaSlug = osSlug;
         tradesOn.push("OpenSea");
+        const listed = stats.floor !== null && (stats.floor ?? 0) > 0;
         checked.push({
           source: "opensea",
           looked_for: `a collection with slug "${osSlug}"`,
           result: "found",
-          detail: `floor ${stats.floor} ${stats.floorCurrency}, ${stats.owners} owners`,
+          detail: listed
+            ? `floor ${stats.floor} ${stats.floorCurrency ?? "(currency not stated)"}, ${stats.owners ?? "unknown"} owners`
+            : `exists (${stats.owners ?? "unknown"} owners, ${stats.totalSales ?? "unknown"} lifetime sales) but nothing is listed on OpenSea right now`,
         });
       } else {
         checked.push({
@@ -558,7 +565,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
           looked_for: `a collection with slug "${osSlug}"`,
           result: "not_found",
           detail:
-            "OpenSea returned HTTP 200 but with an empty shell collection (no floor, no owners) - a placeholder slug, not a real listing",
+            "OpenSea returned HTTP 200 with an empty shell: no owners, no sales, no volume and no listing. That is a placeholder slug, not a collection.",
         });
       }
     } catch (e) {

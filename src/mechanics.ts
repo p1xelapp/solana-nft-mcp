@@ -880,10 +880,10 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-royalty-allowlist",
     category: "venue",
-    title: "Candy Digital royalties are enforced by an allow-list",
+    title: "Candy Digital royalties come with a program allow-list",
     venue: "candy",
     plain:
-      "Candy's MLB collections set a 10% royalty split three ways and back it with a program allow-list, so only the named programs can move a card at all. That makes the fee genuinely unavoidable, and it also means a marketplace not on the list simply cannot trade these cards.",
+      "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid, and the list includes the System Program, so a direct wallet-to-wallet transfer is allowed and pays nothing. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
     pitfall:
       "If a marketplace shows a Candy card but cannot complete a sale, the allow-list is the likely reason. It is a collection rule, not a bug at the marketplace.",
     documented:
@@ -971,7 +971,7 @@ export const MECHANICS: MechanicsEntry[] = [
       "Reading the issuer's wallet at the top of a holder ranking as a collector who bought a large share. Asked who held the 36 packs of an auction, a reader called the treasury a whale with eleven packs; all eleven had been won by collectors and returned on opening.",
     documented: "Not published by Candy; established from the chain.",
     observed:
-      "On 2026-09-18 the update authority of all 398 collections in data/candy-collections.json decoded to the same address (data/issuers.json). On the 36 Gold Series Aces packs, every pack then sitting in that wallet had first been transferred to a collector and then transferred back, signed by that key, six signatures each.",
+      "On 2026-10-08 the update authority of all 401 collections in data/candy-collections.json decoded to the same address (data/issuers.json). On the 36 Gold Series Aces packs, every pack then sitting in that wallet had first been transferred to a collector and then transferred back, signed by that key, six signatures each.",
     verified: true,
     source: "https://metaplex.com/docs/core/collections",
     sourceRead: "2026-09-18",

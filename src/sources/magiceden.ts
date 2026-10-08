@@ -7,8 +7,9 @@
  * polite client is a feature: it is what keeps a zero-key server viable.
  */
 
-import { cached, fetchJson, HttpError, rateLimiter } from "../lib/http.js";
-import { clean } from "../lib/untrusted.js";
+import { cached, fetchJson, HttpError, OversizedBodyError, rateLimiter } from "../lib/http.js";
+import { clean, safeHttpsUrl } from "../lib/untrusted.js";
+import { USER_AGENT } from "../lib/version.js";
 import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
@@ -16,7 +17,7 @@ import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
 const HEADERS = {
-  "User-Agent": "solana-nft-mcp/1.0 (+https://github.com/p1xelapp/solana-nft-mcp)",
+  "User-Agent": USER_AGENT,
   Accept: "application/json",
 };
 
@@ -52,6 +53,8 @@ export interface MeStats {
   floorPrice?: number;
   listedCount?: number;
   volumeAll?: number;
+  /** Lamports, observed 2026-10 in place of volumeAll on the collections sampled. */
+  volume7d?: number;
   avgPrice24hr?: number;
 }
 
@@ -161,12 +164,14 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     throw new NotFoundError(`Magic Eden has no collection with symbol "${symbol}"`);
   }
   // HTTP 200 != exists: ME echoes unknown symbols back as {symbol, listedCount: 0}.
-  // A real-but-quiet collection still carries volumeAll; a phantom carries nothing.
-  // One helper owns the phantom check, so the five market tools that now run it
-  // before reading a feed cannot drift from what this function decides.
-  if (data.floorPrice === undefined && data.volumeAll === undefined) {
+  // A real-but-quiet collection still carries a volume figure; a phantom
+  // carries nothing. One helper owns the phantom check, so the five market
+  // tools that run it before reading a feed cannot drift from what this
+  // function decides.
+  if (data.floorPrice === undefined && data.volumeAll === undefined && data.volume7d === undefined) {
     await assertSymbolKnown(symbol, { signal: opts.signal });
   }
+  const volume7dSol = sol(data.volume7d);
   return {
     // The marketplace writes this back; `collectionAttributes` already cleans
     // the same field, and a symbol that arrives as something else is text.
@@ -176,6 +181,13 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     // ME reports volumeAll in SOL for some collections and lamports for
     // others historically; current v2 returns SOL. Label the unit explicitly.
     volumeAllSol: solAmount(data.volumeAll),
+    // Observed 2026-10: the endpoint returns a 7-day volume in lamports and
+    // no lifetime figure, whatever timeWindow is asked for. The 7-day figure
+    // is passed on under its own name and never relabelled as lifetime.
+    volume7dSol,
+    ...(data.volumeAll === undefined && volume7dSol !== null
+      ? { volumeNote: "Magic Eden currently publishes a 7-day volume for this collection and no lifetime volume, so volumeAllSol is unknown rather than zero." }
+      : {}),
     avgPrice24hSol: sol(data.avgPrice24hr),
     stale,
     cachedAt,
@@ -229,6 +241,7 @@ interface MeActivity {
 export async function recentSales(symbol: string, limit: number) {
   const { data, stale, cachedAt } = await cached(`me:sales:v2:${symbol}:${limit}`, 30_000, async () => {
     const collected: MeActivity[] = [];
+    const seenFills = new Set<string>();
     let scanned = 0;
     // type=buyNow makes the venue do the filtering: on a busy collection the
     // unfiltered feed is thousands of listings per sale, and five pages of it
@@ -244,8 +257,26 @@ export async function recentSales(symbol: string, limit: number) {
       // Every buyNow row is kept, priced or not: a fill with a malformed price
       // is still a fill, and dropping it here is how a count went quietly
       // short. The price is validated below and nulled with a count.
-      appendAll(collected, batch.filter((a) => a.type === "buyNow"));
-      if (batch.length < 100) break;
+      // "buy" and "buyNow" name the same fill on this API (see
+      // collectionActivities); a row labelled "buy" is a sale, not noise.
+      // The feed is newest first, so a sale landing between two page reads
+      // shifts every row down and repeats one across the boundary. A fill
+      // already collected (same signature and item) is not counted twice; a
+      // row with neither is kept, since it cannot be matched to anything.
+      let added = 0;
+      for (const a of batch) {
+        if (a.type !== "buyNow" && a.type !== "buy") continue;
+        const id = typeof a.signature === "string" && a.signature ? `${a.signature}:${a.tokenMint ?? ""}` : null;
+        if (id !== null) {
+          if (seenFills.has(id)) continue;
+          seenFills.add(id);
+        }
+        collected.push(a);
+        added++;
+      }
+      // Only the empty page above ends the feed; a short one does not. A page
+      // that adds nothing new means the venue is repeating itself: stop.
+      if (added === 0) break;
     }
     return { collected, scanned };
   });
@@ -408,7 +439,7 @@ export async function walletTokens(wallet: string, limit: number) {
       collectionName: t.collectionName ? clean(t.collectionName) : null,
       // A link is venue text like any other. Only https survives: a
       // javascript: or private-network URL in a gallery is an injection.
-      image: typeof t.image === "string" && /^https:\/\//.test(t.image) ? t.image : null,
+      image: safeHttpsUrl(t.image),
       listed: t.listStatus === "listed",
     })),
     stale,
@@ -564,7 +595,9 @@ export const ACTIVITY_TYPES = [
   "auctionPlaceBid",
   "poolUpdate",
   "mint",
-  "transfer",
+  // "transfer" was here and is not a filter Magic Eden applies: asked for it,
+  // the venue answered 200 with bids and pool updates. Rows are now also
+  // checked against the requested types after they arrive (see below).
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -599,9 +632,15 @@ const ACTIVITY_PAGE = 500;
 
 export interface CollectionActivityRead {
   events: MeCollectionActivity[];
-  /** True when full pages were still coming and we stopped on budget: older activity exists. */
+  /** True when the walk stopped on its page budget with pages still coming: older activity may exist. */
   truncated: boolean;
   pagesRead: number;
+  /**
+   * Rows the venue returned whose type was not one of those asked for. They
+   * are dropped, because a filter the venue ignored would otherwise hand back
+   * an unfiltered feed under the requested label.
+   */
+  typeMismatchDropped?: number;
   oldestSeen: number | null;
   newestSeen: number | null;
   stale: boolean;
@@ -636,6 +675,10 @@ export async function collectionActivities(
   let truncated = false;
   let stale = false;
   let cachedAt = new Date().toISOString();
+  // "buy" and "buyNow" name the same fill on this API: a request for either
+  // accepts rows labelled with either.
+  const wanted = types.length ? new Set<string>(types.flatMap((t) => (t === "buy" || t === "buyNow" ? ["buy", "buyNow"] : [t]))) : null;
+  let dropped = 0;
 
   for (let p = 0; p < budget; p++) {
     const offset = p * ACTIVITY_PAGE;
@@ -655,7 +698,11 @@ export async function collectionActivities(
     // reporting the newest would overstate it.
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
     pagesRead++;
-    appendAll(events, batch);
+    const kept = wanted ? batch.filter((a) => typeof a.type === "string" && wanted.has(a.type)) : batch;
+    dropped += batch.length - kept.length;
+    appendAll(events, kept);
+    // The window boundary is read from every row the venue sent, kept or not:
+    // the walk's position in time does not depend on the filter.
     for (const a of batch) {
       // Only a REPRESENTABLE time can set the boundary. A blockTime of -1e20
       // on one row became oldestSeen, satisfied the window check, and ended
@@ -665,8 +712,11 @@ export async function collectionActivities(
       if (oldestSeen === null || t < oldestSeen) oldestSeen = t;
       if (newestSeen === null || t > newestSeen) newestSeen = t;
     }
-    // A short page is the end of what ME will serve, not a budget cut.
-    if (batch.length < ACTIVITY_PAGE) {
+    // Only an EMPTY page is the end of what ME will serve. A short one is not:
+    // the listings endpoint on the same API has answered 99 of 100 and then
+    // served more at the next offset, so a short page here only means "keep
+    // going while the budget and the window allow".
+    if (batch.length === 0) {
       truncated = false;
       break;
     }
@@ -676,11 +726,11 @@ export async function collectionActivities(
       truncated = false;
       break;
     }
-    // Full page and still inside the window: history continues past our budget.
+    // Pages still coming and still inside the window: history continues past our budget.
     truncated = true;
   }
 
-  return { events, truncated, pagesRead, oldestSeen, newestSeen, stale, cachedAt };
+  return { events, truncated, pagesRead, oldestSeen, newestSeen, stale, cachedAt, ...(dropped > 0 ? { typeMismatchDropped: dropped } : {}) };
 }
 
 /**
@@ -723,10 +773,11 @@ export interface MeListing {
 
 export interface CollectionListingsRead {
   listings: MeListing[];
-  /** True when the page came back full: there are more listings past what was asked for. */
+  /** True unless the venue answered with an empty page: there may be more listings at the next offset. */
   more: boolean;
   /**
-   * True when the venue answered with a SHORT page.
+   * True when the venue answered with an EMPTY page. A short page does not
+   * count: Magic Eden has answered 99 of 100 and then served more.
    *
    * That is the venue saying it has nothing further to serve for this filter -
    * which is not the same as this being every listing that exists. A faulty or
@@ -800,8 +851,14 @@ export async function collectionListings(
   // the cap it is one, and the guard still refuses it.
   assertPageSize("Magic Eden", "collection listings", served, LISTING_PAGE_MAX);
   const listings = served.slice(0, appliedLimit);
-  const more = served.length > appliedLimit || served.length >= venueLimit;
-  return { listings, more, venueReportedEnd: !more, requestedLimit, appliedLimit, offset, stale, cachedAt };
+  // A short page is NOT the end of the book. Asked for 100, the venue has
+  // answered 99 and then 85 more at the next offset, and treating the 99 as
+  // the end dropped six of the ten lowest serials from a ranking that said it
+  // had read everything. The endpoint has no cursor, so the only end it
+  // reports is an EMPTY page; anything else means "there may be more".
+  const venueReportedEnd = served.length === 0;
+  const more = !venueReportedEnd;
+  return { listings, more, venueReportedEnd, requestedLimit, appliedLimit, offset, stale, cachedAt };
 }
 
 export interface MeAvailableAttribute {
@@ -986,6 +1043,8 @@ export interface CollectionsIndexRead {
   pagesRead: number;
   /** Directory rows dropped because their "symbol" did not obey the symbol grammar. */
   rowsRejected: number;
+  /** Directory entries skipped because the smallest stretch the venue will serve holding them was larger than the body cap. */
+  rowsOversized?: number;
   stale: boolean;
   cachedAt: string;
 }
@@ -1014,6 +1073,52 @@ const isPagingCeiling = (e: unknown): boolean =>
  * for a day because collections get added, not reshuffled, so the full 61-page
  * walk is paid once.
  */
+/**
+ * One stretch of the directory, re-read in smaller pieces when it is too big.
+ *
+ * A single entry can carry megabytes: on 2026-10-08 one collection's `image`
+ * was a 3.4 MB string, its 500-row page came to 4.56 MB, the body cap refused
+ * it, and the whole 61-page walk failed with it, so live name lookups had
+ * quietly fallen back to the bundled snapshot. The cap stays. The stretch is
+ * read again as 100, then 20 entries, and a 20-entry stretch still over the
+ * cap is skipped whole and counted. Twenty is the floor: the endpoint answers
+ * 400 unless the limit is a multiple of 20 and the offset a multiple of the
+ * limit (measured), and that 400 must not be mistaken for its paging ceiling.
+ */
+const INDEX_MIN_PIECE = 20;
+async function readIndexStretch(offset: number, limit: number): Promise<{ rows: MeCollectionIndexEntry[]; oversized: number; ceiling?: boolean }> {
+  try {
+    // The directory walk is 61 pages nobody is waiting on. It yields its turn
+    // to any question a person actually asked, which is what stops a cold
+    // start putting 36 seconds of queue in front of the first one.
+    const rows = page<MeCollectionIndexEntry>("collection index", await me<unknown>(`/collections?offset=${offset}&limit=${limit}`, undefined, { background: true }));
+    return { rows, oversized: 0 };
+  } catch (e) {
+    if (!(e instanceof OversizedBodyError)) throw e;
+    if (limit <= INDEX_MIN_PIECE) return { rows: [], oversized: limit };
+    const step = limit > 100 ? 100 : INDEX_MIN_PIECE;
+    const rows: MeCollectionIndexEntry[] = [];
+    let oversized = 0;
+    for (let o = offset; o < offset + limit; o += step) {
+      let part: { rows: MeCollectionIndexEntry[]; oversized: number; ceiling?: boolean };
+      try {
+        part = await readIndexStretch(o, Math.min(step, offset + limit - o));
+      } catch (inner) {
+        // A piece past the venue's paging ceiling: keep what this stretch
+        // already read and let the walk stop at the ceiling cleanly.
+        if (isPagingCeiling(inner)) return { rows, oversized, ceiling: true };
+        throw inner;
+      }
+      appendAll(rows, part.rows);
+      oversized += part.oversized;
+      if (part.ceiling) return { rows, oversized, ceiling: true };
+      // An empty piece is the end of the catalogue inside this stretch.
+      if (part.rows.length === 0 && part.oversized === 0) break;
+    }
+    return { rows, oversized };
+  }
+}
+
 export async function collectionsIndex(maxPages: number): Promise<CollectionsIndexRead> {
   const budget = Math.max(1, Math.floor(maxPages));
   const { data, stale, cachedAt } = await cached(`me:cindex:${budget}`, 86_400_000, async () => {
@@ -1022,16 +1127,17 @@ export async function collectionsIndex(maxPages: number): Promise<CollectionsInd
     let atVenuePagingLimit = false;
     let pagesRead = 0;
     let rowsRejected = 0;
+    let rowsOversized = 0;
     for (let p = 0; p < budget; p++) {
       let batch: MeCollectionIndexEntry[];
+      let pageSkipped = 0;
+      let hitCeiling = false;
       try {
-        batch = page<MeCollectionIndexEntry>(
-          "collection index",
-          // The directory walk is 61 pages nobody is waiting on. It yields its
-          // turn to any question a person actually asked, which is what stops a
-          // cold start putting 36 seconds of queue in front of the first one.
-          await me<unknown>(`/collections?offset=${p * INDEX_PAGE}&limit=${INDEX_PAGE}`, undefined, { background: true }),
-        );
+        const stretch = await readIndexStretch(p * INDEX_PAGE, INDEX_PAGE);
+        batch = stretch.rows;
+        rowsOversized += stretch.oversized;
+        pageSkipped = stretch.oversized;
+        hitCeiling = stretch.ceiling === true;
       } catch (e) {
         if (isPagingCeiling(e) && collections.length > 0) {
           atVenuePagingLimit = true;
@@ -1060,13 +1166,22 @@ export async function collectionsIndex(maxPages: number): Promise<CollectionsInd
         partial = true;
         break;
       }
-      if (batch.length < INDEX_PAGE) {
+      if (hitCeiling) {
+        atVenuePagingLimit = true;
+        partial = false;
+        break;
+      }
+      // Only an empty page is the end of the catalogue (a short one is not,
+      // the same rule as listings and activity); the venue's paging ceiling,
+      // handled above, is the other way the walk stops cleanly. A page that
+      // came back empty because every piece of it was too large is not the end.
+      if (batch.length === 0 && pageSkipped === 0) {
         partial = false;
         break;
       }
       partial = true;
     }
-    return { collections, partial, atVenuePagingLimit, pagesRead, rowsRejected };
+    return { collections, partial, atVenuePagingLimit, pagesRead, rowsRejected, ...(rowsOversized > 0 ? { rowsOversized } : {}) };
   });
   return { ...data, stale, cachedAt };
 }

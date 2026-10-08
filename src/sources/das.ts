@@ -20,7 +20,8 @@ import { createHash } from "node:crypto";
 
 import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
-import { clean } from "../lib/untrusted.js";
+import { clean, safeHttpsUrl } from "../lib/untrusted.js";
+import { USER_AGENT } from "../lib/version.js";
 import { objectRows } from "../lib/shapes.js";
 import { isBase58Address } from "./solana.js";
 import { DasUnsupported } from "../lib/errors.js";
@@ -107,7 +108,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     try {
       const r = await fetch(ep.url, {
         method: "POST",
-        headers: { "content-type": "application/json", "user-agent": "solana-nft-mcp/1.0 (+https://github.com/p1xelapp/solana-nft-mcp)" },
+        headers: { "content-type": "application/json", "user-agent": USER_AGENT },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         // Never follow a 3xx: a 307 keeps the method and the body, so an
         // endpoint answering one could point an index read at another host.
@@ -379,7 +380,7 @@ function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
 }
 
 const addr = (v: unknown): string | null => (typeof v === "string" && isBase58Address(v) ? v : null);
-const https = (v: unknown): string | null => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
+const https = (v: unknown): string | null => safeHttpsUrl(v);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length ? clean(v) : null);
 
 /**

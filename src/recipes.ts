@@ -64,7 +64,7 @@ export const RECIPES: Record<string, Recipe> = {
         trap: "Polling a sales endpoint on a timer and posting whatever is new.",
         why: "Restarts re-post old sales, and any downtime silently swallows the sales that happened while you were down. The feed looks healthy either way.",
         instead:
-          "Persist the last processed signature or timestamp to disk, resume from it on boot, and reconcile against the marketplace's own history on startup rather than trusting that the process was running.",
+          "Persist every identity you have posted and check, on each poll, that the newest page still overlaps what you already saw. get_recent_sales returns at most the newest 50, so if none of them is known the bot was down past that window: record and announce the gap, because the sales inside it cannot be fetched back through this server. Poll often enough that 50 always covers the busiest stretch.",
       },
       {
         trap: "Treating the on-chain owner of a sold item as the buyer.",
@@ -90,9 +90,16 @@ export const RECIPES: Record<string, Recipe> = {
 // so the key is signature + mint + type. A timestamp cursor is not enough
 // either: two fills share a second, and a restart replays the boundary.
 const seen = await loadSeen();              // Set of identities, survives restarts
-const sales = await getRecentSales(symbol, 50);
+const { sales } = await getRecentSales(symbol, 50);  // the newest 50 at most; there is no cursor
+const key = (s) => \`\${s.signature}:\${s.tokenMint}:buyNow\`;
+// The page must overlap what was already posted. If it does not, sales older
+// than this page happened while the bot was away and cannot be fetched back
+// here: say so loudly instead of looking complete.
+if (seen.size > 0 && sales.length > 0 && !sales.some((s) => seen.has(key(s)))) {
+  await alertSelf(\`gap: sales before \${sales[sales.length - 1].time} may be missing (more than 50 since the last poll)\`);
+}
 for (const s of [...sales].reverse()) {     // oldest first, so order reads true
-  const id = \`\${s.signature}:\${s.tokenMint}:buyNow\`;
+  const id = key(s);
   if (!s.signature || !s.tokenMint) { log("unidentifiable row, held back", s); continue; }
   if (seen.has(id)) continue;
   await post(s);                            // at-least-once: a crash here re-posts
@@ -100,6 +107,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
   await saveSeen(seen);                     // save per item, not per batch:
 }                                            // a crash mid-batch must not skip`,
     beforeShipping: [
+      "Stop the bot long enough for more than 50 sales to happen, restart it, and confirm it reports the gap instead of looking complete.",
       "Kill the process mid-batch and restart it. Nothing may be skipped. The one sale posted just before the crash may repeat, because post-then-save is at-least-once; if the channel cannot tolerate that single repeat, make the receiver idempotent on the identity.",
       "Point it at a deliberately misspelled collection symbol. It must fail loudly, not go quiet.",
       "Let it run through a period with zero sales and confirm it stays silent without erroring.",
@@ -246,11 +254,19 @@ if (isEscrow(p.currentOwner)) renderNotice("Currently listed - held in marketpla
     ],
     costNote: "Free on keyless sources. Portfolio valuation over many wallets multiplies requests quickly - cache per wallet and refresh on demand.",
     skeleton: `const h = await getWalletHoldings(wallet, 100);
-// Three states, never two. Listed is not held and not sold.
-const held   = h.tokens.filter(t => !t.listed);
-const listed = h.tokens.filter(t =>  t.listed);
-if (h.capped) renderNotice("Showing the first 100 - this wallet holds more.");
-renderNotice("Coverage: collections indexed by Magic Eden only.");`,
+// Two readers answer separately. Either can fail; neither failing means empty.
+const me  = h.magicEden;    // absent when Magic Eden did not answer
+const idx = h.chainIndex;   // the chain's asset index; absent when it did not answer
+if (me) {
+  // Three states, never two. Listed is not held and not sold.
+  const held   = me.tokens.filter(t => !t.listed);
+  const listed = me.tokens.filter(t =>  t.listed);
+  if (me.capped) renderNotice("Showing the first 100 Magic Eden items - this wallet holds more.");
+  renderNotice("Prices and listing state: collections indexed by Magic Eden only.");
+} else {
+  renderNotice(\`Magic Eden did not answer (\${h.sourceErrors?.magiceden ?? "no reason given"}): no prices or listing state.\`);
+}
+if (idx) renderNotice(\`\${idx.count} assets on chain\${idx.countIsATotal ? "" : " (at least: the read was cut short)"}.\`);`,
     beforeShipping: [
       "Run it against a wallet holding more than the page size and confirm the cap is disclosed.",
       "Run it against a marketplace escrow address and confirm the explanation is human-readable.",
@@ -264,7 +280,7 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
     dataSources: [
       {
         name: "The public Solana asset index (DAS getAssetsByGroup)",
-        use: "Every asset in the pack's collection, paged. New ids since the last page are the new pulls.",
+        use: "Every asset in the pack's collection, paged to the end. An id you have not stored is NEW TO YOU; it is a new pull only once you have a complete baseline, and only the asset's own history says whether it was minted or opened just now.",
         auth: "None on the Foundation endpoint; a keyed DAS provider is faster and has a higher ceiling.",
         rateLimit:
           "About 100 requests per 10 seconds per IP, shared with plain RPC reads. There is no sort by creation time on the " +
@@ -295,11 +311,31 @@ renderNotice("Coverage: collections indexed by Magic Eden only.");`,
       },
     ],
     costNote: "Free to read. The cost is storage if you retain full history - size it to the full set, not to today's count.",
-    skeleton: `const page = await dasGetAssetsByGroup(collection, { page: 1, limit: 1000 });
-const fresh = page.items.filter((a) => !seen.has(a.id));  // ids you have never stored ARE the new pulls
-// Reconcile on boot: what the issuer says exists vs what we stored.
-const missing = await reconcileAgainstIssuer(storedCount);
-if (missing > 0) log.warn(\`backfilling \${missing} pulls missed while down\`);`,
+    skeleton: `// Walk EVERY page. Page 1 alone is the first 1,000 ids, not the collection.
+const all = [];
+for (let page = 1; ; page++) {
+  const res = await dasGetAssetsByGroup(collection, { page, limit: 1000 });
+  if (res.items.length === 0) break;              // an empty page is the end
+  all.push(...res.items);
+}
+if (!(await baselineComplete())) {
+  // First run: everything already there is history, not a "new pull".
+  await saveSeen(all.map((a) => a.id));
+  await markBaselineComplete();
+  return;
+}
+const unseen = all.filter((a) => !seen.has(a.id)); // new TO YOU, not proven new
+for (const a of unseen) {
+  // The asset's own history decides: a card minted just now is a pull; an
+  // older asset you never stored is a backfill, and is labelled as one.
+  // (events run oldest first; mintObserved says whether the mint was decoded)
+  const p = await getAssetProvenance(a.id);
+  const mint = p.mintObserved ? p.events.find((e) => e.event === "minted") : undefined;
+  emit(a, mint && isRecent(mint.time) ? "pull" : "backfill");
+}
+// Reconcile against the issuer's own count, on boot and on a schedule.
+const expected = await issuerCount(collection);
+if (expected !== all.length) log.warn(\`stored \${all.length}, issuer reports \${expected}: investigate before trusting the feed\`);`,
     beforeShipping: [
       "Stop the watcher for an hour, restart it, and confirm the gap is backfilled rather than lost.",
       "Confirm the store is sized to the full set and that approaching the limit alerts loudly.",

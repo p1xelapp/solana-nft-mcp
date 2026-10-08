@@ -12,6 +12,7 @@
  */
 
 import { createRequire } from "node:module";
+import { Transform } from "node:stream";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -28,7 +29,7 @@ import { roleOf, knownIssuer } from "./issuers.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
 import { decodeCoreAccountPlugins, deriveTrust } from "./lib/coreplugins.js";
-import { clean, cleanFields, inspectUntrusted } from "./lib/untrusted.js";
+import { clean, cleanFields, inspectUntrusted, safeHttpsUrl } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
 import { explorerLinks } from "./sources/catalog.js";
@@ -242,6 +243,8 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
         return { kind: "source-unsupported", headline: "The keyless asset index on the public RPC is not serving that read right now.", next: "The chain and marketplace tools still answer. get_source_status says whether the index is down or withdrawn; DAS_RPC_URL points this server at an index of your own." };
       case "bad-input":
         return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
+      case "chain-unavailable":
+        return { kind: "upstream-unavailable", headline: "The public Solana endpoint did not answer just now (their service, not your setup).", next: "Try again in a minute. For heavy use, set SOLANA_RPC_URL to an RPC of your own; ownership history needs one that keeps transaction history." };
     }
   }
   // Schema rejections are OUR validation, so they are classified by the type
@@ -347,12 +350,37 @@ function walletRole(wallet: string): { walletRole?: string; walletRoleNote?: str
   return {};
 }
 
+/**
+ * Adds one page of listings to a walk, dropping any token already read.
+ *
+ * Magic Eden's book moves between requests: an item listed or sold shifts
+ * every offset after it, so consecutive pages can overlap, and a walk that
+ * now continues past a short page would otherwise count the same listing
+ * twice. Returns how many NEW listings the page contributed; a page that adds
+ * none means the venue is repeating itself, and the walk stops there without
+ * claiming it reached the end of the book.
+ */
+function addNewListings(into: me.MeListing[], seenMints: Set<string>, page: me.MeListing[]): number {
+  let added = 0;
+  for (const l of page) {
+    const id = l.tokenMint;
+    if (typeof id === "string" && id.length > 0) {
+      if (seenMints.has(id)) continue;
+      seenMints.add(id);
+    }
+    into.push(l);
+    added++;
+  }
+  return added;
+}
+
 const symbolSchema = z
   .string()
   .trim()
   .min(1)
   .max(80)
-  .regex(/^[a-z0-9_\-.]+$/i, "must be a Magic Eden collection symbol (letters, digits, _ - .)");
+  .regex(/^[a-z0-9_\-.]+$/i, "must be a Magic Eden collection symbol (letters, digits, _ - .)")
+  .refine((s) => !/^\.+$/.test(s), "must be a Magic Eden collection symbol, not only dots");
 
 /**
  * The marketplace view of one token, whitelisted and neutralised. Names,
@@ -364,7 +392,7 @@ function marketView(t: Record<string, unknown>) {
   // Bounded as well as https: a venue-supplied URL is text the venue
   // controls, and a 130,000-character one turned a single asset answer into
   // 263 KB, twice (text and structured content), which a client cuts off.
-  const url = (v: unknown) => (typeof v === "string" && v.length <= 2048 && !/\s/.test(v) && /^https:\/\//.test(v) ? v : null);
+  const url = (v: unknown) => safeHttpsUrl(v);
   const flags: string[] = [];
   const cl = (v: unknown, label: string) => {
     const s = str(v);
@@ -417,8 +445,7 @@ function trendingView(c: Record<string, unknown>) {
   // uses: the prefix test alone accepts everything after "https://", newlines
   // and role tags included, and a 150,000-character URL on each of fifty rows
   // is an answer no client can read.
-  const https = (v: unknown): string | null =>
-    typeof v === "string" && v.length <= 2048 && !/\s/.test(v) && /^https:\/\//.test(v) ? v : null;
+  const https = (v: unknown): string | null => safeHttpsUrl(v);
   return {
     view: {
       symbol: text(c.symbol, "symbol"),
@@ -590,8 +617,9 @@ registerTool(
     description:
       "Decode the Metaplex Core plugins on an asset and translate them into custody facts: can the " +
       "issuer move or burn it without the holder's signature (permanent delegates - normal on packs, a " +
-      "red flag on keepers), is it frozen, are royalties enforced by a program rule set or merely " +
-      "advisory, is the metadata mutable, is the serial an on-chain edition or just printed text. " +
+      "red flag on keepers), is it frozen, does a royalty rule set limit which programs can trade it (no rule " +
+      "checks that the fee is paid) or is the royalty advisory, is the metadata mutable, is the serial an on-chain " +
+      "edition or just printed text. " +
       "Plugins set on the COLLECTION apply to every asset in it and are read too, marked inherited. " +
       "Marketplaces show the picture and the price; this shows the rules attached to the account. Use " +
       "before a purchase, when a listing 'cannot transfer', or when someone asks whether a pack burns " +
@@ -601,6 +629,9 @@ registerTool(
   },
   guard(async ({ mint }) => {
     const raw = await sol.getCoreAccountRaw(mint);
+    // The custody picture is a snapshot of these bytes at this moment; it is
+    // dated like every other figure the server publishes.
+    const readAt = new Date().toISOString();
     if (!raw) throw new NotFoundError(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
     // Everything below comes from the ONE fresh snapshot in `raw`: name, owner,
     // collection and plugins cannot disagree with each other.
@@ -626,6 +657,8 @@ registerTool(
     const living = mechanicsForTrust(pluginTypes);
     return ok({
       mint,
+      readAt,
+      source: "solana-rpc (Metaplex Core account bytes, decoded locally)",
       name: acct.name,
       owner: acct.owner,
       collection: acct.collection,
@@ -711,6 +744,7 @@ registerTool(
     // key nothing was asked, and saying otherwise turns a missing credential
     // into a claim about the collection.
     let openseaSearched = false;
+    let openseaPartial = false;
     // One of the calls that genuinely needs OpenSea, so it is allowed to ask
     // OpenSea for a free key if none is configured yet. A session that never
     // asks an OpenSea question never spends one.
@@ -719,7 +753,7 @@ registerTool(
       const q = norm(query);
       const words = q.split(" ").filter(Boolean);
       try {
-        const { collections, stale } = await os.solanaCollections();
+        const { collections, stale, truncated, walkNote } = await os.solanaCollections();
         const hits = collections
           .filter((c) => {
             const hay = norm(`${c.name ?? ""} ${c.collection}`);
@@ -735,15 +769,27 @@ registerTool(
               openseaSlug: clean(c.collection),
               name: c.name ? clean(c.name) : null,
               onchainCollection: addr && sol.isBase58Address(addr) ? addr : null,
-              url: url && /^https:\/\/opensea\.io\//.test(url) ? url : null,
+              url: safeHttpsUrl(url, { host: "opensea.io" }),
             };
           });
         // A stale index is a cached list from a failed refresh: it can answer,
         // but it cannot support "not on OpenSea" about anything listed since.
-        openseaSearched = !stale;
+        // Neither can a walk that stopped at its page budget: the collections
+        // past it were never read, so a miss there is not an absence.
+        openseaSearched = !stale && !truncated;
+        openseaPartial = truncated === true;
         opensea = {
           hits,
           indexed: collections.length,
+          complete: !truncated,
+          ...(truncated
+            ? {
+                completeNote:
+                  `Only the first ${collections.length} collections of OpenSea's Solana index (ranked by 7-day volume) were read. ` +
+                  "A collection outside that range is not proven absent from OpenSea." +
+                  (walkNote ? ` ${walkNote}` : ""),
+              }
+            : {}),
           stale,
           next: hits.length ? "get_collection_stats with the openseaSlug adds OpenSea's total supply, creator royalty and floor." : undefined,
         };
@@ -824,7 +870,11 @@ registerTool(
       warning: names.warning,
       hint: nothing
         ? `No match in the registry or the Magic Eden directory layers searched${openseaSearched ? ", and none in OpenSea's Solana index either" : ""}. ` +
-          (openseaSearched ? "" : "OpenSea was not searched, so nothing here says anything about it. ") +
+          (openseaSearched
+            ? ""
+            : openseaPartial
+              ? "OpenSea's index was only read in part, so a miss there is not proof of absence. "
+              : "OpenSea was not searched, so nothing here says anything about it. ") +
           (names.directoryComplete ? "" : "The directory layers searched are short of Magic Eden's full catalogue, so this is not proof of absence there either. ") +
           "identify() probes live sources by name; a mint address from one item finds the collection from the chain."
         : undefined,
@@ -839,7 +889,7 @@ registerTool(
     description:
       "Market + supply stats for a collection. Accepts a registry id, a Magic Eden symbol, or a Metaplex " +
       "Core collection ADDRESS. Addresses are decoded straight from the chain (name, minted, current size) - " +
-      "works for collections no marketplace indexes, e.g. Candy Digital drops. If OPENSEA_API_KEY is set, " +
+      "works for collections no marketplace indexes, e.g. Candy Digital drops. When OpenSea can be read (the server issues itself a free key, or uses OPENSEA_API_KEY), " +
       "an OpenSea cross-marketplace view is added (pass openseaSlug, or rely on registry entries that carry one): " +
       "OpenSea's floor, supply and royalty, plus its 7-day floor trend and the largest holders with their share of supply. " +
       "Answers 'is the floor up or down this week', 'who holds the most', 'is one wallet holding half of it'.",
@@ -880,10 +930,16 @@ registerTool(
       };
     }
     if (r.coreCollection) {
-      const acct = await sol.getCoreAccount(r.coreCollection);
+      const coreRead = await sol.getCoreAccountWithMeta(r.coreCollection);
+      const acct = coreRead.account;
       if (acct?.kind === "collection") {
         out.onchain = {
           address: r.coreCollection,
+          // When the two counters below were read, and from what slot. Every
+          // figure in an answer carries its read time; these did not.
+          readAt: coreRead.cachedAt,
+          stale: coreRead.stale,
+          contextSlot: coreRead.contextSlot,
           name: acct.name,
           numMinted: acct.numMinted,
           currentSize: acct.currentSize,
@@ -897,7 +953,15 @@ registerTool(
             "numMinted minus currentSize. A burn or a closure lowers currentSize and so raises this number, but so does an asset moved out to another collection, and an asset moved in raises currentSize without a mint and lowers it. A burn count needs decoded history (get_asset_provenance), not these two counters.",
           source: "solana-rpc (Metaplex Core account, decoded locally)",
         };
+      } else {
+        out.onchainNote = `${r.coreCollection} decoded as a Metaplex Core ${acct?.kind ?? "account"}, not a collection, so no supply counters were read from it.`;
       }
+    } else {
+      // Silence about supply read as "unknown" or "zero" depending on the
+      // reader. Say what was and was not inspected.
+      out.onchainNote =
+        "On-chain supply is read for Metaplex Core collections only, and no Core collection address is on record for this one " +
+        "(most older Solana NFTs use a different standard). No supply figure here comes from the chain; any count below is a marketplace's own.";
     }
     const sourceErrors: Record<string, string> = {};
     /** True only when Magic Eden established an ABSENCE; a failure to read is not one. */
@@ -927,7 +991,7 @@ registerTool(
       const meta = out.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
       if (meta) {
         const cleaned = cleanFields(
-          { name: meta.name, description: meta.description, image: /^https:\/\//.test(meta.image ?? "") ? meta.image : undefined, twitter: meta.twitter, website: /^https:\/\//.test(meta.website ?? "") ? meta.website : undefined },
+          { name: meta.name, description: meta.description, image: safeHttpsUrl(meta.image) ?? undefined, twitter: meta.twitter, website: safeHttpsUrl(meta.website) ?? undefined },
           ["name", "description", "twitter"],
         );
         out.meta = cleaned.warning ? { ...cleaned.data, untrustedTextWarning: cleaned.warning } : cleaned.data;
@@ -940,8 +1004,24 @@ registerTool(
     let slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     let slugNote: string | undefined;
     const coreAddress = (out.onchain as { address?: string } | undefined)?.address;
+    // What the "no slug" note may claim depends on what was actually asked.
+    // It used to say the address "is not in OpenSea's ranked Solana index"
+    // when OpenSea was off and the index had never been queried.
+    const osIndex: { state: "searched" | "partial" | "failed" | "off" | "no-address"; error?: string } = { state: "no-address" };
+    const indexRead: { partial?: boolean } = {};
+    if (!slug && coreAddress && !(await os.openSeaAvailable())) osIndex.state = "off";
     if (!slug && coreAddress && (await os.openSeaAvailable())) {
-      const found = await os.slugForOnchainCollection(coreAddress).catch(() => null);
+      const found = await os.slugForOnchainCollection(coreAddress, indexRead).then(
+        (v) => {
+          osIndex.state = indexRead.partial ? "partial" : "searched";
+          return v;
+        },
+        (e: unknown) => {
+          osIndex.state = "failed";
+          osIndex.error = e instanceof Error ? e.message : String(e);
+          return null;
+        },
+      );
       if (found) {
         slug = found.slug;
         slugNote = found.note;
@@ -1042,6 +1122,7 @@ registerTool(
               : {}),
             creatorRoyaltyPct: detail.creatorRoyaltyPct,
             onchainCollection: detail.onchainCollection,
+            ...(detail.onchainCollections.length > 1 ? { onchainCollections: detail.onchainCollections, contractsNote: `OpenSea groups ${detail.onchainCollections.length} Solana contracts under this slug; its floor, volume and owner figures cover all of them together.` } : {}),
             royaltyNote: "creatorRoyaltyPct is what the project asks OpenSea to collect; whether the chain enforces it is a per-asset question (get_asset_trust).",
             floor7d,
             topHolders,
@@ -1054,9 +1135,19 @@ registerTool(
       // Silence about a second venue reads as "there is only one". Most Candy
       // collections genuinely have no OpenSea slug, and the answer has to say
       // that rather than simply not mentioning OpenSea at all.
+      const searched: string =
+        osIndex.state === "searched"
+          ? "its on-chain address is not in OpenSea's ranked Solana index (which covers what OpenSea ranks by 7-day volume, not everything it holds)"
+          : osIndex.state === "partial"
+            ? "its on-chain address is not in the part of OpenSea's ranked Solana index that could be read (the read was cut short or served from a stale copy)"
+          : osIndex.state === "failed"
+            ? `OpenSea's index could not be read (${osIndex.error ?? "unknown error"}), so OpenSea was not searched`
+            : osIndex.state === "off"
+              ? `OpenSea was not read at all: ${os.openSeaState().note}`
+              : "there is no on-chain collection address to search OpenSea by, so OpenSea was not searched";
+      out.openseaStatus = osIndex.state === "searched" ? "searched-no-match" : osIndex.state === "partial" ? "searched-partial-no-match" : "not-read";
       out.openseaNote =
-        "No OpenSea slug is known for this collection, and its on-chain address is not in OpenSea's ranked Solana index " +
-        "(which covers what OpenSea ranks by 7-day volume, not everything it holds), so only Magic Eden and the chain were read. " +
+        `No OpenSea slug is known for this collection, and ${searched}. Only Magic Eden and the chain were read. ` +
         "That is a gap in what was searched, not evidence the collection is absent from OpenSea. " +
         "search_collections shows whether OpenSea lists it under another name; pass openseaSlug to add the second marketplace.";
     }
@@ -1079,7 +1170,7 @@ registerTool(
     if (typeof mkt?.floorPriceSol === "number" && mkt.floorPriceSol > 0) {
       quotes.push({ source: "magiceden", value: mkt.floorPriceSol, currency: "SOL", stale: Boolean(mkt.stale) });
     }
-    const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean; onchainCollection?: string | null } | undefined;
+    const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean; onchainCollection?: string | null; onchainCollections?: unknown[] } | undefined;
     const osQuote: FloorQuote | null =
       osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency
         ? { source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, stale: Boolean(osBlock.stale) }
@@ -1093,17 +1184,19 @@ registerTool(
     // the two floors are allowed to be ranked; a conflict shows both floors
     // and refuses the comparison, and an explicit slug whose identity cannot
     // be checked is shown beside, not ranked.
-    let identity: { verdict: "verified" | "verified-by-source" | "conflict" | "unverified"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string } | null = null;
+    let identity: { verdict: "verified" | "verified-by-source" | "group" | "conflict" | "unverified"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string } | null = null;
     if (osBlock && slug) {
       const osChain = typeof osBlock.onchainCollection === "string" && sol.isBase58Address(osBlock.onchainCollection) ? osBlock.onchainCollection : null;
+      // Every Solana contract OpenSea files under the slug, not just the first.
+      const osChains = Array.isArray(osBlock.onchainCollections) ? osBlock.onchainCollections.filter((a): a is string => typeof a === "string" && sol.isBase58Address(a)) : osChain ? [osChain] : [];
       const requested = coreAddress ?? null;
       // A caller repeating the registry's own slug is not overriding anything.
       const curatedSlug = "openseaSlug" in r ? r.openseaSlug : undefined;
       const callerOverride = Boolean(openseaSlug) && openseaSlug !== curatedSlug;
       if (osChain && requested) {
         identity =
-          osChain === requested
-            ? { verdict: "verified", slug, requestedCollection: requested, openseaCollection: osChain, note: "OpenSea's record of this slug names the same on-chain collection that was asked about." }
+          osChains.includes(requested)
+            ? { verdict: "verified", slug, requestedCollection: requested, openseaCollection: requested, note: osChains.length > 1 ? `OpenSea's record of this slug includes the on-chain collection that was asked about, among ${osChains.length} Solana contracts it groups together.` : "OpenSea's record of this slug names the same on-chain collection that was asked about." }
             : {
                 verdict: "conflict",
                 slug,
@@ -1128,6 +1221,17 @@ registerTool(
           note: slugNote
             ? "The slug was found from this collection's own on-chain address or name, which is the identity check."
             : "The slug comes from the curated registry entry for this collection.",
+        };
+      }
+      // A slug that groups several Solana contracts publishes ONE floor, volume
+      // and owner count for all of them. Even when this collection is one of
+      // them, that floor is the cheapest ask across the group, not this
+      // collection's, so it is shown beside Magic Eden's and never ranked.
+      if (identity && osChains.length > 1 && (identity.verdict === "verified" || identity.verdict === "verified-by-source")) {
+        identity = {
+          ...identity,
+          verdict: "group",
+          note: `OpenSea files ${osChains.length} Solana contracts under the slug "${slug}"${requested && osChains.includes(requested) ? ", this collection among them" : ""}, and its floor, volume and owner figures cover all of them together. They are shown beside this collection's figures and not ranked against them.`,
         };
       }
       (out.opensea as Record<string, unknown>).identity = identity;
@@ -1158,7 +1262,9 @@ registerTool(
               verdict:
                 identity.verdict === "conflict"
                   ? `Not compared: the OpenSea slug names a different on-chain collection (${identity.openseaCollection}), so its floor of ${osQuote.value} ${osQuote.currency} is not this collection's floor. Magic Eden's ${quotes[0] ? `${quotes[0].value} ${quotes[0].currency}` : "floor was not returned"}.`
-                  : `Not ranked: the OpenSea slug was supplied by the caller and its collection identity could not be verified. Both floors are listed; ${identity.note}`,
+                  : identity.verdict === "group"
+                    ? `Not ranked: ${identity.note}`
+                    : `Not ranked: the OpenSea slug was supplied by the caller and its collection identity could not be verified. Both floors are listed; ${identity.note}`,
               floors: [...rec.floors, osQuote],
               identity,
             }
@@ -1215,7 +1321,7 @@ registerTool(
     title: "Recent sales",
     description:
       "Most recent completed sales for a collection (price in SOL, buyer, seller, tx signature). " +
-      "Accepts a registry id or Magic Eden symbol. With OPENSEA_API_KEY set and an openseaSlug, " +
+      "Accepts a registry id or Magic Eden symbol. When OpenSea can be read and a slug is known (or passed as openseaSlug), " +
       "OpenSea sales are included for a cross-marketplace picture.",
     annotations: READ_ONLY,
     inputSchema: {
@@ -1239,13 +1345,14 @@ registerTool(
     // collection (no Magic Eden symbol, no curated slug) answered "pass an
     // openseaSlug" while OpenSea had its sales the whole time.
     let discovered = false;
+    let discoveredGroup = 1;
     const core = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
     if (!slug && core && (await os.openSeaAvailable())) {
       // The on-chain name is what OpenSea's slug is usually built from, and
       // it differs from the registry's display name (which carries the
       // issuer as a prefix); the stats tool tries it, so this does too.
       const chainName = await sol.getCoreAccount(core).then((a) => (a?.kind === "collection" ? a.name : null)).catch(() => null);
-      let found: { slug: string } | null = await os.slugForOnchainCollection(core).catch(() => null);
+      let found: { slug: string; solanaContracts?: number } | null = await os.slugForOnchainCollection(core).catch(() => null);
       for (const candidate of [chainName, typeof r.name === "string" ? r.name : null]) {
         if (found || !candidate) continue;
         found = await os.slugByNameForCollection(candidate, core).catch(() => null);
@@ -1253,6 +1360,7 @@ registerTool(
       if (found) {
         slug = found.slug;
         discovered = true;
+        discoveredGroup = found.solanaContracts ?? 1;
       }
     }
     // A slug the caller supplied is a request to read that slug, not proof
@@ -1266,8 +1374,10 @@ registerTool(
     let openseaPart: Record<string, unknown> | undefined;
     if (slug && (await os.openSeaAvailable())) {
       const sales = await os.recentSales(slug, limit).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
-      let identity: { verdict: "verified" | "conflict" | "unverified" | "registry"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string };
-      if (discovered) {
+      let identity: { verdict: "verified" | "group" | "conflict" | "unverified" | "registry"; slug: string; requestedCollection: string | null; openseaCollection: string | null; note: string };
+      if (discovered && discoveredGroup > 1) {
+        identity = { verdict: "group", slug, requestedCollection: core, openseaCollection: core, note: `The slug was found from this collection's own on-chain address or name, but OpenSea files ${discoveredGroup} Solana contracts under it. These sales are the whole group's, not only this collection's.` };
+      } else if (discovered) {
         identity = { verdict: "verified", slug, requestedCollection: core, openseaCollection: core, note: "The slug was found from this collection's own on-chain address or name, and OpenSea's record of it carries that address." };
       } else if (!callerOverride) {
         identity = { verdict: "registry", slug, requestedCollection: null, openseaCollection: null, note: "The slug comes from the curated registry entry for this collection." };
@@ -1275,27 +1385,41 @@ registerTool(
         const expected = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
         const detail = await os.collectionDetail(slug).catch(() => null);
         const osChain = detail?.onchainCollection ?? null;
+        const osChains = detail?.onchainCollections ?? [];
         identity =
           osChain && expected
-            ? osChain === expected
-              ? { verdict: "verified", slug, requestedCollection: expected, openseaCollection: osChain, note: "OpenSea's record of this slug names the same on-chain collection that was asked about." }
+            ? osChains.includes(expected) && osChains.length > 1
+              ? { verdict: "group", slug, requestedCollection: expected, openseaCollection: expected, note: `OpenSea files ${osChains.length} Solana contracts under the slug "${slug}", this collection among them. These sales are the whole group's, not only this collection's.` }
+              : osChains.includes(expected)
+              ? { verdict: "verified", slug, requestedCollection: expected, openseaCollection: expected, note: "OpenSea's record of this slug includes the same on-chain collection that was asked about." }
               : { verdict: "conflict", slug, requestedCollection: expected, openseaCollection: osChain, note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, which is not ${expected}. These sales describe a different collection and are shown for the record only, not as this collection's.` }
             : { verdict: "unverified", slug, requestedCollection: expected, openseaCollection: osChain, note: `The slug "${slug}" was supplied by the caller and ${expected ? "OpenSea's record of it carries no Solana collection address" : "this collection has no on-chain address on record to compare it with"}, so whether these are the same collection could not be checked. Treat the OpenSea sales as sales of that slug, not proven to be this collection's.` };
       }
       openseaPart = { ...sales, identity };
     }
+    // A sales answer from one marketplace has to say the other one was not
+    // read, and why, or it reads as complete coverage.
+    const openseaNotRead = openseaPart
+      ? undefined
+      : {
+          opensea: { status: "not-read" },
+          openseaNote:
+            slug || !os.openSeaState().enabled
+              ? `OpenSea sales were not read: ${os.openSeaState().note}`
+              : "No OpenSea slug is known for this collection and none was found from its address or name, so only Magic Eden's sales were read. Pass openseaSlug to add OpenSea's.",
+        };
     if (!r.meSymbol) {
       if (openseaPart) return ok({ requested: collection, opensea: openseaPart });
       throw new Error(
         `"${collection}" has no Magic Eden symbol. For Candy Digital collections use get_asset_provenance ` +
-          `on a specific card, or pass an openseaSlug with OPENSEA_API_KEY set.`,
+          `on a specific card, or pass an openseaSlug to read OpenSea's sales.`,
       );
     }
     try {
       const unknown = await refuseUnknownSymbol(r.meSymbol);
       if (unknown) return unknown;
       const magiceden = await me.recentSales(r.meSymbol, limit);
-      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: openseaPart } : { ...magiceden, symbolKnown: true });
+      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: openseaPart } : { ...magiceden, symbolKnown: true, ...openseaNotRead });
     } catch (e) {
       if (openseaPart) return ok({ requested: collection, sourceErrors: { magiceden: e instanceof Error ? e.message : String(e) }, opensea: openseaPart });
       throw e;
@@ -1945,7 +2069,7 @@ registerTool(
             : "counts and percentages are from a complete, current read of what Magic Eden indexes",
       supplyShareNote:
         supplyShare.length === 0
-          ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (set OPENSEA_API_KEY). None of the priced collections had one."
+          ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (read when OpenSea is available). None of the priced collections had one."
           : undefined,
       // Capped or stale holdings can never produce a present-tense ceiling:
       // the coverage of the read travels with the numbers derived from it.
@@ -1981,7 +2105,7 @@ registerTool(
       "(Magic Eden order book vs AMM pools; OpenSea with a key), the collections it trades most, every " +
       "flip (bought then sold: hold time and P&L before fees), a behaviour label (flipper / holder / " +
       "mixed / lister / quiet) with the reason, and the first purchase inside the window. With " +
-      "OPENSEA_API_KEY set, plain transfers are included so 'was this airdropped, gifted or bought?' " +
+      "OpenSea readable (a self-issued free key, or OPENSEA_API_KEY), plain transfers are included so 'was this airdropped, gifted or bought?' " +
       "gets an evidence-based answer. Every figure says which feed it came from and what that feed " +
       "cannot see. Read-only; needs no key.",
     annotations: READ_ONLY,
@@ -2230,7 +2354,15 @@ registerTool(
             note: `Sales ${byNameScope === "filtered" ? `matching the name filter` : "in the window"} grouped by item name without its serial (player, character, issue), with the same duplicate and disputed-price policy as the figures above. Source: Magic Eden fills named by the chain's asset index.`,
           }
         : { error: namesError ?? "asset index unavailable", note: "Per-name breakdown skipped; collection-wide figures are unaffected." },
-      feed: { source: "Magic Eden v2 collection activity (buyNow)", pagesRead: read.pagesRead, stale: read.stale, cachedAt: read.cachedAt },
+      feed: {
+        source: "Magic Eden v2 collection activity (buyNow)",
+        pagesRead: read.pagesRead,
+        stale: read.stale,
+        cachedAt: read.cachedAt,
+        ...(read.typeMismatchDropped
+          ? { typeMismatchDropped: read.typeMismatchDropped, typeMismatchNote: `${read.typeMismatchDropped} row(s) the marketplace returned were not sales and were left out of every figure here.` }
+          : {}),
+      },
       next: "get_floor_prices for the current ask; find_listings for what is buyable now; get_top_traders for the biggest wallets over all time.",
     });
   }),
@@ -2276,8 +2408,10 @@ registerTool(
       const PAGE = 100;
       const BUDGET = 10;
       const seen: me.MeListing[] = [];
+      const seenMints = new Set<string>();
       let pagesRead = 0;
       let venueReportedEnd = false;
+      let repeatedPage = false;
       let stale = false;
       let cachedAt = "";
       for (let p = 0; p < BUDGET; p++) {
@@ -2287,9 +2421,13 @@ registerTool(
         // The walk is only as fresh as its STALEST page; reporting the newest
         // would overstate it.
         if (!cachedAt || read.cachedAt < cachedAt) cachedAt = read.cachedAt;
-        for (const l of read.listings) seen.push(l);
+        const added = addNewListings(seen, seenMints, read.listings);
         if (read.venueReportedEnd) {
           venueReportedEnd = true;
+          break;
+        }
+        if (added === 0) {
+          repeatedPage = true;
           break;
         }
       }
@@ -2363,7 +2501,9 @@ registerTool(
           note: venueReportedEnd
             ? `Magic Eden returned no further page after ${seen.length} listing(s)${stale ? `, and at least one of those pages came from cache after a failed refresh (read ${cachedAt || "at an unrecorded time"})` : ` as of ${cachedAt || "this read"}`}. ` +
               `That is the marketplace reporting the end of this filter's book, not an authoritative total - it publishes no listing count to check it against.`
-            : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
+            : repeatedPage
+              ? `Read ${seen.length} listings, then the marketplace answered a page holding only listings already read, so the walk stopped there. That is not the end of the book; higher-priced listings may carry lower serials. Ask again with trait filters to narrow it.`
+              : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
         },
         floorMultiples: multiplesComparable
           ? "available: both the listing pages and the floor were read live"
@@ -2394,12 +2534,14 @@ registerTool(
     // only one of them - the venue running out of listings - means the search
     // saw everything. Stopping because enough names matched used to report the
     // same "every listing was read" sentence as a completed walk.
-    let stopReason: "found" | "budget" | "end" = "end";
+    let stopReason: "found" | "budget" | "end" | "repeat" = "end";
     let first: Awaited<ReturnType<typeof me.collectionListings>> | null = null;
     const kept: me.MeListing[] = [];
     let listingsSeen = 0;
 
     if (needle) {
+      const readSoFar: me.MeListing[] = [];
+      const seenMints = new Set<string>();
       for (let p = 0; p < NAME_PAGE_BUDGET; p++) {
         const read = await me.collectionListings(symbol, {
           attributes: traits,
@@ -2410,11 +2552,19 @@ registerTool(
         });
         first ??= read;
         pagesRead++;
-        listingsSeen += read.listings.length;
-        kept.push(...read.listings.filter((l) => matchesName(l, needle)));
-        // A short page is the end of the book, not the end of our budget.
+        const before = readSoFar.length;
+        const added = addNewListings(readSoFar, seenMints, read.listings);
+        const fresh = readSoFar.slice(before);
+        listingsSeen += added;
+        kept.push(...fresh.filter((l) => matchesName(l, needle)));
+        // Only an empty page ends the book; a short one does not (see
+        // collectionListings), so this stops on that or on the budget.
         if (!read.more) {
           stopReason = "end";
+          break;
+        }
+        if (added === 0) {
+          stopReason = "repeat";
           break;
         }
         if (kept.length >= limit) {
@@ -2457,21 +2607,24 @@ registerTool(
     // address before its trait floors are joined onto these rows; a slug
     // that names another collection would put a stranger's floors beside
   // every trait. A registry slug is curated and joins as is.
-    let slugIdentity: { verdict: "verified" | "conflict" | "unverified" | "registry"; note: string } = { verdict: "registry", note: "slug from the curated registry entry for this collection" };
+    let slugIdentity: { verdict: "verified" | "group" | "conflict" | "unverified" | "registry"; note: string } = { verdict: "registry", note: "slug from the curated registry entry for this collection" };
     if (openseaSlug && slug && openseaSlug !== registryEntry?.openseaSlug && (await os.openSeaAvailable())) {
       const detail = await os.collectionDetail(slug).catch(() => null);
       const osChain = detail?.onchainCollection && sol.isBase58Address(detail.onchainCollection) ? detail.onchainCollection : null;
       const expected = registryEntry?.coreCollection ?? null;
       if (osChain && expected) {
+        const group = detail?.onchainCollections ?? [];
         slugIdentity =
-          osChain === expected
-            ? { verdict: "verified", note: "OpenSea's record of the slug names this collection's on-chain address" }
+          group.includes(expected) && group.length > 1
+            ? { verdict: "group", note: `OpenSea files ${group.length} Solana contracts under the slug "${slug}", this collection among them; its trait floors cover all of them together, so they were not joined to this collection's listings` }
+            : group.includes(expected)
+            ? { verdict: "verified", note: "OpenSea's record of the slug includes this collection's on-chain address" }
             : { verdict: "conflict", note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, not ${expected}; its trait floors describe another collection and were not joined` };
       } else {
         slugIdentity = { verdict: "unverified", note: `whether "${slug}" is this collection could not be checked (${osChain ? "no on-chain address is known for this symbol" : "OpenSea's record carries no Solana collection address"}); its trait floors were not joined` };
       }
     }
-    if (slug && slugIdentity.verdict !== "conflict" && slugIdentity.verdict !== "unverified" && (await os.openSeaAvailable())) {
+    if (slug && slugIdentity.verdict !== "conflict" && slugIdentity.verdict !== "unverified" && slugIdentity.verdict !== "group" && (await os.openSeaAvailable())) {
       try {
         const tf = await os.traitFloors(slug);
         for (const d of deals.deals) {
@@ -2498,7 +2651,7 @@ registerTool(
       } catch (e) {
         openSeaTraitFloors = { slug, identity: slugIdentity, note: `OpenSea trait floors not read: ${e instanceof Error ? e.message : String(e)}` };
       }
-    } else if (slug && (slugIdentity.verdict === "conflict" || slugIdentity.verdict === "unverified")) {
+    } else if (slug && (slugIdentity.verdict === "conflict" || slugIdentity.verdict === "unverified" || slugIdentity.verdict === "group")) {
       openSeaTraitFloors = { slug, identity: slugIdentity, note: `OpenSea trait floors not joined: ${slugIdentity.note}.` };
     } else if (slug) {
       openSeaTraitFloors = { slug, note: `OpenSea slug known but skipped: ${os.openSeaState().note}` };
@@ -2516,7 +2669,10 @@ registerTool(
       budget: 30_000,
       slim: (d) => omit(d as typeof d & { traits?: unknown }, ["traits"]) as typeof d,
       slimmedAway: "the full per-listing trait list",
-      detailHint: "traitFloors above carries every trait floor for the collection, and get_asset on one mint returns that item's whole trait list.",
+      // This used to say traitFloors carried every trait floor; it carries a
+      // count and a read time only. The floors live on each row's trait list,
+      // which is what slimming removes.
+      detailHint: "Each row's trait list, which is where the floor of each of its traits sits, was dropped to fit. traitFloors above only counts the collection's trait floors. Ask for fewer rows to keep the lists, or call get_asset on one mint for its whole trait list.",
       moreHint: "Ask for a smaller limit, or filter by trait or name, to see a different part of the book.",
     });
 
@@ -2558,7 +2714,9 @@ registerTool(
             truncated: searchTruncated,
             stopReason,
             note:
-              stopReason === "budget"
+              stopReason === "repeat"
+                ? `Read ${listingsSeen} listings over ${pagesRead} page(s), cheapest first, then the marketplace answered a page holding only listings already read, so the search stopped. That is not the end of the book: dearer listings were not read.`
+                : stopReason === "budget"
                 ? `Read ${listingsSeen} listings over ${pagesRead} page(s) of ${NAME_PAGE}, cheapest first, and stopped at the page budget - there are dearer listings this name search never saw. Narrow it with a trait filter, or search again knowing the cheapest ${listingsSeen} were covered.`
                 : stopReason === "found"
                   ? `Read ${listingsSeen} listings over ${pagesRead} page(s), cheapest first, and stopped once ${kept.length} matched the name - the marketplace still has dearer listings this search never read, and top-level "more" describes the first page only.`
@@ -2663,7 +2821,8 @@ registerTool(
         });
         continue;
       }
-      let listings: me.MeListing[] = [];
+      const listings: me.MeListing[] = [];
+      const seenMints = new Set<string>();
       let sawWholeBook = false;
       let stale = false;
       let failed: string | undefined;
@@ -2671,11 +2830,14 @@ registerTool(
         for (let p = 0; p < pagesPerCollection; p++) {
           const read = await me.collectionListings(c.meSymbol, { limit: 100, offset: p * 100, sort: "listPrice", direction: "asc" });
           stale = stale || read.stale;
-          listings = listings.concat(read.listings);
+          const added = addNewListings(listings, seenMints, read.listings);
           if (read.venueReportedEnd) {
             sawWholeBook = true;
             break;
           }
+          // A page of listings already read: the venue is repeating itself.
+          // Stop, without claiming the whole book was seen.
+          if (added === 0) break;
         }
       } catch (e) {
         failed = e instanceof Error ? e.message : String(e);
@@ -2764,10 +2926,12 @@ registerTool(
   {
     title: "Top traders of a collection",
     description:
-      "The wallets with the most volume in a collection as Magic Eden counts it (its own fills, all time). " +
-      "Answers 'who are the whales', 'biggest buyers', 'is one wallet moving this market'. Volume on other " +
-      "marketplaces is invisible here, and a high-volume wallet can be a market maker or a wash trader; " +
-      "get_wallet_activity on a wallet shows which.",
+      "The wallets with the most trading volume in a collection as Magic Eden counts it (its own fills, all " +
+      "time, buying and selling together). Answers 'who trades this most', 'is one wallet moving this market'. " +
+      "It is not a buyer ranking: for who spent the most in a recent window use get_collection_sales (topBuyers), " +
+      "and for who holds the most use get_collection_holders. Volume on other marketplaces is invisible here. " +
+      "A high-volume wallet can be a collector, a market maker or a wash trader; get_wallet_activity shows its " +
+      "buy/sell pattern, which is evidence to weigh, not a verdict on intent.",
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol"),
@@ -2801,7 +2965,7 @@ registerTool(
       me.popularCollections(timeRange),
       // Second venue's order, never its numbers: OpenSea's trending rows carry
       // no volume, so this is a ranked name list beside Magic Eden's figures.
-      os.openSeaAvailable().then((up) => (up ? os.rankedCollections("trending", 20) : null)).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
+      os.openSeaAvailable().then((up) => (up ? os.trendingCollections(timeRange, 20) : null)).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })),
     ]);
     const collections = read.collections.slice(0, 50).map((c) => {
       const { view, warning } = trendingView(c);
@@ -2812,7 +2976,18 @@ registerTool(
         ? { note: `OpenSea not read: ${os.openSeaState().note}` }
         : "error" in osRanked
           ? { note: `OpenSea trending not read: ${osRanked.error}` }
-          : { rows: osRanked.rows, stale: osRanked.stale, cachedAt: osRanked.cachedAt, note: "OpenSea's own trending order for Solana by recent sales activity. Rank only; OpenSea publishes no volume on these rows, so nothing here is added to Magic Eden's figures." };
+          : {
+              window: osRanked.window,
+              timeframe: osRanked.timeframe,
+              rows: osRanked.rows,
+              ...("droppedOtherChain" in osRanked ? { droppedOtherChain: osRanked.droppedOtherChain } : {}),
+              ...("droppedDisabled" in osRanked ? { droppedDisabled: osRanked.droppedDisabled } : {}),
+              stale: osRanked.stale,
+              cachedAt: osRanked.cachedAt,
+              note:
+                `OpenSea's own trending order for Solana over ${osRanked.timeframe}, by recent sales activity. Rank only; OpenSea publishes no volume on these rows, so nothing here is added to Magic Eden's figures. ` +
+                "Every row was checked to carry a Solana contract; droppedOtherChain counts rows OpenSea returned for another chain.",
+            };
     return ok({
       timeRange,
       collections,
@@ -2967,6 +3142,58 @@ function tolerateMissingPromptArguments(transport: StdioServerTransport): void {
   transport.onmessage = wrapped;
 }
 
+/**
+ * The largest single message this server will read from its client.
+ *
+ * The tool schemas only run after a message has been parsed, so one line of
+ * 8 MiB was read, parsed and answered. The SDK's own stdio buffer (10 MiB from
+ * 1.31) is a backstop that closes the whole session when exceeded. The largest
+ * legitimate request here is a few kilobytes, so a longer line is discarded
+ * whole before the SDK sees it: the client gets no reply for that one message
+ * and the session carries on, and memory held for any one message stays under
+ * this figure.
+ */
+const MAX_INCOMING_MESSAGE_BYTES = 1024 * 1024;
+
+function boundedLines(limit: number): Transform {
+  let parts: Buffer[] = [];
+  let size = 0;
+  let dropping = false;
+  return new Transform({
+    transform(chunk: Buffer | string, _encoding, done) {
+      const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+      let start = 0;
+      while (start < buf.length) {
+        const nl = buf.indexOf(0x0a, start);
+        const end = nl === -1 ? buf.length : nl + 1;
+        if (!dropping) {
+          const piece = buf.subarray(start, end);
+          if (size + piece.length > limit + 1) {
+            dropping = true;
+            parts = [];
+            size = 0;
+            process.stderr.write(`solana-nft-mcp: discarded an incoming message longer than ${limit} bytes\n`);
+          } else {
+            parts.push(piece);
+            size += piece.length;
+          }
+        }
+        if (nl === -1) break;
+        if (!dropping && size > 0) this.push(Buffer.concat(parts));
+        parts = [];
+        size = 0;
+        dropping = false;
+        start = nl + 1;
+      }
+      done();
+    },
+    flush(done) {
+      if (!dropping && size > 0) this.push(Buffer.concat(parts));
+      done();
+    },
+  });
+}
+
 async function main() {
   // A client that closes its end while an answer is in flight is a normal
   // way for a session to end, not a fault. Without this, the write lands
@@ -2980,7 +3207,9 @@ async function main() {
   // stderr too: a host that closes the diagnostic pipe while leaving stdout
   // open would otherwise take the process down with an unhandled stream error.
   process.stderr.on("error", closedPipe);
-  const transport = new StdioServerTransport();
+  const input = boundedLines(MAX_INCOMING_MESSAGE_BYTES);
+  process.stdin.pipe(input);
+  const transport = new StdioServerTransport(input, process.stdout);
   await server.connect(transport);
   tolerateMissingPromptArguments(transport);
   // The banner reports the key situation as it stands and never REQUESTS one:
