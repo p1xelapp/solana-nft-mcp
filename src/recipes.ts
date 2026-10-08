@@ -92,11 +92,12 @@ export const RECIPES: Record<string, Recipe> = {
 const seen = await loadSeen();              // Set of identities, survives restarts
 const { sales } = await getRecentSales(symbol, 50);  // the newest 50 at most; there is no cursor
 const key = (s) => \`\${s.signature}:\${s.tokenMint}:buyNow\`;
-// The page must overlap what was already posted. If it does not, sales older
-// than this page happened while the bot was away and cannot be fetched back
-// here: say so loudly instead of looking complete.
+// The page should overlap what was already posted. If it does not, either
+// exactly 50 new sales happened (all here) or more did and the older ones
+// cannot be fetched back here. The page cannot tell which, so say a gap is
+// POSSIBLE, loudly, instead of looking complete.
 if (seen.size > 0 && sales.length > 0 && !sales.some((s) => seen.has(key(s)))) {
-  await alertSelf(\`gap: sales before \${sales[sales.length - 1].time} may be missing (more than 50 since the last poll)\`);
+  await alertSelf(\`possible gap: no sale in this page was seen before; sales before \${sales[sales.length - 1].time} may be missing\`);
 }
 for (const s of [...sales].reverse()) {     // oldest first, so order reads true
   const id = key(s);
@@ -324,6 +325,7 @@ if (!(await baselineComplete())) {
   await markBaselineComplete();
   return;
 }
+const seen = new Set(await loadSeen());            // the ids stored by earlier runs
 const unseen = all.filter((a) => !seen.has(a.id)); // new TO YOU, not proven new
 for (const a of unseen) {
   // The asset's own history decides: a card minted just now is a pull; an
@@ -332,6 +334,8 @@ for (const a of unseen) {
   const p = await getAssetProvenance(a.id);
   const mint = p.mintObserved ? p.events.find((e) => e.event === "minted") : undefined;
   emit(a, mint && isRecent(mint.time) ? "pull" : "backfill");
+  seen.add(a.id);
+  await saveSeen([...seen]);                       // per item: a crash cannot re-emit it
 }
 // Reconcile against the issuer's own count, on boot and on a schedule.
 const expected = await issuerCount(collection);

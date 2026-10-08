@@ -115,8 +115,8 @@ export async function symbolKnowledge(symbol: string, opts: { signal?: AbortSign
       } catch (e) {
         if (!(e instanceof HttpError && e.status === 404)) throw e;
       }
-      if (stats && (stats.floorPrice !== undefined || stats.volumeAll !== undefined)) {
-        return { known: true, checked: "Magic Eden's collection stats carry a floor or a lifetime volume for this symbol" };
+      if (stats && (stats.floorPrice !== undefined || stats.volumeAll !== undefined || stats.volume7d !== undefined)) {
+        return { known: true, checked: "Magic Eden's collection stats carry a floor or a volume figure for this symbol" };
       }
       let metaRead = "its collection metadata returned no name";
       try {

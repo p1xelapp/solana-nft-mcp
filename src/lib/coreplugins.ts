@@ -355,7 +355,14 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
       out.assurances.push(`Royalties ${pct}%${where(roy)} with a program allow-list of ${listed}: a transfer is refused unless the accounts involved belong to a listed program.`);
       out.warnings.push(
         `That allow-list limits which programs can move the asset; it does not check that the ${pct}% fee is paid. Whether a sale pays it is up to the marketplace that handles it.` +
-          (programs.includes(SYSTEM_PROGRAM) ? " The list includes the System Program, so a direct wallet-to-wallet transfer is allowed and pays no fee." : ""),
+          // mpl-core's rule passes a transfer when the programs that OWN the
+          // signer's account and the new owner's account are both listed
+          // (royalties.rs validate_transfer). Every ordinary wallet account is
+          // owned by the System Program, so its presence lets a plain
+          // wallet-to-wallet transfer through this rule.
+          (programs.includes(SYSTEM_PROGRAM)
+            ? " The list includes the System Program, which owns every ordinary wallet account, so this rule lets a direct transfer from one wallet to another through, and nothing in such a transfer pays the fee."
+            : ""),
       );
     } else if (rs === "program deny-list") {
       out.assurances.push(`Royalties ${pct}%${where(roy)} with a program deny-list of ${listed}: transfers through those programs are refused.`);
