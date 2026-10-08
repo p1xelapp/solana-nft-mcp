@@ -283,7 +283,7 @@ export const MECHANICS: MechanicsEntry[] = [
     power: "Sets the creator fee percentage, who it splits to, and which programs may move the item at all.",
     heldBy: "The issuer's update authority.",
     plain:
-      "Says what cut the creators take on resale and, through its rule set, whether that cut can be dodged. With no rule set it is a polite request any marketplace can ignore. With a program allow-list the Core program refuses transfers by anyone not on the list, so the fee is genuinely unavoidable on those marketplaces.",
+      "Says what cut the creators take on resale and, through its rule set, whether that cut can be dodged. With no rule set it is a polite request any marketplace can ignore. A program allow-list limits which programs can move the item; it never checks that the fee is paid, and listing the System Program lets plain wallet-to-wallet transfers through.",
     pitfall:
       "Quoting the percentage as if it were collected. Without a rule set it is advisory, and the money is handled by marketplaces rather than by the Core program either way.",
     documented:

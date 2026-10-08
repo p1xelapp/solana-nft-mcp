@@ -777,7 +777,7 @@ registerTool(
         // Neither can a walk that stopped at its page budget: the collections
         // past it were never read, so a miss there is not an absence.
         openseaSearched = !stale && !truncated;
-        openseaPartial = truncated === true;
+        openseaPartial = stale || truncated === true;
         opensea = {
           hits,
           indexed: collections.length,

@@ -218,8 +218,15 @@ export async function pinnedWalk<T>(run: (pin: EndpointPin) => Promise<T>): Prom
     const exclude = first.ep ? [first.ep.id] : [];
     if (e instanceof NoHistoryPinError) exclude.push(...endpoints().filter((x) => x.keepsHistory === false).map((x) => x.id));
     const second = newPin(exclude);
-    const value = await run(second);
-    return { value, endpointPinned: second.label ?? "no endpoint was contacted for this read" };
+    try {
+      const value = await run(second);
+      return { value, endpointPinned: second.label ?? "no endpoint was contacted for this read" };
+    } catch (e2) {
+      // Two pinned attempts used up: that is the public RPC being busy, and it
+      // is typed so the wording layer says so instead of "try a narrower request".
+      if (e2 instanceof PinnedEndpointError) throw new ChainUnavailableError(e2.message);
+      throw e2;
+    }
   }
 }
 
@@ -258,7 +265,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
     // produces a snapshot stitched from two different slots.
     list = pin.ep ? [pin.ep] : list.filter((ep) => !pin.exclude.has(ep.id));
     if (list.length === 0) {
-      throw new Error(
+      throw new ChainUnavailableError(
         `no Solana endpoint is left to pin this read to (every one was already tried). That is the free public RPC being busy, not a problem with what you asked.`,
       );
     }
