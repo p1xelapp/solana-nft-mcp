@@ -71,7 +71,7 @@ rmSync(path.join(stage, "package-lock.json"), { force: true });
 rmSync(path.join(stage, ".npmrc"), { force: true });
 
 const manifest = {
-  manifest_version: "0.2",
+  manifest_version: "0.3",
   name: "solana-nft-mcp",
   display_name: "solana-nft-mcp",
   version: pkg.version,

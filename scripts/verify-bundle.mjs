@@ -46,7 +46,7 @@ const check = (condition, what) => {
 
 console.log(`${bundle}\n`);
 check(manifest.version === pkg.version, `manifest version ${manifest.version} matches package.json ${pkg.version}`);
-check(manifest.manifest_version === "0.2", `manifest_version is 0.2, got ${manifest.manifest_version}`);
+check(manifest.manifest_version === "0.3", `manifest_version is 0.3, got ${manifest.manifest_version}`);
 check(Boolean(manifest.icon) && readdirSync(work).includes(manifest.icon.split("/")[0]), `the icon it names (${manifest.icon}) is inside the bundle`);
 check(manifest.prompts?.length === PROMPT_LIST.length, `declares ${PROMPT_LIST.length} prompts, found ${manifest.prompts?.length ?? 0}`);
 

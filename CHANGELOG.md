@@ -1,5 +1,119 @@
 # Changelog
 
+## 1.18.0 - 2026-10-08
+
+The first review of the published server against live OpenSea, Magic Eden and
+the chain, two and a half weeks after launch. OpenSea had not changed anything
+this server reads: every field it uses still exists, and the September facts
+still hold (Solana floors in SOL, volume labelled ETH, floor-history points
+with no currency). What the review found was this server asking the wrong
+questions in a few places, and one marketplace entry that broke a whole walk.
+Every fix below is pinned by `test/paging-and-boundaries.mjs` or an extended
+existing suite. The blocks that exercise code 1.17.2 already had were run
+against 1.17.2 first, and each fails there for the reason it describes.
+
+Wrong answers, fixed:
+
+- **OpenSea "trending for Solana" was every chain's trending list.** The
+  request sent `chain=solana`; OpenSea's filter is `chains`, and it ignores a
+  parameter it does not know. Asked the old way on 2026-10-08, the list held
+  11 Ethereum, 5 Robinhood, 1 Polygon, 1 Ronin, 1 Abstract and 1 Solana
+  collection, all presented as Solana. The request now sends `chains=solana`
+  and the window the caller asked for (`timeframe`, which was never sent, so
+  every window was really one day), and every row is checked for a Solana
+  contract; a row without one is dropped and counted in `droppedOtherChain`.
+- **A Magic Eden page shorter than asked for was read as the end.** The
+  listings endpoint has answered 99 of 100 and then 85 more at the next
+  offset, so a lowest-serial search reported the whole book and missed six of
+  the ten lowest serials. Listings, collection activity and the collection
+  directory now end only on an empty page, and every listing walk drops a
+  token it has already read, stopping without claiming the end if a page adds
+  nothing new.
+- **One collection entry stopped the live collection directory.** An entry
+  whose `image` is a 3.4 MB string pushed its 500-row page past the 4 MB body
+  cap, and the whole 61-page walk failed with it, so live name lookups had
+  fallen back to the bundled snapshot. An oversized page is now re-read as
+  100-row and then 20-row pieces (the smallest the endpoint serves), and only
+  a 20-row stretch that is still too large is skipped and counted
+  (`rowsOversized`).
+- **`get_asset_trust` called a royalty allow-list "not optional".** mpl-core's
+  royalty rule set checks which programs own the accounts in a transfer, not
+  whether the fee was paid. The answer now gives the rate, decodes the
+  program list, says what an allow-list or deny-list does and does not
+  restrict, and says when the System Program is on an allow-list, which lets
+  a plain wallet-to-wallet transfer through with no fee. Candy's MLB
+  collections are such a case.
+- **A real, unlisted collection was called a placeholder.** `identify` judged
+  an OpenSea slug real only with a floor or more than one owner. Owners,
+  sales or volume now establish that it exists; a floor says only that
+  something is listed right now. Okay Bears (4,416 owners, 26,472 sales,
+  nothing listed on OpenSea) is the live example.
+- **A collection with two Solana contracts kept only the first,** so its
+  second address could be flagged as a different collection. Every Solana
+  contract is kept (`onchainCollections`) and identity checks compare
+  membership.
+- **Absence was claimed from reads that never happened.** Collection stats
+  said an address "is not in OpenSea's ranked index" when OpenSea was off and
+  the index was never asked; search said a collection was absent from OpenSea
+  after reading only part of its index; recent sales from one marketplace
+  said nothing about the other. Each now says what was searched
+  (`openseaStatus`, `opensea.complete`, `opensea.status: "not-read"`).
+- **A Magic Eden `transfer` activity filter returned bids and pool updates.**
+  The venue ignores that filter, so it is gone, and every activity read now
+  checks the returned rows against the requested types
+  (`typeMismatchDropped`).
+- **`find_listings` told the model it had every trait floor** in a field that
+  holds only a count and a read time. The hint now says where the floors are.
+- **Under load, history came from endpoints that keep none.** When
+  mainnet-beta was busy, history reads fell back to the two other public
+  endpoints, which answer a signature request with an empty list rather than
+  an error. Provenance then read 0 transactions (and cached that for two
+  minutes), and a wallet's age came back as "exactly 0 transactions". History
+  reads now go only to an endpoint that keeps history, and say so when it is
+  busy instead of reporting an empty past.
+
+Boundaries, tightened:
+
+- **Credential redaction missed mixed-case and form-style escapes.** A key
+  with URL-reserved characters echoed as `%2f` beside `%2F`, or form-encoded
+  differently from `encodeURIComponent`, survived. Each credential now carries
+  a pattern that accepts any mix of literal and escaped characters.
+- **Image and website fields passed a prefix test only.** Seven places now
+  share `safeHttpsUrl`: a string, bounded, no whitespace or invisible
+  characters, a parsed https URL with no credentials in it, returned in the
+  parser's own escaped form.
+- **A collection argument of `..` left its route** on the marketplace host
+  (`/v2/collections/../stats` became `/v2/stats`). Dot segments are refused
+  wherever a marketplace read is built, and the symbol schema refuses them.
+- **One client message could be any size.** A line over 1 MiB is now
+  discarded whole before the SDK buffers it, with a note on stderr.
+- **OpenSea reads are counted against the hourly allowance.** A free key gets
+  600 reads an hour; the spacing alone allowed 1,800. Reads now stop at 540 in
+  any hour and say when the next one is possible.
+
+Also:
+
+- Dependencies: `@modelcontextprotocol/sdk` 1.31.0 (the OAuth issuer fix;
+  1.32 is newer than this project's seven-day release-age rule), and patched
+  `hono`, `fast-uri`, `ip-address`, `proxy-addr` and `brace-expansion`. `npm
+  audit` reports 0. None of the advisories was reachable from this stdio
+  server, which loads neither the SDK's OAuth client nor its HTTP pieces.
+- Magic Eden now publishes a 7-day volume and no lifetime volume;
+  `volume7dSol` carries it and `volumeAllSol` stays unknown rather than zero.
+- Collection stats and `get_asset_trust` carry their read time; non-Core
+  collections say why no on-chain supply was read.
+- Three new Candy collections (2026 MLB All-Star Game ICONs, Base Series -
+  Collection Quests, Base Series - Rainbow Rewards) are in the registry,
+  verified on chain under Candy's update authority; 401 in all.
+- Builder recipes fixed: the wallet tracker read fields that are not in the
+  response, the sales bot now reports a gap when more than 50 sales passed
+  since its last poll, and the pack watcher pages the whole collection and
+  tells a fresh pull from a backfill by its mint time.
+- The Claude Desktop bundle declares manifest version 0.3. Outbound requests
+  name the real version in their User-Agent. The README says which MCP
+  protocol revision the server speaks (2025-11-25). Several FAQ and
+  QUESTIONS.md lines that promised more than the tools do were corrected.
+
 ## 1.17.2 - 2026-09-21
 
 Listing release. `package.json` now carries `mcpName` (`io.github.p1xelapp/solana-nft-mcp`), which the official MCP registry requires before it will accept the server, and `server.json` describes the package for that registry. Nothing the server does has changed.
