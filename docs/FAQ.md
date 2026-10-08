@@ -22,9 +22,11 @@ No. It runs on your machine, talks to public data sources, and keeps no wallet d
 no questions and no telemetry. The one thing it may write is the free OpenSea key it issues
 itself, stored in `~/.solana-nft-mcp/` so it is not re-issued every start (`SOLANA_NFT_MCP_NO_AUTO_KEYS=1`
 turns that off). No
-account, no sign-in, no telemetry, no log sent anywhere. The only thing that leaves your
-computer is the public address or name you asked about, sent to the public source that
-can answer it. There is nothing to opt out of because nothing is collected.
+account, no sign-in, no telemetry, no log sent anywhere. What leaves your computer is the
+public address or name you asked about, sent to the public source that can answer it; the
+OpenSea key, sent only to OpenSea to authenticate its reads; and one request at startup
+asking npm whether a newer version exists (`SOLANA_NFT_MCP_NO_UPDATE_CHECK=1` turns that
+off). Nothing about you is collected, so there is nothing else to opt out of.
 
 **Why does it make answers faster and cheaper?**
 Without it your assistant has to guess, search the web, open marketplace pages, read
@@ -39,15 +41,18 @@ assistant may be able to read the picture and pull those out for you, but the se
 itself never sees the image. If the screenshot shows a name and a number, type those.
 
 **What happens when Magic Eden or OpenSea goes down, or stops existing?**
-The tool keeps answering from the sources that are up and says which one is missing.
-Chain reads (supply, ownership, history, custody rules) do not depend on any
-marketplace. Every source sits in a catalog with a tier, a fallback and a weekly live
+Most tools keep answering from the sources that are up and say which one is missing. A
+few are built on one marketplace's feed (`get_wallet_profile` reads Magic Eden's wallet
+data, for example), and those fail with the reason instead of answering in part. Chain
+reads (supply, ownership, history, custody rules) do not depend on any marketplace. Every source sits in a catalog with a tier, a fallback and a weekly live
 check, so a marketplace going quiet shows up as a failed check, not as a wrong answer. See
 docs/SOURCES.md for the full list and how a source gets added or retired.
 
 **How far back does it look?**
 As far as the source keeps. Ownership history for Metaplex Core assets is walked from
-the chain itself, back to the mint. Marketplace feeds page back as far as the marketplace
+the chain itself, back to the mint, decoding up to 50 transactions a call; a longer history
+keeps its newest transactions and the mint, marks the unread middle with an `unread_gap`
+row in place, and says `historyComplete: false`. Marketplace feeds page back as far as the marketplace
 serves; when a window is cut short the result says `truncated: true` and how far it got.
 It never fills a gap with a guess.
 
@@ -82,8 +87,9 @@ Yes, including OpenSea. Magic Eden and plain Solana RPC need no key at all.
 OpenSea does, so the server issues itself one: the first question that actually needs
 OpenSea asks OpenSea for one of its free weekly agent keys, keeps it in
 `~/.solana-nft-mcp/opensea-key.json` on your own machine, and renews it a day before it
-expires. That key is yours - it never leaves your computer and is never printed into a log
-or an answer - and a session that never asks an OpenSea question never requests one.
+expires. That key is yours: it is sent only to OpenSea, to authenticate the reads it is
+for, and is never printed into a log or an answer. A session that never asks an OpenSea
+question never requests one.
 
 **What if the key cannot be issued?**
 OpenSea caps key creation at about two a day per IP address, so on a shared or busy
@@ -140,8 +146,9 @@ result says this every time so the model does not present one marketplace as a w
 
 **Does it understand packs?**
 Yes. Sealed packs are separate assets from the cards they open into; opening either
-burns the pack or returns it to a treasury (Candy does the second, most others the
-first), and each reading changes supply math. Packs normally carry a permanent burn or
+burns the pack or returns it to a treasury, and it depends on the product, not just the
+issuer: on Candy, opened Gold Series packs go back to the treasury while opened base packs
+are burned. Each changes supply math differently. Packs normally carry a permanent burn or
 transfer delegate so the opening program can consume them; the same plugin on a card
 meant to be kept is a red flag. `get_asset_trust` shows which case you are looking at.
 
@@ -191,10 +198,12 @@ An MCP server runs on your machine with your permissions, so reading one before 
 install it is the right instinct, whoever wrote it. This one is read-only by design: 21
 tools, each declaring `readOnlyHint`, and no code that can sign, buy, sell, list or
 transfer. It is MIT licensed and open source. Item names are attacker-chosen text and
-are treated that way, as the entry above describes. `test/abuse.mjs` runs on every
-commit and asserts that a hostile marketplace cannot get a fake turn boundary, a
-reflected API key, or anything about the person running the server into an answer. The
-only thing that leaves your machine is the public address or name you asked about.
+are treated that way, as the entry above describes. `test/abuse.mjs` runs in CI on every
+push to main and every pull request, on Linux, macOS and Windows, and asserts that a
+hostile marketplace cannot get a fake turn boundary, a reflected API key, or anything
+about the person running the server into an answer. Apart from the OpenSea key (sent only
+to OpenSea) and the startup version check, the only thing that leaves your machine is the
+public address or name you asked about.
 
 **Will tool names change?**
 No. Agents reference them in prompts and a rename breaks integrations silently. New
@@ -213,10 +222,13 @@ than eight characters sitting in a PATH is the one shape not covered, so put it 
 query field or the userinfo instead, where the four-character floor applies.
 
 **How do I remove it completely?**
-`npm uninstall -g solana-nft-mcp` if you installed from npm, delete the clone if you
-built from source, or remove the extension in Claude Desktop. Then delete
-`~/.solana-nft-mcp/` if it exists, which is the one folder this server ever writes to.
-npm keeps its own download cache separately; `npm cache clean --force` clears that.
+First remove it from your client, or the client will download and start it again: remove
+the extension in Claude Desktop, run `claude mcp remove solana-nft` in Claude Code, or
+delete its entry from the client's config. If you ran it with `npx` there is nothing
+installed globally; `npm uninstall -g solana-nft-mcp` is only for a global install, and a
+clone you built from source is just a folder to delete. Then delete `~/.solana-nft-mcp/`
+if it exists, which is the one folder this server ever writes to. npm keeps its own
+download cache separately; `npm cache clean --force` clears that.
 
 **Something is wrong or missing.**
 Open an issue with the tool name and the input. If it is a security matter, see

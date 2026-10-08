@@ -77,6 +77,9 @@ onto Settings -> Extensions.
 Cursor, Windsurf, Gemini CLI, Zed, Cline and VS Code take the same `command` / `args` pair in
 their own config; the server is plain stdio with no client-specific code, but those have not
 been tested here. ChatGPT on the web and Grok cannot run a local process.
+The server speaks MCP protocol revision 2025-11-25 through the official TypeScript SDK v1. A
+client that offers the newer 2026-07-28 revision gets 2025-11-25 back, which current clients
+accept; one that refuses anything older cannot use this server yet.
 
 **Did it work?** Your app lists the tools near the message box (Claude Code: `/mcp`). You should
 see 21, starting with `identify`. If none: the path must be absolute and end in `dist/index.js`,

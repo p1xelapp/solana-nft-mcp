@@ -145,7 +145,8 @@ traps before she hits them.
 break silently?"*
 
 **What happens:** `get_integration_recipe` (sales-bot): verified endpoints, the real
-Magic Eden pace (about 2/s, so 600 ms), a cursor-based skeleton, running cost, and the
+Magic Eden pace (about 2/s, so 600 ms), a skeleton that keys each sale on signature, mint
+and type and says so when it fell behind, running cost, and the
 trap where a misspelled symbol returns HTTP 200 and the bot posts nothing forever. She
 ships against real data the same afternoon and runs the kill-mid-batch check first
 because the recipe told her to.
@@ -248,12 +249,13 @@ solana-nft-mcp:** she wants to check the seller's claims before she pays.
 **Asks:** the OpenSea link + *"Everything I should know before I pay for this."*
 
 **What happens:** `identify` pulls the mint. `get_asset_provenance`: minted, one
-transfer to the seller, listed. `verify_claim` (never-traded): **CONFIRMED** with a
-receipt. `get_asset_trust`: no delegates, royalties enforced, metadata immutable,
+transfer to the seller, listed, never sold on. `verify_claim` (ownership): the
+seller's wallet holds it, **CONFIRMED** with a receipt. `get_asset_trust`: no delegates,
+a royalty rule set (it limits where the piece can trade; nothing makes anyone pay), metadata immutable,
 edition 1 of 1 on-chain rather than in the name. `get_wallet_activity` on the seller:
 holder, not flipper, three years old. `get_collection_stats`: supply 1 as claimed. She
 buys. Later, someone in the Discord says the item was "flipped five times". She pastes
-the receipt.
+the provenance receipt: one transfer since mint.
 
 ### 13. Kofi, reads floors for a living
 

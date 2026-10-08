@@ -36,7 +36,7 @@ the time to something that works and survives a restart, not the time to a scree
 ### 4. Rug-check checklist
 **Who:** anyone about to buy into a project they do not know.
 **Ask:** "Run a pre-buy check on this collection and this specific item."
-**Server supplies:** chain supply against the announced number, listed depth versus recent sales, and the custody decode for freeze, transfer, burn, royalty enforcement and metadata mutability.
+**Server supplies:** chain supply against the announced number, listed depth versus recent sales, and the custody decode for freeze, transfer, burn, royalty rule set and metadata mutability.
 **You build:** your own pass or fail thresholds. The server gives facts; deciding what disqualifies a project is yours.
 **Time:** 30 minutes to write the checklist once, then a minute per use.
 
@@ -83,8 +83,8 @@ the time to something that works and survives a restart, not the time to a scree
 ### 10. Pack-pull ticker
 **Who:** card communities watching a live rip.
 **Ask:** "Show me pulls as they happen, with player, set, serial and owner."
-**Server supplies:** the live pull feed, cached and gated, labelled best effort because the upstream is flaky by nature.
-**You build:** the display, and a reconciliation pass on boot. The recipe is blunt about this one: a feed built purely by accumulating events loses everything that happened while you were down, and looks complete afterwards.
+**Server supplies:** no live pull feed. It supplies the pieces: the asset index paged in full by collection address, and each asset's decoded history, which says when it was minted.
+**You build:** the feed itself: a complete baseline on first run, a diff of new ids on each pass, the mint time that tells a fresh pull from a backfill, the display, and a reconciliation pass on boot. The recipe is blunt about this one: a feed built purely by accumulating events loses everything that happened while you were down, and looks complete afterwards.
 **What it saves you:** a tracker sized to the count announced at the time silently evicted 8,409 real pulls in one of my own trackers when the set grew past the cap. Size storage to the maximum the set can ever reach, and alert before you get near it.
 **Time:** 4 hours.
 
