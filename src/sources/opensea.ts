@@ -20,8 +20,9 @@ import { homedir } from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 
-import { cached, fetchJson, rateLimiter, HttpError } from "../lib/http.js";
-import { clean } from "../lib/untrusted.js";
+import { cached, fetchJson, rateLimiter, HttpError, StopError } from "../lib/http.js";
+import { clean, safeHttpsUrl } from "../lib/untrusted.js";
+import { USER_AGENT } from "../lib/version.js";
 import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
 import { registerSecret, MIN_NAMED_SECRET_LENGTH } from "../lib/secrets.js";
@@ -30,8 +31,50 @@ import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api.opensea.io/api/v2";
 
-// Free tier is ~hundreds of reads/hour: pace conservatively at 1 req/2s.
+// Spacing: at most one read every 2 s, so a burst of questions stays polite.
 const gate = rateLimiter(2000, "OpenSea");
+
+// ------------------------------------------------------- hourly budget
+// OpenSea documents 600 reads an hour for a free key. The 2 s gate alone
+// allows 1,800, so a sustained session would run into OpenSea's own 429 and
+// a pause of up to an hour. Reads are counted over a sliding hour and refused
+// a margin below the allowance, with the exact time the next one is possible.
+const HOURLY_READ_BUDGET = 540;
+const HOUR_MS = 60 * 60_000;
+const readTimes: number[] = [];
+/** Test seam: forget the hourly count. */
+export function clearHourlyBudgetForTests(): void {
+  readTimes.length = 0;
+}
+/** Test seam: record `n` reads made just now, without making them. */
+export function useHourlyBudgetForTests(n: number): void {
+  const t = now();
+  for (let i = 0; i < n; i++) readTimes.push(t);
+}
+function takeHourlySlot(): void {
+  const t = now();
+  while (readTimes.length > 0 && t - readTimes[0]! >= HOUR_MS) readTimes.shift();
+  if (readTimes.length >= HOURLY_READ_BUDGET) {
+    const wait = readTimes[0]! + HOUR_MS - t;
+    // StopError leaves the retry loop at once and comes out as an HTTP 429
+    // carrying this wait, so the read pause below applies it across calls.
+    throw new StopError(
+      `This server has used its hourly OpenSea allowance (${HOURLY_READ_BUDGET} reads, under the 600 a free key gets per hour); ` +
+        `the next OpenSea read is possible in ${Math.ceil(wait / 1000)}s. Every other source still answers.`,
+      wait,
+    );
+  }
+  readTimes.push(t);
+}
+/**
+ * The spacing gate plus the hourly count, run before EVERY attempt. Counting
+ * once per call let a call that retried on a 5xx or a network error spend
+ * up to three requests against one slot.
+ */
+const countedGate = async (signal?: AbortSignal, opts?: Parameters<typeof gate>[1]): Promise<void> => {
+  await gate(signal, opts);
+  takeHourlySlot();
+};
 
 // ------------------------------------------------------- read pause
 // A 429 on a READ used to stop only the request that met it. The next tool
@@ -388,6 +431,9 @@ export function openSeaState(): OpenSeaState {
       expiresAt: null,
       persisted: null,
       pausedUntil,
+      // Read by the startup banner, which otherwise promised a key would be
+      // requested on first use, contradicting the switch the operator set.
+      unavailableReason: "turned off by SOLANA_NFT_MCP_NO_AUTO_KEYS=1",
       note: "off - automatic key issue is disabled by SOLANA_NFT_MCP_NO_AUTO_KEYS=1. Set OPENSEA_API_KEY to turn OpenSea back on.",
     };
   }
@@ -464,10 +510,10 @@ async function os<T>(route: string, signal?: AbortSignal): Promise<T> {
         headers: {
           "x-api-key": key,
           Accept: "application/json",
-          "User-Agent": "solana-nft-mcp/1.1 (+https://github.com/p1xelapp/solana-nft-mcp)",
+          "User-Agent": USER_AGENT,
         },
       },
-      { gate, signal },
+      { gate: countedGate, signal },
     );
   } catch (e) {
     notePause(e);
@@ -786,13 +832,21 @@ export async function solanaCollections() {
  */
 export async function slugForOnchainCollection(
   address: string,
-): Promise<{ slug: string; name: string | null; note: string } | null> {
-  const { collections, stale, cachedAt } = await solanaCollections();
+  /**
+   * Filled in on every call: whether the index searched was cut short by its
+   * page budget or served stale. A miss in a partial index is not an absence,
+   * and the caller has to be able to say so.
+   */
+  searched?: { partial?: boolean },
+): Promise<{ slug: string; name: string | null; note: string; solanaContracts: number } | null> {
+  const { collections, stale, cachedAt, truncated } = await solanaCollections();
+  if (searched) searched.partial = stale || truncated === true;
   const hit = collections.find((c) => c.contracts?.some((k) => k.chain === "solana" && k.address === address));
   if (!hit?.collection) return null;
   return {
     slug: clean(hit.collection),
     name: hit.name ? clean(hit.name) : null,
+    solanaContracts: (hit.contracts ?? []).filter((k) => k.chain === "solana").length,
     note:
       `OpenSea slug matched by on-chain collection address against OpenSea's own Solana index` +
       `${stale ? " (served stale" : " (read"} ${cachedAt}), not hand-curated.`,
@@ -817,7 +871,7 @@ export async function slugForOnchainCollection(
 export async function slugByNameForCollection(
   name: string,
   onchainAddress: string,
-): Promise<{ slug: string; note: string } | null> {
+): Promise<{ slug: string; note: string; solanaContracts: number } | null> {
   const base = name
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -837,9 +891,10 @@ export async function slugByNameForCollection(
       // useful move either way, and a miss here never becomes a claim.
       continue;
     }
-    if (detail?.onchainCollection && detail.onchainCollection === onchainAddress) {
+    if (detail && detail.onchainCollections.includes(onchainAddress)) {
       return {
         slug,
+        solanaContracts: detail.onchainCollections.length,
         note:
           `OpenSea slug found by trying "${slug}" and confirming OpenSea's own record for it carries this ` +
           `collection's on-chain address. Not hand-curated, and not accepted on the name alone.`,
@@ -883,6 +938,16 @@ export async function collectionDetail(slug: string) {
     creatorRoyaltyPct = bad > 0 ? null : sum;
   }
   const contracts = Array.isArray(data.contracts) ? data.contracts.filter((c): c is NonNullable<typeof c> => Boolean(c) && typeof c === "object") : [];
+  // A collection can carry more than one Solana contract. Keeping only the
+  // first made a valid second address look like a different collection.
+  const onchainCollections = [
+    ...new Set(
+      contracts
+        .filter((c) => c.chain === "solana")
+        .map((c) => venueAddress(c.address))
+        .filter((a): a is string => a !== null),
+    ),
+  ].slice(0, 20);
   return {
     slug: clean(data.collection).slice(0, 120),
     name: data.name ? clean(data.name) : null,
@@ -890,10 +955,11 @@ export async function collectionDetail(slug: string) {
     // The on-chain address has to look like one, because a later check
     // compares it to the collection the caller asked about and decides
     // whether two floors may be ranked together.
-    onchainCollection: venueAddress(contracts.find((c) => c.chain === "solana")?.address),
+    onchainCollection: onchainCollections[0] ?? null,
+    onchainCollections,
     creatorRoyaltyPct,
     listedOn: typeof data.created_date === "string" ? clean(data.created_date).slice(0, 40) : null,
-    url: typeof data.opensea_url === "string" && /^https:\/\/opensea\.io\//.test(data.opensea_url) ? data.opensea_url : null,
+    url: safeHttpsUrl(data.opensea_url, { host: "opensea.io" }),
     ...(malformed.length > 0 ? { malformedFields: malformed } : {}),
     stale,
     cachedAt,
@@ -1218,28 +1284,70 @@ interface OsRankedCollection {
   safelist_status?: string;
   category?: string;
   is_disabled?: boolean;
+  contracts?: { address?: unknown; chain?: unknown }[];
 }
 
+// The trending window this server's tools speak, mapped to OpenSea's own
+// timeframe names. Anything else is refused rather than sent, because OpenSea
+// silently falls back to one_day for a value it does not know.
+export const OS_TRENDING_TIMEFRAME = {
+  "1h": "one_hour",
+  "1d": "one_day",
+  "7d": "seven_days",
+  "30d": "thirty_days",
+} as const;
+export type OsTrendingWindow = keyof typeof OS_TRENDING_TIMEFRAME;
+
 /**
- * OpenSea's own ranked lists for Solana: "trending" (sales activity over a
- * window) and "top" (by its stats). The venue returns names in rank order and
- * no figures on the row itself, so this is an ORDER from a second venue, never
- * a volume to add to Magic Eden's.
+ * OpenSea's own trending list for Solana (sales activity over a window). The
+ * venue returns names in rank order and no figures on the row itself, so this
+ * is an ORDER from a second venue, never a volume to add to Magic Eden's.
+ *
+ * The chain filter is `chains` (plural). It used to be sent as `chain`, which
+ * OpenSea ignores without an error, so the list came back for every chain and
+ * was labelled Solana. Every row is now also checked against its own contract
+ * list: a row with no Solana contract is dropped and counted, whatever the
+ * filter did.
  */
-export async function rankedCollections(kind: "trending" | "top", limit = 20) {
+export async function trendingCollections(window: OsTrendingWindow = "1d", limit = 20) {
+  const timeframe = OS_TRENDING_TIMEFRAME[window];
+  if (!timeframe) throw new Error(`unsupported trending window "${String(window)}"`);
   const n = Math.max(1, Math.min(50, limit));
-  const { data, stale, cachedAt } = await cached(`os:ranked:${kind}:${n}`, 300_000, () =>
-    os<{ collections?: OsRankedCollection[] }>(`/collections/${kind}?chain=solana&limit=${n}`),
+  const { data, stale, cachedAt } = await cached(`os:trending:${timeframe}:${n}`, 300_000, () =>
+    os<{ collections?: OsRankedCollection[] }>(`/collections/trending?chains=solana&timeframe=${timeframe}&limit=${n}`),
   );
-  if (!data || !Array.isArray(data.collections)) throw new Error(`OpenSea returned no ${kind} list (outage or API change)`);
-  const rows = data.collections
-    .filter((c) => typeof c.collection === "string" && !c.is_disabled)
-    .map((c, i) => ({
-      rank: i + 1,
-      slug: clean(c.collection as string).slice(0, 80),
-      name: typeof c.name === "string" ? clean(c.name).slice(0, 80) : null,
-      verified: c.safelist_status === "verified",
-      category: typeof c.category === "string" ? clean(c.category).slice(0, 32) : null,
-    }));
-  return { kind, rows, stale, cachedAt, source: "opensea" as const };
+  if (!data || !Array.isArray(data.collections)) throw new Error("OpenSea returned no trending list (outage or API change)");
+  let otherChain = 0;
+  let disabled = 0;
+  const kept: OsRankedCollection[] = [];
+  for (const c of data.collections) {
+    if (!c || typeof c.collection !== "string") continue;
+    if (c.is_disabled) {
+      disabled++;
+      continue;
+    }
+    const contracts = Array.isArray(c.contracts) ? c.contracts : [];
+    if (!contracts.some((k) => k && k.chain === "solana")) {
+      otherChain++;
+      continue;
+    }
+    kept.push(c);
+  }
+  const rows = kept.map((c, i) => ({
+    rank: i + 1,
+    slug: clean(c.collection as string).slice(0, 80),
+    name: typeof c.name === "string" ? clean(c.name).slice(0, 80) : null,
+    verified: c.safelist_status === "verified",
+    category: typeof c.category === "string" ? clean(c.category).slice(0, 32) : null,
+  }));
+  return {
+    window,
+    timeframe,
+    rows,
+    ...(otherChain > 0 ? { droppedOtherChain: otherChain } : {}),
+    ...(disabled > 0 ? { droppedDisabled: disabled } : {}),
+    stale,
+    cachedAt,
+    source: "opensea" as const,
+  };
 }

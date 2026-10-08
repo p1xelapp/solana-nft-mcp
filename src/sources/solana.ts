@@ -25,7 +25,7 @@ import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertO
 import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
-import { NotFoundError, WrongKindError } from "../lib/errors.js";
+import { ChainUnavailableError, NotFoundError, WrongKindError } from "../lib/errors.js";
 import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
 import { BoundedMap } from "../lib/bounded.js";
@@ -85,7 +85,22 @@ const gateFor = (url: string) => originGate(url, RPC_MIN_INTERVAL_MS);
 interface RpcEndpoint {
   id: string;
   url: string;
+  /** False for an endpoint known to answer history requests with an empty list. */
+  keepsHistory?: boolean;
 }
+
+/**
+ * Methods whose answer is a HISTORY LIST. An endpoint that keeps no history
+ * does not refuse them; it answers an empty signature list, which cannot be
+ * told apart from "this asset never did anything". Under load the walk fell
+ * back to one of those, read 0 transactions, and cached that for two minutes.
+ *
+ * getTransaction is deliberately not here. The same endpoints answer it with
+ * null, which the decoder already reports as an unread transaction, a hole in
+ * place, while the rest of the history still answers. Keeping it on the busy
+ * endpoint only turned that partial, honest answer into a failed call.
+ */
+const HISTORY_METHODS = new Set(["getSignaturesForAddress"]);
 
 /**
  * The endpoints tried for one call, in order. A user's own endpoint goes
@@ -180,6 +195,8 @@ export interface EndpointPin {
 
 /** The pinned endpoint stopped answering mid-walk. The walk is restarted, never stitched. */
 class PinnedEndpointError extends Error {}
+/** The pinned endpoint keeps no history and the walk needs it. The restart skips every such endpoint. */
+class NoHistoryPinError extends PinnedEndpointError {}
 
 const newPin = (exclude: Iterable<string> = []): EndpointPin => ({ ep: null, exclude: new Set(exclude), label: null });
 
@@ -198,7 +215,9 @@ export async function pinnedWalk<T>(run: (pin: EndpointPin) => Promise<T>): Prom
     return { value, endpointPinned: first.label ?? "no endpoint was contacted for this read" };
   } catch (e) {
     if (!(e instanceof PinnedEndpointError)) throw e;
-    const second = newPin(first.ep ? [first.ep.id] : []);
+    const exclude = first.ep ? [first.ep.id] : [];
+    if (e instanceof NoHistoryPinError) exclude.push(...endpoints().filter((x) => x.keepsHistory === false).map((x) => x.id));
+    const second = newPin(exclude);
     const value = await run(second);
     return { value, endpointPinned: second.label ?? "no endpoint was contacted for this read" };
   }
@@ -226,6 +245,14 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   // one fresh endpoint fail and produce "every endpoint was tried" while two
   // recovered ones were never asked - a self-inflicted outage.
   let list = [...all.filter((ep) => !isCooling(ep)), ...all.filter(isCooling)];
+  if (HISTORY_METHODS.has(method)) {
+    // A pinned walk that landed on an endpoint without history restarts on
+    // another one (pinnedWalk does that once) instead of reading nothing.
+    if (pin?.ep && pin.ep.keepsHistory === false) {
+      throw new NoHistoryPinError(`${pin.ep.id} keeps no transaction history, so this walk restarts on an endpoint that does`);
+    }
+    list = list.filter((ep) => ep.keepsHistory !== false);
+  }
   if (pin) {
     // Pinned: one endpoint for the whole walk. Rotating mid-walk is what
     // produces a snapshot stitched from two different slots.
@@ -329,8 +356,8 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       `the Solana endpoint this read was pinned to stopped answering part-way (${problems.join("; ")})`,
     );
   }
-  throw new Error(
-    `public Solana RPC is not answering right now. Every endpoint was tried and none returned a result ` +
+  throw new ChainUnavailableError(
+    `public Solana RPC is not answering right now. Every endpoint ${HISTORY_METHODS.has(method) ? "that keeps transaction history " : ""}was tried and none returned a result ` +
       `(${problems.join("; ")}). That is the free public RPC being busy, not a problem with what you asked. ` +
       `Set SOLANA_RPC_URL to any endpoint you prefer - this server still needs no key of its own.`,
   );

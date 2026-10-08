@@ -452,10 +452,14 @@ export const WIRED_SOURCES: readonly SourceEntry[] = SOURCES.filter((s) => s.wir
  * catch it being busy. A user's own SOLANA_RPC_URL is inserted ahead of all of
  * these by src/sources/solana.ts.
  */
-export const PUBLIC_RPC_ENDPOINTS: readonly { id: string; url: string }[] = [
-  { id: "rpc-mainnet-beta", url: "https://api.mainnet-beta.solana.com" },
-  { id: "rpc-publicnode", url: "https://solana-rpc.publicnode.com" },
-  { id: "rpc-leorpc", url: "https://solana.leorpc.com/?api_key=FREE" },
+export const PUBLIC_RPC_ENDPOINTS: readonly { id: string; url: string; keepsHistory: boolean }[] = [
+  { id: "rpc-mainnet-beta", url: "https://api.mainnet-beta.solana.com", keepsHistory: true },
+  // Measured 2026-10-08: both answer getSignaturesForAddress with an EMPTY
+  // list for assets mainnet-beta returns six transactions for, and
+  // getTransaction with null. They serve current state, not history, so a
+  // signature list is never read from them (see rpc() in solana.ts).
+  { id: "rpc-publicnode", url: "https://solana-rpc.publicnode.com", keepsHistory: false },
+  { id: "rpc-leorpc", url: "https://solana.leorpc.com/?api_key=FREE", keepsHistory: false },
 ];
 
 /**

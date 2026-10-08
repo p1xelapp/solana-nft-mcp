@@ -241,7 +241,17 @@ const { decodeCoreAccountPlugins, deriveTrust } = await import("../dist/lib/core
 const assetOnly = decodeCoreAccountPlugins(fixture);
 const withEmptyCollection = deriveTrust(assetOnly, { kind: "collection", collection: null, plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 5, creators: [], ruleSet: "program allow-list" } }], updateAuthorityIsNone: false, externalPlugins: 0 });
 assert.ok(withEmptyCollection.plugins.some((p) => p.type === "Royalties" && p.inheritedFromCollection), "collection royalties must be inherited");
-assert.ok(withEmptyCollection.assurances.some((a) => /enforced by a program allow-list/.test(a)), "inherited royalties must shape the facts");
+assert.ok(withEmptyCollection.assurances.some((a) => /with a program allow-list/.test(a)), "inherited royalties must shape the facts");
+// An allow-list restricts which programs can move the asset. It is never
+// reported as making the fee mandatory, and the warning says so.
+assert.ok(!withEmptyCollection.assurances.some((a) => /not optional|unavoidable/i.test(a)), "an allow-list is not an assurance that the fee is paid");
+assert.ok(withEmptyCollection.warnings.some((w) => /does not check that the 5% fee is paid/.test(w)), "the allow-list warning names what it does not enforce");
+{
+  const withSystem = deriveTrust(assetOnly, { kind: "collection", collection: null, plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 10, creators: [], ruleSet: "program allow-list", programs: ["11111111111111111111111111111111"], programCount: 1 } }], externalPlugins: 0, updateAuthorityIsNone: false });
+  assert.ok(withSystem.warnings.some((w) => /System Program/.test(w) && /pays no fee/.test(w)), "an allow-list holding the System Program says a wallet-to-wallet transfer pays nothing");
+  const denied = deriveTrust(assetOnly, { kind: "collection", collection: null, plugins: [{ type: "Royalties", authority: "update authority", data: { percent: 10, creators: [], ruleSet: "program deny-list", programs: [], programCount: 2 } }], externalPlugins: 0, updateAuthorityIsNone: false });
+  assert.ok(denied.warnings.some((w) => /deny-list only blocks the programs on it/.test(w)), "a deny-list is not described as blocking non-approved programs");
+}
 assert.strictEqual(withEmptyCollection.incomplete, false);
 // A permanent delegate held by the owner is not another controller.
 const ownerHeld = deriveTrust({ kind: "asset", collection: null, plugins: [{ type: "PermanentTransferDelegate", authority: "owner" }], updateAuthorityIsNone: true, externalPlugins: 0 }, null);

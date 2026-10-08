@@ -35,8 +35,12 @@ await client.connect(transport);
 const checks = [];
 const check = (id, area, what, fn) => checks.push({ id, area, what, fn });
 
-/** A rate limit is the venue being busy, not this server being wrong. */
-const BUSY = /rate limit|429|too many|busy|timed out|abort/i;
+/**
+ * A rate limit is the venue being busy, not this server being wrong. The
+ * pattern names the phrases the server and the venues actually use; a bare
+ * "429" matched a listing's "moonrank":6429 and skipped a healthy answer.
+ */
+const BUSY = /rate.?limit|HTTP 429|too many requests|pause its reads|\bbusy\b|timed out|aborted/i;
 const SKIP = Symbol("skip");
 
 async function call(name, args) {
@@ -387,9 +391,13 @@ check("T3", "fakes", "a search surrounded by imitations still names the real col
   if (BUSY.test(asText(r))) return SKIP;
   const matches = r.magicEdenDirectory?.matches ?? [];
   if (matches.length < 2) return SKIP;
-  if (!r.venueConfirmed) return "the venue was not asked, so the real collection is only there if the directory happened to hold it";
-  if (r.venueConfirmed.symbol !== "okay_bears") return `the venue confirmed ${r.venueConfirmed.symbol}`;
+  // What matters is the order a reader sees. The curated registry now ranks
+  // the real collection first by itself, in which case the venue is never
+  // asked and that is correct, not a failure.
   if (matches[0]?.symbol !== "okay_bears") return `the first match is ${matches[0]?.symbol}, so a reader takes an imitation`;
+  if (matches[0]?.layer === "registry") return true;
+  if (!r.venueConfirmed) return "the real one is first only because the directory happened to hold it; the venue was not asked";
+  if (r.venueConfirmed.symbol !== "okay_bears") return `the venue confirmed ${r.venueConfirmed.symbol}`;
   return /imitation|spin-off|different thing/i.test(asText(r.venueConfirmed)) || "the real one is first but nothing says the others are not it";
 });
 check("T4", "fakes", "a collection matched by name says so rather than implying it was verified", async () => {

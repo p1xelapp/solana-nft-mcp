@@ -83,6 +83,36 @@ export interface Untrusted {
   flags: string[];
 }
 
+/**
+ * A URL a marketplace or index published, made safe to relay.
+ *
+ * Every image and website field used to pass a prefix test only, so anything
+ * after "https://" went through: newlines, role tags, a two-million-character
+ * string, even an array whose first element was an instruction (the regex
+ * coerced it to a string and the array came back out). Now the value must be
+ * a string of at most `max` characters with no whitespace or control
+ * characters, parse as an https URL with no credentials in it, and optionally
+ * sit on one host. It is returned in the URL parser's own serialisation, so
+ * markup in the path comes back percent-escaped rather than as markup.
+ */
+export function safeHttpsUrl(v: unknown, opts: { max?: number; host?: string } = {}): string | null {
+  const max = opts.max ?? 2048;
+  if (typeof v !== "string" || v.length === 0 || v.length > max) return null;
+  // Whitespace, then every invisible or control character the text cleaner
+  // removes (INVISIBLE is global, so replace() is used rather than test()).
+  if (/\s/.test(v) || v.replace(INVISIBLE, "") !== v) return null;
+  let u: URL;
+  try {
+    u = new URL(v);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" || u.username !== "" || u.password !== "") return null;
+  if (opts.host !== undefined && u.hostname !== opts.host) return null;
+  const out = u.href;
+  return out.length <= max ? out : null;
+}
+
 /** Clean one piece of third-party text, discarding the report. */
 export function clean(raw: unknown): string {
   return inspectUntrusted(raw).value;

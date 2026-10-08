@@ -6,9 +6,9 @@
  * plugin's data laid out in between. A Core collection has the same shape
  * after its own base. Marketplaces show the picture and the price. They do
  * not show that the issuer kept a permanent transfer delegate (they can move
- * your card without your signature), that the asset is frozen, that
- * royalties are enforced by an allow-list, or that a pack is designed to be
- * burned on open. Those are the facts that decide what "owning" it means.
+ * your card without your signature), that the asset is frozen, that a
+ * royalty allow-list limits where it can trade (without checking the fee is
+ * paid), or that a pack is designed to be burned on open. Those are the facts that decide what "owning" it means.
  *
  * Plugins on the COLLECTION apply to every asset in it unless the asset
  * carries the same plugin itself, so reading only the asset can say "nothing
@@ -32,7 +32,7 @@
  */
 
 import { base58Encode } from "../sources/solana.js";
-import { clean } from "./untrusted.js";
+import { clean, safeHttpsUrl } from "./untrusted.js";
 
 const PLUGIN_NAMES = [
   "Royalties",
@@ -56,6 +56,8 @@ const PLUGIN_NAMES = [
   "Groups",
 ] as const;
 
+/** Owns every ordinary wallet; on a royalty allow-list it lets plain wallet-to-wallet transfers through. */
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 const KEY_ASSET = 1;
 const KEY_PLUGIN_HEADER = 3;
 const KEY_PLUGIN_REGISTRY = 4;
@@ -110,8 +112,10 @@ class Reader {
   u16() { const v = this.buf.readUInt16LE(this.off); this.off += 2; return v; }
   u32() { const v = this.buf.readUInt32LE(this.off); this.off += 4; return v; }
   u64() { const v = Number(this.buf.readBigUInt64LE(this.off)); this.off += 8; return v; }
-  pubkey() { const v = base58Encode(this.buf.subarray(this.off, this.off + 32)); this.off += 32; return v; }
-  str() { const n = this.u32(); if (n > 4096) throw new Error("implausible string length"); const s = this.buf.toString("utf8", this.off, this.off + n); this.off += n; return s; }
+  // subarray and toString stop quietly at the end of the buffer; a short read
+  // here is a misparse, so it throws and the plugin is reported unreadable.
+  pubkey() { if (this.off + 32 > this.buf.length) throw new Error("public key runs past the end of the account"); const v = base58Encode(this.buf.subarray(this.off, this.off + 32)); this.off += 32; return v; }
+  str() { const n = this.u32(); if (n > 4096) throw new Error("implausible string length"); if (this.off + n > this.buf.length) throw new Error("string runs past the end of the account"); const s = this.buf.toString("utf8", this.off, this.off + n); this.off += n; return s; }
   option<T>(read: () => T): T | null { return this.u8() === 1 ? read() : null; }
   seek(o: number) { if (o < 0 || o > this.buf.length) throw new Error("offset outside account"); this.off = o; }
   peek() { return this.buf[this.off]; }
@@ -162,10 +166,22 @@ function pluginData(type: number, r: Reader): Record<string, unknown> | undefine
     case 0: { // Royalties
       const basisPoints = r.u16();
       const n = r.u32();
+      // Reading only the first 64 of a longer list left the cursor in the
+      // middle of it, and the rule set was then read from the wrong bytes.
+      if (n > 64) throw new Error(`implausible creator count ${n}`);
       const creators: { address: string; percentage: number }[] = [];
-      for (let i = 0; i < n && i < 64; i++) creators.push({ address: r.pubkey(), percentage: r.u8() });
+      for (let i = 0; i < n; i++) creators.push({ address: r.pubkey(), percentage: r.u8() });
       const rs = r.u8();
       const ruleSet = rs === 0 ? "none" : rs === 1 ? "program allow-list" : rs === 2 ? "program deny-list" : `unknown(${rs})`;
+      // The list itself, not just its kind: whether the System Program is on
+      // an allow-list decides whether a plain wallet-to-wallet transfer passes.
+      if (rs === 1 || rs === 2) {
+        const count = r.u32();
+        if (count > 64) throw new Error(`implausible program list length ${count}`);
+        const programs: string[] = [];
+        for (let i = 0; i < count; i++) programs.push(r.pubkey());
+        return { percent: basisPoints / 100, creators, ruleSet, programs, programCount: count };
+      }
       return { percent: basisPoints / 100, creators, ruleSet };
     }
     case 1: case 5: case 16: case 17: // Freeze / PermanentFreeze / FreezeExecute / PermanentFreezeExecute
@@ -187,7 +203,7 @@ function pluginData(type: number, r: Reader): Record<string, unknown> | undefine
       const maxSupply = r.option(() => r.u32());
       const name = r.option(() => r.str());
       const uri = r.option(() => r.str());
-      return { maxSupply, name: name === null ? null : clean(name).slice(0, 120), uri: uri && /^https?:\/\//.test(uri) ? uri.slice(0, 300) : null };
+      return { maxSupply, name: name === null ? null : clean(name).slice(0, 120), uri: safeHttpsUrl(uri, { max: 300 }) };
     }
     default: return undefined;
   }
@@ -325,8 +341,28 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   if (roy?.unreadable) out.warnings.push("A Royalties plugin is present but its data could not be decoded: assume a creator fee may apply and may be enforced.");
   else if (roy?.data) {
     const rs = String(roy.data.ruleSet); const pct = String(roy.data.percent);
+    // What mpl-core's royalty rule set checks is WHICH PROGRAMS own the
+    // accounts in a transfer. It never checks that the fee was paid. It used
+    // to be reported as "the creator fee is not optional", which is a
+    // financial assurance the program does not give: Candy's allow-list
+    // includes the System Program, so a direct wallet-to-wallet transfer
+    // passes and pays nothing.
+    const programs = Array.isArray(roy.data.programs) ? (roy.data.programs as string[]) : [];
+    const count = typeof roy.data.programCount === "number" ? roy.data.programCount : programs.length;
+    const listed = `${count} program${count === 1 ? "" : "s"}`;
     if (rs === "none") out.assurances.push(`Royalties set at ${pct}%${where(roy)} with no program rule set - advisory; a marketplace can ignore them.`);
-    else out.assurances.push(`Royalties ${pct}%${where(roy)} enforced by a ${rs}: transfers through non-approved programs are blocked, so the creator fee is not optional here.`);
+    else if (rs === "program allow-list") {
+      out.assurances.push(`Royalties ${pct}%${where(roy)} with a program allow-list of ${listed}: a transfer is refused unless the accounts involved belong to a listed program.`);
+      out.warnings.push(
+        `That allow-list limits which programs can move the asset; it does not check that the ${pct}% fee is paid. Whether a sale pays it is up to the marketplace that handles it.` +
+          (programs.includes(SYSTEM_PROGRAM) ? " The list includes the System Program, so a direct wallet-to-wallet transfer is allowed and pays no fee." : ""),
+      );
+    } else if (rs === "program deny-list") {
+      out.assurances.push(`Royalties ${pct}%${where(roy)} with a program deny-list of ${listed}: transfers through those programs are refused.`);
+      out.warnings.push(`A deny-list only blocks the programs on it. Any other program, and a direct wallet-to-wallet transfer, can move the asset without paying the ${pct}% fee.`);
+    } else {
+      out.warnings.push(`Royalties ${pct}%${where(roy)} with a rule set this version does not recognise (${rs}): what it restricts could not be read, and nothing here says the fee is enforced.`);
+    }
   } else if (!roy && contextIncomplete) out.warnings.push("No Royalties plugin in the decoded data, but part of the picture was not read (see the warnings below), so whether a creator fee is enforced on resale cannot be settled from this read.");
   else if (!roy) out.assurances.push("No royalties plugin on the asset or its collection: nothing enforces a creator fee on resale.");
 
