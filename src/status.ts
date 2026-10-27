@@ -309,7 +309,7 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
   if (osRow) osRow.credential = { source: osAfter.source, expiresAt: osAfter.expiresAt, persisted: osAfter.persisted ?? null, pausedUntil: osAfter.pausedUntil ?? null };
   const mePause = me.mePausedUntil();
   const meRow = rows.find((r) => r.id === "magiceden-v2");
-  if (meRow && mePause) meRow.note = `${meRow.note} Magic Eden asked readers to pause; no request goes to it before ${mePause}.`;
+  if (meRow && mePause) meRow.note = `${meRow.note} Magic Eden asked readers to pause on at least one kind of request; that kind is not asked again before ${mePause}, and other kinds still are.`;
   clearTimeout(deadline);
   controller.abort();
 

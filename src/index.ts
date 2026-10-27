@@ -29,7 +29,7 @@ import { identify } from "./identify.js";
 import { roleOf, knownIssuer } from "./issuers.js";
 import { RECIPES, RECIPE_GOALS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
-import { decodeCoreAccountPlugins, decodeOracleValidation, deriveTrust, oracleAccountsToRead, type OracleReading } from "./lib/coreplugins.js";
+import { decodeCoreAccountPlugins, decodeOracleValidation, deriveTrust, oracleAccountsToRead, oracleReadingKey, type OracleReading } from "./lib/coreplugins.js";
 import { clean, cleanFields, inspectUntrusted, profileLinkUrl, safeHttpsUrl, withoutLinks } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
@@ -659,13 +659,16 @@ registerTool(
  */
 async function readOracles(accounts: { account: string; resultsOffset: number }[]): Promise<Map<string, OracleReading>> {
   const out = new Map<string, OracleReading>();
+  const fetched = new Map<string, Awaited<ReturnType<typeof sol.getAccountRaw>>>();
   for (const { account, resultsOffset } of accounts.slice(0, 4)) {
+    const key = oracleReadingKey(account, resultsOffset);
     try {
-      const got = await sol.getAccountRaw(account);
-      if (!got) { out.set(account, { account, state: "missing" }); continue; }
-      out.set(account, { account, owner: got.owner, slot: got.slot, ...decodeOracleValidation(got.data, resultsOffset) });
+      if (!fetched.has(account)) fetched.set(account, await sol.getAccountRaw(account));
+      const got = fetched.get(account);
+      if (!got) { out.set(key, { account, state: "missing" }); continue; }
+      out.set(key, { account, owner: got.owner, slot: got.slot, ...decodeOracleValidation(got.data, resultsOffset) });
     } catch (e) {
-      out.set(account, { account, state: "unread", note: e instanceof Error ? e.message : String(e) });
+      out.set(key, { account, state: "unread", note: e instanceof Error ? e.message : String(e) });
     }
   }
   return out;
@@ -1055,8 +1058,11 @@ registerTool(
       const meta = out.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
       if (meta) {
         const website = profileLinkUrl(meta.website);
+        // A handle is a handle: anything that is not one (a URL to some other
+        // site, a sentence) would be a link by another name.
+        const handle = typeof meta.twitter === "string" ? /^(?:https?:\/\/(?:www\.)?(?:x|twitter)\.com\/)?@?([A-Za-z0-9_]{1,15})\/?$/.exec(meta.twitter.trim())?.[1] : undefined;
         const cleaned = cleanFields(
-          { name: meta.name, description: meta.description, image: safeHttpsUrl(meta.image) ?? undefined, twitter: meta.twitter, website: website ?? undefined },
+          { name: meta.name, description: meta.description, image: safeHttpsUrl(meta.image) ?? undefined, twitter: handle ? `@${handle}` : undefined, website: website ?? undefined },
           ["name", "description", "twitter"],
         );
         if (typeof cleaned.data.description === "string") cleaned.data.description = withoutLinks(cleaned.data.description);

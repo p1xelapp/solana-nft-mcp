@@ -83,7 +83,7 @@ const textOf = (r) => JSON.stringify(r);
     }
     // A keyed request's error body is not relayed (2026-10-26); its status is,
     // so the operator still sees that the request was refused.
-    if (body.includes("[REDACTED]") || /HTTP 4\d\d/.test(body)) redactedSomewhere = true;
+    if (body.includes("[REDACTED]") || /OpenSea responded HTTP 4\d\d/.test(body)) redactedSomewhere = true;
   }
   assert.ok(redactedSomewhere, "the refusal is still visible as a status, so the operator can see it happened");
   ok("A-02 an upstream that echoes the operator's key cannot get it into an answer");

@@ -166,9 +166,13 @@ const serverEnvBase = () => {
     // Since 2026-10-26 the reflecting body of a keyed request is not relayed
     // at all; the status still is, so the reflecting route was really asked.
     if (/OpenSea responded HTTP 400/.test(text) && !text.includes("bad request")) redactedSeen = true;
-    if (!r.isError && /opensea[\s\S]*HTTP 400/i.test(text) && !text.includes("bad request")) successPathSeen = true;
+    // The stats route answers 200 with the key as its floor currency. That
+    // value is not ticker-shaped, so the success path must carry the stats
+    // (owners: 2 is the stub's) with the currency refused as null.
+    const osBlock = r.structuredContent?.opensea;
+    if (!r.isError && osBlock && osBlock.owners === 2 && osBlock.floorCurrency === null) successPathSeen = true;
   }
-  assert.ok(successPathSeen, "a SUCCESSFUL answer reached the reflecting route and carried its status without its body");
+  assert.ok(successPathSeen, "a SUCCESSFUL answer read the 200 that reflected the key, and refused the reflected value instead of printing it");
   // SEC-04: the side effect the read-only hint does not cover is disclosed in
   // the server's own instructions, where every client's model reads it.
   const instructions = c.getInstructions() ?? "";

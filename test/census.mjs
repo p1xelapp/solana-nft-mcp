@@ -155,7 +155,9 @@ const kinds = (r) => r.events.map((e) => e.event);
   }
   assert.ok(message.length > 0, "the upstream error surfaced at all");
   assert.ok(!message.includes(canary), `the RPC key reached an error message: ${message}`);
-  assert.ok(message.includes("[REDACTED]"), `the reflection was redacted rather than dropped: ${message}`);
+  // Since 2026-10-26 the person's own endpoint is reported by code only: a
+  // provider can echo the key in an encoding no redaction list anticipates.
+  assert.ok(/-32602/.test(message) && /not relayed/.test(message), `the error is reported by its code, without the provider's text: ${message}`);
 
   // And through the asset index, where the key sits in the path.
   resetSecrets();
@@ -641,7 +643,8 @@ const kinds = (r) => r.events.map((e) => e.event);
     assert.ok(!answer.isError, `the venue answered, so this is a normal result: ${answer.content?.[0]?.text?.slice(0, 200)}`);
     const text = JSON.stringify(answer);
     assert.ok(!text.includes(canary), "a configured private RPC credential reached a successful tool response");
-    assert.ok(/\[REDACTED\]/.test(text) || !/sourceErrors/.test(text), "if the upstream text is carried, it is carried redacted");
+    // Since 2026-10-26 the configured endpoint's text is not relayed at all.
+    assert.ok(/\[REDACTED\]|not relayed/.test(text) || !/sourceErrors/.test(text), "if the upstream failure is carried, its text is redacted or withheld");
     const bytes = Buffer.byteLength(text);
     assert.ok(bytes <= 100_000, `single-asset result is ${bytes} bytes; the image URL must be bounded`);
     assert.strictEqual(answer.structuredContent?.market?.image, null, "an over-long URL is dropped, not relayed");

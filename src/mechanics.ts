@@ -867,9 +867,9 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "After its custodial wallets were drained in October 2026, Candy started moving every holder's items into new wallets run with MoonPay. Its October 23 update lists the steps in order: SOL restored, then wallet claiming, then marketplace connections, then transfers out. An item at a new address says nothing about which step a holder is on, and the collections are unchanged: Candy's key still holds the permanent transfer, burn and freeze delegates on every card.",
     pitfall:
-      "A wallet you can see, a price on a marketplace and an unfrozen card do not add up to 'I can trade it'. Since October 12 an oracle check on the collections refuses ordinary transfers and burns; get_asset_trust reads that check and says whether it still refuses.",
+      "A wallet you can see, a price on a marketplace and an unfrozen card do not add up to 'I can trade it'. Candy began attaching an oracle check to its collections on October 12 (the transactions are on chain), and on October 26 it refused ordinary transfers and burns; get_asset_trust reads that check and says whether it still refuses.",
     documented:
-      "Candy describes the new wallet as using MPC signing. Its October 23 update gives SOL restoration, wallet claiming, marketplace connections and external transfers as successive steps without fixed dates.",
+      "Candy's October 22 post describes the new wallet as powered by MoonPay with MPC signing. Its October 23 update gives SOL restoration, wallet claiming, marketplace connections and external transfers as successive steps without fixed dates.",
     observed:
       "Reading collections 8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K and JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n from a public Solana node showed PermanentTransferDelegate, PermanentBurnDelegate and PermanentFreezeDelegate, all held by the update authority, on the collection - so inherited by every card in it. On 2026-10-26 an Absolute Batman #1 card read through get_asset_trust showed an Oracle adapter on its collection pointing at FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox, whose bytes answered Rejected for transfer and burn.",
     verified: true,
@@ -885,7 +885,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
     pitfall:
-      "Blaming the allow-list every time a Candy sale fails. Since October 12, 2026 an oracle check on the collections has refused ordinary transfers no matter which program asks; get_asset_trust shows which rule is doing the refusing.",
+      "Blaming the allow-list every time a Candy sale fails. An oracle check Candy began attaching on October 12, 2026 refused ordinary transfers no matter which program asked when read on October 26; get_asset_trust shows which rule is doing the refusing.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:
@@ -1128,6 +1128,8 @@ export const MECHANICS: MechanicsEntry[] = [
     plain: "On October 19, 2026 Candy started moving every holder's items from the old custodial wallets into new ones. Unlike Candy's earlier move onto Solana, each card keeps its asset address and its whole history; only the owner changes. Look the card up by its asset address and the move shows as one more transfer. That transfer is not a sale, not a pack opening, and not proof that the old and new wallets belong to the same person.",
     pitfall: "Reading an emptied old wallet as a theft or a sell-off, or a brand-new wallet holding valuable cards as suspicious. Check the card's own history first. Wallet age is the age of the address, not of the collection or the collector.",
     documented: "Candy said NFTs would leave old wallets for new wallets and that open listings were being cancelled. New wallet access and trading were separate rollout steps.",
+    observed:
+      "That a moved card keeps its address and history is how a Metaplex Core transfer works, and it shows on chain: Absolute Batman #1 card 59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4 was transferred on 2026-10-22 under the same address, with its history back to July 2026 still readable.",
     verified: true,
     source: "https://blog.candy.io/candy-community-update-your-nfts-and-sol-are-on-the-move/",
     sourceRead: "2026-10-26",

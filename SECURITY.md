@@ -52,7 +52,10 @@ arguments hold more than 512 elements is refused before validation walks them.
 Links are relayed only as ordinary public https pages: an address literal, a
 local name, a look-alike international domain, or a profile link whose
 address reads like a claim or wallet page is withheld and the answer says so.
-Links inside a collection's description are removed. Nothing this server
+Web addresses inside a collection's description are replaced with "[link
+removed]" (full URLs, defanged ones, markdown links and bare domains on the
+common endings), and a profile's X handle is passed on only when it is a
+handle. Nothing this server
 returns asks anyone to connect a wallet or sign anything, and after a wallet
 theft like Candy's in October 2026 a page that does should be treated as
 hostile.
@@ -87,9 +90,11 @@ Solana's public RPC endpoints are shared infrastructure that their operator
 says is not for production traffic. They are the default here because they
 are free and keyless, which suits interactive research; anyone who needs
 reliable throughput or archival history should point `SOLANA_RPC_URL` at an
-endpoint of their own. When OpenSea, Magic Eden or an RPC endpoint answers
-429 with a `Retry-After`, that pause holds for every later call (capped at an
-hour), instead of ending with the one request that got it. The label a tool prints for a configured endpoint is
+endpoint of their own. A 429 that names a pause is honoured past the one
+request that got it, capped at an hour: OpenSea pauses all its reads, Magic
+Eden pauses that kind of request (its collection stats, say, while its other
+routes keep answering), and an RPC endpoint is skipped for the pause while
+the others are still asked. The label a tool prints for a configured endpoint is
 its host only, never its URL, because private endpoints carry their key in
 the query string.
 

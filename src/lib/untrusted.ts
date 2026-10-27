@@ -129,32 +129,53 @@ function isPublicHostName(host: string): boolean {
  * usual next move, and a collection profile is text anybody who controls it
  * can change.
  */
-const CLAIM_STYLE = /(?:claim|airdrop|restore|recover|connect|verify|validate|rectif|sync|migrat|reward|redeem|free-?mint|wallet|drop-?check|eligib)/i;
+// Matched against whole words of the host and path, never substrings, so
+// "acclaimgames.com" and "/rewards" pass. Single words that only a drainer
+// page needs, and two-word pairs where each word alone is ordinary.
+const CLAIM_WORDS = new Set(["claim", "claims", "airdrop", "airdrops", "restore", "recover", "recovery", "rectify", "rectification", "drainer", "seedphrase", "privatekey", "eligibility", "walletconnect"]);
+const CLAIM_PAIRS = [["connect", "wallet"], ["wallet", "connect"], ["verify", "wallet"], ["validate", "wallet"], ["sync", "wallet"], ["wallet", "sync"], ["migrate", "wallet"], ["wallet", "migration"], ["free", "mint"], ["seed", "phrase"], ["private", "key"], ["check", "eligibility"]];
 
 /**
  * A website link from a collection's marketplace profile, relayed only when it
  * is an ordinary public https page: same rules as safeHttpsUrl, plus no
  * internationalised (xn--) host that can imitate another name, and nothing in
- * the host or path that reads like a claim or wallet page.
+ * the host or path that reads like a claim or wallet page. The query string is
+ * not judged: tracking parameters are not the page.
  */
 export function profileLinkUrl(v: unknown): string | null {
   const u = safeHttpsUrl(v, { max: 300 });
   if (!u) return null;
   const parsed = new URL(u);
   if (parsed.hostname.split(".").some((label) => label.startsWith("xn--"))) return null;
-  let rest = parsed.pathname + parsed.search;
+  let path = parsed.pathname;
   try {
-    rest = decodeURIComponent(rest);
+    path = decodeURIComponent(path);
   } catch {
     /* a malformed escape is checked as written */
   }
-  if (CLAIM_STYLE.test(parsed.hostname) || CLAIM_STYLE.test(rest)) return null;
+  const words = `${parsed.hostname} ${path}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.some((w) => CLAIM_WORDS.has(w))) return null;
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (CLAIM_PAIRS.some(([a, b]) => words[i] === a && words[i + 1] === b)) return null;
+  }
   return u;
 }
 
-/** Links inside free text (descriptions) come out; the words around them stay. */
+/**
+ * Links inside free text (descriptions) come out; the words around them stay.
+ * Schemes, defanged schemes (hxxps), markdown link targets and bare domains
+ * on the common top-level domains all count as links.
+ */
+const LINK_IN_TEXT = new RegExp(
+  [
+    String.raw`\b(?:https?|hxxps?|ipfs|ipns|ar|ftp|wss?):\/\/[^\s<>"'\])]+`,
+    String.raw`\bwww\.[^\s<>"'\])]+`,
+    String.raw`\b(?:[a-z0-9-]+\.)+(?:com|net|org|io|xyz|app|gg|me|fun|site|link|live|gift|cash|club|vip|top|pro|shop|co|ai|art|nft|sol|dev|so|to|ly|us|uk|info|biz|online|world|tech|finance|exchange|wallet)\b(?:\/[^\s<>"'\])]*)?`,
+  ].join("|"),
+  "gi",
+);
 export function withoutLinks(text: string): string {
-  return text.replace(/\b(?:https?:\/\/|www\.)[^\s<>"')\]]+/gi, "[link removed]");
+  return text.replace(LINK_IN_TEXT, "[link removed]");
 }
 
 /** Clean one piece of third-party text, discarding the report. */

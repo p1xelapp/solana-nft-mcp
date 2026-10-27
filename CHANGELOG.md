@@ -1,10 +1,96 @@
 # Changelog
 
-## Unreleased
+## 1.19.0 - 2026-10-27
 
-- Separate Candy's October wallet transfers from its earlier move onto Solana, and date the wallet and trading rollout notes.
-- Stop inferring pack opening and wallet operators from treasury ownership or repeated addresses.
-- Label newly observed mints without calling them pack pulls. State the holder census limit and distinguish indexed rankings from verified current ownership.
+A month after launch, and two weeks after Candy Digital's custodial wallets
+were drained. Candy paused transfers and sales on October 12 and on October
+19 started moving every holder's items into new wallets run with MoonPay.
+Several answers this server gave about Candy were written for the world
+before that, so this release rereads Candy, OpenSea, Magic Eden and the
+chain from scratch, and hardens the server against the kind of attack that
+follows a wallet theft: phishing links and leaked keys. Four independent
+reviews found 34 issues, none critical or high; a hostile review of the fixes
+found nine more, all fixed here. Every fix is pinned by
+`test/locks-links-and-pauses.mjs` or an extended existing suite.
+
+New:
+
+- **`get_asset_trust` now answers "can this card move right now".** Metaplex
+  Core lets a collection attach an oracle: an outside account the program
+  asks before a transfer or a burn. The decoder used to count these and call
+  the picture incomplete. It now decodes the oracle record, reads the oracle
+  account, and reports what it answered (`blockedByOracle`, `oracleChecks`),
+  with the slot it was read at. On 2026-10-26 every sampled Candy collection
+  carried one, and it refused ordinary transfers and burns; the answer says
+  so, and names the exception, because the program force-approves the
+  issuer's permanent delegates before it asks the oracle. A listing price is
+  not the same thing as a trade that can go through, and this is the first
+  tool that can tell them apart.
+
+Wrong answers, fixed:
+
+- **Candy wording was out of date.** It said trading was open, blamed the
+  royalty allow-list for any failed sale, called treasury holdings an
+  opened-pack count, called every other address "a collector", and pointed a
+  question about a moved card at the remint explanation. The Candy entries are
+  rewritten and dated, with a new one for the October wallet move, and an
+  emptied old wallet or a brand-new one is no longer read as a theft or a
+  red flag.
+- **A sales answer sent people to listings "buyable now"** during the freeze.
+  It now says listings are advertised asks whose transferability is not
+  checked.
+- **A zero-listing collection could keep a floor.** Magic Eden still carries a
+  last floor beside "0 listed"; that is no longer quoted as a current ask.
+- **A short page ended a wallet's activity walk** and reported it complete.
+  Only an empty page ends it now, and a page that fails after the first keeps
+  the rows already read and says the walk may be cut off.
+- **OpenSea slug discovery threw away the name** of collections whose issuer
+  comes last ("2026 MLB Gold Series ICONs - Candy Digital"), so OpenSea was
+  never read for them.
+- **An empty OpenSea holder list became 0% concentration.** It is unknown now.
+- **A frozen market charted as missing data.** A complete, fresh feed whose
+  last sale predates the window now fills the window with zero days.
+- **The chain and OpenSea disagreeing on a collection's size** (Gold: 1,572
+  on chain, 784 on OpenSea) is now named, because OpenSea's holder shares
+  divide by its own figure.
+- **The holder census told people to raise `max` past its 5,000 ceiling.**
+- **The pack-watcher recipe called any recent mint a pack pull.** It is a
+  `recent-mint` now; opening needs separate evidence.
+- **Odd marketplace values passed through:** negative prices, a royalty
+  outside 0 to 10,000 basis points, a fractional listing count, and the string
+  "false" read as compressed. Each is null now.
+
+Security:
+
+- **Links.** A collection profile's website is relayed only as an ordinary
+  public https page; an address literal, a local name, a look-alike
+  international domain or an address that reads like a claim or wallet page
+  is withheld, and the answer says so. Links in descriptions are removed, and
+  the X field must be a handle. Image URLs can no longer point at a private
+  address.
+- **Keys.** The error body of a request that carried a key is no longer
+  relayed, only its status, and errors from your own `SOLANA_RPC_URL` or
+  `DAS_RPC_URL` are reported by code. Redaction caught the plain, JSON and URL
+  spellings; base64, hex and HTML-entity echoes got through.
+- **Arguments.** Error text the MCP SDK writes itself is capped at 2,000
+  characters (one bad argument used to come back as 200 KB), and a call whose
+  arguments hold more than 512 elements is refused before validation walks
+  them.
+- **Endpoints.** `SOLANA_RPC_URL` and `DAS_RPC_URL` must be https, except on
+  localhost.
+- **Rate limits.** A `Retry-After` from Magic Eden or an RPC endpoint now holds
+  across calls instead of ending with the request that got it.
+- **Dependencies.** MCP SDK 1.32.1 and zod 4.6.7 clear five advisories
+  published in October. Three more (in body-parser, fast-uri and ip-address,
+  which sit in the SDK's HTTP server and are never loaded by this stdio
+  server) have patches younger than this repository's seven-day rule and will
+  follow once they age in.
+- **Bundle verifier.** A zip entry that claims zero bytes can no longer expand
+  past the verifier's budget.
+
+Checked and unchanged: every OpenSea and Magic Eden endpoint and field the
+code reads, all 401 Candy collections (none added, removed or re-keyed), and
+2,400 mixed calls in one session with memory flat after the first 400.
 
 ## 1.18.0 - 2026-10-08
 

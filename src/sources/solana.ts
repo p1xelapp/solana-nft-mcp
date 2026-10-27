@@ -354,8 +354,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           // A provider error from the person's own endpoint is about their
           // account and can echo their key in any encoding; only its code is
           // relayed. The public endpoints carry no key.
-          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(ep.url === process.env.SOLANA_RPC_URL?.trim() ? `provider error ${Number.isSafeInteger(j.error.code) ? j.error.code : "unknown"}` : `${j.error.code}: ${upstreamMessage(j.error.message)}`);
-          throw new ChainError(`Solana RPC ${j.error.code}: ${upstreamMessage(j.error.message)}`);
+          const own = ep.url === process.env.SOLANA_RPC_URL?.trim();
+          const code = Number.isSafeInteger(j.error.code) ? String(j.error.code) : "unknown";
+          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
+          throw new ChainError(own ? `Solana RPC ${code} from your SOLANA_RPC_URL (its message is not relayed, because a provider can echo your key in it)` : `Solana RPC ${code}: ${upstreamMessage(j.error.message)}`);
         }
         // A malformed envelope with neither result nor error must not read as
         // "no account" or "no history" downstream.
