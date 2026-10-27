@@ -123,7 +123,9 @@ const serverEnvBase = () => {
   }
   assert.ok(message.length > 0, "the 400 surfaced as an error at all");
   assert.ok(!message.includes(canary), `the self-issued key reached an error message: ${message}`);
-  assert.ok(message.includes("[REDACTED]"), `the reflection was redacted rather than dropped: ${message}`);
+  // Since 2026-10-26 a response to a keyed request relays its status only:
+  // redaction cannot anticipate every encoding a provider might echo.
+  assert.ok(!message.includes("bad request") && /HTTP 400/.test(message), `the body of a keyed request is not relayed: ${message}`);
   assert.strictEqual(redactSecrets(`x ${canary} y`), "x [REDACTED] y", "the registry knows the key that was sent");
   globalThis.fetch = denied;
   ok("SEC-01 a self-issued key reflected by the upstream is redacted at the source");
@@ -161,10 +163,12 @@ const serverEnvBase = () => {
     const text = JSON.stringify(r);
     // Raw, JSON-escaped and URL-encoded spellings are all leaks.
     for (const form of [canary, JSON.stringify(canary).slice(1, -1), encodeURIComponent(canary)]) if (text.includes(form)) leaks.push(`${name} (${form === canary ? "raw" : "encoded"})`);
-    if (text.includes("[REDACTED]")) redactedSeen = true;
-    if (!r.isError && /opensea[\s\S]*\[REDACTED\]/i.test(text)) successPathSeen = true;
+    // Since 2026-10-26 the reflecting body of a keyed request is not relayed
+    // at all; the status still is, so the reflecting route was really asked.
+    if (/OpenSea responded HTTP 400/.test(text) && !text.includes("bad request")) redactedSeen = true;
+    if (!r.isError && /opensea[\s\S]*HTTP 400/i.test(text) && !text.includes("bad request")) successPathSeen = true;
   }
-  assert.ok(successPathSeen, "a SUCCESSFUL answer carried the reflected currency and it was redacted there, not only in an error");
+  assert.ok(successPathSeen, "a SUCCESSFUL answer reached the reflecting route and carried its status without its body");
   // SEC-04: the side effect the read-only hint does not cover is disclosed in
   // the server's own instructions, where every client's model reads it.
   const instructions = c.getInstructions() ?? "";
@@ -172,7 +176,7 @@ const serverEnvBase = () => {
   assert.ok(instructions.includes("SOLANA_NFT_MCP_NO_UPDATE_CHECK"), "server instructions disclose the update check and how to turn it off");
   await c.close();
   assert.deepStrictEqual(leaks, [], `the self-issued key reached a tool result: ${leaks.join(", ")}`);
-  assert.ok(redactedSeen, "at least one answer carried the redaction marker, so the reflecting path was really exercised");
+  assert.ok(redactedSeen, "at least one answer came from the reflecting route, so that path was really exercised");
   const keyFile = path.join(home, ".solana-nft-mcp", "opensea-key.json");
   assert.ok(fs.existsSync(keyFile), "the key was stored under the TEST home, proving the real home folder was never in play");
   ok("SEC-01 over real stdio, no tool answer carries the self-issued key in any spelling, including a normal answer; SEC-04 the key and update side effects are disclosed in the instructions");

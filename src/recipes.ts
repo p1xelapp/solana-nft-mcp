@@ -281,7 +281,7 @@ if (idx) renderNotice(\`\${idx.count} assets on chain\${idx.countIsATotal ? "" :
     dataSources: [
       {
         name: "The public Solana asset index (DAS getAssetsByGroup)",
-        use: "Every asset in the pack's collection, paged to the end. An id you have not stored is NEW TO YOU; it is a new pull only once you have a complete baseline, and only the asset's own history says whether it was minted or opened just now.",
+        use: "Every asset in the pack's collection, paged to the end. An id you have not stored is new to this watcher. Establish a complete baseline, then use the asset's own history to distinguish recent mints from backfill. Opening needs separate evidence.",
         auth: "None on the Foundation endpoint; a keyed DAS provider is faster and has a higher ceiling.",
         rateLimit:
           "About 100 requests per 10 seconds per IP, shared with plain RPC reads. There is no sort by creation time on the " +
@@ -289,7 +289,7 @@ if (idx) renderNotice(\`\${idx.count} assets on chain\${idx.countIsATotal ? "" :
       },
       {
         name: "solana-nft-mcp get_asset_provenance",
-        use: "The story behind any single pull: mint, pack open, transfers, sales.",
+        use: "Mint and transfer history for an asset. Pack opening and sales need separate evidence.",
         auth: "None.",
         rateLimit: "Inherits source gates.",
       },
@@ -328,12 +328,12 @@ if (!(await baselineComplete())) {
 const seen = new Set(await loadSeen());            // the ids stored by earlier runs
 const unseen = all.filter((a) => !seen.has(a.id)); // new TO YOU, not proven new
 for (const a of unseen) {
-  // The asset's own history decides: a card minted just now is a pull; an
-  // older asset you never stored is a backfill, and is labelled as one.
+  // A recent mint proves creation, not a pack opening. An older asset
+  // first seen by this watcher is a backfill. Link opening evidence separately.
   // (events run oldest first; mintObserved says whether the mint was decoded)
   const p = await getAssetProvenance(a.id);
   const mint = p.mintObserved ? p.events.find((e) => e.event === "minted") : undefined;
-  emit(a, mint && isRecent(mint.time) ? "pull" : "backfill");
+  emit(a, mint && isRecent(mint.time) ? "recent-mint" : "backfill");
   seen.add(a.id);
   await saveSeen([...seen]);                       // per item: a crash cannot re-emit it
 }

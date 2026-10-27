@@ -144,13 +144,30 @@ programs such as Tensor is not established, so the answer names the marketplaces
 nothing about the rest. Mints and plain transfers are never in it, and OpenSea needs a key. The
 result says this every time so the model does not present one marketplace as a wallet's whole life.
 
+**Did my Candy cards move to a new wallet?**
+Probably. On October 19, 2026 Candy started moving every holder's items out of the
+old custodial wallets and into new ones run with MoonPay. Each card keeps its asset
+address and its history, so look it up by that address: `get_asset_provenance` shows
+the move as one more transfer and `get_asset` shows who holds it now. A move like this
+is not a sale, and a brand-new wallet holding cards is not suspicious by itself.
+
+**Can I trade my Candy card right now?**
+Ask `get_asset_trust` about the card. Since October 12 every Candy collection carries an
+oracle check that the Metaplex Core program consults before a transfer or a burn, and
+the tool reads that check's account and says what it answered. On 2026-10-26 it answered
+no to both, so a sale, a listing that moves the card or a plain send fails on chain until
+Candy changes it. A price you can see on a marketplace does not mean the trade can go
+through. Candy's own steps for wallet claiming, marketplace connections and transfers out
+are in its [October 23 update](https://blog.candy.io/your-questions-answered-the-new-candy-wallet/).
+
 **Does it understand packs?**
-Yes. Sealed packs are separate assets from the cards they open into; opening either
-burns the pack or returns it to a treasury, and it depends on the product, not just the
-issuer: on Candy, opened Gold Series packs go back to the treasury while opened base packs
-are burned. Each changes supply math differently. Packs normally carry a permanent burn or
-transfer delegate so the opening program can consume them; the same plugin on a card
-meant to be kept is a red flag. `get_asset_trust` shows which case you are looking at.
+Yes. Sealed packs are separate assets from the cards they open into. On past Candy
+products, opened Gold Series packs went back to Candy's wallet and still exist, while
+opened base packs were burned, and each changes supply math differently. Packs normally
+carry a permanent burn or transfer delegate so the opening program can consume them; the
+same plugin on a card meant to be kept is a red flag. `get_asset_trust` shows those
+controls. It cannot show whether a pack was opened: a pack sitting in Candy's wallet
+might be opened, unsold, or parked during the October wallet move.
 
 **Compressed NFTs? Legacy SPL NFTs?**
 Holdings and activity cover whatever Magic Eden indexes, which includes both. Provenance

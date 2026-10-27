@@ -72,8 +72,11 @@ export function unzipSync(archivePath, destination) {
     const localExtraLen = buf.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
     const raw = buf.subarray(dataStart, dataStart + compressedSize);
-    const data = method === 8 ? inflateRawSync(raw, { maxOutputLength: uncompressedSize || undefined }) : raw;
-    if (uncompressedSize !== 0 && data.length !== uncompressedSize) throw new Error(`entry "${name}" expanded to ${data.length} bytes, not the ${uncompressedSize} its header names`);
+    // A header claiming zero bytes used to switch both bounds off: the output
+    // cap became "unlimited" and the size check was skipped, so an entry could
+    // expand to anything while the running total counted nothing.
+    const data = method === 8 ? inflateRawSync(raw, { maxOutputLength: Math.max(1, uncompressedSize) }) : raw;
+    if (data.length !== uncompressedSize) throw new Error(`entry "${name}" expanded to ${data.length} bytes, not the ${uncompressedSize} its header names`);
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, data);
     written++;

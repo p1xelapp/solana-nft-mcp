@@ -307,6 +307,9 @@ export async function sourceStatus(deps: { rpcHealth?: typeof rpcHealth } = {}):
   const osAfter = os.openSeaState();
   const osRow = rows.find((r) => r.id === "opensea-v2");
   if (osRow) osRow.credential = { source: osAfter.source, expiresAt: osAfter.expiresAt, persisted: osAfter.persisted ?? null, pausedUntil: osAfter.pausedUntil ?? null };
+  const mePause = me.mePausedUntil();
+  const meRow = rows.find((r) => r.id === "magiceden-v2");
+  if (meRow && mePause) meRow.note = `${meRow.note} Magic Eden asked readers to pause; no request goes to it before ${mePause}.`;
   clearTimeout(deadline);
   controller.abort();
 

@@ -21,7 +21,7 @@
  * winners, 0 untraced.
  */
 
-import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals } from "../lib/http.js";
+import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
@@ -112,7 +112,10 @@ function endpoints(): RpcEndpoint[] {
   // The key inside a private URL is registered BEFORE the first request, so
   // an upstream that echoes it back in an error message cannot carry it into
   // a tool answer. Idempotent, so doing it on every call costs nothing.
-  if (custom) registerUrlCredentials(custom);
+  if (custom) {
+    registerUrlCredentials(custom);
+    requireSecureEndpoint("SOLANA_RPC_URL", custom);
+  }
   return custom ? [{ id: "your SOLANA_RPC_URL", url: custom }, ...PUBLIC_RPC_ENDPOINTS] : [...PUBLIC_RPC_ENDPOINTS];
 }
 
@@ -171,6 +174,14 @@ const ATTEMPTS_PER_ENDPOINT = 2;
 // ignored entirely when it would leave nothing to try.
 const COOLDOWN_MS = 60_000;
 const cooldown = new Map<string, number>();
+
+// A 429 is a request to stay away, not a failure to retry 1.5 s later. The
+// pause the endpoint names is kept apart from the failure cooldown above:
+// a cooling endpoint is still asked as a last resort, a paused one is not.
+const RATE_PAUSE_MIN_MS = 10_000;
+const RATE_PAUSE_MAX_MS = 60 * 60_000;
+const ratePause = new Map<string, number>();
+class RateLimitedEndpoint extends Error {}
 
 let rpcId = 0;
 
@@ -273,6 +284,11 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   const problems: string[] = [];
   for (const ep of list) {
     const wasCooling = isCooling(ep);
+    const pausedFor = (ratePause.get(ep.id) ?? 0) - Date.now();
+    if (pausedFor > 0) {
+      problems.push(`${label(ep)} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`);
+      continue;
+    }
     let lastErr: unknown;
     for (let attempt = 0; attempt < ATTEMPTS_PER_ENDPOINT; attempt++) {
       // A caller that has already given up gets no further requests spent on
@@ -304,6 +320,15 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           await res.body?.cancel().catch(() => undefined);
           throw new EndpointError(`HTTP ${res.status} redirect refused`);
         }
+        // A 429 that names a pause is honoured across calls. One that names
+        // none is the public node's burst limit and keeps the old short retry.
+        const asked = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : 0;
+        if (asked > 0) {
+          await res.body?.cancel().catch(() => undefined);
+          const wait = Math.min(Math.max(asked, RATE_PAUSE_MIN_MS), RATE_PAUSE_MAX_MS);
+          ratePause.set(ep.id, Date.now() + wait);
+          throw new RateLimitedEndpoint(`HTTP 429: asked for a ${Math.round(wait / 1000)} s pause`);
+        }
         if (!res.ok) {
           await res.body?.cancel().catch(() => undefined);
           throw new EndpointError(`HTTP ${res.status}`);
@@ -326,7 +351,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           throw new EndpointError("returned a body that is not a JSON-RPC response");
         }
         if (j.error) {
-          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(`${j.error.code}: ${upstreamMessage(j.error.message)}`);
+          // A provider error from the person's own endpoint is about their
+          // account and can echo their key in any encoding; only its code is
+          // relayed. The public endpoints carry no key.
+          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(ep.url === process.env.SOLANA_RPC_URL?.trim() ? `provider error ${Number.isSafeInteger(j.error.code) ? j.error.code : "unknown"}` : `${j.error.code}: ${upstreamMessage(j.error.message)}`);
           throw new ChainError(`Solana RPC ${j.error.code}: ${upstreamMessage(j.error.message)}`);
         }
         // A malformed envelope with neither result nor error must not read as
@@ -349,9 +377,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         if (e instanceof ChainError) throw new Error(e.message);
         if (e instanceof OversizedBodyError) throw e;
         lastErr = e;
+        if (e instanceof RateLimitedEndpoint) break;
       }
     }
-    cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    if (!(lastErr instanceof RateLimitedEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     problems.push(
       `${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
     );
@@ -628,6 +657,24 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
         `The byte-level decode reads Metaplex Core assets only (SPL, programmable and compressed NFTs: use get_asset).`,
     );
   return info.value.data[0];
+}
+
+/**
+ * Any account's raw bytes and owning program, with the slot the read
+ * describes. Used for oracle accounts, which are not Core accounts: their
+ * owner is whatever program the oracle's controller chose.
+ */
+export async function getAccountRaw(address: string, signal?: AbortSignal): Promise<{ data: string; owner: string; slot: number | null } | null> {
+  const info = await rpc<{ context?: { slot?: number }; value: { data: [string, string]; owner: string } | null }>(
+    "getAccountInfo",
+    [address, { encoding: "base64" }],
+    undefined,
+    undefined,
+    signal,
+  );
+  const slot = typeof info?.context?.slot === "number" && Number.isFinite(info.context.slot) ? info.context.slot : null;
+  if (!info?.value) return null;
+  return { data: info.value.data[0], owner: info.value.owner, slot };
 }
 
 export interface CoreAccountRead {

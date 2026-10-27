@@ -21,7 +21,8 @@ export class BoundedMap<V> {
   get(key: string): V | undefined {
     const hit = this.entries.get(key);
     if (!hit) return undefined;
-    if (Date.now() - hit.at > this.ttlMs) {
+    const age = Date.now() - hit.at;
+    if (age < 0 || age > this.ttlMs) {
       this.entries.delete(key);
       return undefined;
     }
@@ -31,7 +32,8 @@ export class BoundedMap<V> {
   /** When the live entry was stored, for callers that report cache age. */
   storedAt(key: string): number | null {
     const hit = this.entries.get(key);
-    return hit && Date.now() - hit.at <= this.ttlMs ? hit.at : null;
+    const age = hit ? Date.now() - hit.at : null;
+    return hit && age !== null && age >= 0 && age <= this.ttlMs ? hit.at : null;
   }
 
   set(key: string, value: V): void {
@@ -48,7 +50,7 @@ export class BoundedMap<V> {
   /** Drop every expired entry. Called when the ceiling is reached, before anything live is evicted. */
   sweep(): void {
     const now = Date.now();
-    for (const [key, hit] of this.entries) if (now - hit.at > this.ttlMs) this.entries.delete(key);
+    for (const [key, hit] of this.entries) if (now < hit.at || now - hit.at > this.ttlMs) this.entries.delete(key);
   }
 
   clear(): void {

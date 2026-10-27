@@ -69,7 +69,7 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "burn vs return-to-treasury",
     meaning: "Burning destroys an asset permanently. Returning it to a treasury wallet does not.",
     pitfall:
-      "Opening a Candy Digital pack RETURNS the pack to the treasury; it is not burned. Treating 'held by treasury' as 'destroyed' - or as 'still sealed' - both produce wrong pack counts.",
+      "Burned means gone; sent back to Candy's wallet means it still exists. Neither proves a pack was opened: Candy's wallet also holds unsold packs and, since October 2026, items in the middle of its wallet move. Count burns, holdings and openings separately.",
   },
   {
     term: "floor ceiling (portfolio value)",
@@ -100,19 +100,19 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "wallet age",
     meaning: "Time since the wallet's first transaction on chain, from its signature list.",
     pitfall:
-      "Busy wallets have more signatures than a bounded walk reads; the result is then 'at least this old'. A fresh wallet holding a valuable item is a signal worth naming, not proof of anything.",
+      "Busy wallets have more signatures than a bounded walk reads; the result is then 'at least this old'. A fresh address can be a replacement wallet for an established collector. Its age is not the age of the person or their collection.",
   },
   {
     term: "pack (sealed)",
     meaning:
       "An NFT that represents unopened contents. On Solana it is usually its own Metaplex Core asset in a packs collection, distinct from the cards it will produce.",
     pitfall:
-      "A pack and its cards are different assets with different histories. Provenance on a card starts at the pack OPEN, not at the pack purchase; provenance on the pack ends when it is opened.",
+      "A pack and its cards have separate histories. A card can be minted before anyone opens anything, and a returned pack stays on chain afterwards, so a card's first transfer is not the moment a pack was opened unless something links the two.",
   },
   {
     term: "pack open: burn vs return",
     meaning:
-      "Opening a pack consumes it and mints or transfers the contents to the opener. Many projects BURN the pack (its account is closed, ~0.0009 SOL stub remains); Candy Digital RETURNS the pack to a treasury wallet instead.",
+      "Opening a pack can burn it or send it back to the issuer, and mints or transfers the contents to the opener. On past Candy products, Gold Series packs came back to Candy's wallet and base packs were burned; that is what was seen, not a rule every pack follows.",
     pitfall:
       "'The pack is gone from the wallet' has two different meanings. Burned = destroyed; returned = held by treasury and still counts as an existing asset. Counting treasury-held packs as sealed, or returned packs as burned, both produce wrong supply numbers.",
   },

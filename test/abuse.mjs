@@ -81,9 +81,11 @@ const textOf = (r) => JSON.stringify(r);
     for (const form of [CANARY, JSON.stringify(CANARY).slice(1, -1), encodeURIComponent(CANARY)]) {
       assert.ok(!body.includes(form), `${name} leaked the API key (${form === CANARY ? "raw" : "encoded"})`);
     }
-    if (body.includes("[REDACTED]")) redactedSomewhere = true;
+    // A keyed request's error body is not relayed (2026-10-26); its status is,
+    // so the operator still sees that the request was refused.
+    if (body.includes("[REDACTED]") || /HTTP 4\d\d/.test(body)) redactedSomewhere = true;
   }
-  assert.ok(redactedSomewhere, "the reflection was redacted rather than silently dropped, so the operator can see it happened");
+  assert.ok(redactedSomewhere, "the refusal is still visible as a status, so the operator can see it happened");
   ok("A-02 an upstream that echoes the operator's key cannot get it into an answer");
 }
 

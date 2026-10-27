@@ -865,17 +865,17 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Candy Digital: what the wallet says versus what the collection says",
     venue: "candy",
     plain:
-      "Candy gives each fan a self-custody Solana wallet and says trading is open on third-party marketplaces. Its MLB collections also carry permanent transfer, burn and freeze delegates held by Candy's own update authority. Both are true: you hold the card, and Candy retains the power to move, destroy or lock it without your signature.",
+      "After its custodial wallets were drained in October 2026, Candy started moving every holder's items into new wallets run with MoonPay. Its October 23 update lists the steps in order: SOL restored, then wallet claiming, then marketplace connections, then transfers out. An item at a new address says nothing about which step a holder is on, and the collections are unchanged: Candy's key still holds the permanent transfer, burn and freeze delegates on every card.",
     pitfall:
-      "'Self-custody' describes the wallet, not the card. Read the collection's plugins before calling a Candy card unconditionally yours.",
+      "A wallet you can see, a price on a marketplace and an unfrozen card do not add up to 'I can trade it'. Since October 12 an oracle check on the collections refuses ordinary transfers and burns; get_asset_trust reads that check and says whether it still refuses.",
     documented:
-      "Candy will create a self-custody Solana wallet for you; secondary trading will be available through supported third-party Solana marketplaces including Magic Eden.",
+      "Candy describes the new wallet as using MPC signing. Its October 23 update gives SOL restoration, wallet claiming, marketplace connections and external transfers as successive steps without fixed dates.",
     observed:
-      "Reading collections 8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K and JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n from a public Solana node this session showed PermanentTransferDelegate, PermanentBurnDelegate and PermanentFreezeDelegate, all held by the update authority, on the collection - so inherited by every card in it.",
+      "Reading collections 8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K and JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n from a public Solana node showed PermanentTransferDelegate, PermanentBurnDelegate and PermanentFreezeDelegate, all held by the update authority, on the collection - so inherited by every card in it. On 2026-10-26 an Absolute Batman #1 card read through get_asset_trust showed an Oracle adapter on its collection pointing at FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox, whose bytes answered Rejected for transfer and burn.",
     verified: true,
-    source: "https://www.candy.io/faq",
-    sourceRead: READ,
-    keywords: ["candy", "candy digital", "mlb", "self custody", "permanent delegate", "clawback", "wallet"],
+    source: "https://blog.candy.io/your-questions-answered-the-new-candy-wallet/",
+    sourceRead: "2026-10-26",
+    keywords: ["candy", "candy digital", "mlb", "self custody", "permanent delegate", "clawback", "wallet", "moonpay", "frozen", "trading paused", "can i sell"],
   },
   {
     id: "venue-candy-royalty-allowlist",
@@ -883,9 +883,9 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Candy Digital royalties come with a program allow-list",
     venue: "candy",
     plain:
-      "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid, and the list includes the System Program, so a direct wallet-to-wallet transfer is allowed and pays nothing. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
+      "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
     pitfall:
-      "If a marketplace shows a Candy card but cannot complete a sale, the allow-list is the likely reason. It is a collection rule, not a bug at the marketplace.",
+      "Blaming the allow-list every time a Candy sale fails. Since October 12, 2026 an oracle check on the collections has refused ordinary transfers no matter which program asks; get_asset_trust shows which rule is doing the refusing.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:
@@ -934,7 +934,7 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "A sale made on candy.io settles through Magic Eden",
     venue: "candy",
     plain:
-      "Candy opened its secondary market on 2026-07-24. The listing screen is on candy.io, but the transaction itself happens on Solana through Magic Eden, priced in SOL. So a fill that began on Candy's own site appears in Magic Eden's feed, and this server reports it as a Magic Eden sale, because Magic Eden's program is what executed it.",
+      "Candy opened its secondary market on 2026-07-24. The listing screen was on candy.io, but the trade itself happened on Solana through Magic Eden, priced in SOL, so a sale that began on Candy's site shows up in Magic Eden's feed and this server reports it as a Magic Eden sale. That explains where past sales are recorded. It says nothing about trading today: Candy paused transfers and sales on October 12 after its wallet incident.",
     pitfall:
       "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the marketplace on the record says Magic Eden.",
     documented:
@@ -950,7 +950,7 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "A Candy auction is not a listing, and does not exist on chain until it settles",
     venue: "candy",
     plain:
-      "Candy added standard auctions on 2026-09-10, run on its own site with a starting price and minimum increments in dollars. Nothing about a live auction is on the chain and nothing about it is an order on Magic Eden, so an item under auction can show as unlisted here while it is actively being bid on. Only the settlement appears on chain.",
+      "Candy added standard auctions on 2026-09-10, run on its own site with a starting price and minimum increments in dollars. Nothing about a live auction is on the chain and nothing about it is an order on Magic Eden, so an item under auction showed as unlisted here while people were bidding on it. Only the settlement reached the chain. Candy's October 23 update lists auctions as coming back later; this server cannot see Candy's bids either way.",
     pitfall:
       "Reading 'not listed' as 'not for sale'. An item can be mid-auction on Candy with no listing anywhere this server can see, and a floor built from listings will not include it.",
     documented:
@@ -963,10 +963,10 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-one-issuer-key",
     category: "venue",
-    title: "Candy Digital signs everything with one key, and that key is not a collector",
+    title: "One key is the update authority of every Candy collection, and that key is not a collector",
     venue: "candy",
     plain:
-      "One Solana address is the update authority of every Candy Digital collection in this server's registry, and holds the permanent transfer, burn and freeze delegates on all of them. It pays for and signs the mints. When it appears in a holder list it is the issuer's treasury, not a whale: an item there is unsold, held back, or came back after a collector opened or redeemed it.",
+      "On 2026-10-08 all 401 Candy collections in the registry had one update authority, the key that signs the mints and holds the permanent delegates. In a holder list it is the issuer, not a whale. The match does not say why an item sits there (unsold, held back, returned after an opening, parked during the October wallet move) or which other wallets Candy runs. The tools read the authority live, so a change of key is noticed.",
     pitfall:
       "Reading the issuer's wallet at the top of a holder ranking as a collector who bought a large share. Asked who held the 36 packs of an auction, a reader called the treasury a whale with eleven packs; all eleven had been won by collectors and returned on opening.",
     documented: "Not published by Candy; established from the chain.",
@@ -980,12 +980,12 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-pack-open-returns-to-treasury",
     category: "venue",
-    title: "Opening a Candy gold pack sends it back to the treasury; a base pack burns",
+    title: "What opening a Candy pack has looked like on chain",
     venue: "candy",
     plain:
-      "A sealed Candy pack is a Metaplex Core asset with a permanent transfer delegate and a permanent burn delegate held by Candy's key. Opening one exercises a delegate: on the Gold Series the empty pack is transferred back to Candy's treasury and still exists on chain, on the base series it is burned. Either way the collector receives the cards it contained as separate assets.",
+      "A sealed Candy pack is a Metaplex Core asset with permanent transfer and burn delegates held by Candy's key. Gold Series packs that collectors opened went back to the issuer's wallet and still exist; base series packs were burned. Those are patterns seen on past products, not a rule the chain enforces, and the October 2026 wallet move sent other items through the same wallet for reasons that have nothing to do with opening.",
     pitfall:
-      "Counting packs in the treasury as unsold, or counting a gold pack that still exists as sealed. On the Gold Series the treasury's own holding IS the opened count; on the base series still-existing IS sealed.",
+      "Counting the packs in the issuer's wallet as opened, or every pack that still exists as sealed. Report what the chain shows (who holds it, whether it is burned) and leave 'opened' unknown unless something links that pack to the cards it produced.",
     documented: "Not established this session.",
     observed:
       "Gold Series Aces packs now held by the treasury show a trail of mint, transfer to a collector, transfer back to the treasury signed by the treasury key, with burnt: false. Base series packs disappear from the collection's current size when opened.",
@@ -997,12 +997,12 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-other-addresses-are-not-candy",
     category: "venue",
-    title: "No second Candy wallet has been observed; other addresses are collectors or marketplaces",
+    title: "Who runs the other wallets around a Candy drop is usually unknown",
     venue: "candy",
     plain:
-      "Across every Candy collection this server knows, one key issues, freezes, burns and takes back. No second issuer key, alternate treasury or distribution wallet has been observed on chain. The other addresses that recur around a Candy drop are collectors (auction winners, repeat bidders) and marketplace escrows.",
+      "The registry knows one thing for certain about Candy's wallets: which key is each collection's update authority. It is not a list of every wallet Candy, MoonPay or a collector controls. Since the October 2026 move, thousands of items sit in new per-user wallets that look brand new on chain. Receiving many items, sharing a fee payer or being a new address does not tell you who runs a wallet.",
     pitfall:
-      "Calling a frequently seen wallet 'a Candy alt' because it received many items. The winner of nine auction packs is a collector. A Candy account would show as the signer of delegate actions on other people's items, and only the treasury key does that.",
+      "Calling a busy wallet 'a Candy alt', 'a MoonPay wallet' or 'a whale' from its transfer pattern. Say what the chain shows (who signed, who holds what, since when) and leave the owner's identity open.",
     documented: "Not established this session.",
     observed:
       "On the 36 Gold Series Aces packs, first recipients after mint were 17 distinct wallets; none of them signed any delegate action, and every return to the treasury was signed by the one issuer key.",
@@ -1035,9 +1035,9 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Why did my item move to a wallet I do not recognise?",
     plain:
-      "Listing for sale is the usual answer. Some marketplace programs take the item into an account they control until it sells or you withdraw it, so the chain shows a transfer to an address you never chose. Magic Eden's pool program does exactly this with Core items. Delisting returns it.",
+      "Listing for sale is a common answer. Some marketplace programs hold the item in an account they control until it sells or you withdraw it; Magic Eden's pool program does this with Core items, and delisting returns it. It is not the only answer: an issuer moving everyone to new wallets (Candy, October 2026), a permanent delegate acting on the item, or a theft also look like a transfer to an unfamiliar address.",
     pitfall:
-      "That address is the on-chain owner while the listing stands, so any tool asking 'who owns this' will name the marketplace, not you. It is not a theft and not a sale.",
+      "While a listing stands, the marketplace's account is the on-chain owner, so 'who owns this' names the marketplace, not you. Check the new owner with get_asset_provenance before deciding which case you are in: an escrow address is named as one, and a transfer signed by someone other than you is worth a closer look.",
     documented:
       "MMM's Core deposit instruction transfers the asset with new_owner set to the pool account.",
     verified: true,
@@ -1121,13 +1121,26 @@ export const MECHANICS: MechanicsEntry[] = [
     keywords: ["wash trading", "fake volume", "manipulation", "self-financed", "round trip", "suspicious", "inflated"],
   },
   {
+    id: "venue-candy-wallet-migration-october-2026",
+    category: "venue",
+    title: "Candy's October 2026 wallet migration",
+    venue: "candy",
+    plain: "On October 19, 2026 Candy started moving every holder's items from the old custodial wallets into new ones. Unlike Candy's earlier move onto Solana, each card keeps its asset address and its whole history; only the owner changes. Look the card up by its asset address and the move shows as one more transfer. That transfer is not a sale, not a pack opening, and not proof that the old and new wallets belong to the same person.",
+    pitfall: "Reading an emptied old wallet as a theft or a sell-off, or a brand-new wallet holding valuable cards as suspicious. Check the card's own history first. Wallet age is the age of the address, not of the collection or the collector.",
+    documented: "Candy said NFTs would leave old wallets for new wallets and that open listings were being cancelled. New wallet access and trading were separate rollout steps.",
+    verified: true,
+    source: "https://blog.candy.io/candy-community-update-your-nfts-and-sol-are-on-the-move/",
+    sourceRead: "2026-10-26",
+    keywords: ["candy", "moonpay", "wallet", "migration", "october", "moved", "new wallet", "old wallet"],
+  },
+  {
     id: "q-standard-migration",
     category: "question",
     title: "What changes when a project migrates standards?",
     plain:
       "The item is reissued under new rules, so history, custody and tooling all shift at once. Trading history from the old chain or standard does not follow it. Powers that did not exist before - permanent delegates, enforced royalty allow-lists - can appear at creation, because that is the only moment they can be added.",
     pitfall:
-      "A migration is the one moment an issuer can add powers it could never add later. Re-read the plugins after a migration even if you read them before.",
+      "This entry concerns a change of chain or NFT standard. A transfer between wallets on Solana can keep the same asset address and earlier history. Check which kind of migration occurred before applying remint or new-plugin claims.",
     documented:
       "Candy migrated its collectibles to Solana on Metaplex Core, stating that royalty enforcement is embedded directly into the code.",
     observed:

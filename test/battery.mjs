@@ -212,8 +212,11 @@ check("B15", "collections", "a collection never reports more listed than were ev
 // ====================================================== C. assets
 check("C1", "assets", "a Core asset's provenance reaches back and says whether it is complete", async () => {
   const sales = await call("get_recent_sales", { collection: "2026_mlb_base_series_icons_candy_digital", limit: 3 });
-  FIX.coreAsset = sales.sales?.[0]?.tokenMint ?? null;
-  if (!FIX.coreAsset) return "no recent Candy sale to sample, so provenance was not exercised";
+  // A recent sale is the preferred sample. When trading is paused (Candy,
+  // from 2026-10-12) there is none, and every asset check below used to fail
+  // on the missing sample rather than on anything it tests, so a known Core
+  // card stands in: an Absolute Batman #1 read on chain 2026-10-26.
+  FIX.coreAsset = sales.sales?.[0]?.tokenMint ?? "59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4";
   const r = await call("get_asset_provenance", { mint: FIX.coreAsset });
   if (!Array.isArray(r.events)) return `no events: ${text(r).slice(0, 200)}`;
   return has(r.historyComplete) || "historyComplete is missing, so the reader cannot tell a full trail from a truncated one";

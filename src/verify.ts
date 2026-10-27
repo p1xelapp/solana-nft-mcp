@@ -25,7 +25,7 @@
 import * as me from "./sources/magiceden.js";
 import * as sol from "./sources/solana.js";
 import { clean } from "./lib/untrusted.js";
-import { NotFoundError, WrongKindError } from "./lib/errors.js";
+import { NotFoundError, WrongKindError, BadInputError } from "./lib/errors.js";
 
 export type Verdict = "confirmed" | "contradicted" | "unverifiable";
 
@@ -520,15 +520,15 @@ async function route(args: {
   const { claim, subject, value, wallet } = args;
   switch (claim) {
     case "supply":
-      if (value === undefined) throw new Error("supply claims need `value` - the number being claimed");
+      if (value === undefined) throw new BadInputError("supply claims need `value` - the number being claimed");
       return verifySupply(subject, value);
     case "never-traded":
       return verifyUntraded(subject);
     case "ownership":
-      if (!wallet) throw new Error("ownership claims need `wallet` - the address said to own it");
+      if (!wallet) throw new BadInputError("ownership claims need `wallet` - the address said to own it");
       return verifyOwnership(subject, wallet);
     case "floor":
-      if (value === undefined) throw new Error("floor claims need `value` - the price being claimed, in SOL");
+      if (value === undefined) throw new BadInputError("floor claims need `value` - the price being claimed, in SOL");
       return verifyFloor(subject, value);
   }
 }

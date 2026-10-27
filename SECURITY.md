@@ -18,7 +18,10 @@ does not describe them:
 - **It may create and store one credential.** The first question that needs
   OpenSea asks OpenSea's instant-key endpoint for a free key, with no sign-up,
   and keeps it in `~/.solana-nft-mcp/opensea-key.json` at permissions 600 so the
-  next session does not spend another. Set `OPENSEA_API_KEY` and it uses yours
+  next session does not spend another. On Windows, Node cannot set an
+  owner-only ACL, so the file takes the permissions of your home folder;
+  a normal user profile is private, but if yours is shared, set
+  `OPENSEA_API_KEY` or `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` instead. Set `OPENSEA_API_KEY` and it uses yours
   instead; set `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` and it never asks. A refused
   issue is remembered for a cooldown and any `Retry-After` the marketplace sends is
   honoured, so a failing endpoint is not asked again on every call. The
@@ -34,10 +37,29 @@ a redirect: every request this server makes refuses a 3xx answer rather than
 following it, so a header cannot be carried to a host a redirect names. Every
 credential
 this process has sent is registered, and every string that leaves the process
-for a client, a model or a log goes through that registry: an upstream that
-reflects the request header in an error body gets the reflection replaced,
-and the tool boundary scrubs the whole serialised result as a last gate. The
-key file is never logged, never printed and never part of an answer.
+for a client, a model or a log goes through that registry, and the tool
+boundary scrubs the whole serialised result as a last gate. Redaction can
+only catch spellings it knows, and a provider can echo a key in any encoding,
+so the error body of a request that carried a key is not relayed at all, only
+its status; the same goes for provider errors from your own `SOLANA_RPC_URL`
+or `DAS_RPC_URL`, which are reported by code. The key file is never logged,
+never printed and never part of an answer.
+
+Error text the MCP SDK writes itself (a bad argument, an unknown method) is
+capped at 2,000 characters and redacted on its way out, and a tool call whose
+arguments hold more than 512 elements is refused before validation walks them.
+
+Links are relayed only as ordinary public https pages: an address literal, a
+local name, a look-alike international domain, or a profile link whose
+address reads like a claim or wallet page is withheld and the answer says so.
+Links inside a collection's description are removed. Nothing this server
+returns asks anyone to connect a wallet or sign anything, and after a wallet
+theft like Candy's in October 2026 a page that does should be treated as
+hostile.
+
+`SOLANA_RPC_URL` and `DAS_RPC_URL` must be https; plain http is accepted only
+for `localhost`, so a test validator still works. The error for a bad value
+names the variable, never the URL.
 
 Nothing is collected. There is no telemetry, no analytics and no log of your
 questions. What leaves the machine is the public address, symbol or name you
@@ -65,7 +87,9 @@ Solana's public RPC endpoints are shared infrastructure that their operator
 says is not for production traffic. They are the default here because they
 are free and keyless, which suits interactive research; anyone who needs
 reliable throughput or archival history should point `SOLANA_RPC_URL` at an
-endpoint of their own. The label a tool prints for a configured endpoint is
+endpoint of their own. When OpenSea, Magic Eden or an RPC endpoint answers
+429 with a `Retry-After`, that pause holds for every later call (capped at an
+hour), instead of ending with the one request that got it. The label a tool prints for a configured endpoint is
 its host only, never its URL, because private endpoints carry their key in
 the query string.
 

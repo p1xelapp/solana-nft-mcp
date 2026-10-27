@@ -141,7 +141,7 @@ collection name or address.
 | "why is the owner a marketplace address" | Glossary plus escrow detection: listing moves the asset into escrow, the seller is the wallet that sent it in | ANSWERS NOW |
 | "what is a floor, exactly" | Glossary: a floor is the lowest current ask, not a value and not a sale | ANSWERS NOW |
 | "can I sell on Magic Eden something I bought on OpenSea" | Glossary: the asset is the same on chain, marketplaces are storefronts | ANSWERS NOW |
-| "what happens to a pack when I open it" | Glossary plus custody decode: some issuers burn the pack, one returns it to a treasury, and supply math differs | ANSWERS NOW |
+| "what happens to a pack when I open it" | Earlier products used burns or returns; current opening status needs evidence beyond the owner and plugin permissions | ANSWERS NOW |
 | "why does a pack have a burn delegate" | The opening program needs to consume it; expected on a pack, a flag on a card meant to be kept | ANSWERS NOW |
 | "what is a compressed NFT and do I have any" | Glossary plus the compressed count in the wallet profile | ANSWERS NOW |
 | "how do marketplaces actually work on Solana" | Marketplace mechanics explainer covering escrow, order book, pools, fills and fees | ANSWERS NOW |
@@ -195,7 +195,7 @@ collection name or address.
 | "did anyone pull a one of one today" | Serial and population come from the card itself, so a named card answers; a whole-day sweep does not | PARTIAL (per card, not per day) |
 | "how many packs are left" | Pack asset supply from the collection account where packs are Core assets | PARTIAL (supply yes; issuer-held inventory is not visible) |
 | "what are the odds on this pack" | Odds are an operator claim the chain cannot verify, and the answer says so | NOT YET (odds are unverifiable on chain) |
-| "does opening a pack destroy it" | Depends on the issuer; the custody decode shows burn versus return-to-treasury behaviour | ANSWERS NOW |
+| "does opening a pack destroy it" | Depends on the product; the custody decode shows permissions, while opening behaviour needs a linked opening record | ANSWERS NOW |
 | "how many of this card exist" | Chain supply for the card's collection, plus the population printed on the card where present | ANSWERS NOW |
 | "trace these auction packs to their winners" | Transfer decoding walks each pack to its final owner | ANSWERS NOW (Core only) |
 | "is the announced print run accurate" | Claim verification against the collection account | ANSWERS NOW |

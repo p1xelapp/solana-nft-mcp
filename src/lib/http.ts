@@ -11,6 +11,7 @@
 import { inspectUntrusted } from "./untrusted.js";
 import { runWithSignal, withAmbient } from "./context.js";
 import { redactSecrets } from "./secrets.js";
+import { BadInputError } from "./errors.js";
 
 export interface CacheHit<T> {
   data: T;
@@ -138,7 +139,8 @@ export async function cached<T>(
   // `fresh` skips the TTL hit and the stale fallback, but still coalesces
   // with any in-flight fetch and still commits the answer for later callers,
   // so a verification cannot be followed by an older cached value.
-  if (!opts.fresh && hit && Date.now() - hit.cachedAt < ttlMs) {
+  const age = hit ? Date.now() - hit.cachedAt : null;
+  if (!opts.fresh && hit && age !== null && age >= 0 && age < ttlMs) {
     return { data: hit.data as T, stale: false, cachedAt: new Date(hit.cachedAt).toISOString() };
   }
   // This caller's deadline: whatever was passed explicitly, plus the request
@@ -649,7 +651,25 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Retry-After is either delta-seconds or an HTTP-date; both are honoured. */
-function retryAfterMs(h: string | null): number {
+/**
+ * An endpoint the person running the server configured. It carries their
+ * provider key and its answers are read as chain state, so it must be https;
+ * plain http is accepted only on this machine, for a local validator. The
+ * message names the variable, never the URL, which holds the key.
+ */
+export function requireSecureEndpoint(variable: string, url: string): void {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new BadInputError(`${variable} is not a valid URL. Set it to an https endpoint, or unset it to use the public ones.`);
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  if (u.protocol === "https:" || (u.protocol === "http:" && local)) return;
+  throw new BadInputError(`${variable} must use https (plain http is allowed only for localhost). Change it, or unset it to use the public endpoints.`);
+}
+
+export function retryAfterMs(h: string | null): number {
   if (!h) return 0;
   const secs = Number(h);
   if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
@@ -769,7 +789,14 @@ export async function fetchJson<T>(
   assertNoDotSegments(url);
   const res = await fetchRetry(url, opts, retryOpts);
   if (!res.ok) {
-    const reason = await upstreamReason(res, source);
+    // A request that carried a key gets no body relayed. Redaction catches
+    // the key as sent and its usual escapes, but a provider can echo it in
+    // any encoding (base64, hex, HTML entities were all shown to get through),
+    // and the status alone is enough to act on.
+    const headers = new Headers(opts.headers);
+    const carriedKey = headers.has("x-api-key") || headers.has("authorization");
+    if (carriedKey) await res.body?.cancel().catch(() => undefined);
+    const reason = carriedKey ? "" : await upstreamReason(res, source);
     throw new HttpError(
       `${source} responded HTTP ${res.status}${reason ? ` - ${reason}` : ""}`,
       res.status,

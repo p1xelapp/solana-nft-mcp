@@ -145,7 +145,7 @@ without raising an error.
 |---|---|
 | `identify` | what an address or name is, where it trades, which tool to call next |
 | `verify_claim` | confirmed, contradicted or unverifiable, with the numbers seen and how to re-check |
-| `get_asset_trust` | Core plugins decoded from bytes: delegates, frozen state, enforced vs advisory royalties, mutable metadata, editions |
+| `get_asset_trust` | Core plugins decoded from bytes: delegates, frozen state, oracle checks that refuse transfers or burns right now, enforced vs advisory royalties, mutable metadata, editions |
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
 | `get_collection_stats` | chain supply, floors per marketplace, and a reconciliation that refuses to rank SOL against USDC |
