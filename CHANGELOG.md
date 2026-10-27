@@ -81,10 +81,9 @@ Security:
 - **Rate limits.** A `Retry-After` from Magic Eden or an RPC endpoint now holds
   across calls instead of ending with the request that got it.
 - **Dependencies.** MCP SDK 1.32.1 and zod 4.6.7 clear five advisories
-  published in October. Three more (in body-parser, fast-uri and ip-address,
-  which sit in the SDK's HTTP server and are never loaded by this stdio
-  server) have patches younger than this repository's seven-day rule and will
-  follow once they age in.
+  published in October, and patched `body-parser`, `fast-uri` and `ip-address`
+  clear three more. All three sit in the SDK's HTTP server, which this stdio
+  server never loads. `npm audit` reports 0.
 - **Bundle verifier.** A zip entry that claims zero bytes can no longer expand
   past the verifier's budget.
 
