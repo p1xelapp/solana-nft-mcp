@@ -88,9 +88,28 @@ Security:
 - **Bundle verifier.** A zip entry that claims zero bytes can no longer expand
   past the verifier's budget.
 
+Measured against 1.18.0, same scripts, same inputs:
+
+- A 510-case scenario battery, from one-card lookups to multi-step questions,
+  hostile input and failing sources: 19 automatic failures down to 0 (303
+  passes to 322; 188 answers still need a person to judge them).
+- 414 security probes: 381 passed, now 407. The 7 left ask the redaction
+  helper to decode base64, hex and similar spellings of a key; this release
+  closes that path by not relaying the text at all, and the end-to-end
+  reflection probe went from 3 of 9 to 9 of 9.
+- One request carrying a 190,000-element array used to exhaust a server
+  limited to 128 MB; it now gets a 206-byte refusal. Error text that reached
+  200 KB is capped at 2,000 characters.
+- The live question battery: 144 of 160 to 153 of 160. The seven left all need
+  OpenSea data, and OpenSea was not issuing free keys to the test machine
+  that night.
+- Speed is unchanged on fixed fixtures, and this release does not claim
+  otherwise. The tool list is 1.7% smaller, and memory after 500 calls with
+  OpenSea on fell from 175 MB to 143 MB. A 2,400-call session holds memory flat
+  after its first 400 calls, as before.
+
 Checked and unchanged: every OpenSea and Magic Eden endpoint and field the
-code reads, all 401 Candy collections (none added, removed or re-keyed), and
-2,400 mixed calls in one session with memory flat after the first 400.
+code reads, and all 401 Candy collections (none added, removed or re-keyed).
 
 ## 1.18.0 - 2026-10-08
 
