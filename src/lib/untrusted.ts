@@ -100,7 +100,7 @@ export function safeHttpsUrl(v: unknown, opts: { max?: number; host?: string } =
   if (typeof v !== "string" || v.length === 0 || v.length > max) return null;
   // Whitespace, then every invisible or control character the text cleaner
   // removes (INVISIBLE is global, so replace() is used rather than test()).
-  if (/\s/.test(v) || v.replace(INVISIBLE, "") !== v) return null;
+  if (/\s/.test(v) || v.replace(INVISIBLE, "") !== v || v.replace(INVISIBLE_SUPPLEMENTARY, "") !== v) return null;
   let u: URL;
   try {
     u = new URL(v);
@@ -109,8 +109,52 @@ export function safeHttpsUrl(v: unknown, opts: { max?: number; host?: string } =
   }
   if (u.protocol !== "https:" || u.username !== "" || u.password !== "") return null;
   if (opts.host !== undefined && u.hostname !== opts.host) return null;
+  // A published link names a public site by name. An address literal or a
+  // local name points a client that fetches images at the user's own network.
+  if (!isPublicHostName(u.hostname)) return null;
   const out = u.href;
   return out.length <= max ? out : null;
+}
+
+function isPublicHostName(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  if (h.startsWith("[") || /^[\d.]+$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return false;
+  if (!h.includes(".") || h === "localhost" || /\.(?:localhost|local|internal|lan|home|arpa|invalid|test)$/.test(h)) return false;
+  return true;
+}
+
+/**
+ * Words a wallet-drainer page puts in its address. After a custodial wallet
+ * theft, "restore your wallet" and "claim your migrated cards" pages are the
+ * usual next move, and a collection profile is text anybody who controls it
+ * can change.
+ */
+const CLAIM_STYLE = /(?:claim|airdrop|restore|recover|connect|verify|validate|rectif|sync|migrat|reward|redeem|free-?mint|wallet|drop-?check|eligib)/i;
+
+/**
+ * A website link from a collection's marketplace profile, relayed only when it
+ * is an ordinary public https page: same rules as safeHttpsUrl, plus no
+ * internationalised (xn--) host that can imitate another name, and nothing in
+ * the host or path that reads like a claim or wallet page.
+ */
+export function profileLinkUrl(v: unknown): string | null {
+  const u = safeHttpsUrl(v, { max: 300 });
+  if (!u) return null;
+  const parsed = new URL(u);
+  if (parsed.hostname.split(".").some((label) => label.startsWith("xn--"))) return null;
+  let rest = parsed.pathname + parsed.search;
+  try {
+    rest = decodeURIComponent(rest);
+  } catch {
+    /* a malformed escape is checked as written */
+  }
+  if (CLAIM_STYLE.test(parsed.hostname) || CLAIM_STYLE.test(rest)) return null;
+  return u;
+}
+
+/** Links inside free text (descriptions) come out; the words around them stay. */
+export function withoutLinks(text: string): string {
+  return text.replace(/\b(?:https?:\/\/|www\.)[^\s<>"')\]]+/gi, "[link removed]");
 }
 
 /** Clean one piece of third-party text, discarding the report. */
@@ -186,7 +230,15 @@ export function cleanFields<T extends Record<string, unknown>>(
   const out = { ...obj };
   const hits: string[] = [];
   for (const f of fields) {
-    if (typeof out[f] !== "string") continue;
+    // A text field that arrives as an object or array is not text: it used to
+    // pass through untouched, raw delimiters and all, at any size.
+    if (typeof out[f] !== "string") {
+      if (out[f] !== undefined && out[f] !== null) {
+        hits.push(`${String(f)} was not text and was dropped`);
+        out[f] = undefined as T[keyof T];
+      }
+      continue;
+    }
     const r = inspectUntrusted(out[f]);
     out[f] = r.value as T[keyof T];
     if (r.suspicious) hits.push(`${String(f)} had ${r.flags.join(", ")}`);

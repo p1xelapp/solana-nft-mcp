@@ -18,7 +18,7 @@
 
 import { createHash } from "node:crypto";
 
-import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError } from "../lib/http.js";
+import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean, safeHttpsUrl } from "../lib/untrusted.js";
 import { USER_AGENT } from "../lib/version.js";
@@ -58,7 +58,10 @@ function endpoints(): { id: string; url: string }[] {
   const custom = process.env.DAS_RPC_URL?.trim();
   // Registered before the first request: an index that echoes the request
   // URL inside an error message must not carry the key into an answer.
-  if (custom) registerUrlCredentials(custom);
+  if (custom) {
+    registerUrlCredentials(custom);
+    requireSecureEndpoint("DAS_RPC_URL", custom);
+  }
   const list = [{ id: "rpc-mainnet-beta", url: PUBLIC_DAS }];
   return custom ? [{ id: "your DAS_RPC_URL", url: custom }, ...list] : list;
 }
@@ -151,7 +154,12 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     if (j.error) {
       // The index's own words, redacted against every registered credential
       // and cut short: an upstream message is text it controls.
-      last = `${ep.id}: ${typeof j.error.message === "string" ? redactSecrets(clean(j.error.message)).slice(0, 300) : "error " + String(j.error.code)}`;
+      // The person's own index is reported by code only: its text can echo
+      // their key in an encoding no redaction list anticipates.
+      const code = Number.isSafeInteger(j.error.code) ? String(j.error.code) : "unknown";
+      last = ep.id === "your DAS_RPC_URL"
+        ? `${ep.id}: error ${code}`
+        : `${ep.id}: ${typeof j.error.message === "string" ? redactSecrets(clean(j.error.message)).slice(0, 300) : "error " + code}`;
       continue;
     }
     if (!("result" in j)) {

@@ -26,9 +26,20 @@
  *
  * Everything here is read-only bytes-to-facts. Unknown plugin types are named
  * by number and skipped, never guessed - the registry is designed to be read
- * even when some plugins are newer than the reader. External plugin adapters
- * (oracles, lifecycle hooks) are counted, not decoded, and their presence is
- * reported as a gap in the custody picture rather than ignored.
+ * even when some plugins are newer than the reader.
+ *
+ * External plugin adapters follow the internal records (verified against
+ * mpl-core plugin_registry.rs and oracle.rs, main, 2026-10-26):
+ *   ExternalRegistryRecord  plugin_type u8, Authority, Option<Vec<(event u8, flags u32)>>,
+ *                           offset u64, data_offset Option<u64>, data_len Option<u64>
+ *   flags: 1 listen, 2 approve, 4 reject; events: 0 create 1 transfer 2 burn 3 update 4 execute
+ *   Oracle (at offset, after its adapter tag) base_address(32) Option<ExtraAccount>
+ *                           results_offset: 0 none, 1 anchor (8), 2 custom u64
+ *   OracleValidation in the oracle account: 0 uninitialized, 1 V1 {create, transfer, burn, update}
+ *   ExternalValidationResult: 0 approved, 1 rejected, 2 pass
+ * An Oracle with a fixed account is decoded here and its answer read by the
+ * caller. One whose account is derived per transaction, and every other
+ * adapter type, stays a named gap in the custody picture.
  */
 
 import { base58Encode } from "../sources/solana.js";
@@ -77,6 +88,46 @@ export interface DecodedPlugin {
   inheritedFromCollection?: boolean;
 }
 
+const EXTERNAL_NAMES = ["LifecycleHook", "Oracle", "AppData", "LinkedLifecycleHook", "LinkedAppData", "DataSection", "AgentIdentity"] as const;
+const LIFECYCLE_EVENTS = ["create", "transfer", "burn", "update", "execute"] as const;
+const ORACLE_RESULTS = ["approved", "rejected", "pass"] as const;
+export type OracleResult = (typeof ORACLE_RESULTS)[number];
+
+export interface DecodedExternal {
+  type: string;
+  authority: string;
+  /** The lifecycle events the program consults this adapter on, and what it may do there. */
+  checks: { event: string; canReject: boolean; canApprove: boolean; canListen: boolean }[];
+  /** Oracles only: the account whose bytes answer each check, or the base address when it is derived per transaction. */
+  oracle?: { account: string; resultsOffset: number } | { derivedFrom: string };
+  /** True when the record or the adapter body could not be decoded. */
+  unreadable?: boolean;
+  inheritedFromCollection?: boolean;
+}
+
+/** What one oracle account said when it was read. Missing, short and uninitialized accounts all make the program fail the action. */
+export interface OracleReading {
+  account: string;
+  state: "answered" | "missing" | "invalid" | "uninitialized" | "unread";
+  results?: Record<"create" | "transfer" | "burn" | "update", OracleResult>;
+  owner?: string;
+  slot?: number | null;
+  note?: string;
+}
+
+/** Decode the validation struct an oracle account carries at `offset`. */
+export function decodeOracleValidation(b64: string, offset: number): Pick<OracleReading, "state" | "results"> {
+  const buf = Buffer.from(b64, "base64");
+  if (offset < 0 || offset + 5 > buf.length) return { state: "invalid" };
+  const tag = buf[offset];
+  if (tag === 0) return { state: "uninitialized" };
+  if (tag !== 1) return { state: "invalid" };
+  const at = (i: number): OracleResult | null => ORACLE_RESULTS[buf[offset + 1 + i]!] ?? null;
+  const [create, transfer, burn, update] = [at(0), at(1), at(2), at(3)];
+  if (!create || !transfer || !burn || !update) return { state: "invalid" };
+  return { state: "answered", results: { create, transfer, burn, update } };
+}
+
 export interface DecodedAccount {
   kind: "asset" | "collection";
   /** Assets only: the collection this asset belongs to, or null when it is standalone. */
@@ -84,8 +135,10 @@ export interface DecodedAccount {
   plugins: DecodedPlugin[];
   /** Assets only: the base account's update authority is None, so nobody can edit metadata. */
   updateAuthorityIsNone: boolean;
-  /** Count of external plugin adapters (oracles, lifecycle hooks) present but not decoded. */
+  /** Count of external plugin adapters (oracles, lifecycle hooks) attached. */
   externalPlugins: number;
+  /** The external adapters this reader could decode, in registry order. Absent on hand-built accounts, which count adapters only. */
+  external?: DecodedExternal[];
   /** Present only when the layout could not be walked to the end. */
   decodeNote?: string;
 }
@@ -97,6 +150,15 @@ export interface CoreTrust {
   /** Things that are actively good for the holder. */
   assurances: string[];
   frozen: boolean;
+  /**
+   * Actions an oracle check refused at read time (transfer, burn, update).
+   * An ordinary transfer, sale or burn fails on chain while it is listed here.
+   * Empty with `incomplete: false` means every attached oracle was read and
+   * none refused; with `incomplete: true` an unread adapter may still refuse.
+   */
+  blockedByOracle: string[];
+  /** One row per oracle check, with what its account answered when read. */
+  oracleChecks: { account: string; inheritedFromCollection: boolean; events: string[]; reading: OracleReading }[];
   /** True when a party other than the owner can move, freeze or burn it without the owner's signature. */
   ownerIsNotSoleController: boolean;
   /** True when the custody picture is known to be incomplete (external plugins, partial registry, collection not read). */
@@ -218,7 +280,7 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
   const buf = Buffer.from(b64, "base64");
   const r = new Reader(buf);
   const base = skipBase(r);
-  const out: DecodedAccount = { kind: base.kind, collection: base.collection, plugins: [], updateAuthorityIsNone: base.updateAuthorityIsNone, externalPlugins: 0 };
+  const out: DecodedAccount = { kind: base.kind, collection: base.collection, plugins: [], updateAuthorityIsNone: base.updateAuthorityIsNone, externalPlugins: 0, external: [] };
 
   if (r.remaining < 9 || r.peek() !== KEY_PLUGIN_HEADER) return out;
   r.u8();
@@ -231,8 +293,7 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
     if (n > 64) throw new Error("implausible registry length");
     const records: { type: number; auth: string; offset: number }[] = [];
     for (let i = 0; i < n; i++) records.push({ type: r.u8(), auth: authority(r), offset: r.u64() });
-    // External plugin adapters follow the internal records. Their records are
-    // variable-length; the count alone is enough to say the picture is partial.
+    // External plugin adapters follow the internal records.
     if (r.remaining >= 4) {
       const ext = r.u32();
       if (ext <= 64) out.externalPlugins = ext;
@@ -240,6 +301,57 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
     } else {
       throw new Error("registry ends before the external plugin count");
     }
+    // Decoded on their own: a misread here must not cost the internal plugins
+    // above, so a failure leaves one unreadable row per adapter and moves on.
+    const extRecords: { type: number; auth: string; checks: DecodedExternal["checks"]; offset: number }[] = [];
+    try {
+      for (let i = 0; i < out.externalPlugins; i++) {
+        const type = r.u8();
+        const auth = authority(r);
+        const checks = r.option(() => {
+          const n = r.u32();
+          if (n > 8) throw new Error(`implausible lifecycle check count ${n}`);
+          const list: DecodedExternal["checks"] = [];
+          for (let j = 0; j < n; j++) {
+            const ev = r.u8();
+            const flags = r.u32();
+            list.push({ event: LIFECYCLE_EVENTS[ev] ?? `unknown(${ev})`, canListen: (flags & 1) !== 0, canApprove: (flags & 2) !== 0, canReject: (flags & 4) !== 0 });
+          }
+          return list;
+        }) ?? [];
+        const offset = r.u64();
+        r.option(() => r.u64()); // data_offset
+        r.option(() => r.u64()); // data_len
+        extRecords.push({ type, auth, checks, offset });
+      }
+    } catch (e) {
+      // Half a list is not a list: every adapter is reported unreadable.
+      extRecords.length = 0;
+      out.external = Array.from({ length: out.externalPlugins }, () => ({ type: "external adapter", authority: "unknown", checks: [], unreadable: true }));
+      out.decodeNote = `external plugin records unreadable: ${e instanceof Error ? e.message : String(e)}`;
+    }
+    const decodedExternal: DecodedExternal[] = [];
+    for (const rec of extRecords) {
+      const row: DecodedExternal = { type: EXTERNAL_NAMES[rec.type] ?? `unknown external type ${rec.type}`, authority: rec.auth, checks: rec.checks };
+      if (rec.type === 1) {
+        try {
+          r.seek(rec.offset);
+          if (r.u8() !== 1) throw new Error("adapter tag is not Oracle");
+          const baseAddress = r.pubkey();
+          if (r.u8() === 1) row.oracle = { derivedFrom: baseAddress };
+          else {
+            const kind = r.u8();
+            const resultsOffset = kind === 0 ? 0 : kind === 1 ? 8 : kind === 2 ? r.u64() : -1;
+            if (resultsOffset < 0 || resultsOffset > 10_000_000) throw new Error(`unknown results offset kind ${kind}`);
+            row.oracle = { account: baseAddress, resultsOffset };
+          }
+        } catch {
+          row.unreadable = true;
+        }
+      }
+      decodedExternal.push(row);
+    }
+    if (extRecords.length) out.external = decodedExternal;
 
     const failures: string[] = [];
     for (const rec of records) {
@@ -265,7 +377,7 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
       }
       out.plugins.push({ type: name, authority: rec.auth, ...(data ? { data } : {}), ...(unreadable ? { unreadable: true } : {}) });
     }
-    if (failures.length) out.decodeNote = `plugin data unreadable for ${failures.join("; ")}`;
+    if (failures.length) out.decodeNote = [out.decodeNote, `plugin data unreadable for ${failures.join("; ")}`].filter(Boolean).join("; ");
   } catch (e) {
     out.decodeNote = `plugin registry only partially readable: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -277,17 +389,70 @@ const heldByOther = (p: DecodedPlugin | undefined): boolean =>
   Boolean(p) && p!.authority !== "owner" && p!.authority !== "none";
 
 /**
- * Turn decoded plugins into custody facts. Collection plugins are inherited
- * by the asset unless the asset carries the same plugin type itself.
+ * The oracle accounts a caller has to read before deriveTrust can say whether
+ * an oracle refuses anything. Deduplicated; derived accounts are not listed
+ * because their address depends on the transaction.
  */
-export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount | null): CoreTrust {
+export function oracleAccountsToRead(asset: DecodedAccount, collection?: DecodedAccount | null): { account: string; resultsOffset: number }[] {
+  const seen = new Map<string, number>();
+  for (const e of [...(asset.external ?? []), ...(collection?.external ?? [])]) {
+    if (e.oracle && "account" in e.oracle && !seen.has(e.oracle.account)) seen.set(e.oracle.account, e.oracle.resultsOffset);
+  }
+  return [...seen].map(([account, resultsOffset]) => ({ account, resultsOffset }));
+}
+
+const ORACLE_FAILS: Record<Exclude<OracleReading["state"], "answered" | "unread">, string> = {
+  missing: "the oracle account does not exist, and the program fails the check when it cannot read one",
+  invalid: "the oracle account's bytes are not a validation answer, and the program fails the check on that",
+  uninitialized: "the oracle account is uninitialized, and the program fails the check on that",
+};
+
+/**
+ * Turn decoded plugins into custody facts. Collection plugins are inherited
+ * by the asset unless the asset carries the same plugin type itself. Oracle
+ * answers come from `oracleReadings`, keyed by oracle account; an oracle with
+ * no reading stays a gap.
+ */
+export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount | null, oracleReadings?: Map<string, OracleReading>): CoreTrust {
   const plugins: DecodedPlugin[] = [...asset.plugins];
   if (collection) {
     for (const cp of collection.plugins) {
       if (!plugins.some((p) => p.type === cp.type)) plugins.push({ ...cp, inheritedFromCollection: true });
     }
   }
-  const out: CoreTrust = { plugins, warnings: [], assurances: [], frozen: false, ownerIsNotSoleController: false, incomplete: false };
+  const out: CoreTrust = { plugins, warnings: [], assurances: [], frozen: false, blockedByOracle: [], oracleChecks: [], ownerIsNotSoleController: false, incomplete: false };
+
+  // External adapters: an Oracle whose account was read is a settled fact;
+  // anything else attached is a gap that keeps the picture incomplete.
+  // An account built by hand (older callers, fixtures) may carry only the
+  // count: every adapter it counts is then an unread one.
+  const assetExt = asset.external ?? [];
+  const collectionExt = collection?.external ?? [];
+  const externals = [...assetExt.map((e) => ({ ...e, inheritedFromCollection: false })), ...collectionExt.map((e) => ({ ...e, inheritedFromCollection: true }))];
+  let unreadExternal = asset.externalPlugins - assetExt.length + (collection ? collection.externalPlugins - collectionExt.length : 0);
+  const blocked = new Set<string>();
+  const failing: string[] = [];
+  for (const e of externals) {
+    const events = e.checks.filter((c) => c.canReject).map((c) => c.event);
+    if (e.type !== "Oracle" || e.unreadable || !e.oracle || !("account" in e.oracle)) {
+      // An adapter that is consulted on nothing and can reject nothing cannot
+      // block a transfer; everything else is unread.
+      if (e.unreadable || events.length > 0 || e.type !== "Oracle") unreadExternal++;
+      continue;
+    }
+    const reading = oracleReadings?.get(e.oracle.account) ?? { account: e.oracle.account, state: "unread" as const };
+    out.oracleChecks.push({ account: e.oracle.account, inheritedFromCollection: e.inheritedFromCollection, events, reading });
+    if (reading.state === "unread") { if (events.length) unreadExternal++; continue; }
+    for (const ev of events) {
+      if (reading.state === "answered") {
+        if (ev !== "execute" && ev in reading.results! && reading.results![ev as keyof typeof reading.results] === "rejected") blocked.add(ev);
+      } else if (ev !== "execute") {
+        blocked.add(ev);
+        failing.push(`${ev}: ${ORACLE_FAILS[reading.state]}`);
+      }
+    }
+  }
+  out.blockedByOracle = ["transfer", "burn", "update", "create"].filter((ev) => blocked.has(ev));
   const notes = [asset.decodeNote, collection?.decodeNote ? `collection: ${collection.decodeNote}` : undefined].filter(Boolean);
   if (notes.length) out.decodeNote = notes.join("; ");
 
@@ -333,7 +498,7 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   // rests on absence. "No royalties plugin" beside an unread collection or an
   // unread external adapter was a definite claim built on a hole.
   const contextIncomplete =
-    asset.externalPlugins + (collection?.externalPlugins ?? 0) > 0 ||
+    unreadExternal > 0 ||
     Boolean(asset.decodeNote || collection?.decodeNote) ||
     (asset.kind === "asset" && Boolean(asset.collection) && !collection) ||
     plugins.some((p) => p.unsupported);
@@ -368,6 +533,7 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
       out.assurances.push(`Royalties ${pct}%${where(roy)} with a program deny-list of ${listed}: transfers through those programs are refused.`);
       out.warnings.push(`A deny-list only blocks the programs on it. Any other program, and a direct wallet-to-wallet transfer, can move the asset without paying the ${pct}% fee.`);
     } else {
+      out.incomplete = true;
       out.warnings.push(`Royalties ${pct}%${where(roy)} with a rule set this version does not recognise (${rs}): what it restricts could not be read, and nothing here says the fee is enforced.`);
     }
   } else if (!roy && contextIncomplete) out.warnings.push("No Royalties plugin in the decoded data, but part of the picture was not read (see the warnings below), so whether a creator fee is enforced on resale cannot be settled from this read.");
@@ -383,10 +549,18 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   if (me?.data) { const ms = me.data.maxSupply; out.assurances.push(`Master edition with max supply ${typeof ms === "number" ? String(ms) : "unlimited"}.`); }
   if (has("BubblegumV2")) out.assurances.push("Collection admits compressed (Bubblegum v2) NFTs; some members need a DAS indexer to read.");
 
-  const ext = asset.externalPlugins + (collection?.externalPlugins ?? 0);
-  if (ext > 0) {
+  if (out.blockedByOracle.length) {
+    const viaCollection = out.oracleChecks.some((c) => c.inheritedFromCollection) ? " It is set on the collection, so it applies to every asset in it." : "";
+    const accounts = [...new Set(out.oracleChecks.map((c) => c.account))].join(", ");
+    out.warnings.unshift(
+      `BLOCKED BY AN ORACLE when read: ${out.blockedByOracle.join(", ")}. The program asks oracle account ${accounts} before each of these actions and the answer was no${failing.length ? ` (${failing.join("; ")})` : ""}, so an ordinary transfer, sale or listing that moves the item fails on chain until that answer changes.${viaCollection} Whoever controls that account can change the answer at any time, so this describes the moment of the read.${ptd && heldByOther(ptd) && blocked.has("transfer") ? ` The permanent transfer delegate (${ptd.authority}) is the exception: the program force-approves its transfers, so the issuer can still move the item.` : ""}`,
+    );
+  } else if (out.oracleChecks.some((c) => c.reading.state === "answered")) {
+    out.assurances.push(`Oracle check${out.oracleChecks.length === 1 ? "" : "s"} attached (${[...new Set(out.oracleChecks.map((c) => c.account))].join(", ")}) answered without refusing anything when read. Its controller can change that answer at any time.`);
+  }
+  if (unreadExternal > 0) {
     out.incomplete = true;
-    out.warnings.push(`${ext} external plugin adapter(s) attached (oracles or lifecycle hooks) that this decoder does not read. They can veto or gate transfers, burns and updates, so the custody picture above is incomplete.`);
+    out.warnings.push(`${unreadExternal} external plugin adapter(s) attached (oracles or lifecycle hooks) that this read could not settle. They can veto or gate transfers, burns and updates, so the custody picture above is incomplete.`);
   }
   if (asset.decodeNote || collection?.decodeNote) {
     out.incomplete = true;
@@ -399,7 +573,7 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
     out.warnings.push(`This asset belongs to collection ${asset.collection}, whose plugins were not read; rules set there also apply to this asset.`);
   }
 
-  if (!out.incomplete && !out.ownerIsNotSoleController && plugins.length === 0) {
+  if (!out.incomplete && !out.ownerIsNotSoleController && plugins.length === 0 && externals.length === 0) {
     out.assurances.unshift("No plugins on the asset or its collection: nothing but the owner's own signature can move, freeze or burn this asset.");
   }
   return out;

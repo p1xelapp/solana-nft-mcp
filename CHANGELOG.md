@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Separate Candy's October wallet transfers from its earlier move onto Solana, and date the wallet and trading rollout notes.
+- Stop inferring pack opening and wallet operators from treasury ownership or repeated addresses.
+- Label newly observed mints without calling them pack pulls. State the holder census limit and distinguish indexed rankings from verified current ownership.
+
 ## 1.18.0 - 2026-10-08
 
 The first review of the published server against live OpenSea, Magic Eden and

@@ -876,8 +876,11 @@ export async function slugByNameForCollection(
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    // Issuer prefixes like "Candy Digital - " are not part of an OpenSea slug.
-    .replace(/^[a-z0-9 ]+ - /, "")
+    // The issuer prefix "Candy Digital - " is not part of an OpenSea slug. Any
+    // other "words - " prefix is kept: stripping it turned "2026 MLB Gold
+    // Series ICONs - Candy Digital" into "candy digital" and the real slug was
+    // never tried.
+    .replace(/^candy digital - /, "")
     .trim();
   const words = base.split(/[^a-z0-9]+/).filter(Boolean);
   if (words.length === 0) return null;
@@ -1264,7 +1267,10 @@ export async function holders(slug: string, limit = 10, totalSupply: number | nu
   return {
     slug,
     top: rows,
-    topCombinedSharePct: rows.some((r) => r.sharePct === null) ? null : shareOf(topItems),
+    // No rows is no observation, not a dispersed collection: 0% read as
+    // "nobody holds much" when OpenSea simply served an empty list.
+    topCombinedSharePct: rows.length === 0 || rows.some((r) => r.sharePct === null) ? null : shareOf(topItems),
+    ...(rows.length === 0 ? { note: "OpenSea returned no holder rows, so how concentrated this collection is stays unknown." } : {}),
     shareBasis: !supplyKnown
       ? "no total supply known, so no share was computed"
       : supplyConflict

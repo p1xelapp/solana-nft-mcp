@@ -5,12 +5,11 @@
  * from the MCP spec. The spec is permissive; the clients are not, and each one
  * fails differently:
  *
- *   - Claude Code truncates a tool result past MAX_MCP_OUTPUT_TOKENS (25,000).
+ *   - This suite targets a conservative 25,000-token output budget.
  *     A truncated JSON answer is worse than a refused one, because the model
  *     reads the surviving prefix as the whole answer.
- *   - Cursor caps the ACTIVE tool count at 40 across every server a person has
- *     installed at once, silently. A 20-tool server is half of somebody's
- *     budget, so the count is a number to defend, not to grow.
+ *   - The tool-count check reserves room below a 40-tool style budget.
+ *     Actual client limits vary; this is a conservative test target.
  *   - OpenAI strict function calling accepts a subset of JSON Schema: no
  *     $ref/$defs, no root anyOf, at most 5 levels of nesting and 100
  *     properties, and it DROPS minLength, maxLength, pattern, minimum,
@@ -59,11 +58,9 @@ const { prompts } = await client.listPrompts();
 
 // ------------------------------------------------------------- x2 tool count
 {
-  // Cursor's silent cap is 40 ACROSS ALL SERVERS. Ours cannot be the one that
-  // eats the whole budget, and Anthropic's own guidance says selection
-  // accuracy falls off past 30-50 tools available to one model.
+  // Keep room for other installed servers within the suite's style budget.
   assert.ok(tools.length <= 25, `${tools.length} tools leaves too little of a 40-tool client budget for anything else`);
-  ok(`x2 ${tools.length} tools, inside every published client ceiling and half of Cursor's 40-tool budget`);
+  ok(`x2 ${tools.length} tools, within this suite's 25-tool target`);
 }
 
 // ------------------------------------------------- x3 annotations and titles
@@ -154,9 +151,8 @@ const { prompts } = await client.listPrompts();
 
 // ------------------------------------------------------- x7 answer size caps
 {
-  // Claude Code truncates a tool result past 25,000 tokens and Claude.ai past
-  // ~150,000 characters. A truncated JSON body is read by the model as the
-  // whole answer, so an over-large result is a wrong answer, not a slow one.
+  // Clients may truncate, reject or save oversized results to a file.
+  // Keep this suite's conservative output target independent of the client.
   // These are the widest reads each tool offers, asked of a real collection.
   const wide = [
     ["find_listings", { symbol: "mad_lads", limit: 100 }],
@@ -178,7 +174,7 @@ const { prompts } = await client.listPrompts();
   // leaves a factor of two: the model still has to carry the question, the
   // other tool definitions and its own reasoning next to whatever this
   // returns. Anything above this is not "a big answer", it is an answer the
-  // client will cut without telling anyone.
+  // client may handle differently from an ordinary inline result.
   const CEILING = 55_000;
   // This check used to be able to pass having measured NOTHING. Every call
   // could throw, `over` would stay empty, and the green line still announced
@@ -231,7 +227,7 @@ const { prompts } = await client.listPrompts();
     measured.length >= need,
     `only ${measured.length} of ${wide.length} widest reads produced a real answer, which is too few to claim anything about size. Unmeasured: ${unmeasured.join("; ")}`,
   );
-  ok(`x7 ${measured.length} of ${wide.length} widest-case answers measured, all under ${CEILING / 1000} KB, well inside the 25,000-token client ceiling`);
+  ok(`x7 ${measured.length} of ${wide.length} widest-case answers measured, all under ${CEILING / 1000} KB, within the suite's 25,000 estimated-token target`);
 }
 
 // ------------------------------------------------- x8 no instruction reliance

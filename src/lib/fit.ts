@@ -1,8 +1,8 @@
 /**
  * Keep an answer inside the ceiling the CLIENT imposes.
  *
- * Every client truncates a tool result, and none of them say so to the model:
- * Claude Code cuts at 25,000 tokens, Claude.ai at roughly 150,000 characters.
+ * Clients handle large answers differently: some truncate, reject or save
+ * them to a file. Keep a conservative budget and name every reduction.
  * A truncated JSON body is not a smaller answer, it is a WRONG one, because
  * the model reads the surviving prefix as the whole thing and then reports
  * "the 23 listings" when there were 100.
@@ -88,7 +88,7 @@ export function fitRows<T>(
         slimmed: true,
         note:
           `All ${rows.length} rows are here, but ${opts.slimmedAway ?? "the per-row detail"} was left off each one to keep this answer ` +
-          `inside the size a client will carry; a bigger answer is silently cut off, which reads as a shorter list rather than a truncated one.` +
+          `within this server's output budget. Larger answers may exceed a client's limits.` +
           (opts.detailHint ? ` ${opts.detailHint}` : ""),
       };
     }
@@ -116,8 +116,8 @@ export function fitRows<T>(
       omitted: rows.length,
       slimmed,
       note:
-        `No rows are here. The smallest row on its own is ${firstBytes} bytes against a ${budget}-byte budget, so returning ` +
-        `even one would produce an answer a client silently cuts off - which reads as a complete list rather than a truncated one. ` +
+        `No rows are here. The first row is ${firstBytes} bytes against a ${budget}-byte budget, so including ` +
+        `that row would exceed this server's output budget. ` +
         `This is a size limit, not an empty result.` +
         (opts.moreHint ? ` ${opts.moreHint}` : "") +
         (opts.detailHint ? ` ${opts.detailHint}` : ""),
@@ -129,9 +129,9 @@ export function fitRows<T>(
     omitted,
     slimmed,
     note:
-      `${kept.length} of ${rows.length} rows are here. ${omitted} were left out, and ` +
-      (slimmed ? `${opts.slimmedAway ?? "the per-row detail"} was left off the ones that remain, ` : "") +
-      `because a client silently cuts off an answer past about ${Math.round(CLIENT_TOKEN_CEILING / 1000)}k tokens and the cut looks like a shorter list. ` +
+      `${kept.length} of ${rows.length} rows are here. ${omitted} were left out ` +
+      (slimmed ? `and ${opts.slimmedAway ?? "the per-row detail"} was left off the remaining rows ` : "") +
+      `to keep the answer within this server's output budget. ` +
       `This is a size limit, not the end of the data.` +
       (opts.moreHint ? ` ${opts.moreHint}` : "") +
       (opts.detailHint ? ` ${opts.detailHint}` : ""),

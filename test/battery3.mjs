@@ -36,7 +36,15 @@ await client.connect(transport);
 
 const checks = [];
 const check = (id, area, what, fn) => checks.push({ id, area, what, fn });
-const BUSY = /rate limit|429|too many|busy|timed out|abort/i;
+const BUSY = /rate.?limit|HTTP 429|too many requests|pause its reads|timed out|aborted/i;
+function upstreamUnavailable(r) {
+  if (!r || typeof r !== "object") return false;
+  if (["upstream-rate-limit", "upstream-unavailable"].includes(r.error)) return true;
+  if (r.error) return r.error === "error" && BUSY.test(String(r.detail ?? r.message ?? ""));
+  if (r._isError) return BUSY.test(String(r._raw ?? ""));
+  if (!r.sourceErrors || typeof r.sourceErrors !== "object") return false;
+  return Object.values(r.sourceErrors).some((e) => BUSY.test(typeof e === "string" ? e : JSON.stringify(e)));
+}
 const SKIP = Symbol("skip");
 
 async function call(name, args) {
@@ -56,7 +64,7 @@ const BIG_COLLECTION = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"; // 27,876 
 // ================================================== V. charts and visuals
 check("V1", "visuals", "a sales window returns a per-day series a chart can use", async () => {
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 14, maxPages: 4 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   if (!Array.isArray(r.daily)) return "no daily series at all, so 'chart the last month' cannot be answered";
   if (r.daily.length === 0) return SKIP;
   for (const d of r.daily) {
@@ -68,7 +76,7 @@ check("V1", "visuals", "a sales window returns a per-day series a chart can use"
 });
 check("V2", "visuals", "the per-day series is in date order, so a chart is not drawn backwards", async () => {
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 14, maxPages: 4 });
-  if (BUSY.test(asText(r)) || !Array.isArray(r.daily) || r.daily.length < 2) return SKIP;
+  if (upstreamUnavailable(r) || !Array.isArray(r.daily) || r.daily.length < 2) return SKIP;
   const dates = r.daily.map((d) => d.date);
   const sorted = [...dates].sort();
   return JSON.stringify(dates) === JSON.stringify(sorted) || `days are out of order: ${dates.slice(0, 4).join(", ")}`;
@@ -77,7 +85,7 @@ check("V3", "visuals", "a day with no sales is absent rather than invented as ze
   // Either shape is drawable, but the answer has to say which it is, or a
   // reader fills the gaps with zeros and draws a crash that never happened.
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 14, maxPages: 4 });
-  if (BUSY.test(asText(r)) || !Array.isArray(r.daily) || r.daily.length < 2) return SKIP;
+  if (upstreamUnavailable(r) || !Array.isArray(r.daily) || r.daily.length < 2) return SKIP;
   const days = new Set(r.daily.map((d) => d.date));
   const first = new Date(r.daily[0].date);
   const last = new Date(r.daily[r.daily.length - 1].date);
@@ -90,13 +98,13 @@ check("V3", "visuals", "a day with no sales is absent rather than invented as ze
 });
 check("V4", "visuals", "the day totals add up to the window total", async () => {
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 14, maxPages: 4 });
-  if (BUSY.test(asText(r)) || !Array.isArray(r.daily) || r.daily.length === 0) return SKIP;
+  if (upstreamUnavailable(r) || !Array.isArray(r.daily) || r.daily.length === 0) return SKIP;
   const summed = r.daily.reduce((n, d) => n + d.sales, 0);
   return summed === r.sales || `the per-day rows total ${summed} sales but the window says ${r.sales}`;
 });
 check("V5", "visuals", "a holdings breakdown carries shares that do not exceed the whole", async () => {
   const r = await call("get_wallet_profile", { wallet: WALLET });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const rows = r.holdings?.byCollection ?? [];
   if (rows.length === 0) return SKIP;
   // The field is shareOfWalletPct. Naming it wrong made this check skip
@@ -115,7 +123,7 @@ check("V5", "visuals", "a holdings breakdown carries shares that do not exceed t
 });
 check("V6", "visuals", "a table of floors never mixes currencies in one column", async () => {
   const r = await call("get_floor_prices", { symbols: ["mad_lads", "claynosaurz", "degods"] });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const rows = r.floors ?? r.results ?? [];
   if (rows.length === 0) return SKIP;
   const priced = rows.filter((x) => typeof x.floorPriceSol === "number" || typeof x.floor === "number");
@@ -129,7 +137,7 @@ check("W1", "units", "no floor is reported in lamports", async () => {
   const out = [];
   for (const sym of ["mad_lads", "degods", "claynosaurz"]) {
     const r = await call("get_collection_stats", { collection: sym });
-    if (BUSY.test(asText(r))) continue;
+    if (upstreamUnavailable(r)) continue;
     const f = r.market?.floorPriceSol;
     if (typeof f === "number" && f > 100_000) out.push(`${sym} floor ${f}`);
   }
@@ -137,13 +145,13 @@ check("W1", "units", "no floor is reported in lamports", async () => {
 });
 check("W2", "units", "no sale price is reported in lamports", async () => {
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 7, maxPages: 2 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const suspects = [r.highest?.priceSol, r.lowest?.priceSol, r.medianSol, r.averageSol, r.volumeSol].filter((n) => typeof n === "number" && n > 1_000_000);
   return suspects.length === 0 || `a figure in the lamport range was labelled SOL: ${suspects.join(", ")}`;
 });
 check("W3", "units", "a listing price is in the same unit as the floor it is compared against", async () => {
   const [stats, book] = await Promise.all([call("get_collection_stats", { collection: "mad_lads" }), call("find_listings", { symbol: "mad_lads", limit: 3 })]);
-  if (BUSY.test(asText(stats)) || BUSY.test(asText(book))) return SKIP;
+  if (upstreamUnavailable(stats) || upstreamUnavailable(book)) return SKIP;
   const floor = stats.market?.floorPriceSol;
   const ask = book.deals?.[0]?.priceSol;
   if (typeof floor !== "number" || typeof ask !== "number") return SKIP;
@@ -152,7 +160,7 @@ check("W3", "units", "a listing price is in the same unit as the floor it is com
 });
 check("W4", "units", "every currency that appears is named", async () => {
   const r = await call("get_collection_stats", { collection: BIG_COLLECTION });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const os = r.opensea;
   if (!os || os.error || typeof os.floor !== "number") return SKIP;
   return typeof os.floorCurrency === "string" && os.floorCurrency.length > 0 ? true : "an OpenSea floor with no currency beside it";
@@ -163,7 +171,7 @@ check("X1", "unicode", "a mirrored-Cyrillic imitation is not returned as a plain
   // Real, seen in a live search: "ꙅɿɒɘd ɘidmoƹ" is "Zombie bears" in mirrored
   // lookalike glyphs, sitting in the directory beside the real Okay Bears.
   const r = await call("search_collections", { query: "okay bears" });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const raw = JSON.stringify(r);
   const hasMirrored = /[Ѐ-ӿꙀ-ꚟɐ-ʯ]/.test(raw);
   if (!hasMirrored) return SKIP;
@@ -177,7 +185,7 @@ check("X2", "unicode", "a right-to-left override in a collection name cannot rev
 });
 check("X3", "unicode", "a zero-width character cannot hide a difference between two names", async () => {
   const r = await call("identify", { query: "mad​lads" });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   return !JSON.stringify(r).includes("​") || "a zero-width space survived into the answer";
 });
 check("X4", "unicode", "an emoji in a collection name does not break the answer", async () => {
@@ -197,34 +205,34 @@ check("Y1", "standards", "compressed holdings are counted explicitly, not left t
   // an omitted count reads as "not checked", and a reader cannot tell a wallet
   // with no compressed items from a reader that cannot see them.
   const profile = await call("get_wallet_profile", { wallet: WALLET });
-  if (BUSY.test(asText(profile))) return SKIP;
+  if (upstreamUnavailable(profile)) return SKIP;
   const n = profile.holdings?.compressed;
   if (typeof n !== "number") return "the holdings summary carries no compressed count at all";
   if (n === 0) return true;
   // There are some: one of them has to be readable as an asset.
   const holdings = await call("get_wallet_holdings", { wallet: WALLET, limit: 100 });
-  if (BUSY.test(asText(holdings))) return SKIP;
+  if (upstreamUnavailable(holdings)) return SKIP;
   const hit = (holdings.chainIndex?.items ?? []).find((i) => i.compressed === true);
   if (!hit) return true;
   const r = await call("get_asset", { mint: hit.mint });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   return !r._isError || `a compressed asset could not be read: ${(r._raw ?? "").slice(0, 120)}`;
 });
 check("Y2", "standards", "the holdings answer says which standards it found", async () => {
   const r = await call("get_wallet_holdings", { wallet: WALLET, limit: 50 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const byStandard = r.chainIndex?.byStandard;
-  return byStandard && Object.keys(byStandard).length > 0 ? true : "holdings came back with no breakdown by standard";
+  return byStandard && (Object.keys(byStandard).length > 0 || (r.chainIndex.count === 0 && r.chainIndex.countIsATotal === true)) ? true : "holdings came back with no breakdown by standard";
 });
 check("Y3", "scale", "a 27,876-item collection answers with supply from the chain", async () => {
   const r = await call("get_collection_stats", { collection: BIG_COLLECTION });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const minted = r.onchain?.numMinted;
   return typeof minted === "number" && minted > 10_000 ? true : `a large collection reported ${minted} minted`;
 });
 check("Y4", "scale", "a large collection's listed count never exceeds what was minted", async () => {
   const r = await call("get_collection_stats", { collection: BIG_COLLECTION });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const { numMinted: minted } = r.onchain ?? {};
   const listed = r.market?.listedCount;
   if (typeof minted !== "number" || typeof listed !== "number") return SKIP;
@@ -232,14 +240,14 @@ check("Y4", "scale", "a large collection's listed count never exceeds what was m
 });
 check("Y5", "scale", "a wallet read that hit a cap says so instead of reporting a total", async () => {
   const r = await call("get_wallet_holdings", { wallet: WALLET, limit: 5 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const me = r.magicEden;
   if (!me) return SKIP;
   return /capped|limit|more|floor, not a total|countisatotal/i.test(asText(r)) || "a capped read presented itself as the whole wallet";
 });
 check("Y6", "scale", "asking for one item costs one item, not the book", async () => {
   const r = await call("find_listings", { symbol: "mad_lads", limit: 1 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   return (r.deals?.length ?? 0) <= 1 || `limit 1 returned ${r.deals.length} rows`;
 });
 
@@ -254,19 +262,19 @@ check("Z1", "builders", "the sales-bot recipe names a tool, and that tool runs",
   const runnable = named.find((n) => args[n]);
   if (!runnable) return SKIP;
   const out = await call(runnable, args[runnable]);
-  if (BUSY.test(asText(out))) return SKIP;
+  if (upstreamUnavailable(out)) return SKIP;
   return !out._isError || `the recipe's own first call failed: ${runnable}`;
 });
 check("Z2", "builders", "a polling bot can tell one sale from the same sale seen twice", async () => {
   // The field a deduplicating bot keys on has to exist and be unique.
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 7, maxPages: 2 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const sig = r.highest?.signature;
   return typeof sig === "string" && sig.length > 40 ? true : "a sale with no transaction signature to deduplicate on";
 });
 check("Z3", "builders", "a bot is told how far back the feed was actually read", async () => {
   const r = await call("get_collection_sales", { symbol: "mad_lads", days: 7, maxPages: 2 });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const c = r.coverage;
   return c && (c.oldestSeen || c.truncated !== undefined) ? true : "no coverage block, so a bot cannot tell a quiet week from a short read";
 });
@@ -280,17 +288,17 @@ check("Z4", "builders", "every recipe goal this server advertises can be fetched
 });
 check("Z5", "builders", "a website builder gets an image for an item, or is told there is none", async () => {
   const holdings = await call("get_wallet_holdings", { wallet: WALLET, limit: 20 });
-  if (BUSY.test(asText(holdings))) return SKIP;
+  if (upstreamUnavailable(holdings)) return SKIP;
   const mint = holdings.chainIndex?.items?.[0]?.mint;
   if (!mint) return SKIP;
   const r = await call("get_asset", { mint });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   const raw = asText(r);
   return /image|uri|no image|not carried/i.test(raw) || "an asset answer with nothing to render and nothing saying so";
 });
 check("Z6", "builders", "a number a builder would print carries the time it was read", async () => {
   const r = await call("get_floor_prices", { symbols: ["mad_lads"] });
-  if (BUSY.test(asText(r))) return SKIP;
+  if (upstreamUnavailable(r)) return SKIP;
   return /cachedat|readat|at"/i.test(asText(r)) || "a floor with no read time, which a cache would print as current forever";
 });
 

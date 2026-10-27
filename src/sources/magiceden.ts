@@ -24,8 +24,43 @@ const HEADERS = {
 // 600ms between calls ≈ 1.6 req/s, under ME's ~2/s public allowance.
 const gate = rateLimiter(600, "Magic Eden");
 
+// A 429 used to end only the request that got it: the next tool call went
+// out 0.6 s later into the same pause. The pause the venue asks for now holds
+// for every later call to the same KIND of route ("collections/*/stats" for
+// any symbol), bounded so one odd header cannot switch it off for a day. It
+// is per route kind because Magic Eden has been seen to throttle one route
+// (a collection's stats) while its others answered normally.
+const pausedUntil = new Map<string, number>();
+const PAUSE_DEFAULT_MS = 30_000;
+const PAUSE_MAX_MS = 60 * 60_000;
+
+/** "/collections/mad_lads/stats?x=1" and "/collections/other/stats" share "collections/stats". */
+function routeKind(path: string): string {
+  const parts = (path.split("?")[0] ?? "").split("/").filter(Boolean);
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts[0]}/${parts[parts.length - 1]}`;
+}
+
+/** The latest moment any Magic Eden route asked readers to wait until, or null. Read by the status tool. */
+export function mePausedUntil(): string | null {
+  const latest = Math.max(0, ...pausedUntil.values());
+  return latest > Date.now() ? new Date(latest).toISOString() : null;
+}
+
 async function me<T>(path: string, signal?: AbortSignal, opts: { background?: boolean } = {}): Promise<T> {
-  return fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal, background: opts.background });
+  const kind = routeKind(path);
+  const remaining = (pausedUntil.get(kind) ?? 0) - Date.now();
+  if (remaining > 0) {
+    throw new HttpError(`Magic Eden asked readers to pause; about ${Math.ceil(remaining / 1000)} s of that pause is left`, 429, "rate limited", remaining);
+  }
+  try {
+    return await fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal, background: opts.background });
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 429) {
+      const wait = Math.min(Math.max(e.retryAfterMs ?? PAUSE_DEFAULT_MS, 1_000), PAUSE_MAX_MS);
+      pausedUntil.set(kind, Math.max(pausedUntil.get(kind) ?? 0, Date.now() + wait));
+    }
+    throw e;
+  }
 }
 
 /**
@@ -172,12 +207,18 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     await assertSymbolKnown(symbol, { signal: opts.signal });
   }
   const volume7dSol = sol(data.volume7d);
+  const listedCount = count(data.listedCount);
   return {
     // The marketplace writes this back; `collectionAttributes` already cleans
     // the same field, and a symbol that arrives as something else is text.
     symbol: clean(data.symbol),
-    floorPriceSol: sol(data.floorPrice),
-    listedCount: count(data.listedCount),
+    // A floor beside "0 listed" in the same answer is the last floor the
+    // venue kept, not an ask anyone can fill now.
+    floorPriceSol: listedCount === 0 ? null : sol(data.floorPrice),
+    ...(listedCount === 0 && sol(data.floorPrice) !== null
+      ? { floorNote: "Magic Eden reports no listings, so there is no current ask to quote; the floor it still carries is an old one." }
+      : {}),
+    listedCount,
     // ME reports volumeAll in SOL for some collections and lamports for
     // others historically; current v2 returns SOL. Label the unit explicitly.
     volumeAllSol: solAmount(data.volumeAll),
@@ -473,17 +514,27 @@ export interface MeWalletActivity {
  */
 export async function walletActivities(wallet: string, pages: number) {
   const { data, stale, cachedAt } = await cached(`me:wact:${wallet}:${pages}`, 60_000, async () => {
+    // Only an empty page ends the feed. A short page is not an end signal on
+    // this venue: its listings endpoint served 99 rows and then 91 more.
     const all: MeWalletActivity[] = [];
+    let exhausted = false;
+    let lastLength = 100;
     for (let p = 0; p < pages; p++) {
       const batch = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`));
       assertPageSize("Magic Eden", "wallet activities", batch, 100);
-      if (batch.length === 0) break;
+      if (batch.length === 0) { exhausted = true; break; }
       appendAll(all, batch);
-      if (batch.length < 100) break;
+      lastLength = batch.length;
     }
-    return all;
+    // The budget ran out on a short page: one look past it settles whether
+    // that was the end, so a quiet wallet is not reported as cut off.
+    if (!exhausted && lastLength < 100) {
+      const next = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${pages * 100}&limit=100`));
+      exhausted = next.length === 0;
+    }
+    return { events: all, exhausted };
   });
-  return { events: data, truncated: data.length >= pages * 100, stale, cachedAt };
+  return { events: data.events, truncated: !data.exhausted, stale, cachedAt };
 }
 
 export interface MeWalletToken {

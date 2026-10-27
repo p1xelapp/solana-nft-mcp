@@ -31,7 +31,7 @@
     "pack-check": "node scripts/pack-check.mjs",
     "prepublishOnly": "node scripts/pack-check.mjs",
     "start": "node dist/index.js",
-    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/roles-and-holes.mjs && node test/siblings.mjs && node test/abuse.mjs && node test/identity-and-validation.mjs && node test/injection-and-redirects.mjs && node test/opensea-contract.mjs && node test/paging-and-boundaries.mjs && node test/release-checks.mjs && node test/robustness.mjs && node scripts/build-architecture.mjs --check",
+    "test": "npm run build && npm run lint && node test/protocol.mjs && node test/market.mjs && node test/das.mjs && node test/mechanics.mjs && node test/hardening.mjs && node test/wrong-answers.mjs && node test/autokey.mjs && node test/credentials-and-cancellation.mjs && node test/census.mjs && node test/escrow-and-dedupe.mjs && node test/roles-and-holes.mjs && node test/siblings.mjs && node test/abuse.mjs && node test/identity-and-validation.mjs && node test/injection-and-redirects.mjs && node test/opensea-contract.mjs && node test/paging-and-boundaries.mjs && node test/release-checks.mjs && node test/robustness.mjs && node test/locks-links-and-pauses.mjs && node scripts/build-architecture.mjs --check",
     "test:smoke": "npm run build && node test/smoke.mjs",
     "test:live": "npm run build && node test/live.mjs",
     "test:battery": "npm run build && node test/battery.mjs && node test/battery2.mjs && node test/battery3.mjs",
@@ -67,8 +67,8 @@
     "url": "git+https://github.com/p1xelapp/solana-nft-mcp.git"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
-    "zod": "^3.25.1"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -596,11 +596,14 @@ export function summarizeSales(
         const partial = from > dayStart || to < dayEnd;
         return { ...row, coveredFrom: iso(from), coveredTo: iso(to), ...(partial ? { partial: true as const } : {}) };
       };
-      // Filling is for a chart window (the tool caps at 90 days). An empty
-      // feed stays empty, and a window wider than a year stays sparse rather
-      // than becoming thousands of zero rows.
+      // Filling is for a chart window (the tool caps at 90 days). A feed with
+      // no evidence for the window stays empty, and a window wider than a year
+      // stays sparse rather than becoming thousands of zero rows. A fresh,
+      // complete feed whose sales all predate the window is evidence: those
+      // days were quiet, and a frozen market charts as zeros, not as a gap.
       const spanDays = (windowEndUnix - windowStartUnix) / 86_400;
-      if (sparse.length === 0 || !Number.isFinite(spanDays) || spanDays > 400) return sparse.map(covered).sort((a, b) => a.date.localeCompare(b.date));
+      const quietButCovered = sparse.length === 0 && oldestSeen !== null && oldestSeen <= windowStartUnix && !truncated && !stale;
+      if ((sparse.length === 0 && !quietButCovered) || !Number.isFinite(spanDays) || spanDays > 400) return sparse.map(covered).sort((a, b) => a.date.localeCompare(b.date));
       const byDate = new Map<string, DailyPoint>(sparse.map((d) => [d.date, d]));
       const oldestDay = truncated && oldestSeen !== null ? utcDay(oldestSeen) : null;
       for (let t = windowStartUnix; t <= windowEndUnix + 86_399; t += 86_400) {
