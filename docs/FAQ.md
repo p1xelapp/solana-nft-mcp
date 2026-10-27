@@ -152,9 +152,10 @@ the move as one more transfer and `get_asset` shows who holds it now. A move lik
 is not a sale, and a brand-new wallet holding cards is not suspicious by itself.
 
 **Can I trade my Candy card right now?**
-Ask `get_asset_trust` about the card. Since October 12 every Candy collection carries an
-oracle check that the Metaplex Core program consults before a transfer or a burn, and
-the tool reads that check's account and says what it answered. On 2026-10-26 it answered
+Ask `get_asset_trust` about the card. Candy began attaching an oracle check to its
+collections on October 12, and every one sampled since carries it: the Metaplex Core
+program consults it before a transfer or a burn, and the tool reads that check's account
+and says what it answered. On 2026-10-26 it answered
 no to both, so a sale, a listing that moves the card or a plain send fails on chain until
 Candy changes it. A price you can see on a marketplace does not mean the trade can go
 through. Candy's own steps for wallet claiming, marketplace connections and transfers out

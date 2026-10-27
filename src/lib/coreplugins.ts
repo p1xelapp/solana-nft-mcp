@@ -100,6 +100,8 @@ export interface DecodedExternal {
   checks: { event: string; canReject: boolean; canApprove: boolean; canListen: boolean }[];
   /** Oracles only: the account whose bytes answer each check, or the base address when it is derived per transaction. */
   oracle?: { account: string; resultsOffset: number } | { derivedFrom: string };
+  /** Oracles only: the base address the program keys this record by. */
+  oracleBase?: string;
   /** True when the record or the adapter body could not be decoded. */
   unreadable?: boolean;
   inheritedFromCollection?: boolean;
@@ -338,13 +340,23 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
           r.seek(rec.offset);
           if (r.u8() !== 1) throw new Error("adapter tag is not Oracle");
           const baseAddress = r.pubkey();
-          if (r.u8() === 1) row.oracle = { derivedFrom: baseAddress };
-          else {
-            const kind = r.u8();
-            const resultsOffset = kind === 0 ? 0 : kind === 1 ? 8 : kind === 2 ? r.u64() : -1;
-            if (resultsOffset < 0 || resultsOffset > 10_000_000) throw new Error(`unknown results offset kind ${kind}`);
-            row.oracle = { account: baseAddress, resultsOffset };
-          }
+          row.oracleBase = baseAddress;
+          // base_address_config: None, or an ExtraAccount. Preconfigured
+          // (0-4) and CustomPda (5) derive the account per transaction, so
+          // it cannot be read ahead of one; Address (6) names it outright.
+          const hasConfig = r.u8();
+          let account: string | null = baseAddress;
+          if (hasConfig === 1) {
+            const extra = r.u8();
+            if (extra <= 4) { r.u8(); r.u8(); account = null; }
+            else if (extra === 5) { row.oracle = { derivedFrom: baseAddress }; decodedExternal.push(row); continue; }
+            else if (extra === 6) { account = r.pubkey(); r.u8(); r.u8(); }
+            else throw new Error(`unknown extra account kind ${extra}`);
+          } else if (hasConfig !== 0) throw new Error(`option tag ${hasConfig}`);
+          const kind = r.u8();
+          const resultsOffset = kind === 0 ? 0 : kind === 1 ? 8 : kind === 2 ? r.u64() : -1;
+          if (resultsOffset < 0 || resultsOffset > 10_000_000) throw new Error(`unknown results offset kind ${kind}`);
+          row.oracle = account ? { account, resultsOffset } : { derivedFrom: baseAddress };
         } catch {
           row.unreadable = true;
         }
@@ -394,11 +406,16 @@ const heldByOther = (p: DecodedPlugin | undefined): boolean =>
  * because their address depends on the transaction.
  */
 export function oracleAccountsToRead(asset: DecodedAccount, collection?: DecodedAccount | null): { account: string; resultsOffset: number }[] {
-  const seen = new Map<string, number>();
+  const seen = new Map<string, { account: string; resultsOffset: number }>();
   for (const e of [...(asset.external ?? []), ...(collection?.external ?? [])]) {
-    if (e.oracle && "account" in e.oracle && !seen.has(e.oracle.account)) seen.set(e.oracle.account, e.oracle.resultsOffset);
+    if (e.oracle && "account" in e.oracle) seen.set(oracleReadingKey(e.oracle.account, e.oracle.resultsOffset), { account: e.oracle.account, resultsOffset: e.oracle.resultsOffset });
   }
-  return [...seen].map(([account, resultsOffset]) => ({ account, resultsOffset }));
+  return [...seen.values()];
+}
+
+/** Readings are keyed by account AND offset: two records can read different places in one account. */
+export function oracleReadingKey(account: string, resultsOffset: number): string {
+  return `${account}@${resultsOffset}`;
 }
 
 const ORACLE_FAILS: Record<Exclude<OracleReading["state"], "answered" | "unread">, string> = {
@@ -428,9 +445,16 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   // count: every adapter it counts is then an unread one.
   const assetExt = asset.external ?? [];
   const collectionExt = collection?.external ?? [];
-  const externals = [...assetExt.map((e) => ({ ...e, inheritedFromCollection: false })), ...collectionExt.map((e) => ({ ...e, inheritedFromCollection: true }))];
+  // The program keys oracle records by their base address, and the asset's
+  // record stands in for a collection record with the same key.
+  const assetOracleBases = new Set(assetExt.filter((e) => e.oracleBase).map((e) => e.oracleBase));
+  const externals = [
+    ...assetExt.map((e) => ({ ...e, inheritedFromCollection: false })),
+    ...collectionExt.filter((e) => !(e.oracleBase && assetOracleBases.has(e.oracleBase))).map((e) => ({ ...e, inheritedFromCollection: true })),
+  ];
   let unreadExternal = asset.externalPlugins - assetExt.length + (collection ? collection.externalPlugins - collectionExt.length : 0);
   const blocked = new Set<string>();
+  const blockedVia = new Set<boolean>();
   const failing: string[] = [];
   for (const e of externals) {
     const events = e.checks.filter((c) => c.canReject).map((c) => c.event);
@@ -440,16 +464,16 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
       if (e.unreadable || events.length > 0 || e.type !== "Oracle") unreadExternal++;
       continue;
     }
-    const reading = oracleReadings?.get(e.oracle.account) ?? { account: e.oracle.account, state: "unread" as const };
+    const reading = oracleReadings?.get(oracleReadingKey(e.oracle.account, e.oracle.resultsOffset)) ?? { account: e.oracle.account, state: "unread" as const };
     out.oracleChecks.push({ account: e.oracle.account, inheritedFromCollection: e.inheritedFromCollection, events, reading });
     if (reading.state === "unread") { if (events.length) unreadExternal++; continue; }
     for (const ev of events) {
-      if (reading.state === "answered") {
-        if (ev !== "execute" && ev in reading.results! && reading.results![ev as keyof typeof reading.results] === "rejected") blocked.add(ev);
-      } else if (ev !== "execute") {
-        blocked.add(ev);
-        failing.push(`${ev}: ${ORACLE_FAILS[reading.state]}`);
-      }
+      if (ev === "execute") continue;
+      const refuses = reading.state === "answered" ? reading.results![ev as keyof NonNullable<OracleReading["results"]>] === "rejected" : true;
+      if (!refuses) continue;
+      blocked.add(ev);
+      blockedVia.add(e.inheritedFromCollection);
+      if (reading.state !== "answered") failing.push(`${ev}: ${ORACLE_FAILS[reading.state]}`);
     }
   }
   out.blockedByOracle = ["transfer", "burn", "update", "create"].filter((ev) => blocked.has(ev));
@@ -550,10 +574,22 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   if (has("BubblegumV2")) out.assurances.push("Collection admits compressed (Bubblegum v2) NFTs; some members need a DAS indexer to read.");
 
   if (out.blockedByOracle.length) {
-    const viaCollection = out.oracleChecks.some((c) => c.inheritedFromCollection) ? " It is set on the collection, so it applies to every asset in it." : "";
+    const viaCollection = blockedVia.has(true) ? " It is set on the collection, so it applies to every asset in it." : "";
     const accounts = [...new Set(out.oracleChecks.map((c) => c.account))].join(", ");
+    // Say what each refusal stops, and only that: a refused burn says nothing
+    // about whether the item can be sold.
+    const effects: string[] = [];
+    if (blocked.has("transfer")) effects.push("an ordinary transfer, sale or listing that moves the item fails on chain");
+    if (blocked.has("burn")) effects.push("a burn by the holder fails");
+    if (blocked.has("update")) effects.push("a metadata update fails");
+    if (blocked.has("create")) effects.push("creating new items under it fails");
+    // Permanent delegates are force-approved before any oracle is asked
+    // (mpl-core validate_asset_permissions), so the issuer's own moves pass.
+    const exceptions: string[] = [];
+    if (ptd && heldByOther(ptd) && blocked.has("transfer")) exceptions.push(`transfers by the permanent transfer delegate (${ptd.authority})`);
+    if (pbd && heldByOther(pbd) && blocked.has("burn")) exceptions.push(`burns by the permanent burn delegate (${pbd.authority})`);
     out.warnings.unshift(
-      `BLOCKED BY AN ORACLE when read: ${out.blockedByOracle.join(", ")}. The program asks oracle account ${accounts} before each of these actions and the answer was no${failing.length ? ` (${failing.join("; ")})` : ""}, so an ordinary transfer, sale or listing that moves the item fails on chain until that answer changes.${viaCollection} Whoever controls that account can change the answer at any time, so this describes the moment of the read.${ptd && heldByOther(ptd) && blocked.has("transfer") ? ` The permanent transfer delegate (${ptd.authority}) is the exception: the program force-approves its transfers, so the issuer can still move the item.` : ""}`,
+      `BLOCKED BY AN ORACLE when read: ${out.blockedByOracle.join(", ")}. The program asks oracle account ${accounts} before ${out.blockedByOracle.length === 1 ? "this action" : "these actions"} and the answer was no${failing.length ? ` (${failing.join("; ")})` : ""}, so ${effects.join(", and ")}, until that answer changes.${viaCollection} Whoever controls that account can change the answer at any time, so this describes the moment of the read.${exceptions.length ? ` The exception is ${exceptions.join(" and ")}: the program force-approves those before it asks the oracle.` : ""}`,
     );
   } else if (out.oracleChecks.some((c) => c.reading.state === "answered")) {
     out.assurances.push(`Oracle check${out.oracleChecks.length === 1 ? "" : "s"} attached (${[...new Set(out.oracleChecks.map((c) => c.account))].join(", ")}) answered without refusing anything when read. Its controller can change that answer at any time.`);

@@ -36,8 +36,10 @@ const PAUSE_MAX_MS = 60 * 60_000;
 
 /** "/collections/mad_lads/stats?x=1" and "/collections/other/stats" share "collections/stats". */
 function routeKind(path: string): string {
+  // "/tokens/<mint>" and "/collections/<symbol>" are one kind each, not one
+  // per item: the item is the middle of the path, never part of the kind.
   const parts = (path.split("?")[0] ?? "").split("/").filter(Boolean);
-  return parts.length <= 1 ? (parts[0] ?? "") : `${parts[0]}/${parts[parts.length - 1]}`;
+  return parts.length <= 2 ? (parts[0] ?? "") : `${parts[0]}/${parts[parts.length - 1]}`;
 }
 
 /** The latest moment any Magic Eden route asked readers to wait until, or null. Read by the status tool. */
@@ -519,18 +521,33 @@ export async function walletActivities(wallet: string, pages: number) {
     const all: MeWalletActivity[] = [];
     let exhausted = false;
     let lastLength = 100;
+    // Only the first page may fail the call. A later page that fails ends the
+    // walk with what was read and `truncated: true`; it used to throw away the
+    // rows already in hand.
+    const read = async (offset: number): Promise<MeWalletActivity[] | null> => {
+      try {
+        const batch = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${offset}&limit=100`));
+        assertPageSize("Magic Eden", "wallet activities", batch, 100);
+        return batch;
+      } catch (e) {
+        if (offset === 0) throw e;
+        return null;
+      }
+    };
+    let failed = false;
     for (let p = 0; p < pages; p++) {
-      const batch = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${p * 100}&limit=100`));
-      assertPageSize("Magic Eden", "wallet activities", batch, 100);
+      const batch = await read(p * 100);
+      if (batch === null) { failed = true; break; }
       if (batch.length === 0) { exhausted = true; break; }
       appendAll(all, batch);
       lastLength = batch.length;
     }
     // The budget ran out on a short page: one look past it settles whether
-    // that was the end, so a quiet wallet is not reported as cut off.
-    if (!exhausted && lastLength < 100) {
-      const next = page<MeWalletActivity>("wallet activities", await me<unknown>(`/wallets/${wallet}/activities?offset=${pages * 100}&limit=100`));
-      exhausted = next.length === 0;
+    // that was the end, so a quiet wallet is not reported as cut off. If that
+    // look fails, the answer says it may be cut off rather than failing.
+    if (!exhausted && !failed && lastLength < 100) {
+      const next = await read(pages * 100);
+      exhausted = next !== null && next.length === 0;
     }
     return { events: all, exhausted };
   });
