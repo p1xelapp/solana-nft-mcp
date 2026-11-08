@@ -869,7 +869,7 @@ export const MECHANICS: MechanicsEntry[] = [
     pitfall:
       "A refused burn does not mean transfers are refused. Wallet access, marketplace support, oracle events and permanent delegates are separate checks. An advertised ask is not proof that a sale will succeed; get_asset_trust reports only the rules it could read at that moment.",
     documented:
-      "Candy's November 6 guide says the MoonPay-powered wallet connects to OpenSea, Magic Eden and Tensor through WalletConnect. Wallet permissions do not remove collection-level delegates.",
+      "Candy's November 6 guide says its wallet connects to OpenSea, Magic Eden and Tensor through WalletConnect; its October 22 post describes the new wallets as MoonPay-powered. Wallet permissions do not remove collection-level delegates.",
     observed:
       "On 2026-11-08, 401 collection accounts registered only burn against oracle FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox at offset 36. At slot 466835054 its results were create rejected, transfer pass, burn rejected, update rejected; only registered events apply. Each collection carried Royalties and PermanentTransferDelegate. Other controls must be read on the asset. This supersedes the October 26 transfer-and-burn observation.",
     verified: true,
@@ -885,7 +885,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
     pitfall:
-      "A failed sale does not identify which rule refused it. On 2026-11-08 the sampled Candy oracle records checked burn only. Other plugins or marketplace requirements can still prevent a transfer. Read get_asset_trust on the item instead of treating the October 2026 pause as its current state.",
+      "A failed sale does not identify which rule refused it. On 2026-11-08 all 401 registered Candy collections' oracle records checked burn only. Other plugins or marketplace requirements can still prevent a transfer. Read get_asset_trust on the item instead of treating the October 2026 pause as its current state.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:

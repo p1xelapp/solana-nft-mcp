@@ -1,9 +1,9 @@
 // Offline integration tests for previously unexecuted reads and scan limits.
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { start,call } from './helpers/fake-server.mjs';
-const base=process.argv[2] || '.';
+const base=process.argv[2] || fileURLToPath(new URL('..', import.meta.url));
 const MINT='59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4';
 let passed=0,failed=0;
 async function check(name,fn) {try{await fn();passed++;console.log(`PASS ${name}`);}catch(e){failed++;console.log(`FAIL ${name}: ${e.message}`);}}
@@ -34,7 +34,12 @@ await check('oversized text-only response is refused',async()=>{
 await check('Candy mechanics do not assign every delegate to every card',async()=>{
   const { MECHANICS }=await import(pathToFileURL(resolve(base,'dist/mechanics.js')));
   const e=MECHANICS.find(e=>e.id==='venue-candy-custody');
-  assert(!/holds the permanent transfer, burn and freeze delegates on every card/.test(e.plain),'a sampled card has no permanent burn delegate');
+  // The entry may name the collection-level transfer delegate it observed,
+  // but must send per-card questions to get_asset_trust rather than claim
+  // burn or freeze delegates on every card.
+  assert(!/(burn|freeze)[^.]*every card|every card[^.]*(burn|freeze) delegate/i.test(e.plain),'a sampled card has no permanent burn delegate');
+  assert.match(e.plain, /get_asset_trust/);
+  assert.match(e.plain, /2026-11-08/);
 });
 await check('matching printed serials retain distinct mint identities',()=>fixture('duplicate-serial',async s=>{
   const r=await call(s,'find_listings',{symbol:'mad_lads',limit:3,lowestSerials:true});assert(!r.error);

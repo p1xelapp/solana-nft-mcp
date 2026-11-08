@@ -204,6 +204,7 @@ export function summarizeActivity(
   wallet: string,
   events: MeWalletActivity[],
   truncated: boolean,
+  stopReason: "end" | "page-cap" | "page-failed" = truncated ? "page-cap" : "end",
 ): ActivitySummary {
   const byType: Record<string, number> = {};
   const venues: Record<string, number> = {};
@@ -423,7 +424,13 @@ export function summarizeActivity(
   if (unusableTimestamps) {
     caveats.push(`${unusableTimestamps} row(s) carried a blockTime that is not a representable time; their times are null and the rows still count.`);
   }
-  if (truncated) caveats.push("The feed was cut at the page limit; older activity exists. Raise `pages` to see more.");
+  if (truncated) {
+    caveats.push(
+      stopReason === "page-failed"
+        ? "A later page of the feed could not be read, so the walk may be cut off; older activity may be missing. Asking again may read further."
+        : "The feed was cut at the page limit; older activity may exist. Raise `pages` to see more.",
+    );
+  }
   if (sells.count > 0 && purchases === 0) caveats.push("Sells without matching buys usually means the items were minted, transferred in, or bought before the window started.");
 
   return {

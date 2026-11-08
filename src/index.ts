@@ -484,7 +484,7 @@ function trendingView(c: Record<string, unknown>) {
     view: {
       symbol: text(c.symbol, "symbol"),
       name: text(c.name, "name"),
-      description: text(c.description, "description"),
+      description: ((d) => (d === null ? null : withoutLinks(d)))(text(c.description, "description")),
       // Magic Eden publishes this endpoint's floor and volume without a unit
       // anywhere in its docs, so the number is passed through with the
       // uncertainty attached instead of being silently called SOL.
@@ -2227,7 +2227,7 @@ registerTool(
     // second FIFO match, doubling realised P&L, wins and flip count - so the
     // feed is deduplicated on the whole event before anything counts it.
     const deduped = dedupeEvents(feed.events);
-    const summary = summarizeActivity(wallet, deduped.events, feed.truncated);
+    const summary = summarizeActivity(wallet, deduped.events, feed.truncated, feed.stopReason);
     // The OpenSea block is always present and always says which of four
     // things it is: read, disabled by the caller, not read for want of a key,
     // or failed. An absent block with a prose note beside it was a state a
@@ -2311,7 +2311,7 @@ registerTool(
       // "has it ever sold one of X" was being answered from that window. The
       // collection's own sales feed is the read that question needs.
       next: feed.truncated
-        ? "This window hit the page cap, so it is the wallet's most recent activity, not its history. To learn whether this wallet ever sold an item of ONE collection, read that collection's sales instead: get_collection_sales on its symbol lists sellers, and get_asset_provenance on a specific item shows every hand it passed through."
+        ? `${feed.stopReason === "page-failed" ? "A later page could not be read" : "This window hit the page cap"}, so it is the wallet's most recent activity, not its history. To learn whether this wallet ever sold an item of ONE collection, read that collection's sales instead: get_collection_sales on its symbol lists sellers, and get_asset_provenance on a specific item shows every hand it passed through.`
         : "For whether this wallet ever sold an item of one collection, get_collection_sales on that symbol lists sellers; get_asset_provenance on a specific item shows every hand it passed through.",
     });
   }),

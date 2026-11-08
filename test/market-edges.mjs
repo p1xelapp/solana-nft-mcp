@@ -1,9 +1,9 @@
 // Offline regressions from the 2026-11-08 marketplace review.
-// AUDIT_DIST lets the same assertions run against the preserved original build.
+// Pass another build's folder as the first argument to run the same checks on it.
 import assert from 'node:assert/strict';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-const dist = path.resolve(process.env.AUDIT_DIST || 'dist');
+const dist = path.resolve(process.argv[2] || fileURLToPath(new URL('..', import.meta.url)), 'dist');
 process.env.SOLANA_NFT_MCP_NO_UPDATE_CHECK = '1';
 process.env.OPENSEA_API_KEY = ['TEST', 'market-edges', '1234567890'].join('-');
 let route;
@@ -63,7 +63,8 @@ await check('OpenSea recent sales reports unconsumed history', async () => {
   route = () => json({ asset_events: [{ event_type: 'sale', event_timestamp: sale.blockTime, nft: { identifier: mint }, payment: { quantity: '1', decimals: 9, symbol: 'SOL' } }], next: 'more' });
   const r = await os.recentSales('audit-limited-cursor', 1);
   assert.equal(r.sales.length, 1);
-  assert.equal(r.truncated, true);
+  assert.equal(r.truncated, false);
+  assert.equal(r.moreAvailable, true);
 });
 await check('tiny sales survive collection and wallet arithmetic', async () => {
   const r = market.summarizeSales([sale], { windowStartUnix: sale.blockTime - 1, windowEndUnix: sale.blockTime + 1 });

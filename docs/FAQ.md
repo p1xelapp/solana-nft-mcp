@@ -145,8 +145,9 @@ nothing about the rest. Mints and plain transfers are never in it, and OpenSea n
 result says this every time so the model does not present one marketplace as a wallet's whole life.
 
 **Did my Candy cards move to a new wallet?**
-Candy announced the move from its old custodial wallets to MoonPay-powered wallets
-on October 19, 2026, and opened wallet claiming on October 30. A particular card's
+Candy announced the move out of its old custodial wallets on October 19, 2026,
+described the new wallets as MoonPay-powered on October 22, and opened wallet
+claiming on October 30. A particular card's
 move needs its own evidence: `get_asset_provenance` shows transfers under the same
 asset address and `get_asset` reads its current owner. A transfer alone proves
 neither a sale nor a theft. Indexes can still show the old owner after a move.

@@ -1,7 +1,7 @@
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { getEventListeners } from 'node:events';
-const root = path.resolve(process.argv[2] || '.');
+const root = path.resolve(process.argv[2] || fileURLToPath(new URL('..', import.meta.url)));
 const load = p => import(pathToFileURL(path.join(root, 'dist', p)));
 const { profileLinkUrl, withoutLinks, clean, safeHttpsUrl } = await load('lib/untrusted.js');
 const { rpcHealth } = await load('sources/solana.js');
@@ -26,13 +26,16 @@ for (const [name, value] of Object.entries(encodings)) {
     return json(Array.isArray(req) ? [{id:1,error:{code:-32000,message:value}},{id:2,result:100}] : {result:null});
   };
   const result = await rpcHealth(2000);
-  const note = result.find(r=>r.endpoint.includes('your SOLANA_RPC_URL'))?.note ?? '';
+  const row = result.find(r=>r.endpoint.includes('your SOLANA_RPC_URL'));
   // HTML and percent forms can be truncated: checking their first 32 bytes
-  // also detects a partial credential, without printing it.
-  check('check', !note.includes(value.slice(0,32)), `rpcHealth ${name} reflection withheld`);
+  // also detects a partial credential, without printing it. A missing row is
+  // a failure, not an empty note that passes.
+  check('check', row !== undefined && !JSON.stringify(row).includes(value.slice(0,32)), `rpcHealth ${name} reflection withheld`);
   globalThis.fetch = async () => json({error:value},400);
+  let threw = false;
   try { await fetchJson('OpenSea','https://api.opensea.io/test',{headers:{'x-api-key':key}},{retries:0}); }
-  catch (e) { check('control', !e.message.includes(value.slice(0,32)), `OpenSea ${name} error body withheld`); }
+  catch (e) { threw = true; check('control', !e.message.includes(value.slice(0,32)), `OpenSea ${name} error body withheld`); }
+  if (!threw) check('control', false, `OpenSea ${name}: a 400 answer did not fail the call`);
 }
 for (const url of ['https://candy-wallet.example/?action=claim','https://moonpay-wallet.example/#/wallet/migration','https://project.example/%2563laim']) {
   check('check',profileLinkUrl(url) === null, `profile link blocked (${new URL(url).pathname})`);

@@ -220,7 +220,9 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     listingValidityChecked: false,
     ...(listedCount === 0 && sol(data.floorPrice) !== null
       ? { floorNote: "Magic Eden reports no listings, so there is no current ask to quote; the floor it still carries is an old one." }
-      : { floorNote: "Magic Eden's index-reported ask. Custody and active orders were not checked; an API listing can remain after the asset moves to another wallet." }),
+      : sol(data.floorPrice) !== null
+        ? { floorNote: "Magic Eden's index-reported ask. Custody and active orders were not checked; an API listing can remain after the asset moves to another wallet." }
+        : {}),
     listedCount,
     // ME reports volumeAll in SOL for some collections and lamports for
     // others historically; current v2 returns SOL. Label the unit explicitly.
@@ -277,10 +279,10 @@ interface MeActivity {
 /**
  * Recent completed sales (buyNow) for a collection, newest first.
  *
- * The activity feed has no server-side type filter and busy collections can
- * show pages of listings/bids between sales, so we walk up to 5 pages (paced
- * by the shared gate) until we have `limit` sales - and report how much
- * activity we scanned so thin results are explainable, never mysterious.
+ * Asks for type=buyNow, then checks each row, because the venue can ignore the
+ * filter and serve pages of listings or transfers. Walks up to 5 pages (paced
+ * by the shared gate) until it has `limit` sales, and reports in `coverage`
+ * why it stopped, so a thin result is explainable, never mysterious.
  */
 export async function recentSales(symbol: string, limit: number) {
   const { data, stale, cachedAt } = await cached(`me:sales:v2:${symbol}:${limit}`, 30_000, async () => {
@@ -567,10 +569,12 @@ export async function walletActivities(wallet: string, pages: number) {
     if (!exhausted && !failed && lastLength < 100) {
       const next = await read(pages * 100);
       exhausted = next !== null && next.length === 0;
+      if (next === null) failed = true;
     }
-    return { events: all, exhausted };
+    const stopReason: "end" | "page-cap" | "page-failed" = exhausted ? "end" : failed ? "page-failed" : "page-cap";
+    return { events: all, exhausted, stopReason };
   });
-  return { events: data.events, truncated: !data.exhausted, stale, cachedAt };
+  return { events: data.events, truncated: !data.exhausted, stopReason: data.stopReason, stale, cachedAt };
 }
 
 export interface MeWalletToken {
