@@ -485,7 +485,7 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
 
   const ptd = has("PermanentTransferDelegate");
   if (ptd && heldByOther(ptd)) {
-    out.warnings.push(`PERMANENT transfer delegate held by ${ptd.authority}${where(ptd)}: that party can move this asset out of any wallet without the holder's signature, forever. Common on packs and redeemable items; a real custody caveat on anything else.`);
+    out.warnings.push(`PERMANENT transfer delegate held by ${ptd.authority}${where(ptd)}: while this plugin remains active, that party can move this asset out of any wallet without the holder's signature, including after a sale. Common on packs and redeemable items; a real custody caveat on anything else.`);
     out.ownerIsNotSoleController = true;
   }
   const pbd = has("PermanentBurnDelegate");
@@ -568,9 +568,9 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
   else out.warnings.push("Metadata is mutable: the issuer can change the name, image and traits after you buy.");
   if (has("AddBlocker")) out.assurances.push("Add-blocker present: no new plugins can be attached later, so the rules you see are the rules you get.");
   const ed = has("Edition");
-  if (ed?.data) out.assurances.push(`On-chain edition number ${String(ed.data.edition)} - the serial is enforced by the program, not just printed in metadata.`);
+  if (ed?.data) out.assurances.push(`On-chain edition number ${String(ed.data.edition)}. The program stores this number but does not enforce uniqueness.${ed.authority === "none" ? " Its authority is None, so the number cannot be changed." : " Its plugin authority can change the number."}`);
   const me = has("MasterEdition");
-  if (me?.data) { const ms = me.data.maxSupply; out.assurances.push(`Master edition with max supply ${typeof ms === "number" ? String(ms) : "unlimited"}.`); }
+  if (me?.data) { const ms = me.data.maxSupply; out.assurances.push(`Master edition records an intended maximum supply of ${typeof ms === "number" ? String(ms) : "unspecified"}. This is informational and does not enforce a minting cap.`); }
   if (has("BubblegumV2")) out.assurances.push("Collection admits compressed (Bubblegum v2) NFTs; some members need a DAS indexer to read.");
 
   if (out.blockedByOracle.length) {

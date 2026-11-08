@@ -18,7 +18,7 @@
 
 import { createHash } from "node:crypto";
 
-import { AbortedError, assertOnline, cached, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint } from "../lib/http.js";
+import { AbortedError, assertOnline, cached, combineSignals, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean, safeHttpsUrl } from "../lib/untrusted.js";
 import { USER_AGENT } from "../lib/version.js";
@@ -69,24 +69,6 @@ function endpoints(): { id: string; url: string }[] {
 interface RpcError {
   code?: number;
   message?: string;
-}
-
-/**
- * One signal firing on either the request timeout or the caller's own
- * deadline. `AbortSignal.any` landed in Node 20.3 and the engine floor is
- * 20.0, so the two are combined by hand.
- */
-function combineSignals(timeoutMs: number, caller?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  if (!caller) return timeout;
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  if (caller.aborted || timeout.aborted) stop();
-  else {
-    caller.addEventListener("abort", stop, { once: true });
-    timeout.addEventListener("abort", stop, { once: true });
-  }
-  return controller.signal;
 }
 
 async function call<T>(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ result: T; endpoint: string }> {

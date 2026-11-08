@@ -434,7 +434,7 @@ const WIDE = { windowStartUnix: 0, windowEndUnix: 4_000_000_000 };
     { reader: "the chain's asset index", count: 9, bounded: false },
   );
   assert.strictEqual(differing.comparable, true);
-  assert.ok(/larger count as the floor/.test(differing.note));
+  assert.ok(/Neither count establishes a minimum current holding/.test(differing.note));
 
   // One reader down is not a comparison at all.
   const half = compareReaderCounts(

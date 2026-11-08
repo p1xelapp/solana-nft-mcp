@@ -712,13 +712,13 @@ const serverEnvBase = () => {
   const r3 = await verifyClaim({ claim: "never-traded", subject: mint });
   assert.strictEqual(r3.verdict, "confirmed", `a decoded mint and a complete, readable history still confirms: ${r3.explanation}`);
 
-  // Control: a decoded TransferV1 (data "F" is byte 14) contradicts it.
+  // Control: a decoded TransferV1 (data "F" is byte 14) proves movement, not a sale.
   globalThis.fetch = rpcFor([
     { signature: signature("moved"), tx: tx({ programId: CORE, accounts, data: "F" }, ["Program log: Instruction: Transfer"]) },
     { signature: signature("created-2"), tx: tx({ programId: CORE, accounts, data: "11" }, ["Program log: Instruction: Create"]) },
   ]);
   const r4 = await verifyClaim({ claim: "never-traded", subject: mint });
-  assert.strictEqual(r4.verdict, "contradicted");
+  assert.strictEqual(r4.verdict, "unverifiable");
 
   // F02, three more routes to a false "confirmed", each its own regression.
   // Data "M" is byte 20: CreateV2.

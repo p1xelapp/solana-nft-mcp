@@ -429,11 +429,14 @@ export function symbolForCollectionName(name: string): SymbolFromDirectory | nul
   const distinct = [...new Set(hits)];
   if (distinct.length !== 1) return null;
   const snap = loadSnapshot();
+  const inSnapshot = snap?.collections.some((row) => row.s === distinct[0] && nameKey(row.n) === nameKey(name));
+  const origin = inSnapshot
+    ? `the bundled directory snapshot${snap?.takenAt ? ` taken ${snap.takenAt}` : ""}`
+    : `the live directory read ${liveReady?.cachedAt ?? "at an unrecorded time"}`;
   return {
     symbol: distinct[0]!,
     note:
-      `Magic Eden symbol matched by exact name in the bundled directory snapshot` +
-      (snap?.takenAt ? ` taken ${snap.takenAt}` : "") +
+      `Magic Eden symbol matched by exact name in ${origin}` +
       `, not hand-verified. If the market figures look like a different collection, pass the symbol yourself.`,
   };
 }

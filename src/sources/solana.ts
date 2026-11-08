@@ -506,7 +506,9 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
         // where no error guard would ever see it.
         note: healthy && slot !== null
           ? `healthy at slot ${slot}`
-          : (upstreamMessage(health?.error?.message) || "answered but did not report itself healthy"),
+          : ep.url === process.env.SOLANA_RPC_URL?.trim()
+            ? "your SOLANA_RPC_URL answered but did not report itself healthy; provider text withheld"
+            : (upstreamMessage(health?.error?.message) || "answered but did not report itself healthy"),
       });
     } catch (e) {
       out.push({
@@ -514,7 +516,9 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
         ok: false,
         latencyMs: Date.now() - started,
         slot: null,
-        note: upstreamMessage(e instanceof Error ? e.message : String(e)) || "did not answer",
+        note: ep.url === process.env.SOLANA_RPC_URL?.trim()
+          ? "your SOLANA_RPC_URL did not answer; provider text withheld"
+          : upstreamMessage(e instanceof Error ? e.message : String(e)) || "did not answer",
       });
     }
   }

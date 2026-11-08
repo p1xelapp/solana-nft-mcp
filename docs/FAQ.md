@@ -145,21 +145,44 @@ nothing about the rest. Mints and plain transfers are never in it, and OpenSea n
 result says this every time so the model does not present one marketplace as a wallet's whole life.
 
 **Did my Candy cards move to a new wallet?**
-Probably. On October 19, 2026 Candy started moving every holder's items out of the
-old custodial wallets and into new ones run with MoonPay. Each card keeps its asset
-address and its history, so look it up by that address: `get_asset_provenance` shows
-the move as one more transfer and `get_asset` shows who holds it now. A move like this
-is not a sale, and a brand-new wallet holding cards is not suspicious by itself.
+Candy announced the move from its old custodial wallets to MoonPay-powered wallets
+on October 19, 2026, and opened wallet claiming on October 30. A particular card's
+move needs its own evidence: `get_asset_provenance` shows transfers under the same
+asset address and `get_asset` reads its current owner. A transfer alone proves
+neither a sale nor a theft. Indexes can still show the old owner after a move.
 
 **Can I trade my Candy card right now?**
-Ask `get_asset_trust` about the card. Candy began attaching an oracle check to its
-collections on October 12, and every one sampled since carries it: the Metaplex Core
-program consults it before a transfer or a burn, and the tool reads that check's account
-and says what it answered. On 2026-10-26 it answered
-no to both, so a sale, a listing that moves the card or a plain send fails on chain until
-Candy changes it. A price you can see on a marketplace does not mean the trade can go
-through. Candy's own steps for wallet claiming, marketplace connections and transfers out
-are in its [October 23 update](https://blog.candy.io/your-questions-answered-the-new-candy-wallet/).
+Ask `get_asset_trust` about the card for its current rules. Candy announced
+marketplace connections on November 6, 2026. A November 8 read of all 401 registered
+collections found burn-only oracle checks: holder burns were refused, while
+transfers no longer consulted the oracle. This replaced the transfer-and-burn
+checks observed on October 26. Other plugins and marketplace requirements can
+still prevent a sale, and an asset may override a collection rule. An advertised
+ask is not proof that a trade will succeed. Candy's
+[November 6 guide](https://blog.candy.io/how-to-connect-your-candy-wallet-to-opensea-and-magic-eden/)
+describes the wallet connections; this server neither connects a wallet nor signs.
+
+**Do duplicate serials mean my card is fake?**
+Not by themselves. On November 8, 2026, distinct Justice League Membership Card
+accounts carried identical names and serials. A number in a name is issuer metadata;
+even a Core Edition plugin does not enforce uniqueness. Compare asset and collection
+addresses with `get_asset` and `get_asset_trust`. A `(n/0)` name has no valid edition
+size and is excluded from the lowest-serial listing search.
+
+**Does a higher minted count prove Candy issued new editions?**
+It proves the collection recorded more Solana creations only when compared with a
+dated earlier read. It does not identify the reason. An older Palm item first
+created on Solana, a pack result and a new issue need separate evidence. Collection
+stats give current counters, not a historical supply series.
+
+**Why can a collection have listings but no recent sales?**
+A listing is an ask, not a fill. `get_recent_sales` requests Magic Eden's sale filter
+and reports how many activity rows it scanned. `coverage` says whether the read reached the end of the feed,
+stopped at its page budget, or met a repeated page. Even an exhausted feed describes that marketplace's index only. Use
+`get_collection_sales` for a dated window and keep other venues' coverage separate.
+Listing validity is separate from API freshness. Magic Eden can retain an ask after
+the asset moves to another wallet. Floors and listing searches report
+`listingValidityChecked: false`; their read times do not prove an order can fill.
 
 **Does it understand packs?**
 Yes. Sealed packs are separate assets from the cards they open into. On past Candy

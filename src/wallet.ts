@@ -654,20 +654,20 @@ export function compareReaderCounts(a: ReaderCount, b: ReaderCount): ReaderCompa
       comparable: false,
       note:
         `${describe(a)}; ${describe(b)}. These are items READ, not totals: at least one reader stopped at a limit, ` +
-        `so each number is a lower bound and the two cannot be compared to each other.`,
+        `so each number is a lower bound on that source's index entries, not on current holdings. Either index can retain items after a transfer or listing. Check get_asset for a current Core owner.`,
     };
   }
   if (a.count === b.count) {
     return {
       comparable: true,
-      note: `Both readers listed ${a.count} item(s) and neither stopped at a limit, so they agree on what they can see. Coverage still differs: ${a.reader} only carries what it indexes, and ${b.reader} has undocumented coverage of its own.`,
+      note: `Both readers listed ${a.count} item(s) and neither stopped at a limit, so their counts agree. Coverage still differs, and both indexes can lag a transfer. Equal counts do not prove they name the same items or current owners. Check get_asset for a current Core owner.`,
     };
   }
   return {
     comparable: true,
     note:
-      `${describe(a)}; ${describe(b)}. Neither index is complete on its own: a marketplace skips what it does not trade, ` +
-      `the public asset index has undocumented coverage. Treat the larger count as the floor.`,
+      `${describe(a)}; ${describe(b)}. Either index can omit items or retain outdated owners after a transfer or listing. ` +
+      `Neither count establishes a minimum current holding. Check get_asset for a current Core owner.`,
   };
 }
 
@@ -794,7 +794,7 @@ export function floorCeiling(
         ? `NO FIGURE: Magic Eden did not answer for the holdings themselves. The counts available were read at ${coverage.cachedAt ?? "an unrecorded earlier time"} and the floors at ${floorsReadAt}, and floor x a cached count is a number no moment ever held - the wallet may hold none of these items now. Ask again in a minute for a figure about the present.`
         : capped
           ? `A LOWER BOUND over the ${totalItems} items actually read: the holdings walk stopped at its cap${coverage.raise ? ` (raise ${coverage.raise} to read further)` : ""}, so items beyond it are absent from every figure here and the wallet's real total was never established.`
-          : "This is floor x count on Magic Eden at query time: the most the wallet could list for and still be the cheapest, not what it would realise.",
+          : "This is floor x indexed count on Magic Eden at query time, not what it would realise in sales. Current custody was not checked; an index can retain items after a transfer or listing. This arithmetic is not a valuation or proof the wallet can sell those items.",
       capped || mixedTime
         ? "How many items had no Magic Eden floor cannot be stated: that count needs a current holdings total this read did not establish."
         : `${Math.max(0, totalItems - coveredItems)} items had no Magic Eden floor (unindexed, no listings, or the collection was outside the priced set) and count as zero here.`,

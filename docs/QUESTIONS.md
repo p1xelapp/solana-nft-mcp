@@ -59,7 +59,7 @@ collection name or address.
 |---|---|---|
 | "what is this" (pastes a mint or a marketplace link) | Identify works out what the string is and what to look up next | ANSWERS NOW |
 | "who has owned this card" | Full ownership history for Core assets decoded from RPC, dated, marketplaces named | ANSWERS NOW (Core only) |
-| "has this ever been sold" | Claim verification returns confirmed, contradicted or unverifiable with the transfer count | ANSWERS NOW (Core only) |
+| "has this ever been sold" | A complete Core history without transfers can confirm no on-chain sale. Transfers alone leave the claim unverifiable; sale records need a separate check | PARTIAL (Core history; a transfer is not a sale) |
 | "is this legit" | Identify plus collection stats plus the custody decode; the answer describes, it does not certify | ANSWERS NOW |
 | "did I overpay" | Recent sales and the floor at the time of asking, against what was paid | ANSWERS NOW |
 | "can they take this back from me" | Custody decode: permanent transfer, freeze and burn delegates read from the asset bytes | ANSWERS NOW (Core only) |
@@ -123,7 +123,7 @@ collection name or address.
 | "is this wash trading" | Buys and sells between the same addresses can be shown; calling it wash trading is a judgment the tool does not make | PARTIAL (pattern shown, no verdict) |
 | "the winner of our raffle looks fake, check them" | Wallet age, transaction count, holdings, and how the qualifying item arrived | ANSWERS NOW (arrival needs the OpenSea key) |
 | "someone says this sold for 400 SOL, true" | Claim verification against sales in the window, plus the highest sale figure | ANSWERS NOW (window figure) |
-| "this seller says never traded, prove it" | Claim verification returns contradicted with a transfer count, then the dated history | ANSWERS NOW (Core only) |
+| "this seller says never traded, prove it" | Claim verification keeps transfers separate from sales; migration or escrow moves alone cannot contradict a never-sold claim | PARTIAL (Core history plus separate sale evidence) |
 | "are they selling to themselves" | Buyer and seller addresses are in the sales rows; you can see repeats | PARTIAL (raw pattern, no clustering) |
 | "is this a fake collection with a copied name" | Chain address versus registry versus marketplace symbol; matching names with different addresses are named as different things | ANSWERS NOW |
 | "did the team dump on holders" | Wallet activity for a named address, with marketplaces covered stated | PARTIAL (needs the address; team wallets are not identified for you) |

@@ -140,7 +140,7 @@ await edge("E07", "full provenance of the same pack, no hole, buyer visible", as
 await edge("E08", "verify_claim never-traded on a pack that moved", async () => {
   const { body, err } = await call("verify_claim", { claim: "never-traded", subject: candyPack.mint });
   must(body, `tool error: ${err}`);
-  must(body.verdict !== "unverifiable", `unverifiable: ${body.explanation}`);
+  must(body.verdict === "unverifiable", `a transfer alone cannot prove a sale: ${body.explanation}`);
   return { note: `${body.verdict}: ${body.explanation.slice(0, 140)}` };
 });
 

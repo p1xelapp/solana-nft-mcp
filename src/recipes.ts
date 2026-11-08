@@ -220,7 +220,7 @@ if (isEscrow(p.currentOwner)) renderNotice("Currently listed - held in marketpla
 
   "wallet-tracker": {
     goal: "wallet-tracker",
-    buildingWhat: "A view of what a wallet holds, what it has bought and sold, and what that is worth now.",
+    buildingWhat: "A view of indexed holdings, recorded trades and current asking prices, with custody checked separately.",
     dataSources: [
       ME_SOURCE,
       RPC_SOURCE,
@@ -234,8 +234,8 @@ if (isEscrow(p.currentOwner)) renderNotice("Currently listed - held in marketpla
     pitfalls: [
       {
         trap: "Treating a marketplace's wallet endpoint as the complete picture.",
-        why: "It only covers collections that marketplace indexes. Anything else is invisible, and the response gives no hint that it is partial.",
-        instead: "State the coverage explicitly in the UI. 'As indexed by Magic Eden' is honest; a bare total is not.",
+        why: "It only covers indexed collections and can retain an old owner after a transfer. Even a fresh, complete API response can describe outdated custody.",
+        instead: "Label these as index entries. Use get_asset to check the current Core owner before claiming a wallet still holds an item.",
       },
       {
         trap: "Counting listed items as still held, or as already sold.",
@@ -245,7 +245,7 @@ if (isEscrow(p.currentOwner)) renderNotice("Currently listed - held in marketpla
       {
         trap: "Valuing a portfolio by multiplying item count by floor.",
         why: "Serial numbers, grades and 1-of-1s make items within one collection wildly unequal, and the floor is one optimistic ask.",
-        instead: "Show a floor-based range with the assumption stated, or value from comparable recent sales at similar serials.",
+        instead: "Show floor x indexed count as arithmetic with its source and read time. Keep completed comparable sales separate; neither establishes what this wallet would realise in sales.",
       },
       {
         trap: "Assuming a blocked or empty wallet response means an empty wallet.",
@@ -262,12 +262,12 @@ if (me) {
   // Three states, never two. Listed is not held and not sold.
   const held   = me.tokens.filter(t => !t.listed);
   const listed = me.tokens.filter(t =>  t.listed);
-  if (me.capped) renderNotice("Showing the first 100 Magic Eden items - this wallet holds more.");
+  if (me.capped) renderNotice("The Magic Eden index read stopped at its cap; current holdings were not established.");
   renderNotice("Prices and listing state: collections indexed by Magic Eden only.");
 } else {
   renderNotice(\`Magic Eden did not answer (\${h.sourceErrors?.magiceden ?? "no reason given"}): no prices or listing state.\`);
 }
-if (idx) renderNotice(\`\${idx.count} assets on chain\${idx.countIsATotal ? "" : " (at least: the read was cut short)"}.\`);`,
+if (idx) renderNotice(\`\${idx.count} index entries\${idx.countIsATotal ? "" : " (read capped)"}. Current ownership was not checked.\`);`,
     beforeShipping: [
       "Run it against a wallet holding more than the page size and confirm the cap is disclosed.",
       "Run it against a marketplace escrow address and confirm the explanation is human-readable.",

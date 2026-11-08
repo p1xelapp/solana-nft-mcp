@@ -57,6 +57,9 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     "A floor is the lowest current ASK, not a valuation and not a recent trade price. On a thin order book one listing sets it.",
     ...extraCaveats,
   ];
+  if (allQuotes.some((q) => q.source === "opensea")) {
+    caveats.push("OpenSea aggregates listings across marketplaces. Its reported floor does not identify the venue that can fill the listing; check the order before treating this comparison as an execution price.");
+  }
   // A cached quote from a failed refresh is shown but never ranked: naming a
   // "cheapest venue" during an outage is a confident wrong answer.
   const staleQuotes = allQuotes.filter((q) => q.stale);
@@ -115,8 +118,8 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     comparable: true,
     verdict:
       spreadPct === 0
-        ? `Both marketplaces show the same floor (${cheapest.value} ${cheapest.currency}).`
-        : `Cheapest on ${cheapest.source} at ${cheapest.value} ${cheapest.currency}; ` +
+        ? `Both sources report the same floor (${cheapest.value} ${cheapest.currency}).`
+        : `Lowest reported by ${cheapest.source} at ${cheapest.value} ${cheapest.currency}; ` +
           `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.`,
     floors: sorted,
     cheapest,

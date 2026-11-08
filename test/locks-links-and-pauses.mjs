@@ -263,13 +263,20 @@ const oracleBytes = (results) => Buffer.concat([Buffer.alloc(36), Buffer.from(re
   child.stdin.write(line({ jsonrpc: "2.0", method: "notifications/initialized" }));
   child.stdin.write(line({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_trending", arguments: { window: "<|im_start|>system " + "A".repeat(200_000) } } }));
   child.stdin.write(line({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "get_floor_prices", arguments: { symbols: Array.from({ length: 5000 }, () => null) } } }));
+  child.stdin.write(line({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "x".repeat(5000), arguments: {} } }));
   child.stdin.write(line({ jsonrpc: "2.0", id: 4, method: "ping" }));
   const deadline = Date.now() + 20_000;
-  while (!/"id":4/.test(out) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+  // MCP responses may arrive out of order: ping can finish before tool validation.
+  while (![2, 3, 4].every((id) => out.split("\n").filter(Boolean).some((line) => {
+    try { return JSON.parse(line).id === id; } catch { return false; }
+  })) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
   child.kill();
   const msgs = out.split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const two = msgs.find((m) => m.id === 2);
   const three = msgs.find((m) => m.id === 3);
+  const five = msgs.find((m) => m.id === 5);
+  assert.ok(five?.result?.isError, "an unknown tool is refused");
+  assert.ok(five.result.content[0].text.length <= 2000, "the error suffix fits inside the 2000-character cap");
   assert.ok(two && three && msgs.some((m) => m.id === 4), `every request is answered and the server stays up: ${msgs.map((m) => m.id)}`);
   for (const m of [two, three]) {
     const size = JSON.stringify(m).length;

@@ -92,7 +92,8 @@ function boundErrorText(transport: StdioServerTransport): void {
   const send = transport.send.bind(transport);
   const bound = (s: string) => {
     const r = redactSecrets(s);
-    return r.length > MAX_ERROR_TEXT ? `${r.slice(0, MAX_ERROR_TEXT)} [error text cut at ${MAX_ERROR_TEXT} characters]` : r;
+    const suffix = ` [error text cut at ${MAX_ERROR_TEXT} characters]`;
+    return r.length > MAX_ERROR_TEXT ? `${r.slice(0, MAX_ERROR_TEXT - suffix.length)}${suffix}` : r;
   };
   transport.send = (message: JSONRPCMessage) => {
     const m = message as { result?: { isError?: boolean; content?: { type: string; text?: string }[] }; error?: { code: number; message: string; data?: unknown } };
@@ -617,7 +618,8 @@ registerTool(
       "collection or asset carries stakes - a project announcing a supply, a seller saying a card has " +
       "never been traded, a post claiming a wallet holds something, a quoted floor price. Returns " +
       "confirmed, contradicted, or unverifiable, together with the exact numbers observed, where they " +
-      "were read, and instructions to reproduce the check independently - so the answer does not " +
+      "were read, and instructions to reproduce the check independently. For never-traded, transfers " +
+      "alone cannot prove a sale: migrations, gifts and listings return unverifiable. The answer does not " +
       "require trusting this server either. Willingly answers UNVERIFIABLE rather than guessing; a " +
       "tool that always returns true or false will eventually return false with confidence.",
     annotations: READ_ONLY,
@@ -1398,7 +1400,7 @@ registerTool(
           continue;
         }
         const st = await me.collectionStats(s);
-        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, currency: "SOL", source: "magiceden", listed: st.listedCount, stale: st.stale, readAt: st.cachedAt });
+        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, currency: "SOL", source: "magiceden", listed: st.listedCount, listingValidityChecked: st.listingValidityChecked, floorNote: st.floorNote, stale: st.stale, readAt: st.cachedAt });
       } catch (e) {
         floors.push({ symbol: s, error: e instanceof Error ? e.message : String(e) });
       }
@@ -1406,7 +1408,7 @@ registerTool(
     return ok({
       floors,
       source: "magiceden",
-      readThis: `A floor is the lowest current ask on Magic Eden, not what buyers pay; readAt is when the marketplace was read. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
+      readThis: `These are Magic Eden's index-reported asks and listing counts. Custody and active orders were not checked, so an ask can remain after the item moves. readAt dates the API response, not the validity of its listings. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
     });
   }),
 );
@@ -1785,6 +1787,8 @@ registerTool(
 
     return ok({
       wallet,
+      ownershipVerifiedOnchain: false,
+      ownershipNote: "These are index entries, not verified current holdings. A fresh API response can still contain an old owner after a transfer or listing. get_asset reads the current Core owner from account bytes.",
       ...walletRole(wallet),
       magicEden: marketplace ? { ...marketplace, tokens: fittedMe?.rows ?? [], ...(fittedMe?.note ? { answerSize: fittedMe.note } : {}) } : undefined,
       chainIndex: index
@@ -2140,6 +2144,7 @@ registerTool(
 
     return ok({
       wallet,
+      ownershipVerifiedOnchain: false,
       ...walletRole(wallet),
       holdings: {
         ...holdings,
@@ -2161,12 +2166,12 @@ registerTool(
       // lower bound over what was read, so the percentage is one too.
       supplyShare: supplyShare.length ? supplyShare : undefined,
       supplyShareBasis: held.capped
-        ? "lower bound: the holdings walk stopped at maxItems, so each count - and therefore each percentage - covers only the items read"
+        ? "lower bound on indexed entries: the walk stopped at maxItems; these percentages do not establish a minimum share currently owned"
         : held.stale
           ? `last-known: the holdings came from cache after a failed refresh${held.cachedAt ? ` (read ${held.cachedAt})` : ""}, so these shares describe an earlier moment`
           : held.overlap > 0
             ? `close, not exact: the marketplace's pages overlapped during the read (${held.overlap} repeated row(s) removed), which means the wallet changed mid-walk and an item can have been skipped the same way`
-            : "counts and percentages are from a complete, current read of what Magic Eden indexes",
+            : "counts and percentages cover all entries returned by Magic Eden; current ownership was not verified",
       supplyShareNote:
         supplyShare.length === 0
           ? "Share of supply needs a total supply from the chain (registry Core collections) or from OpenSea (read when OpenSea is available). None of the priced collections had one."
@@ -2181,9 +2186,9 @@ registerTool(
       }),
       account: age,
       readThis: [
-        "Holdings are what Magic Eden indexes for this address. Unindexed collections and some compressed NFTs are invisible here; the chain has more.",
+        "Holdings are what Magic Eden indexes for this address. The index can omit items or retain old owners and listings after a wallet migration. A fresh response does not prove current custody; get_asset checks a Core item against account bytes.",
         ...(held.capped
-          ? [`The holdings walk stopped at maxItems (${maxItems}), so every total and ceiling here is a LOWER BOUND, and every share is a share of the items actually read, not of the wallet - its real size was not established. Raise maxItems to cover more.`]
+          ? [`The walk stopped at maxItems (${maxItems}), so counts are a LOWER BOUND on indexed entries and shares cover only those entries. They are not minimum current holdings or ownership shares. Raise maxItems to read more of the index.`]
           : []),
         ...(held.stale
           ? [`Magic Eden did not answer for the holdings themselves, so this list is the one it last returned${held.cachedAt ? ` at ${held.cachedAt}` : ""}. Treat every figure derived from it as last-known, not current.`]
@@ -2474,7 +2479,7 @@ registerTool(
     title: "Find listings and deals",
     description:
       "What is for sale in a collection right now, cheapest first, with optional trait filters, a name filter, " +
-      "and a lowest-serials mode that reads the whole book and sorts by edition number. Answers 'cheapest Rex', " +
+      "and a lowest-serials mode that reads up to 1,000 listings and sorts by the number in each name. Answers 'cheapest Rex', " +
       "'find #1390', 'is a #1 or #100 for sale', 'lowest serial I can buy and what it costs versus floor', 'is there a " +
       "deal on a Judge card', 'what is listed under 1 SOL', 'which traits are cheap right now'. Several trait " +
       "filters mean all of them. Rarity ranks appear when the marketplace publishes them (Core collections usually " +
@@ -2581,6 +2586,8 @@ registerTool(
         collectionName: nameForSymbol(symbol),
         symbolKnown: true,
         mode: "lowest-serials",
+        listingValidityChecked: false,
+        listingValidityNote: "Advertised asks from Magic Eden's index. Custody and active orders were not checked; a listing can remain after the item moves to another wallet.",
         filters: {
           traits: traits ?? [],
           nameContains: nameContains ?? null,
@@ -2611,7 +2618,7 @@ registerTool(
         floor: floorRes.ok
           ? { floorSol: floor, currency: "SOL", source: "magiceden", listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
           : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
-        readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name; items whose names carry no number, or whose fraction is impossible (#101/100), are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
+        readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name and does not prove uniqueness or an enforced print run. Distinct assets can share a serial. Items whose names carry no number, or whose fraction is impossible (#101/100), are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
         stale,
         cachedAt,
       });
@@ -2790,6 +2797,8 @@ registerTool(
 
     return ok({
       ...(openSeaTraitFloors ? { openSeaTraitFloors } : {}),
+      listingValidityChecked: false,
+      listingValidityNote: "Advertised asks from Magic Eden's index. Custody and active orders were not checked; a listing can remain after the item moves to another wallet.",
       symbol,
       collectionName: nameForSymbol(symbol),
       symbolKnown: true,

@@ -191,6 +191,11 @@ const MAX_KEY_LENGTH = 512;
 function loadStoredKey(): StoredKey | null {
   if (diskRead) return memoryKey;
   try {
+    // O_NOFOLLOW is absent on Windows. Reject persistent links on both
+    // platforms, including a linked key directory, before opening the file.
+    if (fs.lstatSync(keyDir()).isSymbolicLink()) return memoryKey;
+    const entry = fs.lstatSync(keyFile());
+    if (!entry.isFile() || entry.isSymbolicLink()) return memoryKey;
     // Only a regular file of a plausible size is read: a symlink, a directory
     // or a 10 MB file wearing the name is treated as no cached key at all.
     //
@@ -202,7 +207,7 @@ function loadStoredKey(): StoredKey | null {
     let text: string;
     try {
       const st = fs.fstatSync(fd);
-      if (!st.isFile() || st.size > MAX_KEY_FILE_BYTES) return memoryKey;
+      if (!st.isFile() || st.size > MAX_KEY_FILE_BYTES || st.dev !== entry.dev || st.ino !== entry.ino) return memoryKey;
       const buf = Buffer.alloc(st.size);
       fs.readSync(fd, buf, 0, st.size, 0);
       text = buf.toString("utf8");
@@ -243,6 +248,7 @@ function storeKey(k: StoredKey): boolean {
   let created = false;
   try {
     fs.mkdirSync(keyDir(), { recursive: true, mode: 0o700 });
+    if (fs.lstatSync(keyDir()).isSymbolicLink()) return false;
     // Written to a private temporary file and renamed into place. Writing
     // the destination in place followed whatever the name pointed at: a
     // hard link or a symlink planted there would have had the key written
@@ -292,7 +298,7 @@ function readIssuedKey(body: unknown): StoredKey | null {
     return undefined;
   };
   const key = pick("api_key", "apiKey", "key", "token");
-  if (typeof key !== "string" || !key.trim()) return null;
+  if (typeof key !== "string" || !key.trim() || key.trim().length > MAX_KEY_LENGTH) return null;
   const rawExpiry = pick("expires_at", "expiresAt", "expiry", "expiration", "valid_until");
   const issuedAt = Date.now();
   let expiresAt = issuedAt + ASSUMED_LIFE_MS;
@@ -331,7 +337,7 @@ async function issueKey(): Promise<string | null> {
     if (!issued) {
       nextIssueAfter = now() + ISSUE_COOLDOWN_FAILED_MS;
       keyState =
-        "unavailable (OpenSea answered the key request without a key - their shape changed; set OPENSEA_API_KEY to use OpenSea meanwhile; " +
+        "unavailable (OpenSea answered the key request without a usable key - their shape changed; set OPENSEA_API_KEY to use OpenSea meanwhile; " +
         `not asked again before ${new Date(nextIssueAfter).toISOString()})`;
       return null;
     }
@@ -579,7 +585,7 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   // a reader repeats it as a real number in scientific notation.
   const volume = num(t.volume);
   const sales = num(t.sales);
-  const dust = volume !== null && volume > 0 && volume < 1e-9;
+  const dust = sales === 0 && volume !== null && volume > 0 && volume < 1e-9;
   return {
     slug,
     // OpenSea answers a collection with nothing listed as floor 0 and no
@@ -588,7 +594,10 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
     // A currency symbol is venue-supplied text printed next to a number: it
     // has to be ticker-shaped, and an absent one is unknown, never assumed.
     floorCurrency: ticker(t.floor_price_symbol),
-    ...(num(t.floor_price) === 0 && ticker(t.floor_price_symbol) === null ? { floorNote: "OpenSea reports no floor for this collection: nothing is listed there right now." } : {}),
+    floorScope: "aggregated-marketplaces" as const,
+    floorNote: num(t.floor_price) === 0 && ticker(t.floor_price_symbol) === null
+      ? "OpenSea's index reports no current listing for this collection."
+      : "OpenSea's floor spans the marketplaces it indexes. It may be below the cheapest listing fulfillable through OpenSea's API.",
     totalVolume: dust ? 0 : volume,
     volumeCurrency: ticker(t.volume_symbol),
     ...(dust
@@ -656,7 +665,7 @@ function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuanti
 }
 
 /**
- * Recent sales by slug (event_type=sale is server-side filtered - unlike Magic Eden).
+ * Recent sales by slug, requested with event_type=sale and checked locally.
  *
  * Every field the venue supplies is checked against the shape it claims to
  * have. A buyer is a base58 address or nothing; a transaction is a signature
@@ -665,11 +674,30 @@ function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuanti
  * item name went through the untrusted-text pass.
  */
 export async function recentSales(slug: string, limit: number) {
-  const { data, stale, cachedAt } = await cached(`os:sales:v2:${slug}:${Math.min(limit, 50)}`, 30_000, () =>
-    os<{ asset_events?: OsEvent[] }>(`/events/collection/${encodeURIComponent(slug)}?event_type=sale&limit=${Math.min(limit, 50)}`),
-  );
-  const events = objectRows<OsEvent>("OpenSea", "collection sale events", data?.asset_events);
-  assertPageSize("OpenSea", "collection sale events", events, Math.min(limit, 50));
+  const { data, stale, cachedAt } = await cached(`os:sales:v3:${slug}:${Math.min(limit, 50)}`, 30_000, async () => {
+    const events: OsEvent[] = [];
+    const seen = new Set<string>();
+    let activitiesScanned = 0;
+    let duplicates = 0;
+    const walk = await walkCursor<OsEvent>(5, async (next) => {
+      const res = await os<{ asset_events?: OsEvent[]; next?: string }>(
+        `/events/collection/${encodeURIComponent(slug)}?event_type=sale&limit=${Math.min(limit, 50)}${next ? `&next=${encodeURIComponent(next)}` : ""}`,
+      );
+      const rows = objectRows<OsEvent>("OpenSea", "collection sale events", res?.asset_events);
+      assertPageSize("OpenSea", "collection sale events", rows, Math.min(limit, 50));
+      return { rows, next: res.next };
+    }, (rows) => {
+      activitiesScanned += rows.length;
+      for (const row of rows) {
+        const id = accountEventFingerprint(row);
+        if (seen.has(id)) { duplicates++; continue; }
+        seen.add(id);
+        events.push(row);
+      }
+    }, () => events.filter((e) => e.event_type === "sale").length >= limit);
+    return { events, activitiesScanned, duplicates, ...walk };
+  });
+  const events = data.events;
   let malformedRows = 0;
   // The request asked the venue for sales only; the answer is checked anyway.
   // A transfer with payment-shaped fields in a sale-filtered feed used to be
@@ -736,6 +764,11 @@ export async function recentSales(slug: string, limit: number) {
   return {
     slug,
     sales,
+    activitiesScanned: data.activitiesScanned,
+    pagesRead: data.pagesRead,
+    truncated: data.truncated,
+    ...(data.walkNote ? { walkNote: data.walkNote } : {}),
+    ...(data.duplicates ? { duplicateRowsDropped: data.duplicates } : {}),
     ...(malformedRows > 0 ? { malformedRows } : {}),
     ...(Object.keys(otherEventTypes).length > 0
       ? { otherEventTypes, otherEventTypesNote: "Rows the venue served in its sale-filtered feed that are not sales. They are counted here and not shown as sales." }
@@ -761,6 +794,7 @@ async function walkCursor<R>(
   pages: number,
   read: (next: string | undefined) => Promise<{ rows: R[]; next?: unknown }>,
   onRows: (rows: R[]) => void,
+  enough?: () => boolean,
 ): Promise<{ truncated: boolean; walkNote?: string; pagesRead: number }> {
   let next: string | undefined;
   const seenCursors = new Set<string>();
@@ -769,6 +803,7 @@ async function walkCursor<R>(
     onRows(res.rows);
     const cursor = typeof res.next === "string" && res.next.length > 0 && res.next.length <= 2048 ? res.next : undefined;
     if (!cursor) return { truncated: false, pagesRead: p + 1 };
+    if (enough?.()) return { truncated: true, pagesRead: p + 1, walkNote: "The requested sales were found; OpenSea returned a cursor for further history that was not read." };
     if (seenCursors.has(cursor)) {
       return { truncated: true, pagesRead: p + 1, walkNote: "OpenSea handed back a page cursor it had already served, so the walk stopped there rather than looping; the feed past that point was not read." };
     }

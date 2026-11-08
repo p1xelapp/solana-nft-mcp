@@ -176,14 +176,14 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   };
 }
 
-/** Verify that an asset has, or has not, changed hands since it was minted. */
+/** A complete transfer-free history rules out an on-chain resale; transfers alone cannot prove one. */
 async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
-    claim: "never changed hands since mint",
+    claim: "never sold on chain since mint",
     subject: mint,
     reproduce:
-      `Call getSignaturesForAddress on ${mint}, fetch each transaction, and count the ones whose logs ` +
-      `contain a Core Transfer instruction. Anything beyond the original mint is a change of hands.`,
+      `Call getSignaturesForAddress on ${mint}, fetch each transaction, and decode Core transfers for this asset. ` +
+      `A transfer alone does not prove a sale: wallet migrations, gifts and escrow moves need separate sale evidence.`,
   };
 
   // Fresh walk, and decode every transaction (depth 25 is the tool's ceiling;
@@ -297,11 +297,11 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
 
   return {
     ...base,
-    verdict: "contradicted",
+    verdict: "unverifiable",
     explanation:
-      `Contradicted: the asset has changed hands ${transfers.length} time(s) on chain` +
+      `The asset has changed hands ${transfers.length} time(s) on chain` +
       (transfers.some((t) => t.marketplace) ? ` (${transfers.filter((t) => t.marketplace).length} through a marketplace program - listings and sales both move it)` : "") +
-      `. Whether any of those was a sale needs marketplace sale records: get_recent_sales. Use get_asset_provenance for the dated trail.`,
+      `. These transfers do not settle whether it was ever sold. A wallet migration, gift or escrow move is not sale evidence. Check get_recent_sales for recorded fills and get_asset_provenance for the dated trail.`,
     evidence,
     caveats,
   };
