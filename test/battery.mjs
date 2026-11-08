@@ -1113,7 +1113,14 @@ check("Y7", "scenarios", "what did this exact card last sell for", async () => {
   return !has(asset.ERROR) || `following a sale to its asset failed: ${String(asset.ERROR).slice(0, 140)}`;
 });
 check("Y8", "scenarios", "a wallet's biggest position and what it is worth", async () => {
-  const r = await call("get_wallet_profile", { wallet: FIX.wallet });
+  let r = await call("get_wallet_profile", { wallet: FIX.wallet });
+  // The fixed sample wallet emptied itself in November 2026. A wallet with
+  // nothing has no biggest position, so the current owner of the discovered
+  // Core card stands in rather than the check passing on an empty answer.
+  if (r.holdings?.totalItems === 0 && FIX.coreAsset) {
+    const owner = (await call("get_asset", { mint: FIX.coreAsset })).onchain?.owner;
+    if (owner) r = await call("get_wallet_profile", { wallet: owner });
+  }
   const top = r.holdings?.byCollection?.[0];
   if (!top) return "no collection breakdown";
   return has(top.count ?? top.items) && has(top.shareOfWalletPct ?? top.sharePct) ? true : `a position with no size: ${text(top).slice(0, 160)}`;
