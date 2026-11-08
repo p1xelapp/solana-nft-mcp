@@ -31,7 +31,8 @@
  */
 const INVISIBLE = new RegExp(
   "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u00AD\\u061C\\u180E" +
-    "\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF\\uFFF9-\\uFFFB]",
+    "\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF\\uFFF9-\\uFFFB]" +
+    "|\\u034F|[\\u115F-\\u1160]|[\\u17B4-\\u17B5]|\\u3164|\\uFFA0",
   "g",
 );
 /**
@@ -139,21 +140,26 @@ const CLAIM_PAIRS = [["connect", "wallet"], ["wallet", "connect"], ["verify", "w
  * A website link from a collection's marketplace profile, relayed only when it
  * is an ordinary public https page: same rules as safeHttpsUrl, plus no
  * internationalised (xn--) host that can imitate another name, and nothing in
- * the host or path that reads like a claim or wallet page. The query string is
- * not judged: tracking parameters are not the page.
+ * the URL that reads like a claim or wallet page. Queries and fragments can
+ * select a page too. This is a filter, not proof that a site is genuine.
  */
 export function profileLinkUrl(v: unknown): string | null {
   const u = safeHttpsUrl(v, { max: 300 });
   if (!u) return null;
   const parsed = new URL(u);
   if (parsed.hostname.split(".").some((label) => label.startsWith("xn--"))) return null;
-  let path = parsed.pathname;
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    /* a malformed escape is checked as written */
+  let route = `${parsed.pathname} ${parsed.search} ${parsed.hash}`;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const decoded = decodeURIComponent(route);
+      if (decoded === route) break;
+      route = decoded;
+    } catch {
+      return null;
+    }
   }
-  const words = `${parsed.hostname} ${path}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (/%[0-9a-f]{2}/i.test(route)) return null;
+  const words = `${parsed.hostname} ${route}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   if (words.some((w) => CLAIM_WORDS.has(w))) return null;
   for (let i = 0; i + 1 < words.length; i++) {
     if (CLAIM_PAIRS.some(([a, b]) => words[i] === a && words[i + 1] === b)) return null;
@@ -170,7 +176,7 @@ const LINK_IN_TEXT = new RegExp(
   [
     String.raw`\b(?:https?|hxxps?|ipfs|ipns|ar|ftp|wss?):\/\/[^\s<>"'\])]+`,
     String.raw`\bwww\.[^\s<>"'\])]+`,
-    String.raw`\b(?:[a-z0-9-]+\.)+(?:com|net|org|io|xyz|app|gg|me|fun|site|link|live|gift|cash|club|vip|top|pro|shop|co|ai|art|nft|sol|dev|so|to|ly|us|uk|info|biz|online|world|tech|finance|exchange|wallet)\b(?:\/[^\s<>"'\])]*)?`,
+    String.raw`\b(?:[a-z0-9-]+\.)+[a-z]{2,63}\b(?:\/[^\s<>"'\])]*)?`,
   ].join("|"),
   "gi",
 );

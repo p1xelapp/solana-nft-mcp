@@ -38,9 +38,9 @@ export const GLOSSARY: GlossaryEntry[] = [
   },
   {
     term: "serial number / edition",
-    meaning: "The item's position in a numbered run, written like 29/250 - the 29th of 250 printed.",
+      meaning: "A number assigned to an item, often written like 29/250. A name or attribute states a serial and intended run size; it does not prove either is unique or enforced.",
     pitfall:
-      "Low serials and 'jersey numbers' can carry large premiums, so an average price across a whole series hides most of what collectors care about.",
+      "Distinct assets can carry the same serial. Compare asset addresses and edition data before treating a number in a name as proof of rarity; an Edition plugin does not enforce uniqueness either.",
   },
   {
     term: "1-of-1",

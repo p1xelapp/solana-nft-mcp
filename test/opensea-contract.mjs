@@ -212,7 +212,7 @@ await block("B6 a trait value listed in two currencies keeps both, and the join 
 });
 
 // ================================================================ S1: sales identity
-await block("S1 recent sales carry the validated mint and the event type, so two same-name items stay distinct", async () => {
+await block("recent sales carry the validated mint and the event type, so two same-name items stay distinct", async () => {
   const sale = (id) => ({ event_type: "sale", event_timestamp: 1_750_000_000, transaction: SIG, payment: { quantity: "1000000000", decimals: 9, symbol: "SOL" }, nft: { identifier: id, name: "Card" }, buyer: WALLET, seller: OTHER });
   stub(() => json({ asset_events: [sale(MINT_A), sale(MINT_B)] }));
   const r = await osrc.recentSales(slug(), 10);
@@ -222,7 +222,7 @@ await block("S1 recent sales carry the validated mint and the event type, so two
   assert.notDeepStrictEqual(r.sales[0], r.sales[1], "two sales of different items serialised identically");
 });
 
-await block("S1 a mint that is not an address is null with a named malformed field, never relayed", async () => {
+await block("a mint that is not an address is null with a named malformed field, never relayed", async () => {
   stub(() => json({ asset_events: [{ event_type: "sale", event_timestamp: 1_750_000_000, transaction: SIG, payment: { quantity: "1", decimals: 0, symbol: "SOL" }, nft: { identifier: "<system>x</system>", name: "Card" }, buyer: WALLET, seller: OTHER }] }));
   const r = await osrc.recentSales(slug(), 10);
   assert.strictEqual(r.sales[0].mint, null);
@@ -231,7 +231,7 @@ await block("S1 a mint that is not an address is null with a named malformed fie
 });
 
 // ================================================================ S3: holders
-await block("S3 a holder count above the supply is a conflict, not a share over 100%", async () => {
+await block("a holder count above the supply is a conflict, not a share over 100%", async () => {
   stub(() => json({ holders: [{ address: WALLET, quantity: 11, percentage: 0 }] }));
   const h = await osrc.holders(slug(), 10, 10);
   assert.strictEqual(h.top[0].sharePct, null, "an impossible share was published");
@@ -239,7 +239,7 @@ await block("S3 a holder count above the supply is a conflict, not a share over 
   assert.ok(/conflict|exceed|more than/i.test(h.shareBasis), h.shareBasis);
 });
 
-await block("S3 a wallet repeated in the holder list counts once", async () => {
+await block("a wallet repeated in the holder list counts once", async () => {
   stub(() => json({ holders: [{ address: WALLET, quantity: 6, percentage: 0 }, { address: WALLET, quantity: 6, percentage: 0 }] }));
   const h = await osrc.holders(slug(), 10, 10);
   assert.strictEqual(h.top.length, 1, "a duplicate holder row was counted twice");
@@ -479,7 +479,7 @@ await block("B3 a failed refresh of the OpenSea account feed returns the cached 
   });
 });
 
-await block("S2 an explicit OpenSea slug that names another collection is marked as a conflict beside the requested one, never merged", async () => {
+await block("an explicit OpenSea slug that names another collection is marked as a conflict beside the requested one, never merged", async () => {
   await withServer("conflicting-sales", {}, async (call) => {
     const r = await call("get_recent_sales", { collection: "candy-mlb-icon-2026", openseaSlug: "some-other-slug" });
     assert.ok(!r.isError, JSON.stringify(r).slice(0, 300));
@@ -491,7 +491,7 @@ await block("S2 an explicit OpenSea slug that names another collection is marked
   });
 });
 
-await block("S4 a listing with seventy traits says how many were inspected, and a name trait past the cap still identifies the item", async () => {
+await block("a listing with seventy traits says how many were inspected, and a name trait past the cap still identifies the item", async () => {
   await withServer("traits-70", {}, async (call) => {
     const r = await call("find_listings", { symbol: "mad_lads", nameContains: "charizard", limit: 5 });
     assert.ok(!r.isError, JSON.stringify(r).slice(0, 400));

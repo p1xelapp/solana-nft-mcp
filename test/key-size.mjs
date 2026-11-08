@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {syncBuiltinESMExports} from 'node:module';
+import {pathToFileURL} from 'node:url';
+const root=path.resolve(process.argv[2]||'.');
+const home=fs.mkdtempSync(path.join(os.tmpdir(),'key-size-'));
+os.homedir=()=>home;syncBuiltinESMExports();
+delete process.env.OPENSEA_API_KEY;delete process.env.SOLANA_NFT_MCP_NO_AUTO_KEYS;
+globalThis.fetch=async()=>new Response(JSON.stringify({api_key:'x'.repeat(20000),expires_at:new Date(Date.now()+7*86400000).toISOString()}),{headers:{'content-type':'application/json'}});
+const sea=await import(pathToFileURL(path.join(root,'dist/sources/opensea.js')));
+const accepted=await sea.ensureKey()!==null;
+const file=path.join(home,'.solana-nft-mcp','opensea-key.json');
+const bytes=fs.existsSync(file)?fs.statSync(file).size:0;
+console.log(`${accepted?'FAIL':'PASS'} oversized issued key refused; persistedBytes=${bytes}`);
+process.exitCode=accepted?1:0;

@@ -1,35 +1,46 @@
 # Changelog
 
-## 1.19.0 - 2026-10-27
+## 1.19.0 - 2026-11-09
 
-A month after launch, and two weeks after Candy Digital's custodial wallets
-were drained. Candy paused transfers and sales on October 12 and on October
-19 started moving every holder's items into new wallets run with MoonPay.
-Several answers this server gave about Candy were written for the world
-before that, so this release rereads Candy, OpenSea, Magic Eden and the
-chain from scratch, and hardens the server against the kind of attack that
-follows a wallet theft: phishing links and leaked keys. Four independent
-reviews found 34 issues, none critical or high; a hostile review of the fixes
-found nine more, all fixed here. Every fix is pinned by
-`test/locks-links-and-pauses.mjs` or an extended existing suite.
+Six weeks after launch, through the whole of Candy Digital's lockdown. Candy's
+custodial wallets were drained in October. Candy paused transfers and sales on
+October 12, moved every holder's items into new wallets run with MoonPay from
+October 19, and on November 6 announced that its wallets connect to OpenSea,
+Magic Eden and Tensor again. Several answers this server gave about Candy were
+written for the world before any of that, so this release rereads Candy,
+OpenSea, Magic Eden and the chain from scratch, and hardens the server against
+what follows a wallet theft: phishing links and leaked keys.
+
+It went through two review rounds. The first (October 26 and 27) found 34
+issues, and a hostile review of those fixes found nine more. The second
+(November 8, after the unlock) found 32, several of them the same issue seen
+from different sides. None was critical or high. All are fixed here or
+explained below, and each fix is pinned by a test.
 
 New:
 
-- **`get_asset_trust` now answers "can this card move right now".** Metaplex
-  Core lets a collection attach an oracle: an outside account the program
-  asks before a transfer or a burn. The decoder used to count these and call
-  the picture incomplete. It now decodes the oracle record, reads the oracle
-  account, and reports what it answered (`blockedByOracle`, `oracleChecks`),
-  with the slot it was read at. On 2026-10-26 every sampled Candy collection
-  carried one, and it refused ordinary transfers and burns; the answer says
-  so, and names the exception, because the program force-approves the
-  issuer's permanent delegates before it asks the oracle. A listing price is
-  not the same thing as a trade that can go through, and this is the first
-  tool that can tell them apart.
+- **`get_asset_trust` answers "can this card move right now".** Metaplex Core
+  lets a collection attach an oracle: an outside account the program asks
+  before a transfer or a burn. The decoder used to count these and call the
+  picture incomplete. It now decodes the oracle record, reads the oracle
+  account, and reports which actions it checks and what it answered
+  (`blockedByOracle`, `oracleChecks`), with the slot it was read at. On
+  2026-10-26 every sampled Candy collection refused ordinary transfers and
+  burns. On 2026-11-08 all 401 registered Candy collections checked burns
+  only: transfers no longer ask the oracle, and holder burns are still
+  refused. The answer names the exception too, because the program
+  force-approves the issuer's permanent delegates before it asks the oracle.
+  A listing price is not the same thing as a trade that can go through, and
+  this is the tool that tells them apart.
+- **Recent sales say how far they looked.** `get_recent_sales` reports
+  `coverage`: pages read, whether Magic Eden's feed ended, whether a page
+  repeated, and whether the read stopped at its budget. Magic Eden floors and
+  listings carry `listingValidityChecked: false`, because an ask can stay in
+  the index after the item moves to another wallet.
 
 Wrong answers, fixed:
 
-- **Candy wording was out of date.** It said trading was open, blamed the
+- **Candy wording was out of date.** It still described the July market, blamed the
   royalty allow-list for any failed sale, called treasury holdings an
   opened-pack count, called every other address "a collector", and pointed a
   question about a moved card at the remint explanation. The Candy entries are
@@ -59,6 +70,33 @@ Wrong answers, fixed:
 - **Odd marketplace values passed through:** negative prices, a royalty
   outside 0 to 10,000 basis points, a fractional listing count, and the string
   "false" read as compressed. Each is null now.
+- **A page with no sales ended the Magic Eden sales walk.** The venue can
+  ignore the sale filter and serve a page of transfers or listings, and the
+  walk stopped there, so a sale on the next page was missed and the answer
+  called the market quiet. It now keeps reading within its budget and says why
+  it stopped. (Checked live on Absolute Batman #1: its newest Magic Eden sale
+  really is from October 8. Nothing was hidden there.)
+- **OpenSea recent sales ignored the next-page cursor** on a short first page
+  and did not say unread history remained. It follows the cursor now, within a
+  five-page limit.
+- **A tiny real OpenSea volume was rounded to zero** as dust even when sales
+  were recorded. Post-unlock Candy sales at 0.01 SOL are real sales.
+- **Candy guidance described the October pause as current.** It is dated now,
+  states what the November 8 read found, and points to `get_asset_trust` for the
+  card in hand, so it stays true if Candy changes the rules again.
+- **A wallet migration could contradict a "never sold" claim.** A transfer is
+  not a sale; without sale evidence the verdict is unverifiable, not false.
+- **Wallet index counts were described as minimum current holdings.** Indexes
+  can keep the old owner after a move, so they are counts from that index.
+- **Edition numbers and Master Edition supply implied uniqueness or a cap**
+  that Core does not enforce. On November 8, distinct Justice League
+  Membership Card accounts carried the same name and serial.
+- **Permanent delegates were called unconditionally irremovable.** They survive
+  transfers; removal follows Core's plugin permissions.
+- **An OpenSea floor was described as the cheapest place to buy.** It is an
+  aggregated ask, not a statement about where an order fills.
+- **Three Candy symbols were missing on a cold start**, and a name matched only
+  in the live Magic Eden directory claimed the September snapshot as its source.
 
 Security:
 
@@ -80,10 +118,25 @@ Security:
   localhost.
 - **Rate limits.** A `Retry-After` from Magic Eden or an RPC endpoint now holds
   across calls instead of ending with the request that got it.
-- **Dependencies.** MCP SDK 1.32.1 and zod 4.6.7 clear five advisories
-  published in October, and patched `body-parser`, `fast-uri` and `ip-address`
-  clear three more. All three sit in the SDK's HTTP server, which this stdio
-  server never loads. `npm audit` reports 0.
+- **RPC health notes.** The status note for your own RPC endpoint relayed the
+  provider's error text, and a provider that echoes the key in an encoding
+  redaction does not recognise could leak it there. Provider text is withheld.
+- **More claim-link shapes.** Claim wording hidden in a query string, a fragment
+  or repeated escapes is caught, and bare domains are removed from descriptions
+  without relying on a fixed list of domain endings.
+- **Invisible characters.** Six more invisible Unicode characters are stripped
+  from third-party text before it reaches an answer.
+- **Key file.** A key folder that is a link to somewhere else is refused for
+  reading and writing, and an issued key longer than the stored-key limit is
+  refused before it is saved. The README no longer promises mode 600 on
+  Windows, where the file's access comes from the home folder's permissions.
+- **Small fixes.** Finished DAS reads no longer leave listeners on the caller's
+  cancel signal, and the error-truncation notice now fits inside the
+  2,000-character cap.
+- **Dependencies.** MCP SDK 1.32.2 and zod 4.6.7, with patched `body-parser`,
+  `fast-uri`, `ip-address`, `qs` and the Hono node adapter. All of these sit in
+  the SDK's HTTP server, which this stdio server never loads. The lint parser's
+  `minimatch` is patched too (development only). `npm audit` reports 0.
 - **Bundle verifier.** A zip entry that claims zero bytes can no longer expand
   past the verifier's budget.
 
@@ -106,6 +159,17 @@ Measured against 1.18.0, same scripts, same inputs:
   otherwise. The tool list is 1.7% smaller, and memory after 500 calls with
   OpenSea on fell from 175 MB to 143 MB. A 2,400-call session holds memory flat
   after its first 400 calls, as before.
+
+Measured again on November 8, after the unlock:
+
+- An 857-case offline battery covering all 21 tools, with fake upstreams so
+  results repeat: 838 passes and 3 failures before this round's fixes, 841 and
+  0 after (16 answers need a person to judge them).
+- 64 questions a Candy collector would ask this week, run against live data:
+  51 correct, 9 misleading, 2 wrong and 2 unanswered before; 62 correct, 0
+  misleading, 0 wrong and the same 2 unanswered after. One asks what MoonPay
+  controls, which the chain does not say; the other asks whether a serial is
+  duplicated anywhere, which needs a scan of the whole collection.
 
 Checked and unchanged: every OpenSea and Magic Eden endpoint and field the
 code reads, and all 401 Candy collections (none added, removed or re-keyed).

@@ -132,9 +132,14 @@ No account, no sign-in, no telemetry, no log of your questions, and no signing c
 the repository; every tool declares `readOnlyHint`. What leaves the machine: the public address,
 symbol or name you asked about, sent to the source that can answer it; one startup request to
 npm for the latest version number; one request to OpenSea for a free key, the first time a
-question needs it. One file is written, the key file above, at permissions 600. Nothing else
+question needs it. One file may be written, the key file above. Nothing else
 touches disk. To remove everything: uninstall or delete the clone, then delete
 `~/.solana-nft-mcp/`.
+
+Key files use mode 600 on macOS and Linux. Windows uses the home folder's access
+permissions; mode 600 does not set a Windows ACL. Keep that folder private to your
+account. A linked key file or key directory is not used. If saving fails, the key
+stays in memory and `get_source_status` reports that it was not saved.
 
 ## Tools
 
@@ -169,6 +174,12 @@ Three prompts: `getting_started`, `collection_report`, `wallet_report`. No MCP r
 purpose: everything they would carry is reachable by a tool the assistant calls itself.
 
 ## Trust and limits
+
+Candy's trading status can change. On 2026-11-08 all 401 registered collections
+carried burn-only oracle checks; the oracle still refused holder burns, while
+transfers no longer consulted it. Use `get_asset_trust` on the card for the live
+answer. A wallet migration is a transfer, not proof of a sale. Wallet indexes can
+retain the old owner; `get_asset` checks current Core ownership against account bytes.
 
 - Buying, selling, listing and signing are absent. No code exists for them.
 - Provenance and trust decoding cover Metaplex Core only. Legacy SPL and compressed NFTs are

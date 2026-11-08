@@ -217,9 +217,10 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
     // A floor beside "0 listed" in the same answer is the last floor the
     // venue kept, not an ask anyone can fill now.
     floorPriceSol: listedCount === 0 ? null : sol(data.floorPrice),
+    listingValidityChecked: false,
     ...(listedCount === 0 && sol(data.floorPrice) !== null
       ? { floorNote: "Magic Eden reports no listings, so there is no current ask to quote; the floor it still carries is an old one." }
-      : {}),
+      : { floorNote: "Magic Eden's index-reported ask. Custody and active orders were not checked; an API listing can remain after the asset moves to another wallet." }),
     listedCount,
     // ME reports volumeAll in SOL for some collections and lamports for
     // others historically; current v2 returns SOL. Label the unit explicitly.
@@ -285,7 +286,11 @@ export async function recentSales(symbol: string, limit: number) {
   const { data, stale, cachedAt } = await cached(`me:sales:v2:${symbol}:${limit}`, 30_000, async () => {
     const collected: MeActivity[] = [];
     const seenFills = new Set<string>();
+    const seenActivities = new Set<string>();
     let scanned = 0;
+    let pagesRead = 0;
+    let venueReportedEnd = false;
+    let repeatedPage = false;
     // type=buyNow makes the venue do the filtering: on a busy collection the
     // unfiltered feed is thousands of listings per sale, and five pages of it
     // found one sale for Mad Lads. The filtered feed reaches months back.
@@ -295,7 +300,8 @@ export async function recentSales(symbol: string, limit: number) {
         await me<unknown>(`/collections/${encodeURIComponent(symbol)}/activities?offset=${pageNo * 100}&limit=100&type=buyNow`),
       );
       assertPageSize("Magic Eden", "collection activities", batch, 100);
-      if (batch.length === 0) break;
+      pagesRead++;
+      if (batch.length === 0) { venueReportedEnd = true; break; }
       scanned += batch.length;
       // Every buyNow row is kept, priced or not: a fill with a malformed price
       // is still a fill, and dropping it here is how a count went quietly
@@ -306,8 +312,14 @@ export async function recentSales(symbol: string, limit: number) {
       // shifts every row down and repeats one across the boundary. A fill
       // already collected (same signature and item) is not counted twice; a
       // row with neither is kept, since it cannot be matched to anything.
-      let added = 0;
+      let addedActivities = 0;
       for (const a of batch) {
+        const activityId = typeof a.signature === "string" && a.signature ? `${a.signature}:${a.tokenMint ?? ""}:${a.type ?? ""}` : null;
+        if (activityId !== null) {
+          if (seenActivities.has(activityId)) continue;
+          seenActivities.add(activityId);
+        }
+        addedActivities++;
         if (a.type !== "buyNow" && a.type !== "buy") continue;
         const id = typeof a.signature === "string" && a.signature ? `${a.signature}:${a.tokenMint ?? ""}` : null;
         if (id !== null) {
@@ -315,13 +327,13 @@ export async function recentSales(symbol: string, limit: number) {
           seenFills.add(id);
         }
         collected.push(a);
-        added++;
       }
       // Only the empty page above ends the feed; a short one does not. A page
-      // that adds nothing new means the venue is repeating itself: stop.
-      if (added === 0) break;
+      // with no new activities is a repeat. A page with no sales may just
+      // mean the venue ignored its type filter; keep looking within budget.
+      if (addedActivities === 0) { repeatedPage = true; break; }
     }
-    return { collected, scanned };
+    return { collected, scanned, pagesRead, venueReportedEnd, repeatedPage };
   });
   if (!Array.isArray(data.collected)) throw new Error(`Magic Eden returned no activity for "${symbol}"`);
   // One row with a block time Date cannot represent (1e20 has been served)
@@ -381,6 +393,13 @@ export async function recentSales(symbol: string, limit: number) {
     symbol,
     sales,
     activitiesScanned: data.scanned,
+    coverage: {
+      pagesRead: data.pagesRead,
+      venueReportedEnd: data.venueReportedEnd,
+      repeatedPage: data.repeatedPage,
+      limitReached: data.collected.length >= limit,
+      budgetReached: data.pagesRead === 5 && data.collected.length < limit && !data.venueReportedEnd && !data.repeatedPage,
+    },
     ...(rejectedTotal > 0 || futureTimes > 0
       ? {
           validation: {
@@ -398,7 +417,7 @@ export async function recentSales(symbol: string, limit: number) {
     note:
       sales.length < limit
         ? data.scanned > 0
-          ? `only ${sales.length} sales in the last ${data.scanned} activity events - a quiet or listing-heavy market, not an error`
+          ? `Only ${sales.length} sales in the ${data.scanned} activity events read. ${data.venueReportedEnd ? "Magic Eden returned an empty page after these events; that is the end of its feed, not proof of no sales elsewhere." : data.repeatedPage ? "The next page repeated events already read, so older sales may be missing." : "The read stopped before the feed ended; older sales may be missing."}`
           : `Magic Eden's activity feed returned no events at all for "${symbol}" - that is the feed being empty, which is not the same as the market being quiet. Confirm the symbol with search_collections.`
         : undefined,
     ...(unusableTimestamps > 0

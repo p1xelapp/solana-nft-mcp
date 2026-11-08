@@ -387,17 +387,17 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "plugin",
     title: "Permanent freeze delegate",
     pluginType: "PermanentFreezeDelegate",
-    power: "Locks or unlocks the item at will, forever, through every future owner.",
+    power: "Locks or unlocks the item while the delegate remains active, including after a transfer.",
     heldBy: "The issuer, set when the item was created.",
     plain:
-      "The issuer kept a switch that can stop this item moving at any moment, and keeps it after you sell. It is how soul-bound badges, memberships and compliance locks are built. Nobody can remove it later, because permanent plugins can only be added when the item is created.",
+      "The issuer kept a switch that can stop this item moving, and a sale does not revoke it. It can only be added at creation. Permanent describes survival across transfers, not unconditional resistance to removal: the update authority can remove an unfrozen plugin unless its authority is None or another rule refuses. Read the current asset and collection rather than assuming an earlier delegate is still present.",
     pitfall:
       "Currently unfrozen does not mean safe. The power to freeze is the fact; the current state is just today's setting.",
     documented:
-      "Provides irrevocable freeze authority that persists across transfers; authority is never revoked, even after transfers; can only be added at Asset or Collection creation.",
+      "The Core removal validator rejects removal while frozen. The shared validator also rejects removal of a plugin whose authority is None. Collection update authority can otherwise approve removal of authority-managed plugins.",
     verified: true,
-    source: `${CORE}/permanent-freeze-delegate`,
-    sourceRead: READ,
+    source: `${CORE_SRC}/plugins/internal/permanent/permanent_freeze_delegate.rs`,
+    sourceRead: "2026-11-08",
     keywords: ["permanent freeze", "soulbound", "non-transferable", "locked forever", "compliance", "membership"],
   },
   {
@@ -408,7 +408,7 @@ export const MECHANICS: MechanicsEntry[] = [
     power: "Moves the item out of any wallet, any number of times, without the holder signing.",
     heldBy: "The issuer or its program, set when the item was created.",
     plain:
-      "Whoever holds this can take the item from your wallet without you. It is normal on packs and rentals, where a program has to move things for you. On a finished collectible it means custody is shared with the issuer no matter what the marketplace page says. It cannot be added later and cannot be removed.",
+      "While active, this delegate can take the item from your wallet without your signature, including after a sale. It can only be added at creation. The update authority can remove it unless its authority is None or another rule refuses; the holder cannot assume it disappeared on transfer. On a finished collectible, read the current asset and collection before treating custody as exclusive.",
     pitfall:
       "No marketplace page shows this, and it decides whether a purchase is final: check who holds it first.",
     documented:
@@ -430,7 +430,7 @@ export const MECHANICS: MechanicsEntry[] = [
     pitfall:
       "Expected on a sealed pack, a real caveat on a finished card. Same plugin, completely different meaning depending on what you are holding.",
     documented:
-      "Can burn the Asset at any time, even when the Asset is frozen; authority persists forever and can only be added at creation.",
+      "Can burn the Asset even when frozen; the authority survives transfers and the plugin can only be added at creation. Removal is subject to the shared plugin permission checks.",
     verified: true,
     source: `${CORE}/permanent-burn-delegate`,
     sourceRead: READ,
@@ -865,16 +865,16 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Candy Digital: what the wallet says versus what the collection says",
     venue: "candy",
     plain:
-      "After its custodial wallets were drained in October 2026, Candy started moving every holder's items into new wallets run with MoonPay. Its October 23 update lists the steps in order: SOL restored, then wallet claiming, then marketplace connections, then transfers out. An item at a new address says nothing about which step a holder is on, and the collections are unchanged: Candy's key still holds the permanent transfer, burn and freeze delegates on every card.",
+      "Candy announced wallet claiming on 2026-10-30 and marketplace connections on 2026-11-06. On 2026-11-08 all 401 registered collections had a burn-only oracle check: holder burns were refused, but transfers no longer consulted it. Each collection still carried a permanent transfer delegate. These are dated observations, not a promise that a trade will work. Use get_asset_trust on the card for its current rules and any asset-level override.",
     pitfall:
-      "A wallet you can see, a price on a marketplace and an unfrozen card do not add up to 'I can trade it'. Candy began attaching an oracle check to its collections on October 12 (the transactions are on chain), and on October 26 it refused ordinary transfers and burns; get_asset_trust reads that check and says whether it still refuses.",
+      "A refused burn does not mean transfers are refused. Wallet access, marketplace support, oracle events and permanent delegates are separate checks. An advertised ask is not proof that a sale will succeed; get_asset_trust reports only the rules it could read at that moment.",
     documented:
-      "Candy's October 22 post describes the new wallet as powered by MoonPay with MPC signing. Its October 23 update gives SOL restoration, wallet claiming, marketplace connections and external transfers as successive steps without fixed dates.",
+      "Candy's November 6 guide says the MoonPay-powered wallet connects to OpenSea, Magic Eden and Tensor through WalletConnect. Wallet permissions do not remove collection-level delegates.",
     observed:
-      "Reading collections 8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K and JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n from a public Solana node showed PermanentTransferDelegate, PermanentBurnDelegate and PermanentFreezeDelegate, all held by the update authority, on the collection - so inherited by every card in it. On 2026-10-26 an Absolute Batman #1 card read through get_asset_trust showed an Oracle adapter on its collection pointing at FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox, whose bytes answered Rejected for transfer and burn.",
+      "On 2026-11-08, 401 collection accounts registered only burn against oracle FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox at offset 36. At slot 466835054 its results were create rejected, transfer pass, burn rejected, update rejected; only registered events apply. Each collection carried Royalties and PermanentTransferDelegate. Other controls must be read on the asset. This supersedes the October 26 transfer-and-burn observation.",
     verified: true,
-    source: "https://blog.candy.io/your-questions-answered-the-new-candy-wallet/",
-    sourceRead: "2026-10-26",
+    source: "https://blog.candy.io/how-to-connect-your-candy-wallet-to-opensea-and-magic-eden/",
+    sourceRead: "2026-11-08",
     keywords: ["candy", "candy digital", "mlb", "self custody", "permanent delegate", "clawback", "wallet", "moonpay", "frozen", "trading paused", "can i sell"],
   },
   {
@@ -885,7 +885,7 @@ export const MECHANICS: MechanicsEntry[] = [
     plain:
       "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
     pitfall:
-      "Blaming the allow-list every time a Candy sale fails. An oracle check Candy began attaching on October 12, 2026 refused ordinary transfers no matter which program asked when read on October 26; get_asset_trust shows which rule is doing the refusing.",
+      "A failed sale does not identify which rule refused it. On 2026-11-08 the sampled Candy oracle records checked burn only. Other plugins or marketplace requirements can still prevent a transfer. Read get_asset_trust on the item instead of treating the October 2026 pause as its current state.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:
@@ -931,17 +931,17 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-secondary-settles-on-magiceden",
     category: "venue",
-    title: "A sale made on candy.io settles through Magic Eden",
+    title: "Candy's July 2026 secondary market settled through Magic Eden",
     venue: "candy",
     plain:
-      "Candy opened its secondary market on 2026-07-24. The listing screen was on candy.io, but the trade itself happened on Solana through Magic Eden, priced in SOL, so a sale that began on Candy's site shows up in Magic Eden's feed and this server reports it as a Magic Eden sale. That explains where past sales are recorded. It says nothing about trading today: Candy paused transfers and sales on October 12 after its wallet incident.",
+      "Candy's July 2026 secondary market used Magic Eden for settlement, so those sales appear in Magic Eden's feed. Candy paused transfers on October 12, then announced marketplace connections on November 6. A wallet can now connect to several venues; do not assume every later sale settles through Magic Eden. Read the sale's source and signature, and use get_asset_trust for the item's current restrictions.",
     pitfall:
       "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the marketplace on the record says Magic Eden.",
     documented:
-      "Transactions take place on Solana through Magic Eden.",
+      "The July 24 announcement described Magic Eden settlement. The November 6 guide describes connections to OpenSea, Magic Eden and Tensor.",
     verified: true,
-    source: "https://blog.candy.io/candys-secondary-market-is-now-open-what-you-need-to-know/",
-    sourceRead: "2026-09-15",
+    source: "https://blog.candy.io/how-to-connect-your-candy-wallet-to-opensea-and-magic-eden/",
+    sourceRead: "2026-11-08",
     keywords: ["candy", "secondary", "magic eden", "settles", "venue", "sale", "where did it sell"],
   },
   {
@@ -950,7 +950,7 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "A Candy auction is not a listing, and does not exist on chain until it settles",
     venue: "candy",
     plain:
-      "Candy added standard auctions on 2026-09-10, run on its own site with a starting price and minimum increments in dollars. Nothing about a live auction is on the chain and nothing about it is an order on Magic Eden, so an item under auction showed as unlisted here while people were bidding on it. Only the settlement reached the chain. Candy's October 23 update lists auctions as coming back later; this server cannot see Candy's bids either way.",
+      "Candy's September 2026 auctions ran on its own site with bids in dollars. Those bids were not Magic Eden orders; only settlement reached the chain. Its October 23 update described auctions as planned for a later step. That dated statement does not establish their current availability. This server does not read Candy auction bids, so an unlisted item may still be offered somewhere it cannot see.",
     pitfall:
       "Reading 'not listed' as 'not for sale'. An item can be mid-auction on Candy with no listing anywhere this server can see, and a floor built from listings will not include it.",
     documented:
@@ -983,7 +983,7 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "What opening a Candy pack has looked like on chain",
     venue: "candy",
     plain:
-      "A sealed Candy pack is a Metaplex Core asset with permanent transfer and burn delegates held by Candy's key. Gold Series packs that collectors opened went back to the issuer's wallet and still exist; base series packs were burned. Those are patterns seen on past products, not a rule the chain enforces, and the October 2026 wallet move sent other items through the same wallet for reasons that have nothing to do with opening.",
+      "Candy packs are Metaplex Core assets; use get_asset_trust for their current delegates. In the September 2026 observations, opened Gold Series packs went back to the issuer's wallet and still existed; base series packs were burned. These are patterns from past products, not rules the chain enforces. The October 2026 wallet move sent other items through the same wallet for reasons unrelated to opening.",
     pitfall:
       "Counting the packs in the issuer's wallet as opened, or every pack that still exists as sealed. Report what the chain shows (who holds it, whether it is burned) and leave 'opened' unknown unless something links that pack to the cards it produced.",
     documented: "Not established this session.",
@@ -1050,7 +1050,7 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Can the project take my item back?",
     plain:
-      "Only if it kept a permanent delegate, and you can check. A permanent transfer delegate lets the holder move the item out of any wallet; a permanent burn delegate lets them destroy it; a permanent freeze delegate lets them lock it. All three can only be set when the item is created and can never be removed afterwards.",
+      "Check the current plugins. A permanent transfer delegate can move the item without the holder signing; a permanent burn delegate can destroy it; a permanent freeze delegate can lock it. These powers survive sales and can only be added at creation. The update authority may remove them subject to plugin permissions, so an earlier reading does not prove the power still exists.",
     pitfall:
       "They can be set on the collection rather than on the item, where most tools never look. Absence on the item alone proves nothing.",
     documented:
@@ -1146,7 +1146,7 @@ export const MECHANICS: MechanicsEntry[] = [
     documented:
       "Candy migrated its collectibles to Solana on Metaplex Core, stating that royalty enforcement is embedded directly into the code.",
     observed:
-      "The migrated Candy MLB collections read this session carry permanent transfer, burn and freeze delegates that a pre-migration holder never agreed to.",
+      "The October 26 collection observation included permanent transfer, burn and freeze delegates. On November 8, 2026, all 401 registered collection accounts carried Royalties and PermanentTransferDelegate. Asset-level plugins require a separate read; the earlier collection observation is not their current state.",
     verified: true,
     source: "https://blog.candy.io/candy-collectibles-migration-to-solana-what-fans-need-to-know/",
     sourceRead: READ,

@@ -38,6 +38,25 @@ const realNow = Date.now;
 let clockOffsetMs = 0;
 Date.now = () => realNow() + clockOffsetMs;
 
+if (scenario === "stale-wallet") {
+  // Advance before the second call is handled. A zero-delay timer can run
+  // after that call and leave the supposedly expired entry fresh.
+  let input = "";
+  let calls = 0;
+  process.stdin.on("data", (chunk) => {
+    input += chunk.toString();
+    let end;
+    while ((end = input.indexOf("\n")) >= 0) {
+      const line = input.slice(0, end);
+      input = input.slice(end + 1);
+      const request = JSON.parse(line);
+      if (request.method === "tools/call" && request.params?.name === "get_wallet_activity" && ++calls === 2) {
+        clockOffsetMs = 120_000;
+      }
+    }
+  });
+}
+
 let accountReads = 0;
 
 const eventBase = (over) => ({
@@ -67,11 +86,6 @@ function openSea(target) {
     }
     if (scenario === "stale-wallet") {
       if (accountReads === 1) {
-        // After this answer the cache holds a 60-second entry. Jump past it so
-        // the next tool call has to refresh, and make that refresh fail.
-        setTimeout(() => {
-          clockOffsetMs = 120_000;
-        }, 0);
         return json({ asset_events: [eventBase({})] });
       }
       return json({ errors: ["forbidden"] }, 403);

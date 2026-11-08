@@ -40,6 +40,38 @@ export interface RegistryEntry {
 }
 
 export const REGISTRY: RegistryEntry[] = [
+  // Listed items or activities matched these Core collections on 2026-11-08.
+  // Their symbols are newer than the bundled Magic Eden directory snapshot.
+  {
+    id: "candy-portraits-echoes-across-the-lens-of-time",
+    name: "Candy Digital - Portraits: Echoes Across the Lens of Time",
+    platform: "Candy Digital (Other)",
+    coreCollection: "Fr42ujZwVq2PH5Pb6cDRcmmTkRrk18XyM2AHCH8aqEyY",
+    meSymbol: "portraits_echoes_across_the_lens_of_time",
+    group: "Other",
+    keywords: ["candy", "portraits", "echoes", "lens", "time"],
+    notes: "Magic Eden symbol checked against a listed item's Core collection on 2026-11-08.",
+  },
+  {
+    id: "candy-2026-mlb-all-star-game-icons",
+    name: "Candy Digital - 2026 MLB All-Star Game ICONs",
+    platform: "Candy Digital (official MLB license)",
+    coreCollection: "YTAPbbkLY6cqskMCtBfQXtN1x1a8smiKiM99svzQAvX",
+    meSymbol: "2026_mlb_allstar_game_icons_candy_digital",
+    group: "MLB",
+    keywords: ["candy", "mlb", "all-star", "icons"],
+    notes: "Magic Eden symbol checked against an activity item's Core collection on 2026-11-08.",
+  },
+  {
+    id: "candy-base-series-collection-quests",
+    name: "Candy Digital - Base Series - Collection Quests",
+    platform: "Candy Digital (official MLB license)",
+    coreCollection: "BYSfa4LYpChyhLqvcB9o1vPp9riGUECPuaQ8tkw1ii5G",
+    meSymbol: "base_series_collection_quests_candy_digital",
+    group: "MLB",
+    keywords: ["candy", "mlb", "base series", "collection quests"],
+    notes: "Magic Eden symbol checked against a listed item's Core collection on 2026-11-08.",
+  },
   // ---- Well-known Solana collections, by the names people type.
   //
   // The Magic Eden directory snapshot stops at the venue's 30,000-row
