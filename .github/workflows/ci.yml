@@ -56,7 +56,9 @@ jobs:
         run: |
           set -euo pipefail
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          # GitHub's release downloads answer 504 for minutes at a time; a
+          # failed download here skips every test job, so retry before failing.
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
           echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
           tar xzf "$tarball" gitleaks
           ./gitleaks detect --source=. --config=.gitleaks.toml --redact --exit-code=1 --verbose
