@@ -11,7 +11,7 @@ written for the world before any of that, so this release rereads Candy,
 OpenSea, Magic Eden and the chain from scratch, and hardens the server against
 what tends to follow trouble at a custodian: phishing links and leaked keys.
 
-Outside reviews before and after the unlock found 75 issues between them, none
+Outside reviews before and after Candy reopened found 75 issues between them, none
 critical or high, several of them the same issue seen from different sides. All
 are fixed here or explained below, and each fix is pinned by a test.
 
@@ -78,7 +78,7 @@ Wrong answers, fixed:
   and did not say unread history remained. It follows the cursor now, within a
   five-page limit.
 - **A tiny real OpenSea volume was rounded to zero** as dust even when sales
-  were recorded. Post-unlock Candy sales at 0.01 SOL are real sales.
+  were recorded. Candy sales at 0.01 SOL since trading reopened are real sales.
 - **Candy guidance described the October pause as current.** It is dated now,
   states what the November 8 read found, and points to `get_asset_trust` for the
   card in hand, so it stays true if Candy changes the rules again.
@@ -161,7 +161,7 @@ Measured against 1.18.0, same scripts, same inputs:
   OpenSea on fell from 175 MB to 143 MB. A 2,400-call session holds memory flat
   after its first 400 calls, as before.
 
-Measured again on November 8, after the unlock:
+Measured again on November 8, after trading reopened:
 
 - An 857-case offline battery covering all 21 tools, with fake upstreams so
   results repeat: 838 passes and 3 failures before this round's fixes, 841 and
