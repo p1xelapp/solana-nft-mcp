@@ -117,7 +117,13 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       // `JSON.parse` puts a slice of the offending body into its own message,
       // so this text is partly written by the endpoint. It travels into the
       // capability note and from there into a successful status answer.
-      last = `${ep.id} ${upstreamText(e)}`;
+      // Your own endpoint can echo its key in an encoding redaction misses,
+      // so its text is not relayed at all.
+      last = ep.id !== "your DAS_RPC_URL"
+        ? `${ep.id} ${upstreamText(e)}`
+        : e instanceof SyntaxError
+          ? `${ep.id} returned a body that is not JSON (its text is not relayed, because a provider can echo your key in it)`
+          : `${ep.id} could not be read (${e instanceof Error ? e.name : "error"}; the message is not relayed, because a provider can echo your key in it)`;
       continue;
     }
     // A JSON-RPC response is an object. An endpoint answering the literal

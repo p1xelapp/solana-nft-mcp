@@ -12,7 +12,7 @@ export const WALLET = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 export const OTHER = 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263';
 const CORE = 'CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d';
 const ESCROW = '1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix';
-const mode = process.env.AUDIT_PROFILE || 'normal';
+const mode = process.env.FIXTURE_PROFILE || 'normal';
 const oracleFixture=['unlocked','oracle-missing','oracle-unread'].includes(mode)?JSON.parse(readFileSync(new URL('../fixtures/candy-oracle-2026-11-08.json',import.meta.url))):null;
 const empty = mode === 'empty';
 const hostile = mode === 'hostile';
@@ -101,7 +101,7 @@ function os(u) {
   return {};
 }
 
-if(process.env.AUDIT_READY) {
+if(process.env.FIXTURE_READY) {
   const upstream = http.createServer(async (req,res)=> {
     if(req.url==='/memory') return send(res,{...process.memoryUsage(),requests:requests.length});
     if(req.url==='/requests') return send(res,requests);
@@ -123,7 +123,7 @@ if(process.env.AUDIT_READY) {
   await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
   upstream.unref();
   const port=upstream.address().port;
-  writeFileSync(process.env.AUDIT_READY,JSON.stringify({port}));
+  writeFileSync(process.env.FIXTURE_READY,JSON.stringify({port}));
   const originalFetch=globalThis.fetch;
   globalThis.fetch=(url,options={})=>originalFetch(`http://127.0.0.1:${port}/upstream`,{method:'POST',body:JSON.stringify({url:String(url),body:options.body}),signal:options.signal,redirect:'error'});
   const connect=net.Socket.prototype.connect;

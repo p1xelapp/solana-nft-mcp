@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import {syncBuiltinESMExports} from 'node:module';
-import {pathToFileURL} from 'node:url';
-const root=path.resolve(process.argv[2]||'.');
+import {fileURLToPath, pathToFileURL} from 'node:url';
+const root=path.resolve(process.argv[2]||fileURLToPath(new URL('..', import.meta.url)));
 const parent=os.tmpdir();
 const run=fs.mkdtempSync(path.join(parent,'keyfile-'));
 let home=run;
@@ -29,7 +29,10 @@ for(const mode of ['corrupt','empty','directory','oversized']) {
  const file=fresh('regular');
  await sea.ensureKey();
  console.log(`platform=${process.platform} mode=${(fs.statSync(file).mode&0o777).toString(8)} O_NOFOLLOW=${fs.constants.O_NOFOLLOW??'absent'}`);
- 
+ // Positive control: an ordinary key file is read, so the refusals below
+ // cannot pass just because nothing is ever read.
+ fs.writeFileSync(file,stored());sea.resetKeyCache();
+ check('control',sea.openSeaState().enabled===true,'a regular key file is read');
 }
 {
  const file=fresh('leaf-link'),target=path.join(run,'target-key.json');fs.writeFileSync(target,stored());

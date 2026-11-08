@@ -56,9 +56,9 @@ Web addresses inside a collection's description are replaced with "[link
 removed]" (full URLs, defanged ones, markdown links and bare domains on the
 common endings), and a profile's X handle is passed on only when it is a
 handle. Nothing this server
-returns asks anyone to connect a wallet or sign anything, and after a wallet
-theft like Candy's in October 2026 a page that does should be treated as
-hostile.
+returns asks anyone to connect a wallet or sign anything, and while a
+custodian is moving its users to new wallets, as Candy did in October 2026, a
+page that does should be treated as hostile.
 
 `SOLANA_RPC_URL` and `DAS_RPC_URL` must be https; plain http is accepted only
 for `localhost`, so a test validator still works. The error for a bad value

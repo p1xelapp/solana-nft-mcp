@@ -1,21 +1,19 @@
 # Changelog
 
-## 1.19.0 - 2026-11-09
+## 1.19.0 - 2026-11-08
 
-Six weeks after launch, through the whole of Candy Digital's lockdown. Candy's
-custodial wallets were drained in October. Candy paused transfers and sales on
-October 12, moved every holder's items into new wallets run with MoonPay from
-October 19, and on November 6 announced that its wallets connect to OpenSea,
+Six weeks after launch, through the whole of Candy Digital's trading pause.
+Candy's collections stopped allowing transfers and sales on October 12 (read on
+chain), Candy moved holders' items into new MoonPay-powered wallets in late
+October, and on November 6 it announced that its wallets connect to OpenSea,
 Magic Eden and Tensor again. Several answers this server gave about Candy were
 written for the world before any of that, so this release rereads Candy,
 OpenSea, Magic Eden and the chain from scratch, and hardens the server against
-what follows a wallet theft: phishing links and leaked keys.
+what tends to follow trouble at a custodian: phishing links and leaked keys.
 
-It went through two review rounds. The first (October 26 and 27) found 34
-issues, and a hostile review of those fixes found nine more. The second
-(November 8, after the unlock) found 32, several of them the same issue seen
-from different sides. None was critical or high. All are fixed here or
-explained below, and each fix is pinned by a test.
+Outside reviews before and after the unlock found 75 issues between them, none
+critical or high, several of them the same issue seen from different sides. All
+are fixed here or explained below, and each fix is pinned by a test.
 
 New:
 
@@ -124,7 +122,7 @@ Security:
 - **More claim-link shapes.** Claim wording hidden in a query string, a fragment
   or repeated escapes is caught, and bare domains are removed from descriptions
   without relying on a fixed list of domain endings.
-- **Invisible characters.** Six more invisible Unicode characters are stripped
+- **Invisible characters.** Fourteen more invisible Unicode characters are stripped
   from third-party text before it reaches an answer.
 - **Key file.** A key folder that is a link to somewhere else is refused for
   reading and writing, and an issued key longer than the stored-key limit is
@@ -133,10 +131,13 @@ Security:
 - **Small fixes.** Finished DAS reads no longer leave listeners on the caller's
   cancel signal, and the error-truncation notice now fits inside the
   2,000-character cap.
-- **Dependencies.** MCP SDK 1.32.2 and zod 4.6.7, with patched `body-parser`,
-  `fast-uri`, `ip-address`, `qs` and the Hono node adapter. All of these sit in
-  the SDK's HTTP server, which this stdio server never loads. The lint parser's
-  `minimatch` is patched too (development only). `npm audit` reports 0.
+- **Dependencies.** MCP SDK 1.32.2 and zod 4.6.7. The lockfile pins patched
+  `body-parser`, `fast-uri`, `ip-address`, `qs` and the Hono node adapter, and
+  the bundle ships those; an npm install resolves them from the SDK's own
+  version ranges, which allow the patched releases. All of them sit in the SDK's
+  HTTP server, which this stdio server never loads. The lint parser's
+  `minimatch` is patched too (development only). `npm audit` on the repository
+  reports 0.
 - **Bundle verifier.** A zip entry that claims zero bytes can no longer expand
   past the verifier's budget.
 

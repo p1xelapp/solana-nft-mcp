@@ -585,7 +585,9 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
   // a reader repeats it as a real number in scientific notation.
   const volume = num(t.volume);
   const sales = num(t.sales);
-  const dust = sales === 0 && volume !== null && volume > 0 && volume < 1e-9;
+  // A missing sale count is treated like zero here: a positive count is what
+  // makes a tiny volume a real one.
+  const dust = (sales === 0 || sales === null) && volume !== null && volume > 0 && volume < 1e-9;
   return {
     slug,
     // OpenSea answers a collection with nothing listed as floor 0 and no
@@ -767,6 +769,7 @@ export async function recentSales(slug: string, limit: number) {
     activitiesScanned: data.activitiesScanned,
     pagesRead: data.pagesRead,
     truncated: data.truncated,
+    ...(data.moreAvailable ? { moreAvailable: true } : {}),
     ...(data.walkNote ? { walkNote: data.walkNote } : {}),
     ...(data.duplicates ? { duplicateRowsDropped: data.duplicates } : {}),
     ...(malformedRows > 0 ? { malformedRows } : {}),
@@ -795,7 +798,7 @@ async function walkCursor<R>(
   read: (next: string | undefined) => Promise<{ rows: R[]; next?: unknown }>,
   onRows: (rows: R[]) => void,
   enough?: () => boolean,
-): Promise<{ truncated: boolean; walkNote?: string; pagesRead: number }> {
+): Promise<{ truncated: boolean; moreAvailable?: boolean; walkNote?: string; pagesRead: number }> {
   let next: string | undefined;
   const seenCursors = new Set<string>();
   for (let p = 0; p < pages; p++) {
@@ -803,7 +806,9 @@ async function walkCursor<R>(
     onRows(res.rows);
     const cursor = typeof res.next === "string" && res.next.length > 0 && res.next.length <= 2048 ? res.next : undefined;
     if (!cursor) return { truncated: false, pagesRead: p + 1 };
-    if (enough?.()) return { truncated: true, pagesRead: p + 1, walkNote: "The requested sales were found; OpenSea returned a cursor for further history that was not read." };
+    // Every requested row is in hand, so nothing the caller asked for is
+    // missing; older history exists and is named, but this is not a gap.
+    if (enough?.()) return { truncated: false, moreAvailable: true, pagesRead: p + 1, walkNote: "The requested sales were found; OpenSea returned a cursor for older history that was not read." };
     if (seenCursors.has(cursor)) {
       return { truncated: true, pagesRead: p + 1, walkNote: "OpenSea handed back a page cursor it had already served, so the walk stopped there rather than looping; the feed past that point was not read." };
     }
