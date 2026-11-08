@@ -30,7 +30,12 @@ jobs:
   # workflow gates a secret reaching a public branch.
   secrets:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
+    # One place for the pinned version and its checksum: the cache key, the
+    # download and the checksum check all read these.
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       # Actions pinned to full commit SHAs - a moved tag is a supply-chain vector.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -49,16 +54,27 @@ jobs:
       # 8.30.x, not 8.24: the rule-scoped allowlist in .gitleaks.toml needs
       # `targetRules`, which older binaries ignore - and ignoring it would
       # silently widen the allowlist back to every rule.
+      # The tarball is cached by version, so a run only downloads it when the
+      # version changes. On 8 November 2026 GitHub's release downloads answered
+      # 504 for over an hour and failed this job on every push; with the cache
+      # warm, that outage would not have reached us. The checksum is checked on
+      # every run, cached copy or not, so a poisoned cache cannot slip through.
+      - name: Restore gitleaks
+        id: gitleaks-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: gitleaks_${{ env.GITLEAKS_VERSION }}_linux_x64.tar.gz
+          key: gitleaks-${{ env.GITLEAKS_VERSION }}-${{ env.GITLEAKS_SHA256 }}
+
       - name: Secrets scan (gitleaks, full history)
-        env:
-          GITLEAKS_VERSION: 8.30.1
-          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
           set -euo pipefail
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          # GitHub's release downloads answer 504 for minutes at a time; a
-          # failed download here skips every test job, so retry before failing.
-          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          if [ ! -f "$tarball" ]; then
+            # Cache miss: keep retrying for up to four minutes, because the
+            # release server's 504s come in bursts longer than one minute.
+            curl -fsSL --retry 12 --retry-all-errors --retry-delay 20 --retry-max-time 240 -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          fi
           echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
           tar xzf "$tarball" gitleaks
           ./gitleaks detect --source=. --config=.gitleaks.toml --redact --exit-code=1 --verbose
