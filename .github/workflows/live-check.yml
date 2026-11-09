@@ -77,18 +77,25 @@ jobs:
 
       - name: Report the verdict
         if: always() && steps.live.outcome != 'skipped'
+        # Through env, not ${{ }} inside the script: the verdict is program
+        # output, and an expression spliced into run: is executed as shell.
+        env:
+          VERDICT: ${{ steps.live.outputs.verdict || 'RESULT - FAILED (the live check did not print a verdict)' }}
         run: |
-          echo "::notice::${{ steps.live.outputs.verdict || 'RESULT - FAILED (the live check did not print a verdict)' }}"
+          echo "::notice::${VERDICT}"
 
       # A skipped step's outcome is the literal string 'skipped', not ''. With
       # the old `== ''` test this explanation never ran, and a red run caused by
       # the npm registry looked exactly like a broken venue.
       - name: Explain a setup failure
         if: failure() && steps.live.outcome == 'skipped'
+        env:
+          INSTALL_OK: ${{ steps.install.outputs.ok }}
+          BUILD_OK: ${{ steps.build.outputs.ok }}
         run: |
-          if [ "${{ steps.install.outputs.ok }}" != "true" ]; then
+          if [ "${INSTALL_OK}" != "true" ]; then
             where="installing dependencies (npm ci) - the npm registry or the lockfile"
-          elif [ "${{ steps.build.outputs.ok }}" != "true" ]; then
+          elif [ "${BUILD_OK}" != "true" ]; then
             where="the TypeScript build - this repository's own code, not a venue"
           else
             where="the runner, before the live check could start"
