@@ -31,7 +31,7 @@ export const PROMPT_TEXTS = {
     "I just installed solana-nft-mcp and I do not know what to ask yet. Use its own tools, not your memory.\n" +
     "Call get_source_status and tell me which sources are live right now and whether OpenSea is on.\n" +
     "Say in plain language what this server can answer: the history of a single card, who can freeze or burn it, " +
-    "what a collection is worth at floor and what actually sold, the cheapest listings and low serial numbers, " +
+    "what sellers are asking and what actually sold, the cheapest listings and low serial numbers, " +
     "and what any wallet holds and how it trades.\n" +
     "Say clearly what it cannot do: it never moves anything, never signs anything, and only reads public data.\n" +
     "Then give me five questions I can copy, using real collections you can resolve with search_collections.\n" +

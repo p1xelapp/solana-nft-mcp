@@ -361,6 +361,12 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       assertOnline(ep.url);
       await gateFor(ep.url)(signal);
       if (signal?.aborted) throw new AbortedError("the Solana read was abandoned: the caller's deadline passed");
+      // Another caller may have received a pause while this one was queued.
+      const queuedPause = originPauseLeftMs(ep.url);
+      if (queuedPause > 0) {
+        lastErr = new RateLimitedEndpoint(`asked for a pause; ${Math.ceil(queuedPause / 1000)} s of it is left`);
+        break;
+      }
       try {
         const res = await fetch(ep.url, {
           method: "POST",
@@ -423,6 +429,19 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         // A malformed envelope with neither result nor error must not read as
         // "no account" or "no history" downstream.
         if (!("result" in j)) throw new EndpointError("returned an envelope with no result field");
+        if (method === "getAccountInfo") {
+          const account = j.result as { value?: unknown } | null;
+          // Only an explicit null value means the account was absent. A
+          // partial response must not become a missing item or a cached miss.
+          const value = account?.value as { owner?: unknown } | null | undefined;
+          // Every caller asks for base64, so the bytes are checked here too:
+          // inside this loop an unreadable answer moves on to the next
+          // endpoint, where a check after the read failed the whole read on
+          // one bad endpoint while the others were healthy.
+          if (!account || typeof account !== "object" || Array.isArray(account) || !("value" in account) || (value !== null && sliceOf(value) === null)) {
+            throw new EndpointError("returned an unreadable account response");
+          }
+        }
         cooldown.delete(ep.id);
         if (pin && !pin.ep) {
           pin.ep = ep;
@@ -535,6 +554,11 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
     }
     try {
       await gateFor(ep.url)(signal);
+      const queuedPause = originPauseLeftMs(ep.url);
+      if (queuedPause > 0) {
+        out.push({ endpoint: label(ep), ok: false, latencyMs: null, slot: null, note: `not checked: it asked for a pause and ${Math.ceil(queuedPause / 1000)} s of it is left` });
+        continue;
+      }
       const res = await fetch(ep.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -755,7 +779,7 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
     address,
     { encoding: "base64" },
   ]);
-  if (!info?.value) return null;
+  if (info.value === null) return null;
   // Typed, not a plain Error. get_asset_trust reads through here, and an
   // untyped failure lost its class on the way to the wording layer: asking for
   // the custody rules of a programmable NFT answered "Try again, or try a
@@ -765,6 +789,7 @@ export async function getCoreAccountRaw(address: string): Promise<string | null>
       `account ${address} is owned by ${info.value.owner}, not Metaplex Core. ` +
         `The byte-level decode reads Metaplex Core assets only (SPL, programmable and compressed NFTs: use get_asset).`,
     );
+  if (!sliceOf(info.value)) throw new Error("Solana RPC returned unreadable account bytes");
   return info.value.data[0];
 }
 
@@ -782,7 +807,8 @@ export async function getAccountRaw(address: string, signal?: AbortSignal): Prom
     signal,
   );
   const slot = typeof info?.context?.slot === "number" && Number.isFinite(info.context.slot) ? info.context.slot : null;
-  if (!info?.value) return null;
+  if (info.value === null) return null;
+  if (!sliceOf(info.value)) throw new Error("Solana RPC returned unreadable account bytes");
   return { data: info.value.data[0], owner: info.value.owner, slot };
 }
 
@@ -833,11 +859,12 @@ export async function getCoreAccountWithMeta(
     // The slot travels WITH the decoded account, through the cache, because it
     // describes that value and nothing else.
     const slot = typeof info?.context?.slot === "number" && Number.isFinite(info.context.slot) ? info.context.slot : null;
-    if (!info?.value) return { missing: true as const, slot };
+    if (info.value === null) return { missing: true as const, slot };
     if (info.value.owner !== CORE_PROGRAM) {
       noteOwnerProgram(address, info.value.owner);
       return { notCore: true as const, owner: info.value.owner, slot };
     }
+    if (!sliceOf(info.value)) throw new Error("Solana RPC returned unreadable account bytes");
     return { decoded: decodeCoreAccount(info.value.data[0]), burned: isBurnedCoreStub(info.value.data[0]), slot };
   };
   // `fresh` bypasses the stale-on-error cache: a verification must never
@@ -927,9 +954,13 @@ function sliceOf(value: unknown): { owner: string; bytes: Buffer } | null {
   if (value === null || typeof value !== "object") return null;
   const v = value as { owner?: unknown; data?: unknown };
   if (typeof v.owner !== "string" || !isBase58Address(v.owner)) return null;
-  const b64 = Array.isArray(v.data) && typeof v.data[0] === "string" ? v.data[0] : null;
+  const b64 = Array.isArray(v.data) && v.data.length === 2 && v.data[1] === "base64" && typeof v.data[0] === "string" ? v.data[0] : null;
   if (b64 === null) return null;
-  return { owner: v.owner, bytes: Buffer.from(b64, "base64") };
+  const bytes = Buffer.from(b64, "base64");
+  // Buffer silently skips bad characters and accepts other encodings' text.
+  // A custody verdict needs the exact base64 bytes the request asked for.
+  if (bytes.toString("base64") !== b64) return null;
+  return { owner: v.owner, bytes };
 }
 
 /**
@@ -981,7 +1012,7 @@ export async function readAssetOwners(addresses: string[], opts: { fresh?: boole
  * This is what tells a person's wallet (the System Program) from a
  * marketplace's listing account (the marketplace's program).
  */
-export async function readOwnerPrograms(addresses: string[]): Promise<Map<string, OwnerProgramRead>> {
+export async function readOwnerPrograms(addresses: string[], opts: { fresh?: boolean } = {}): Promise<Map<string, OwnerProgramRead>> {
   const out = new Map<string, OwnerProgramRead>();
   const todo: string[] = [];
   for (const a of new Set(addresses)) {
@@ -989,7 +1020,7 @@ export async function readOwnerPrograms(addresses: string[]): Promise<Map<string
       out.set(a, { kind: "unread", reason: "not a Solana address" });
       continue;
     }
-    const hit = ownerProgramCache.get(a);
+    const hit = opts.fresh ? undefined : ownerProgramCache.get(a);
     if (hit) out.set(a, hit);
     else todo.push(a);
   }
@@ -1174,7 +1205,10 @@ export async function getProvenance(
   const trace: RpcTrace = {};
   const run = async (pin?: EndpointPin) => {
     const accountRead = await getCoreAccountWithMeta(mint, { fresh: opts.fresh, trace, pin });
-    const account = accountRead.account;
+    const burned = accountRead.burned === true;
+    // A burn removes the base fields, not the address's transactions. Keep
+    // those fields unknown while reading the history the stub still has.
+    const account = burned ? { kind: "asset" as const, owner: null, name: null, collection: null } : accountRead.account;
     // Pinning one endpoint stops the walk being stitched from two NODES. It
     // does not stop one node serving the account from a recent slot and the
     // signature list from an older one behind a load balancer, which reads as
@@ -1605,7 +1639,7 @@ export async function getProvenance(
   // vanish into "no issuer".
     let issuerKey: string | null = null;
     let issuerRead: IssuerRead;
-    if (!account.collection) issuerRead = { status: "not-applicable", reason: "the asset is not in a collection" };
+    if (!account.collection) issuerRead = { status: "not-applicable", reason: burned ? "the burned stub does not retain a collection address" : "the asset is not in a collection" };
     else {
       try {
         const c = await getCoreAccountWithMeta(account.collection, { fresh: opts.fresh, trace, pin });
@@ -1664,7 +1698,7 @@ export async function getProvenance(
         e.label = "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
       }
     }
-    return { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead };
+    return { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -1685,7 +1719,7 @@ export async function getProvenance(
     const retry = await walkOnce().catch(() => null);
     if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
   }
-  const { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead } = value;
+  const { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead } = value;
 
   // OpenSea opens one account per listing, so unlike Magic Eden's escrow the
   // recipient cannot be recognised by address. Its owning program says it.
@@ -1694,8 +1728,8 @@ export async function getProvenance(
   let currentOwnerInOpenSeaListing = false;
   if (events.some((e) => e.marketplace === "OpenSea")) {
     const recipients = events.filter((e) => e.event === "transferred" && e.newOwner).map((e) => e.newOwner!);
-    const programs = await readOwnerPrograms([...recipients, account.owner]).catch(() => new Map<string, OwnerProgramRead>());
-    const isListing = (a: string | undefined) => {
+    const programs = await readOwnerPrograms([...recipients, ...(account.owner ? [account.owner] : [])]).catch(() => new Map<string, OwnerProgramRead>());
+    const isListing = (a: string | null | undefined) => {
       const p = a ? programs.get(a) : undefined;
       return p?.kind === "program" && p.program === OPENSEA_SOLANA_PROGRAM;
     };
@@ -1729,7 +1763,12 @@ export async function getProvenance(
     name: account.name,
     collection: account.collection,
     currentOwner: account.owner,
-    currentOwnerNote: currentOwnerInOpenSeaListing
+    ...(burned ? { burned: true } : {}),
+    currentOwnerNote: burned
+      ? events.length > 0
+        ? "This Core asset was burned and has no current owner. Its stub does not retain its name or collection; the events below come from its transactions."
+        : "This Core asset was burned and has no current owner. Its stub does not retain its name or collection, and no transaction for it could be read here, so its history is empty."
+      : currentOwnerInOpenSeaListing
       ? `currentOwner is ${OPENSEA_LISTING_ACCOUNT_LABEL}.`
       : "If the asset is listed on a marketplace, currentOwner may be an escrow or listing account, not the seller's wallet.",
     events,
@@ -1990,7 +2029,7 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
       undefined,
       opts.signal,
     );
-    if (!info?.value) {
+    if (info.value === null) {
       return {
         address,
         ownerProgram: null,

@@ -62,6 +62,41 @@ Listings are checked against the chain:
   Eden's book at a markup, so the same stale listing appeared as a second,
   "12% higher" floor. It is recognised by item and seller and said once.
 
+A last pass on November 11 kept failed reads from turning into answers:
+
+- **A floor receipt needs a checked listing.** `verify_claim` rereads the
+  listing book, each item's owner and that owner's program. A floor whose
+  listing was not checked (a pool, a non-Core item, a failed read) is
+  unverifiable, never confirmed or contradicted. A listing with no usable price
+  leaves the floor unchecked instead of making every listing stale, and setting
+  one venue's quote aside no longer calls the other one buyable. Floor
+  subjects accept hyphens and dots like the other market tools.
+- **A broken reply is a failed read.** An account reply with no value, an
+  unreadable owner, or bytes that are not intact base64 is retried and then
+  reported as unreadable, never as a missing account, a burned item or a held
+  listing. A cut-short plugin header is not an empty plugin list, and an index
+  or RPC error that says "not found" is not a missing asset.
+- **Holders and sales.** A holder whose owning program was not read, or is a
+  program other than a wallet or a known venue, is unknown and left out of
+  `heldByCollectors`. Sales in both feeds match only on one signature, item,
+  buyer and seller, a price difference is shown without a guessed fee, and
+  wallet P&L is the difference between reported amounts, which can already
+  include royalties.
+- **Core rules.** An asset's oracle replaces its collection's only for the
+  events it registers, so a transfer override no longer hides a burn check.
+  AddBlocker and permanent plugins are no longer described as locking the rules
+  for good, and Tensor's Core listing custody is explained from its published
+  program.
+- **Assets.** `get_asset` keeps the asset index's image and traits when Magic
+  Eden has no record, and `get_asset_provenance` reads the history of a burned
+  Core asset.
+- **Smaller fixes.** Ownership receipts carry their read time. The starter
+  prompt speaks of asks, not worth. Floor comparisons no longer repeat their
+  matched rows, which pushed large answers past 60 KB. Queued reads respect a
+  pause that arrived while they waited, error text is redacted again after
+  hidden characters are removed, PRIVACY.md describes request headers
+  correctly, and the bundle check works on macOS and Linux.
+
 Candy facts, reread on November 10:
 
 - **Candy's signing key changed.** On November 5 the update authority of all
@@ -82,7 +117,7 @@ Candy facts, reread on November 10:
 - **Sales.** `get_collection_sales` reads Magic Eden's feed and now says that
   instead of "the whole collection", with OpenSea's count for the same window
   beside it, never added. `get_recent_sales` marks a sale that both feeds
-  carry as one transaction and explains the two prices.
+  carry as one transaction.
 
 Wrong pastes get an answer:
 

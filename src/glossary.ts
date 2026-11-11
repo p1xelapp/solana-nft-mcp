@@ -86,7 +86,7 @@ export const GLOSSARY: GlossaryEntry[] = [
   },
   {
     term: "flip / hold time",
-    meaning: "An item bought and later sold by the same wallet; hold time is the gap between the two. Realised P&L is sale minus purchase, before fees and royalties.",
+    meaning: "An item bought and later sold by the same wallet; hold time is the gap between the two. Realised P&L is the reported sale amount minus the reported purchase amount; those amounts can include fees or royalties, and net proceeds are not checked.",
     pitfall:
       "Items bought before the observed window look like 'sells without buys' and items still held have no P&L yet. Unrealised gains at floor are a ceiling, not a gain.",
   },

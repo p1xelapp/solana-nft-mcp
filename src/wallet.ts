@@ -394,7 +394,7 @@ export function summarizeActivity(
 
   const caveats = [
     "This is Magic Eden's API feed for the wallet: listings, bids, buys and sells as Magic Eden indexed them. Each row names the execution marketplace Magic Eden reported for it (see marketplaces); how completely that feed covers fills on other programs is not established, so a marketplace absent from it is unobserved here, not absent from the wallet's life. Plain transfers, mints and airdrops are never in it.",
-    "Realised P&L here is sale price minus purchase price for items both bought and sold in the window, before marketplace fees and royalties. It is a lower bound on cost, not an accounting.",
+    "Realised P&L here subtracts the venue-reported purchase amount from the venue-reported sale amount for items bought and sold in the window. Fee and royalty treatment can differ by trading route; net proceeds were not checked.",
   ];
   if (malformedPrices) {
     caveats.push(
@@ -461,7 +461,7 @@ export function summarizeActivity(
       losses: rows.filter((r) => r.delta < 0).length,
       best: rows.length ? rows.reduce((a, b) => (b.delta > a.delta ? b : a)).flip : null,
       worst: rows.length ? rows.reduce((a, b) => (b.delta < a.delta ? b : a)).flip : null,
-      note: "Sale minus purchase for items both bought and sold inside the window, before fees and royalties, Magic Eden feed only. Amounts are shown to lamport resolution (9 decimals); wins and losses are decided on the unrounded difference. unmeasuredCycles are resales that closed but could not be priced or ordered; they are outside every figure here.",
+      note: "Sale minus purchase using Magic Eden's reported amounts for items bought and sold inside the window. These amounts can include fees or royalties; net proceeds were not checked. Amounts are shown to lamport resolution (9 decimals); wins and losses are decided on the unrounded difference. unmeasuredCycles are resales that closed but could not be priced or ordered; they are outside every figure here.",
     },
     behaviour: { boughtThenSoldPct, medianHoldDays: medianHold, label, why },
     firstBuyInWindow: firstBuy

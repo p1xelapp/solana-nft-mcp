@@ -202,7 +202,7 @@ the time to something that works and survives a restart, not the time to a scree
 **Who:** somebody who traded a lot and needs a record.
 **Ask:** "Every buy and sell for this address this year, dated and priced, as a table."
 **Server supplies:** paged activity, dated and priced, flips paired with hold times, and an explicit list of what is missing.
-**You build:** the export and the reconciliation against your own records. Read the gaps out loud: marketplaces not in the feed, fees and royalties excluded, anything older than the window. It is a record with named gaps, not a tax document, and it is not advice.
+**You build:** the export and the reconciliation against your own records. Read the gaps out loud: marketplaces not in the feed, fee and royalty treatment that varies by trading route, anything older than the window. It is a record with named gaps, not a tax document, and it is not advice.
 **Time:** a weekend.
 
 ### 27. Agent that answers collection questions in a channel

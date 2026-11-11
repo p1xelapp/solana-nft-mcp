@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const root = resolve(process.argv[2] || '.');
+const { reconcileFloors } = await import(pathToFileURL(resolve(root, 'dist/lib/reconcile.js')).href);
+const witnesses = Array.from({ length: 100 }, (_, i) => ({ mint: String(i).padStart(44, '1'), maker: '2'.repeat(44) }));
+const quotes = [{ source: 'magiceden', value: 1, currency: 'SOL', alsoListed: witnesses }, { source: 'opensea', value: 2, currency: 'SOL', listing: witnesses[99] }];
+const result = reconcileFloors(quotes);
+assert.match(result.verdict, /one listing seen on two marketplaces/);
+assert.equal(result.spreadPct, 100);
+assert.ok(quotes[0].alsoListed.length === 100, 'comparison leaves its input intact');
+const bytes = Buffer.byteLength(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], structuredContent: result }));
+assert.ok(bytes < 10000, `${bytes} bytes: comparison witnesses should not be repeated in the answer`);
+assert.ok(result.floors.every(q => q.alsoListed === undefined));
+console.log(`PASS mirror recognition preserves the comparison without repeating its witnesses (${bytes} bytes)`);

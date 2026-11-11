@@ -31,6 +31,7 @@ collection name or address.
 | "give me the floor for these 8 collections at once" | Batch floor lookup, up to ten in one call, sequenced through one rate gate | ANSWERS NOW |
 | "how does this month compare to last month" | Two windows of collection sales, compared side by side | ANSWERS NOW |
 | "what's the average sale price right now" | Derived from recent sales in the window, labelled as derived and as a window average | ANSWERS NOW |
+| "why is the floor receipt unverifiable when I can see a price" | `verify_claim` separates a venue-reported price from a listing whose custody was checked; pool and non-Core custody can remain unknown | ANSWERS NOW |
 
 ---
 
@@ -48,6 +49,7 @@ collection name or address.
 | "alert me when something drops under 1 SOL" | The data for the check is available; the watching loop is something you build, with a recipe | PARTIAL (data now, scheduling is yours) |
 | "which trait is actually rare here" | Per-trait floors show what the market prices as rare; rarity rank itself is not computed | PARTIAL (price signal, not a rarity score) |
 | "how much cheaper is OpenSea than Magic Eden for this" | Both floors with currencies; a spread only when comparable | PARTIAL (spread only in matching currency) |
+| "is OpenSea's higher sale price a fee" | `get_recent_sales` keeps both reported amounts and currencies; the reason for a difference needs a transaction-level check | PARTIAL (amounts shown, fee reason unchecked) |
 | "anything from this collection sold cheap in the last day" | Recent sales sorted by price over a one-day window | ANSWERS NOW |
 | "cheapest one that has never been sold" | Listing price is available, but never-traded is only verifiable per asset for Core assets, one at a time | PARTIAL (per item yes, bulk filter no) |
 
@@ -82,7 +84,7 @@ collection name or address.
 | "profile my wallet" | Items grouped by collection, share of wallet, share of supply, listed and compressed counts, wallet age | ANSWERS NOW |
 | "how much is my collection worth" | A floor-times-count ceiling, labelled a ceiling, with unpriced items counted and thin books named | PARTIAL (ceiling, never a valuation) |
 | "does this guy flip or hold" | Wallet activity: buys, sells, median hold, realized flips, a behaviour label with its reason | ANSWERS NOW |
-| "how much has this wallet made" | Realized flips paired with hold time and profit, plus net SOL flow, with fees and royalties excluded and said so | PARTIAL (realized only, fees excluded) |
+| "how much has this wallet made" | Matched purchases and sales with hold time and the difference between reported amounts; fee and royalty treatment can vary by trading route | PARTIAL (reported amounts, net proceeds unchecked) |
 | "is this a fresh wallet" | First and last transaction from the chain, transaction count, holdings count | ANSWERS NOW |
 | "was this airdropped or did they buy it" | With an OpenSea key, plain transfers show as received without a recorded sale, from a named address | PARTIAL (needs the optional key) |
 | "do I have anything listed that I forgot about" | Listed items surfaced first in the wallet profile, with marketplace | ANSWERS NOW |
@@ -104,6 +106,7 @@ collection name or address.
 | "is this project rugged" | Supply, recent sales activity, listed depth and custody rights are given; the word rugged is not the tool's to apply | PARTIAL (evidence yes, label no) |
 | "how many actually exist vs how many they announced" | Chain supply from the collection account against the claim, via claim verification | ANSWERS NOW |
 | "are holders concentrated in a few wallets" | `get_collection_holders` reads every asset in the collection from the chain's asset index and ranks holders by count and share, listed or not, with the issuer's own key and marketplace escrows called out as roles so neither is mistaken for a collector | ANSWERS NOW (one collection at a time; no cross-collection ranking) |
+| "are those holders actually marketplace accounts" | `get_collection_holders` names recognized venue custody and keeps unread or unidentified program roles outside collector counts | PARTIAL (unknown roles remain visible) |
 | "has anyone traded this in the last month" | Recent sales plus window sales count | ANSWERS NOW |
 | "can the team still mint more" | Update authority and collection state from the chain; mint authority behaviour is read from the collection account | PARTIAL (authority visible, future intent is not) |
 | "did they burn the supply they said they burned" | Collection account reports minted versus current size. The difference also moves when assets change collection, so it is a size difference, not a burn count; burns need each asset's decoded history | PARTIAL |

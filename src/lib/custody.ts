@@ -69,7 +69,7 @@ export async function custodyOfListings(
     if (o?.kind === "core-asset" && o.owner !== r.seller && o.owner !== sol.MAGIC_EDEN_ESCROW && !foreign.includes(o.owner)) foreign.push(o.owner);
   });
   const cap = Math.max(0, opts.explainOwners ?? 100);
-  const programs = cap > 0 && foreign.length > 0 ? await sol.readOwnerPrograms(foreign.slice(0, cap)) : new Map<string, sol.OwnerProgramRead>();
+  const programs = cap > 0 && foreign.length > 0 ? await sol.readOwnerPrograms(foreign.slice(0, cap), { fresh: opts.fresh }) : new Map<string, sol.OwnerProgramRead>();
 
   return rows.map((r, i): Custody => {
     const m = mints[i];
@@ -84,18 +84,17 @@ export async function custodyOfListings(
     if (typeof r.seller === "string" && owner === r.seller) return { state: "backed", heldBy: "seller", chainOwner: owner, why: "the seller still holds the item" };
     if (owner === sol.MAGIC_EDEN_ESCROW) return { state: "backed", heldBy: "magic-eden-escrow", chainOwner: owner, why: "the item sits in Magic Eden's escrow, where a live Magic Eden listing keeps it" };
     const p = programs.get(owner);
-    const knownOpenSea = sol.isOpenSeaListingAccount(owner);
     // The owner is somebody other than the seller. What KIND of account it is
     // decides everything from here, and a verdict is only given on a kind that
     // was actually read: when that second read failed or was not made, a real
     // listing held in a venue's own account looked exactly like a stale one.
-    if (!knownOpenSea && (!p || p.kind === "unread")) {
+    if (!p || p.kind === "unread") {
       return {
         state: "unread",
         why: `the item's owner on chain is ${short(owner)}, not the seller, and what kind of account that is could not be read just now, so whether this listing can be bought is unknown`,
       };
     }
-    const inOpenSea = knownOpenSea || (p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM);
+    const inOpenSea = p.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM;
     if (inOpenSea && venue === "opensea") {
       return { state: "backed", heldBy: "opensea-listing-account", chainOwner: owner, why: "the item sits in an OpenSea listing account, where a live OpenSea listing keeps it" };
     }
@@ -183,11 +182,11 @@ const CHECKED_FLOOR_PAGE = 100;
  * skipped and counted; a listing the chain could not be read for stops the
  * walk, because skipping it could step over the real floor.
  */
-export async function checkedFloor(symbol: string, venueFloorSol: number | null): Promise<CheckedFloor> {
+export async function checkedFloor(symbol: string, venueFloorSol: number | null, opts: { fresh?: boolean } = {}): Promise<CheckedFloor> {
   const base = { venueReportedFloorSol: venueFloorSol, floorListing: null, staleBelowFloor: 0, listingsChecked: 0, listingsRead: [], staleExamples: [] };
   let page: me.CollectionListingsRead;
   try {
-    page = await me.collectionListings(symbol, { limit: CHECKED_FLOOR_PAGE, sort: "listPrice", direction: "asc" });
+    page = await me.collectionListings(symbol, { limit: CHECKED_FLOOR_PAGE, sort: "listPrice", direction: "asc", fresh: opts.fresh });
   } catch (e) {
     return {
       ...base,
@@ -204,7 +203,13 @@ export async function checkedFloor(symbol: string, venueFloorSol: number | null)
   if (rows.length === 0) {
     return { ...base, status: "unread", floorSol: venueFloorSol, checked: false, sentence: "Magic Eden returned no listings to check, so its floor was not checked against the chain; this is Magic Eden's own figure." };
   }
-  const custody = await custodyOfListings(rows.map((l) => ({ mint: l.tokenMint, seller: l.seller })));
+  // An unpriced row has no place in the price order. Skipping it cannot prove
+  // a cheapest ask, and a page of such rows says nothing about stale custody.
+  const unpriced = rows.filter((l) => usableAsk(l.price) === null).length;
+  if (unpriced > 0) {
+    return { ...base, status: "unread", floorSol: venueFloorSol, checked: false, sentence: `Magic Eden returned ${unpriced} listing(s) without a usable asking price. Their order cannot establish the cheapest ask, so its floor was not checked; this is Magic Eden's own figure. Missing prices do not show that items moved or listings are stale.` };
+  }
+  const custody = await custodyOfListings(rows.map((l) => ({ mint: l.tokenMint, seller: l.seller })), { fresh: opts.fresh });
   const listingsRead = rows.flatMap((l, i) =>
     typeof l.tokenMint === "string" && sol.isBase58Address(l.tokenMint)
       ? [{ mint: l.tokenMint, seller: sol.venueAddress(l.seller), priceSol: usableAsk(l.price), custody: custody[i]!.state }]

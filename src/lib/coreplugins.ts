@@ -318,11 +318,12 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
   const base = skipBase(r);
   const out: DecodedAccount = { kind: base.kind, collection: base.collection, plugins: [], updateAuthorityIsNone: base.updateAuthorityIsNone, externalPlugins: 0, external: [] };
 
-  if (r.remaining < 9 || r.peek() !== KEY_PLUGIN_HEADER) return out;
-  r.u8();
-  const registryOffset = r.u64();
-
+  if (r.remaining === 0) return out;
   try {
+    // Trailing bytes mean a registry was present, even when its header was
+    // cut short. Only an account ending at the base proves there are none.
+    if (r.remaining < 9 || r.u8() !== KEY_PLUGIN_HEADER) throw new Error("plugin header unreadable");
+    const registryOffset = r.u64();
     r.seek(registryOffset);
     if (r.u8() !== KEY_PLUGIN_REGISTRY) throw new Error("registry key mismatch");
     const n = r.u32();
@@ -514,12 +515,20 @@ export function deriveTrust(
   // count: every adapter it counts is then an unread one.
   const assetExt = asset.external ?? [];
   const collectionExt = collection?.external ?? [];
-  // The program keys oracle records by their base address, and the asset's
-  // record stands in for a collection record with the same key.
-  const assetOracleBases = new Set(assetExt.filter((e) => e.oracleBase).map((e) => e.oracleBase));
+  // Registry checks are selected for one lifecycle event before the asset
+  // overrides its collection. A transfer override does not replace a burn
+  // check that uses the same oracle base address.
+  const assetOracleEvents = new Map<string, Set<string>>();
+  for (const e of assetExt) {
+    if (e.oracleBase) assetOracleEvents.set(e.oracleBase, new Set(e.checks.map((c) => c.event)));
+  }
   const externals = [
     ...assetExt.map((e) => ({ ...e, inheritedFromCollection: false })),
-    ...collectionExt.filter((e) => !(e.oracleBase && assetOracleBases.has(e.oracleBase))).map((e) => ({ ...e, inheritedFromCollection: true })),
+    ...collectionExt.flatMap((e) => {
+      const overridden = e.oracleBase ? assetOracleEvents.get(e.oracleBase) : undefined;
+      const checks = e.checks.filter((c) => !overridden?.has(c.event));
+      return e.checks.length > 0 && checks.length === 0 ? [] : [{ ...e, checks, inheritedFromCollection: true }];
+    }),
   ];
   let unreadExternal = asset.externalPlugins - assetExt.length + (collection ? collection.externalPlugins - collectionExt.length : 0);
   const blocked = new Set<string>();
@@ -635,7 +644,7 @@ export function deriveTrust(
   if (has("ImmutableMetadata")) out.assurances.push("Metadata is immutable: the name and URI cannot be changed by anyone, including the issuer.");
   else if (asset.updateAuthorityIsNone) out.assurances.push("The asset's update authority is None: nobody can change its name or URI.");
   else out.warnings.push("Metadata is mutable: the issuer can change the name, image and traits after you buy.");
-  if (has("AddBlocker")) out.assurances.push("Add-blocker present: no new plugins can be attached later, so the rules you see are the rules you get.");
+  if (has("AddBlocker")) out.assurances.push("Add-blocker present: new authority-managed plugins are blocked, but owner-managed plugins can still be added. Existing plugin settings remain subject to their own update rules.");
   const ed = has("Edition");
   if (ed?.data) out.assurances.push(`On-chain edition number ${String(ed.data.edition)}. The program stores this number but does not enforce uniqueness.${ed.authority === "none" ? " Its authority is None, so the number cannot be changed." : " Its plugin authority can change the number."}`);
   const me = has("MasterEdition");

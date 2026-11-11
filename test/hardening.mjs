@@ -587,7 +587,7 @@ const jsonResponse = (body, headers = {}) =>
   const realFetch = globalThis.fetch;
   const reply = (owner) =>
     Promise.resolve(
-      new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { value: owner === null ? null : { owner, executable: false } } }), {
+      new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { value: owner === null ? null : { owner, executable: false, data: ["", "base64"] } } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),

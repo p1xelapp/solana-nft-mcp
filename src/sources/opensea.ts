@@ -73,6 +73,8 @@ function takeHourlySlot(): void {
  */
 const countedGate = async (signal?: AbortSignal, opts?: Parameters<typeof gate>[1]): Promise<void> => {
   await gate(signal, opts);
+  const left = nextReadAfter - now();
+  if (left > 0) throw new StopError("OpenSea asked readers to pause", left);
   takeHourlySlot();
 };
 

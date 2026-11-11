@@ -562,11 +562,14 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   // listings after the item has moved. A receipt saying CONFIRMED on such a
   // listing was pasted as proof of a price nobody could pay, so the claim is
   // judged against the cheapest listing the chain shows can be bought.
-  const check = await checkedFloor(symbol, observed);
-  const reproduce =
+  const check = await checkedFloor(symbol, observed, { fresh: true });
+  const reproduceChecked =
     `${base.reproduce} Then GET /v2/collections/${symbol}/listings?sort=listPrice&sort_direction=asc&limit=100 and read each listed item's Metaplex Core account ` +
     `(getMultipleAccounts, bytes 1-33 are the owner): a listing counts only when that owner is the seller or Magic Eden's escrow ${sol.MAGIC_EDEN_ESCROW}.`;
-  if (check.status === "none-backed" || check.status === "unread") {
+  // Anything short of a checked floor, including pool and non-Core custody
+  // that is deliberately left unread, gives no verdict either way.
+  const reproduce = check.status === "not-core" ? base.reproduce : reproduceChecked;
+  if (!check.checked || check.status === "none-backed") {
     return {
       ...base,
       reproduce,
@@ -574,7 +577,9 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       explanation:
         check.status === "none-backed"
           ? `Magic Eden reports a floor of ${observed} SOL, but none of the ${check.listingsChecked} cheapest listing(s) read can be bought: in every one the chain shows the seller no longer holds the item. No ask that can be paid was found among them to check the claim against.`
-          : `Magic Eden reports a floor of ${observed} SOL, but its listings could not be checked against the chain just now, and its floor can be a listing whose item has moved. ${check.sentence}`,
+          : check.status === "not-core"
+            ? `Magic Eden reports a floor of ${observed} SOL. This collection is not Metaplex Core, so whether the seller behind that listing still holds the item is not checked here, and a receipt is only given on a checked listing. get_floor_prices shows Magic Eden's figure with that label.`
+            : `Magic Eden reports a floor of ${observed} SOL, but the listing behind it could not be checked against the chain, and its floor can be a listing whose item has moved. ${check.sentence} This neither confirms nor contradicts a price someone can pay.`,
       evidence,
       caveats: [...caveats, ...(check.staleExamples.length ? [`Stale listings seen: ${check.staleExamples.map((s) => `${s.priceSol} SOL (${s.why})`).join("; ")}.`] : [])],
     };
@@ -586,12 +591,8 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   evidence.push({
     source: `Magic Eden collection listings for ${symbol}, each checked against its Solana account`,
     method: "The cheapest 100 listings, cheapest first; a listing counts only when the item's Core account names the seller or Magic Eden's escrow as its owner.",
-    observed:
-      check.status === "backed"
-        ? `cheapest ask that can be bought ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`
-        : `cheapest ask not known to be stale ${floor} SOL (not a Core item, so not checked)`,
+    observed: `cheapest ask that can be bought ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`,
   });
-  if (check.status === "not-core") caveats.push(check.sentence);
   if (check.staleBelowFloor > 0) caveats.push(`${check.staleBelowFloor} cheaper listing(s) on Magic Eden were left out: the chain shows the seller no longer holds the item, so nobody can buy at those prices.`);
 
   // 2% tolerance: a floor moves while the claim is being made, and calling that
@@ -601,10 +602,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       ...base,
       reproduce,
       verdict: "confirmed",
-      explanation:
-        check.status === "backed"
-          ? `Confirmed within 2%: the cheapest live ask that can be bought is ${floor} SOL against a claimed ${claimed} SOL.`
-          : `Confirmed within 2% against Magic Eden's own figure: its cheapest ask is ${floor} SOL against a claimed ${claimed} SOL. That listing was not checked against the chain, so this confirms what Magic Eden shows, not that the item can be bought at that price.`,
+      explanation: `Confirmed within 2%: the cheapest live ask that can be bought is ${floor} SOL against a claimed ${claimed} SOL.`,
       evidence,
       caveats,
     };
@@ -617,9 +615,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     reproduce,
     verdict: "contradicted",
     explanation:
-      (check.status === "backed"
-        ? `Contradicted: the cheapest live ask that can be bought is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.`
-        : `Contradicted against Magic Eden's own figure: its cheapest ask is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%. That listing was not checked against the chain.`) +
+      `Contradicted: the cheapest live ask that can be bought is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.` +
       (staleMatch ? ` The claimed figure matches Magic Eden's reported floor of ${observed} SOL, which is a listing whose seller no longer holds the item.` : ""),
     evidence,
     caveats,
@@ -636,7 +632,7 @@ export function buildReceipt(r: Omit<VerificationResult, "receipt">, at = new Da
   const onChain = r.evidence.length > 0 && r.evidence.every((e) => /Solana|Core|account|transaction/i.test(e.source));
   const venue = (src: string) => src.split(/ (collection|stats|account|for) /)[0] ?? src;
   const srcLabel = r.evidence.length === 0 ? "" : onChain ? "chain shows" : `${[...new Set(r.evidence.map((e) => venue(e.source)))].join(" + ")} shows`;
-  const how = r.evidence.length === 0 ? "" : onChain ? " · checked on-chain via solana-nft-mcp, reproducible with no key" : ` · marketplace read via solana-nft-mcp at ${at.toISOString().slice(0, 16)}Z, reproducible with no key`;
+  const how = r.evidence.length === 0 ? "" : onChain ? ` · checked on-chain via solana-nft-mcp at ${at.toISOString()}, reproducible with no key` : ` · marketplace read via solana-nft-mcp at ${at.toISOString()}, reproducible with no key`;
   return (
     `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
     (observed ? ` - ${srcLabel} ${observed}` : "") +
