@@ -98,7 +98,10 @@ if (home) {
       }
       case "getAsset": {
         if (p.id === NOISY) return { jsonrpc: "2.0", id: b.id, error: { code: -32000, message: `index fixture refusal ${"q".repeat(260)} end of the index reason` } };
-        return { jsonrpc: "2.0", id: b.id, result: dasAssets[p.id] ?? null };
+        // An unknown id gets the error the public index really sends; an empty
+        // result would be an outage, not an answer.
+        if (!dasAssets[p.id]) return { jsonrpc: "2.0", id: b.id, error: { code: -32000, message: "Database Error: RecordNotFound Error: Asset not found" } };
+        return { jsonrpc: "2.0", id: b.id, result: dasAssets[p.id] };
       }
       case "getAssetsByGroup": return { jsonrpc: "2.0", id: b.id, result: { total: p.groupValue === COL ? 3 : 0, items: p.groupValue === COL ? [0, 1, 2].map(groupRow) : [] } };
       case "getSignaturesForAddress": return { jsonrpc: "2.0", id: b.id, result: [] };
