@@ -303,7 +303,7 @@ const serverEnvBase = () => {
   let calls = 0;
   globalThis.fetch = async () => {
     calls++;
-    return json({ jsonrpc: "2.0", id: calls, result: { value: { owner: "11111111111111111111111111111111" } } });
+    return json({ jsonrpc: "2.0", id: calls, result: { value: { owner: "11111111111111111111111111111111", data: ["", "base64"] } } });
   };
   const first = sol.accountNature(address("gate-holder"));
   const controller = new AbortController();
