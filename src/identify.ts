@@ -26,13 +26,14 @@ import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
-import { knownIssuer } from "./issuers.js";
+import { describeIssuerKey, knownIssuer } from "./issuers.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError } from "./lib/http.js";
-import { NotFoundError } from "./lib/errors.js";
+import { NotFoundError, WrongKindError, type Wording } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
+import { hasHomoglyphs } from "./spam.js";
 
 export interface Probe {
   source: string;
@@ -49,14 +50,25 @@ export interface Identification {
     | "core-asset"
     | "core-collection"
     | "indexed-asset"
+    | "fungible-token"
     | "marketplace-collection"
     | "wallet-or-unknown-account"
+    | "no-account"
+    | "program"
     | "venue-account"
     | "issuer-key"
     | "registry-entry"
+    | "name-service-name"
+    | "other-chain-address"
+    | "transaction-signature"
+    | "invalid-address"
     | "ambiguous"
     | "unknown";
   summary: string;
+  /** Set when the query was a marketplace or explorer link: which part of it was used. The link itself is never opened. */
+  link?: { host: string; partUsed: string; usedAs: "address" | "transaction-signature" | "symbol or slug"; note: string };
+  /** Set when the query mixes alphabets or changes under Unicode folding: the spelling a copy uses. */
+  spellingWarning?: string;
   /** Identifiers other tools accept, so the agent can chain without guessing. */
   identifiers: Record<string, string>;
   standard?: string;
@@ -79,6 +91,224 @@ export interface Identification {
 
 const looksLikeAddress = (q: string) => sol.isBase58Address(q);
 const looksLikeSlug = (q: string) => /^[a-z0-9_\-.]{2,80}$/i.test(q);
+
+// ---------------------------------------------------------- wrong shapes
+//
+// Three things people paste that are not identifiers this server reads, plus
+// a string that looks like an address and is not one. Each is settled by its
+// SHAPE, before any network read: "toly.sol" was answered as a Magic Eden
+// collection that happened to share the word, an Ethereum address spent 34 s
+// on probes that could never match, and a transaction signature came back as
+// "nothing matched", which reads as a missing collection.
+
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const NAME_SERVICE = /^[^\s/@:]{1,63}\.sol$/i;
+
+/**
+ * How many bytes a base58 string decodes to, or null when it is not base58.
+ * Every Solana address is exactly 32; 44 characters of "z" pass the character
+ * test and decode to 33, and each source then refused it in its own words.
+ */
+export function base58ByteLength(s: string): number | null {
+  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(s) || s.length > 100) return null;
+  let n = 0n;
+  for (const c of s) n = n * 58n + BigInt(B58.indexOf(c));
+  let bytes = 0;
+  while (n > 0n) {
+    n >>= 8n;
+    bytes++;
+  }
+  let zeros = 0;
+  while (zeros < s.length && s[zeros] === "1") zeros++;
+  return zeros + bytes;
+}
+
+export interface WrongShape {
+  kind: "name-service-name" | "other-chain-address" | "transaction-signature" | "invalid-address";
+  wording: Wording;
+}
+
+/**
+ * What a string is when its shape alone says it is not an address, a symbol or
+ * a name this server can look up. Null for everything else. Shared by identify
+ * and by the address schemas, so a refusal and an identification say the same
+ * thing about the same paste.
+ */
+export function wrongShape(raw: string): WrongShape | null {
+  const q = raw.trim();
+  if (EVM_ADDRESS.test(q)) {
+    return {
+      kind: "other-chain-address",
+      wording: {
+        headline: `${q} is an Ethereum-style address (0x followed by 40 hexadecimal characters). This server reads Solana only, so there is nothing to look up and nothing is wrong with the service.`,
+        next: "A Solana address is 32 to 44 letters and digits with no 0x in front. Find the item on a Solana marketplace or explorer and paste its address from there.",
+      },
+    };
+  }
+  if (TX_SIGNATURE.test(q)) {
+    return {
+      kind: "transaction-signature",
+      wording: {
+        headline: "That is a Solana transaction signature (86 to 88 characters), the id of one transaction, not the address of an item, a collection or a wallet.",
+        // No scheme on purpose: error text has its links removed on the way
+        // out, and the explorer page is the useful part of this answer.
+        next: `Open it in an explorer (solscan.io/tx/${q}) to see which accounts it touched, then pass the item's or the wallet's address from there.`,
+      },
+    };
+  }
+  if (NAME_SERVICE.test(q)) {
+    const shown = clean(q).slice(0, 70);
+    return {
+      kind: "name-service-name",
+      wording: {
+        headline: `"${shown}" is a Solana Name Service name (a .sol domain), not an address. This server does not resolve names, so nothing was looked up.`,
+        next: "Look the name up in a .sol name service or an explorer such as solscan.io, then pass the wallet address it points to.",
+      },
+    };
+  }
+  if (sol.isBase58Address(q)) {
+    const bytes = base58ByteLength(q);
+    if (bytes !== null && bytes !== 32) {
+      return {
+        kind: "invalid-address",
+        wording: {
+          headline: `${q} uses only address characters but decodes to ${bytes} bytes, and every Solana address is exactly 32, so it is not an address of anything.`,
+          next: "Copy the address again from where you found it; a character added or lost in copying is the usual cause.",
+        },
+      };
+    }
+  }
+  return null;
+}
+
+// --------------------------------------------------------------- links
+//
+// The error text tells people identify accepts a marketplace link, and it
+// refused every one: the link was matched as a name and came back "nothing
+// matched". A link is read only for the identifier in its path. It is never
+// fetched - the page at the other end is somebody else's text.
+
+/** Hosts whose paths carry a collection symbol, a slug, an address or a signature as their last segment. */
+const LINK_HOSTS = ["magiceden.io", "opensea.io", "solscan.io", "solana.fm", "explorer.solana.com", "xray.helius.xyz", "tensor.trade"];
+
+export type LinkReading =
+  | { ok: true; host: string; part: string; usedAs: "address" | "transaction-signature" | "symbol or slug"; devnetNote?: string }
+  | { ok: false; wording: Wording };
+
+/** Null when the query is not a link at all. */
+export function readLink(q: string): LinkReading | null {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(q) && !/^www\./i.test(q)) return null;
+  let u: URL;
+  try {
+    u = new URL(/^www\./i.test(q) ? `https://${q}` : q);
+  } catch {
+    return { ok: false, wording: { headline: "That looks like a link but does not parse as one, so nothing was read from it.", next: "Paste the item's or the collection's address, its marketplace symbol, or its name instead." } };
+  }
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  const shownHost = clean(host).slice(0, 80);
+  const known = LINK_HOSTS.join(", ");
+  if (!LINK_HOSTS.includes(host)) {
+    return {
+      ok: false,
+      wording: {
+        headline: `That is a link to ${shownHost}, and this server only reads the identifier out of links to ${known}. Nothing was opened or looked up.`,
+        next: "Paste the address, the marketplace symbol or the collection name shown on that page instead.",
+      },
+    };
+  }
+  if (u.protocol !== "https:") {
+    return { ok: false, wording: { headline: `Only https links are read, and this one starts with ${clean(u.protocol)}//. Nothing was opened or looked up.`, next: `Paste the https version of the ${shownHost} link, or the address or symbol it shows.` } };
+  }
+  const segments = u.pathname
+    .split("/")
+    .filter(Boolean)
+    .map((s) => {
+      try {
+        return decodeURIComponent(s);
+      } catch {
+        return s;
+      }
+    });
+  const last = segments[segments.length - 1] ?? "";
+  const cluster = u.searchParams.get("cluster");
+  const devnetNote = cluster && cluster !== "mainnet" && cluster !== "mainnet-beta" ? `The link names the ${clean(cluster).slice(0, 20)} cluster; every read here is Solana mainnet, where the same address is a different account.` : undefined;
+  const base = { ok: true as const, host: shownHost, part: last, ...(devnetNote ? { devnetNote } : {}) };
+  if (TX_SIGNATURE.test(last)) return { ...base, usedAs: "transaction-signature" };
+  if (sol.isBase58Address(last) && base58ByteLength(last) === 32) return { ...base, usedAs: "address" };
+  if (/^[a-z0-9_\-.]{2,80}$/i.test(last) && !/^\.+$/.test(last)) return { ...base, usedAs: "symbol or slug" };
+  return {
+    ok: false,
+    wording: {
+      headline: `That ${shownHost} link has no address, symbol or slug at the end of its path, so there is nothing in it to identify. Nothing was opened.`,
+      next: "Open the item or collection page itself and paste that link, or the address it shows.",
+    },
+  };
+}
+
+// ----------------------------------------------------------- token mints
+
+/** Built-in loaders: an account they own is a deployed program, not an item and not a wallet. */
+const LOADERS = new Set([
+  "BPFLoaderUpgradeab1e11111111111111111111111",
+  "BPFLoader2111111111111111111111111111111111",
+  "BPFLoader1111111111111111111111111111111111",
+  "NativeLoader1111111111111111111111111111111",
+  "LoaderV411111111111111111111111111111111111",
+]);
+export const isLoader = (owner: string | null | undefined): boolean => typeof owner === "string" && LOADERS.has(owner);
+
+const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
+
+/**
+ * Whether a mint is a fungible token rather than a collectible.
+ *
+ * USD Coin was described as "a single other asset" with one current holder,
+ * because the asset index files it under a custom interface and names its
+ * mint authority as the owner. A token has decimals and many holders, each
+ * with a balance; a collectible's mint has none. The index's own fungible
+ * interface decides when it says so; otherwise the mint account's decimals
+ * byte does. Null when it is not a token or the mint could not be read: a
+ * read that failed never turns an item into a token.
+ */
+export async function fungibleToken(
+  mint: string,
+  indexed: das.DasAsset | null,
+  opts: { signal?: AbortSignal } = {},
+): Promise<{ name: string | null; decimals: number | null } | null> {
+  if (indexed && (indexed.compressed || (indexed.standard !== "fungible" && indexed.standard !== "other"))) return null;
+  if (indexed?.standard === "fungible") return { name: indexed.name, decimals: null };
+  try {
+    const raw = await sol.getAccountRaw(mint, opts.signal);
+    if (!raw || !TOKEN_PROGRAMS.has(raw.owner)) return null;
+    const bytes = Buffer.from(raw.data, "base64");
+    // An SPL mint is 82 bytes before any extension; decimals sit at byte 44.
+    if (bytes.length < 82) return null;
+    const decimals = bytes[44]!;
+    return decimals > 0 ? { name: indexed?.name ?? null, decimals } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The answer for a token mint, worded once for identify and get_asset. */
+export function tokenWording(mint: string, token: { name: string | null; decimals: number | null }): Wording {
+  const named = token.name ? `"${clean(token.name).slice(0, 60)}" (${mint})` : mint;
+  return {
+    headline:
+      `${named} is a fungible token, not a collectible: it has many holders, each with a balance${token.decimals !== null ? ` in units of ${token.decimals} decimal places` : ""}, so there is no single owner to report. ` +
+      "This server covers collectibles only, not tokens.",
+    next: `A token explorer shows its supply and holders, for example solscan.io/token/${mint}.`,
+  };
+}
+
+/** What a mixed-alphabet or fold-changing query is told, wherever it matched. */
+export const SPELLING_WARNING =
+  "This name is written with letters from another alphabet or with lookalike characters mixed in, which is a common sign of a copy imitating a real collection. Check the collection's address against the project's official channel before acting on this match.";
+
+/** True when a query mixes Latin with lookalike letters or changes under Unicode compatibility folding. */
+export const disguisedSpelling = (q: string): boolean => hasHomoglyphs(q) || q.normalize("NFKC") !== q;
 
 /**
  * One deadline for the whole identification.
@@ -134,8 +364,28 @@ function aliasNote(entry: RegistryEntry, nq: string, norm: (s: string) => string
   return ` (${parts.join("; ")})`;
 }
 
+/** An answer the query's shape settled, with no network read behind it. */
+function settledByShape(query: string, kind: Identification["kind"], w: Wording, checked: Probe[], confidence: Identification["confidence"] = "high"): Identification {
+  return {
+    query: clean(query),
+    kind,
+    summary: `${w.headline} ${w.next}`,
+    identifiers: {},
+    tradesOn: [],
+    checked: [...checked, { source: "shape", looked_for: "what the query is from its form alone", result: "found", detail: w.headline }],
+    notChecked: ["Every live source: the form of the query already says what it is, so no request was sent."],
+    confidence,
+    suggestedNextTools: [],
+  };
+}
+
 export async function identify(query: string): Promise<Identification> {
-  const q = query.trim();
+  const raw = query.trim();
+  // A link is read for the identifier in its path and then identified like
+  // anything else; it is never opened.
+  const link = readLink(raw);
+  if (link && !link.ok) return settledByShape(raw, "unknown", link.wording, [], "low");
+  const q = link?.ok ? link.part : raw;
   // ONE budget for the whole identification, threaded into every network call
   // below. Without it, two marketplaces that accept connections and never
   // answer cost ~95 s between them and the caller's client has long given up.
@@ -145,7 +395,12 @@ export async function identify(query: string): Promise<Identification> {
   const signal = controller.signal;
   const timedOut = () => signal.aborted;
   try {
-    return await runIdentify(q, signal, timedOut);
+    const found = await runIdentify(q, signal, timedOut);
+    if (!link?.ok) return found;
+    const note =
+      `Read from a ${link.host} link: the last part of its path, "${link.part}", was used as ${link.usedAs === "address" ? "an address" : link.usedAs === "transaction-signature" ? "a transaction signature" : "a marketplace symbol or slug"}. The link itself was not opened.` +
+      (link.devnetNote ? ` ${link.devnetNote}` : "");
+    return { ...found, summary: `${note} ${found.summary}`, link: { host: link.host, partUsed: link.part, usedAs: link.usedAs, note } };
   } finally {
     clearTimeout(deadline);
     controller.abort();
@@ -263,8 +518,20 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     if (entry.coreCollection) identifiers.coreCollection = entry.coreCollection;
   }
 
+  // ---- 1b. shapes no live source can answer ------------------------------
+  // After the registry, which costs nothing, so a collection that really is
+  // called "Something.sol" in the registry or the directory is still found by
+  // its name; every other .sol is a name service name.
+  const shape = wrongShape(q);
+  if (shape && !(shape.kind === "name-service-name" && (entry || symbolForCollectionName(q)))) {
+    return settledByShape(q, shape.kind, shape.wording, checked);
+  }
+
   // ---- 2. on-chain, when the string could be an address ----------------
   let coreKind: "asset" | "collection" | null = null;
+  // What the chain said when the address is not a Core account, by the class
+  // the reader threw: no account at all, or an account another program owns.
+  let coreAbsence: "no-account" | "other-owner" | null = null;
   let coreName: string | undefined;
   // A minter chooses an asset's name, so it is neutralised ONCE here, at the
   // boundary where bytes become text, and only the cleaned value travels into
@@ -308,7 +575,8 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       // a decoded account, not from anything a third party sent - so matching
       // on them is matching on our own vocabulary, not on attacker text.
       const msg = e instanceof Error ? e.message : String(e);
-      const answered = /not Metaplex Core|does not exist on mainnet/i.test(msg);
+      const answered = e instanceof NotFoundError || e instanceof WrongKindError || /not Metaplex Core|does not exist on mainnet/i.test(msg);
+      if (addressToProbe === q) coreAbsence = e instanceof NotFoundError ? "no-account" : e instanceof WrongKindError ? "other-owner" : null;
       checked.push({
         source: "solana-rpc",
         looked_for: "a Metaplex Core account at this address",
@@ -600,6 +868,9 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   let summary: string;
   let confidence: Identification["confidence"] = "low";
   const next: string[] = [];
+  // Only an account another program owns can be a token mint, and the index
+  // has already said whether it is a legacy NFT, so this is at most one read.
+  const token = looksLikeAddress(q) && coreKind === null && coreAbsence === "other-owner" ? await fungibleToken(q, indexed, { signal }) : null;
 
   if (coreKind === "asset") {
     kind = "core-asset";
@@ -639,6 +910,12 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
         checked.push({ source: "solana-rpc", looked_for: "recently active assets in the collection", result: "error", detail: detail(e) });
       }
     }
+  } else if (token) {
+    kind = "fungible-token";
+    identifiers.mint = q;
+    const w = tokenWording(q, token);
+    summary = `${w.headline} ${w.next}`;
+    confidence = "high";
   } else if (indexed) {
     kind = "indexed-asset";
     identifiers.mint = q;
@@ -686,25 +963,53 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   } else if (looksLikeAddress(q) && knownIssuer(q)) {
     const k = knownIssuer(q)!;
     kind = "issuer-key";
-    summary = `${shown} is ${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry (derived from the chain on ${k.derivedAt.slice(0, 10)}), which signs their metadata and their mints. That is the issuer's key, an identity from a dated table: what it holds, and how each item got there, is a per-collection question, so use get_collection_holders on any of its collections (it reads the authority live) and get_asset_provenance on an item.`;
+    summary = `${shown} is ${describeIssuerKey(k)} That is an identity from a dated table: what it holds, and how each item got there, is a per-collection question, so use get_collection_holders on any of its collections (it reads the authority live) and get_asset_provenance on an item.`;
     confidence = "high";
     next.push("get_collection_holders", "get_wallet_holdings");
-  } else if (looksLikeAddress(q) && sol.knownVenueAccount(q)) {
+  } else if (looksLikeAddress(q) && (sol.knownVenueAccount(q) || sol.knownProgram(q))) {
     kind = "venue-account";
-    summary = `${shown} is ${sol.knownVenueAccount(q)}. It is not a collectible and not a person's wallet: get_wallet_holdings lists what it currently holds, and get_asset_provenance on any of those items shows who handed it over.`;
+    summary = sol.knownProgram(q)
+      ? `${shown} is ${sol.knownProgram(q)}. It is a marketplace's program, not a collectible and not a person's wallet.`
+      : `${shown} is ${sol.knownVenueAccount(q)}. It is not a collectible and not a person's wallet: get_wallet_holdings lists what it currently holds, and get_asset_provenance on any of those items shows who handed it over.`;
     confidence = "high";
     next.push("get_wallet_holdings");
   } else if (looksLikeAddress(q)) {
-    kind = "wallet-or-unknown-account";
-    summary =
-      `${shown} is a valid Solana address but is not a Metaplex Core asset or collection` +
-      (dasAvailable === true
-        ? ", and the chain's asset index has no record of it as an asset either. It is most likely a wallet or another program's account."
-        : dasAvailable === false
-          ? ". The chain's asset index could not be reached, so a legacy SPL or compressed NFT cannot be ruled out - see notChecked."
-          : ". It is most likely a wallet, a legacy SPL mint, or another program's account.");
-    confidence = dasAvailable === true ? "medium" : "low";
-    next.push("get_wallet_holdings");
+    // What owns the account is structural, so it is read rather than guessed:
+    // an address with no account at all and the Core program's own id were
+    // both called "most likely a wallet".
+    const nature = coreAbsence === "other-owner" ? await sol.accountNature(q, { signal }) : null;
+    if (coreAbsence === "no-account" && dasAvailable === true) {
+      kind = "no-account";
+      summary =
+        `No account exists at ${shown} on Solana mainnet, and the chain's asset index has no record of it, so it is not an item or a collection. ` +
+        "It may be mistyped (one wrong character still looks like a valid address), an account that was closed, or a wallet that has never held SOL; get_wallet_holdings shows whether anything is held under it.";
+      confidence = "medium";
+      next.push("get_wallet_holdings");
+    } else if (isLoader(nature?.ownerProgram)) {
+      kind = "program";
+      summary =
+        `${shown} is ${q === sol.CORE_PROGRAM ? "the Metaplex Core program itself, the code every Core item and collection runs under" : "a program (code deployed on chain)"}, ` +
+        "not an item, a collection or a wallet, so there is nothing here to price or to hold.";
+      confidence = "high";
+    } else if (nature?.looksLikeAWallet === true) {
+      kind = "wallet-or-unknown-account";
+      summary = `${shown} is a wallet (an account owned by the System Program), not an item or a collection. get_wallet_holdings lists what it holds.`;
+      confidence = "high";
+      next.push("get_wallet_holdings");
+    } else {
+      kind = "wallet-or-unknown-account";
+      summary =
+        nature?.ownerProgram && dasAvailable === true
+          ? `${shown} is an account owned by ${nature.ownerName ?? `the program ${nature.ownerProgram}`}: not a person's wallet, and not an item or a collection the chain's asset index knows.`
+          : `${shown} is a valid Solana address but is not a Metaplex Core asset or collection` +
+            (dasAvailable === true
+              ? ", and the chain's asset index has no record of it as an asset either. What owns the account could not be read just now."
+              : dasAvailable === false
+                ? ". The chain's asset index could not be reached, so a legacy SPL or compressed NFT cannot be ruled out - see notChecked."
+                : ". What owns the account could not be read just now.");
+      confidence = dasAvailable === true ? "medium" : "low";
+      next.push("get_wallet_holdings");
+    }
   } else {
     summary = `Nothing matched "${shown}" in the sources this server can see. That is not proof it does not exist - see notChecked for the gaps, and search_collections for close names.`;
     next.push("search_collections");
@@ -716,10 +1021,21 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     confidence = "high";
   }
 
+  // "Mad Lads" typed with a Cyrillic a reached the real collection at high
+  // confidence. The match is kept, because the person may well mean it, but a
+  // name spelled the way a copy spells it is never a confident answer.
+  let spellingWarning: string | undefined;
+  if (kind !== "unknown" && !looksLikeAddress(q) && disguisedSpelling(shown)) {
+    spellingWarning = SPELLING_WARNING;
+    confidence = "low";
+    summary += ` ${SPELLING_WARNING}`;
+  }
+
   return {
     query: clean(q),
     kind,
     summary,
+    ...(spellingWarning ? { spellingWarning } : {}),
     ...(untrustedTextWarning ? { untrustedTextWarning } : {}),
     ...(lookalikes.length ? { lookalikes, lookalikeWarning: LOOKALIKE_WARNING } : {}),
     identifiers,

@@ -34,8 +34,37 @@ const ME_SOURCE = {
   use: "Floors, listings, recent sale activity for any Solana collection.",
   auth: "None. Keyless.",
   rateLimit:
-    "~2 requests/second PER IP ADDRESS, not per process. Pace at one request per 600ms and cache; five bots on one office IP share one allowance and need one shared limiter, not five. A keyless API stays usable only while its callers stay polite.",
+    "Answers carry x-ratelimit-limit: 180 with a reset under a minute ahead (read 2026-11-10), so about 180 requests a minute, and the remaining count fell faster than one caller's own requests: it is shared by everything calling from the same IP ADDRESS, not per process. Pace at one request per 600ms and cache; five bots on one office IP share one allowance and need one shared limiter, not five. A keyless API stays usable only while its callers stay polite.",
 };
+
+/**
+ * What each source's terms ask of an app that shows its data. OpenSea's are
+ * explicit about attribution, and a builder copying a recipe would otherwise
+ * never see them; read on the date given, from the pages named.
+ */
+export const SOURCE_TERMS = [
+  {
+    source: "OpenSea API",
+    read: "2026-11-10",
+    urls: ["https://opensea.io/tos", "https://docs.opensea.io/reference/api-overview"],
+    asks:
+      "Link back to OpenSea from the NFTs you display and give attribution (the API overview's Attribution section; the terms of service require appropriate attribution, for example a link to the OpenSea website). The terms also forbid getting round API limits, naming aggregating accounts and creating multiple API keys: one key per app, not one per user or per bot.",
+    howThisServerDoesIt:
+      "Answers built on OpenSea figures for a collection carry openseaUrl, https://opensea.io/collection/<slug>, built only from a slug this server proved against the collection's on-chain address. Show that link wherever you show the figure.",
+  },
+  {
+    source: "Magic Eden public API",
+    read: "2026-11-10",
+    urls: [],
+    asks: "Not confirmed: Magic Eden's documentation and terms pages answered with a bot check and were not read. Read them yourself before shipping.",
+  },
+  {
+    source: "Public Solana RPC",
+    read: "2026-11-10",
+    urls: ["https://solana.com/docs/references/clusters"],
+    asks: "Not confirmed: the page lists the public endpoints and their limits but refused an automated read on this date. The public endpoints are rate limited; check the page, and plan on your own or a provider's endpoint for anything that ships.",
+  },
+] as const;
 
 const RPC_SOURCE = {
   name: "Solana JSON-RPC",

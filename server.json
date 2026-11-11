@@ -35,6 +35,26 @@
           "description": "Optional. Set to 1 to skip the once-per-start npm version check.",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "SOLANA_RPC_URL",
+          "description": "Optional. Your own https Solana RPC endpoint; without it the free public endpoints are used.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "DAS_RPC_URL",
+          "description": "Optional. Your own https endpoint that serves the DAS asset-index methods.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "SOLANA_NFT_MCP_LOG",
+          "description": "Optional. Set to 1 to write one line per tool call to stderr (tool name, argument names, duration; never argument values).",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     }

@@ -25,6 +25,7 @@
 import * as me from "./sources/magiceden.js";
 import * as sol from "./sources/solana.js";
 import { clean } from "./lib/untrusted.js";
+import { checkedFloor } from "./lib/custody.js";
 import { NotFoundError, WrongKindError, BadInputError } from "./lib/errors.js";
 
 export type Verdict = "confirmed" | "contradicted" | "unverifiable";
@@ -176,6 +177,72 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   };
 }
 
+/**
+ * "Never sold" for an item whose history the chain reader cannot decode.
+ *
+ * A legacy or programmable NFT has no Core account, so the claim used to come
+ * back unverifiable even while the marketplace showed the item selling twice
+ * that hour. One recorded fill, with its transaction, is enough to contradict
+ * "never"; no fill confirms nothing, because a venue's silence is not a
+ * history.
+ */
+async function untradedFromMarketplace(
+  mint: string,
+  base: { claim: string; subject: string; reproduce: string },
+): Promise<Omit<VerificationResult, "receipt">> {
+  const reproduce = `GET https://api-mainnet.magiceden.dev/v2/tokens/${mint}/activities and look for rows of type buyNow; open each signature in an explorer to check the transfer and the payment. No key required.`;
+  let read: Awaited<ReturnType<typeof me.tokenSales>>;
+  try {
+    read = await me.tokenSales(mint);
+  } catch (e) {
+    return {
+      ...base,
+      reproduce,
+      verdict: "unverifiable",
+      explanation: `${mint} is not a Metaplex Core asset, so its history is not decoded from the chain here, and Magic Eden's activity for it could not be read just now (${clean(e instanceof Error ? e.message : String(e)).slice(0, 160)}).`,
+      evidence: [],
+      caveats: ["This is a source failure, not a statement about the item. get_recent_sales on its collection shows the fills the marketplaces recorded."],
+    };
+  }
+  const latest = read.sales[0];
+  if (latest) {
+    return {
+      ...base,
+      reproduce,
+      verdict: "contradicted",
+      explanation:
+        `Contradicted: Magic Eden recorded ${read.sales.length} sale(s) of this item, the latest at ${latest.time} for ${latest.priceSol} SOL ` +
+        `(transaction ${latest.signature}).`,
+      evidence: [
+        {
+          source: `Magic Eden token activity for ${mint}`,
+          method: "Sale rows in the marketplace's activity feed for this mint, each carrying a transaction signature, a price above zero and a block time.",
+          observed: `${read.sales.length} sale(s) in ${read.eventsRead} event(s) read at ${read.readAt}, latest ${latest.signature}`,
+        },
+      ],
+      caveats: [
+        "This item is not a Metaplex Core asset, so the answer rests on the marketplace's record rather than on decoded chain history. The transaction can be opened in any explorer to check it.",
+      ],
+    };
+  }
+  return {
+    ...base,
+    reproduce,
+    verdict: "unverifiable",
+    explanation:
+      `${mint} is not a Metaplex Core asset, so its history is not decoded from the chain here, and Magic Eden's activity for it shows no recorded sale ` +
+      `in the ${read.eventsRead} event(s) read${read.reachedEnd ? ", which is all it returned" : ` (the newest ${read.pagesRead} page(s) only, so older sales can sit beyond them)`}. One marketplace with no record of a sale is not proof the item never sold.`,
+    evidence: [
+      {
+        source: `Magic Eden token activity for ${mint}`,
+        method: "Sale rows in the marketplace's activity feed for this mint.",
+        observed: `0 sales in ${read.eventsRead} event(s) read at ${read.readAt}`,
+      },
+    ],
+    caveats: ["get_recent_sales on the item's collection shows the fills the marketplaces recorded, and get_asset names the collection."],
+  };
+}
+
 /** A complete transfer-free history rules out an on-chain resale; transfers alone cannot prove one. */
 async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "receipt">> {
   const base = {
@@ -191,6 +258,7 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   let prov: Awaited<ReturnType<typeof sol.getProvenance>> | null = null;
   let provError: string | undefined;
   let provMissing = false;
+  let isCollection = false;
   try {
     prov = await sol.getProvenance(mint, 25, { fresh: true });
   } catch (e) {
@@ -198,6 +266,8 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     // anything else is the chain not being readable. The class says which.
     provMissing = e instanceof NotFoundError || e instanceof WrongKindError;
     provError = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
+    // The provenance reader's own sentence for a collection account.
+    isCollection = e instanceof WrongKindError && /Core COLLECTION/.test(e.message);
   }
   if (!prov && provError && !provMissing) {
     return {
@@ -208,15 +278,16 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
       caveats: ["This is a source failure, not a statement about the asset. Retry shortly."],
     };
   }
-  if (!prov) {
+  if (!prov && isCollection) {
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `${mint} could not be read as a Metaplex Core asset, so its transfer history cannot be decoded here.`,
+      explanation: `${mint} is a collection address, not a single item, so whether it was ever sold is not a question it can answer. Pass one item's mint; identify lists recently active members of a collection.`,
       evidence: [],
-      caveats: ["Legacy SPL and compressed NFTs are not decoded by this server."],
+      caveats: [],
     };
   }
+  if (!prov) return untradedFromMarketplace(mint, base);
 
   const transfers = prov.events.filter((e) => e.event === "transferred");
   const evidence: Evidence[] = [
@@ -357,8 +428,13 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
     },
   ];
 
+  // The escrow sentence only where it applies: printed under every
+  // contradiction, it offered "maybe it is in escrow" about an item a person's
+  // wallet plainly holds.
   const caveats = [
-    "If the item is listed for sale, the on-chain owner is the marketplace escrow rather than the seller - so a 'no' here can still mean the person controls the asset.",
+    ...(sol.knownVenueAccount(acct.owner)
+      ? ["The owner on chain is a marketplace escrow, which is where a listed item sits rather than with its seller - so a 'no' here can still mean the person controls the asset."]
+      : []),
     "A permanent delegate, where one is configured, can move the asset without the owner's signature. Ownership on chain is not always unconditional control.",
   ];
 
@@ -369,6 +445,31 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
       explanation: `Confirmed: the asset account names ${wallet} as its owner right now.`,
       evidence,
       caveats,
+    };
+  }
+
+  // A listed item's owner is the marketplace's account, not the seller, and
+  // the seller is not written anywhere this server can read. Saying
+  // CONTRADICTED to the person who listed it is a confident wrong answer; the
+  // honest one is that the chain cannot settle it from here.
+  const venue =
+    acct.owner === sol.MAGIC_EDEN_ESCROW
+      ? "Magic Eden's escrow account, where a Magic Eden listing keeps the item"
+      : (await sol.accountNature(acct.owner).catch(() => null))?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM
+        ? `an OpenSea listing account (${acct.owner}), owned by OpenSea's Solana protocol program, where an OpenSea listing keeps the item`
+        : null;
+  if (venue) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation:
+        `The item is listed for sale. Its owner on chain is ${venue}, not a person's wallet. ` +
+        `The seller of that listing cannot be read from the chain here, so whether ${wallet} is that seller, and so still owns the item, cannot be checked.`,
+      evidence,
+      caveats: [
+        "get_asset_provenance on this item shows the wallet that moved it into the listing account; that wallet is the seller unless it has been sold since.",
+        caveats[1]!,
+      ],
     };
   }
 
@@ -449,7 +550,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     {
       source: `Magic Eden collection stats for ${symbol}`,
       method: "Live floorPrice in lamports, divided by 1e9.",
-      observed: `${observed} SOL, ${stats.listedCount ?? "?"} listed`,
+      observed: `${observed} SOL reported, ${stats.listedCount ?? "?"} listed`,
     },
   ];
   const caveats = [
@@ -457,23 +558,69 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     "Other marketplaces quote their own floors, sometimes in another currency. Use get_collection_stats for the cross-marketplace view.",
   ];
 
-  // 2% tolerance: a floor moves while the claim is being made, and calling that
-  // a lie would make the tool useless.
-  if (near(observed, claimed, claimed * 0.02)) {
+  // The venue's floor is the cheapest ask in its index, and its index keeps
+  // listings after the item has moved. A receipt saying CONFIRMED on such a
+  // listing was pasted as proof of a price nobody could pay, so the claim is
+  // judged against the cheapest listing the chain shows can be bought.
+  const check = await checkedFloor(symbol, observed);
+  const reproduce =
+    `${base.reproduce} Then GET /v2/collections/${symbol}/listings?sort=listPrice&sort_direction=asc&limit=100 and read each listed item's Metaplex Core account ` +
+    `(getMultipleAccounts, bytes 1-33 are the owner): a listing counts only when that owner is the seller or Magic Eden's escrow ${sol.MAGIC_EDEN_ESCROW}.`;
+  if (check.status === "none-backed" || check.status === "unread") {
     return {
       ...base,
+      reproduce,
+      verdict: "unverifiable",
+      explanation:
+        check.status === "none-backed"
+          ? `Magic Eden reports a floor of ${observed} SOL, but none of the ${check.listingsChecked} cheapest listing(s) read can be bought: in every one the chain shows the seller no longer holds the item. No ask that can be paid was found among them to check the claim against.`
+          : `Magic Eden reports a floor of ${observed} SOL, but its listings could not be checked against the chain just now, and its floor can be a listing whose item has moved. ${check.sentence}`,
+      evidence,
+      caveats: [...caveats, ...(check.staleExamples.length ? [`Stale listings seen: ${check.staleExamples.map((s) => `${s.priceSol} SOL (${s.why})`).join("; ")}.`] : [])],
+    };
+  }
+  const floor = check.floorSol;
+  if (!comparable(floor)) {
+    return { ...base, reproduce, verdict: "unverifiable", explanation: `No usable floor was found for "${symbol}" after checking its listings. ${check.sentence}`, evidence, caveats };
+  }
+  evidence.push({
+    source: `Magic Eden collection listings for ${symbol}, each checked against its Solana account`,
+    method: "The cheapest 100 listings, cheapest first; a listing counts only when the item's Core account names the seller or Magic Eden's escrow as its owner.",
+    observed:
+      check.status === "backed"
+        ? `cheapest ask that can be bought ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`
+        : `cheapest ask not known to be stale ${floor} SOL (not a Core item, so not checked)`,
+  });
+  if (check.status === "not-core") caveats.push(check.sentence);
+  if (check.staleBelowFloor > 0) caveats.push(`${check.staleBelowFloor} cheaper listing(s) on Magic Eden were left out: the chain shows the seller no longer holds the item, so nobody can buy at those prices.`);
+
+  // 2% tolerance: a floor moves while the claim is being made, and calling that
+  // a lie would make the tool useless.
+  if (near(floor, claimed, claimed * 0.02)) {
+    return {
+      ...base,
+      reproduce,
       verdict: "confirmed",
-      explanation: `Confirmed within 2%: the live floor is ${observed} SOL against a claimed ${claimed} SOL.`,
+      explanation:
+        check.status === "backed"
+          ? `Confirmed within 2%: the cheapest live ask that can be bought is ${floor} SOL against a claimed ${claimed} SOL.`
+          : `Confirmed within 2% against Magic Eden's own figure: its cheapest ask is ${floor} SOL against a claimed ${claimed} SOL. That listing was not checked against the chain, so this confirms what Magic Eden shows, not that the item can be bought at that price.`,
       evidence,
       caveats,
     };
   }
 
-  const dir = observed > claimed ? "higher" : "lower";
+  const dir = floor > claimed ? "higher" : "lower";
+  const staleMatch = check.staleBelowFloor > 0 && near(observed, claimed, claimed * 0.02);
   return {
     ...base,
+    reproduce,
     verdict: "contradicted",
-    explanation: `Contradicted: the live floor is ${observed} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.`,
+    explanation:
+      (check.status === "backed"
+        ? `Contradicted: the cheapest live ask that can be bought is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.`
+        : `Contradicted against Magic Eden's own figure: its cheapest ask is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%. That listing was not checked against the chain.`) +
+      (staleMatch ? ` The claimed figure matches Magic Eden's reported floor of ${observed} SOL, which is a listing whose seller no longer holds the item.` : ""),
     evidence,
     caveats,
   };
