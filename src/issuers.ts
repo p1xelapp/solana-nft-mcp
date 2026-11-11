@@ -32,11 +32,21 @@ interface IssuerRow {
   issuer: string;
   role: string;
   collections: number;
+  /** Every registered collection this key was the authority of when the table was derived. */
+  collectionAddresses?: string[];
+  /** A hand-written, dated note: how the name was established, or what else the key still controls. */
+  note?: string;
+  /** No longer the authority of any registered collection; kept so an old key is not mistaken for a stranger. */
+  former?: boolean;
+  /** The last table date on which it was the authority. */
+  lastSeenAsAuthority?: string | null;
+  /** The first table date on which it no longer was. */
+  formerAsOf?: string;
 }
 
-const table: { derivedAt: string; issuers: IssuerRow[] } = (() => {
+const table: { derivedAt: string; issuers: IssuerRow[]; unreadable?: string[] } = (() => {
   try {
-    return createRequire(import.meta.url)("../data/issuers.json") as { derivedAt: string; issuers: IssuerRow[] };
+    return createRequire(import.meta.url)("../data/issuers.json") as { derivedAt: string; issuers: IssuerRow[]; unreadable?: string[] };
   } catch {
     return { derivedAt: "", issuers: [] };
   }
@@ -46,6 +56,66 @@ const table: { derivedAt: string; issuers: IssuerRow[] } = (() => {
 export function knownIssuer(address: string): (IssuerRow & { derivedAt: string }) | null {
   const row = table.issuers.find((i) => i.address === address);
   return row ? { ...row, derivedAt: table.derivedAt } : null;
+}
+
+/**
+ * Where the dated table and the registry disagree, one line per collection.
+ *
+ * The table answers "whose key is this" and the registry answers "which
+ * collections are Candy's". When one is regenerated without the other, a
+ * collection can be signed by a key the table calls former, or by no key the
+ * table knows, and identify then names the wrong key with high confidence.
+ * Run by the release checks against the bundled files; an empty list is
+ * agreement. `tableOverride` lets the check be proved on a broken copy.
+ */
+export function issuerTableDisagreements(
+  registryAddresses: string[],
+  tableOverride?: { issuers: IssuerRow[]; unreadable?: string[] },
+): string[] {
+  const t: { issuers: IssuerRow[]; unreadable?: string[] } = tableOverride ?? table;
+  const problems: string[] = [];
+  const registry = new Set(registryAddresses);
+  const owner = new Map<string, string>();
+  for (const row of t.issuers) {
+    const list = Array.isArray(row.collectionAddresses) ? row.collectionAddresses : null;
+    if (!list) { problems.push(`${row.address}: no collection list, so its ${row.collections} collection(s) cannot be checked`); continue; }
+    if (row.former && list.length > 0) problems.push(`${row.address}: marked former but still listed as the authority of ${list.length} collection(s)`);
+    if (list.length !== row.collections) problems.push(`${row.address}: says ${row.collections} collection(s) but lists ${list.length}`);
+    for (const a of list) {
+      if (owner.has(a)) problems.push(`${a}: listed under both ${owner.get(a)} and ${row.address}`);
+      owner.set(a, row.address);
+      if (!registry.has(a)) problems.push(`${a}: in the issuer table under ${row.address} but not in the registry`);
+    }
+  }
+  const unreadable = new Set(Array.isArray(t.unreadable) ? t.unreadable : []);
+  for (const a of registry) {
+    if (!owner.has(a) && !unreadable.has(a)) problems.push(`${a}: in the registry but the issuer table names no authority for it`);
+  }
+  return problems;
+}
+
+/**
+ * One sentence on what a key in the table is, current or former.
+ *
+ * Candy's collections changed update authority in November 2026 and the
+ * table still described the old key as the authority of all 401 while the new
+ * one was called "most likely a wallet". A former key is still somebody's key:
+ * it signed every older mint and can control other accounts, so it is named
+ * as former, with the dates that bound the change, rather than dropped.
+ */
+export function describeIssuerKey(k: IssuerRow & { derivedAt: string }): string {
+  const read = `${k.derivedAt.slice(0, 10)} UTC`;
+  const note = k.note ? ` ${k.note}` : "";
+  if (k.former) {
+    return (
+      `${k.issuer}'s FORMER key: it was the update authority of the registered collections on ${k.lastSeenAsAuthority ?? "an earlier table date"} ` +
+      `and is the authority of none of them in the table derived from the chain on ${read}.${note}`
+    );
+  }
+  return (
+    `${k.issuer}'s key: the current update authority of ${k.collections} collection(s) in the bundled registry ` +
+    `(derived from the chain on ${read}), which signs their metadata and their mints.${note}`
+  );
 }
 
 export type HolderRole = "issuer" | "venue-escrow" | "wallet" | "unknown";
@@ -75,7 +145,9 @@ export function roleOf(
   const venue = knownVenueAccount(address);
   if (venue) return { role: "venue-escrow", note: venue };
   const hint = known
-    ? `known as ${known.issuer}'s key (the update authority of ${known.collections} collection(s) in the bundled registry as of ${known.derivedAt.slice(0, 10)})`
+    ? known.former
+      ? `known as ${known.issuer}'s former key (seen as the update authority of the registered collections on ${known.lastSeenAsAuthority ?? "an earlier table date"}, of none as of ${known.derivedAt.slice(0, 10)})`
+      : `known as ${known.issuer}'s key (the update authority of ${known.collections} collection(s) in the bundled registry as of ${known.derivedAt.slice(0, 10)})`
     : null;
   if (authorityRead === "unavailable") {
     return {

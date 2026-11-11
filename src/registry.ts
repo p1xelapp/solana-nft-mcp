@@ -31,8 +31,9 @@ export interface RegistryEntry {
   /**
    * Other names the same collection is filed under. The hand-written entries
    * predate the generated list and sometimes spell a collection differently
-   * from the issuer's own export - the 2026 MLB ICON Series is "2026 MLB Base
-   * Series ICONs" there, and the venue directory only knows that spelling. The
+   * from the issuer's own export - the entry once called "2026 MLB ICON Series"
+   * is "2026 MLB Base Series ICONs" there, and the venue directory only knows
+   * that spelling. The
    * duplicate address is dropped; its name is kept here so either one resolves.
    */
   aliases?: string[];
@@ -258,20 +259,28 @@ export const REGISTRY: RegistryEntry[] = [
 
   {
     id: "candy-mlb-icon-2026",
-    name: "Candy Digital - 2026 MLB ICON Series",
+    // The display name follows the collection account's own name (read
+    // 2026-11-10); the spellings people used before stay as aliases so they
+    // still resolve.
+    name: "Candy Digital - 2026 MLB Base Series ICONs",
     platform: "Candy Digital (official MLB license)",
     coreCollection: "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n",
     group: "MLB",
+    aliases: ["2026 MLB ICON Series", "Candy Digital - 2026 MLB ICON Series"],
     keywords: ["candy", "candy digital", "mlb", "icon", "baseball", "packs", "2026"],
     notes:
       "Metaplex Core collection. Pack pulls are Core assets - use get_asset_provenance on any card mint for its full ownership trail.",
   },
   {
     id: "candy-mlb-gold-auction-1",
-    name: "Candy Digital - MLB Gold Series Auction #1",
+    // The collection account calls itself "2026 MLB Gold Series ICONs -
+    // Candy Digital" (read 2026-11-10). The old display name named the
+    // auction it was sold through, which no marketplace or explorer shows.
+    name: "Candy Digital - 2026 MLB Gold Series ICONs",
     platform: "Candy Digital (official MLB license)",
     coreCollection: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
     group: "MLB",
+    aliases: ["MLB Gold Series Auction #1", "Candy Digital - MLB Gold Series Auction #1"],
     keywords: ["candy", "candy digital", "gold", "gold series", "mlb", "auction", "ohtani", "soto"],
     notes: "36 auctioned packs / 226 cards incl. 1-of-1s. Fully traceable on-chain.",
   },

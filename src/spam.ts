@@ -61,7 +61,7 @@ const MONEY = /(?:[$€£]\s?\d|\b\d[\d,.]*\s*(?:sol|usdc|usdt|eth|btc)\b)/i;
  * "Vоucher". A name written entirely in another script is a name; a name that
  * is ASCII except for two substituted letters is a disguise.
  */
-function hasHomoglyphs(name: string): boolean {
+export function hasHomoglyphs(name: string): boolean {
   const latin = /[a-z]/i.test(name);
   if (!latin) return false;
   // Cyrillic and Greek blocks only: these are the ones whose letters are drawn

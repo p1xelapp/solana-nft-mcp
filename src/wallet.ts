@@ -774,6 +774,14 @@ export function floorCeiling(
      */
     currency: "SOL" as const,
     fiatNote: "No fiat conversion is performed.",
+    /**
+     * Which floor this is. get_floor_prices checks a floor's listing against
+     * the chain and this arithmetic does not, so the two can differ widely on
+     * a collection whose old listings were never cleared, and a reader must
+     * be told which one they are looking at.
+     */
+    floorBasis:
+      "Each floor here is Magic Eden's own reported floor, not checked against the chain. Where listings outlived a move of the items (Candy collections after October 2026) that figure can be a listing nobody can buy, and get_floor_prices, which checks, will show a different one.",
     /** Why no figure is given, when none is. */
     unavailableReason: mixedTime
       ? `Magic Eden did not answer for this wallet's holdings, so the only counts available were read at ${coverage.cachedAt ?? "an unrecorded earlier time"} while the floors were read at ${floorsReadAt}. Multiplying those together would produce a figure that was never true at either moment, so no figure is given. Ask again in a minute.`

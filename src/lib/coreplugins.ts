@@ -115,6 +115,40 @@ export interface OracleReading {
   owner?: string;
   slot?: number | null;
   note?: string;
+  /**
+   * Set only when the oracle account is an SPL token mint: the key that can
+   * mint, and so rewrite the bytes the oracle answers from. Null means the
+   * mint has no mint authority. Absent means the account is not a mint.
+   */
+  mintAuthority?: string | null;
+}
+
+const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/**
+ * The mint authority of an oracle account that is an SPL token mint, from
+ * the bytes already read for the oracle answer.
+ *
+ * Candy's oracle reads its answer from the supply field of a token mint, so
+ * whoever holds that mint's authority can change the answer by minting. The
+ * trust read said "whoever controls that account" without naming anyone,
+ * while the key was right there in the first 36 bytes. Returns undefined for
+ * anything that is not an initialised mint of either token program, so the
+ * caller keeps its general sentence.
+ */
+export function splMintAuthority(b64: string, owner: string | undefined): string | null | undefined {
+  if (owner !== TOKEN_PROGRAM && owner !== TOKEN_2022_PROGRAM) return undefined;
+  const buf = Buffer.from(b64, "base64");
+  // A classic mint is exactly 82 bytes. A Token-2022 mint with extensions is
+  // padded to 165 and marks itself with account type 1 at that offset; a
+  // token ACCOUNT is 165 bytes too, and must not be read as a mint.
+  const isMint = buf.length === 82 || (owner === TOKEN_2022_PROGRAM && buf.length > 165 && buf[165] === 1);
+  if (!isMint || buf[45] !== 1) return undefined;
+  const tag = buf.readUInt32LE(0);
+  if (tag === 0) return null;
+  if (tag !== 1) return undefined;
+  return base58Encode(buf.subarray(4, 36));
 }
 
 /** Decode the validation struct an oracle account carries at `offset`. */
@@ -425,12 +459,47 @@ const ORACLE_FAILS: Record<Exclude<OracleReading["state"], "answered" | "unread"
 };
 
 /**
+ * Who can change an oracle's answer, as far as the bytes say.
+ *
+ * Named only when every oracle read is an SPL mint with one mint authority:
+ * then that key can rewrite the answer by minting, and whether it is the
+ * collection's update authority is worth a sentence of its own (on Candy's
+ * collections in November 2026 it was not). Anything else keeps the general
+ * sentence, because an unnamed controller is better than a guessed one.
+ */
+function oracleController(
+  checks: CoreTrust["oracleChecks"],
+  context: { updateAuthority?: string | null; nameKey?: (address: string) => string | null },
+  fallback: string,
+): string {
+  const answered = checks.filter((c) => c.reading.state === "answered");
+  if (answered.length === 0 || answered.some((c) => typeof c.reading.mintAuthority !== "string")) return fallback;
+  const keys = [...new Set(answered.map((c) => c.reading.mintAuthority as string))];
+  if (keys.length !== 1) return fallback;
+  const key = keys[0]!;
+  const name = context.nameKey?.(key);
+  const ua = context.updateAuthority;
+  const relation = !ua
+    ? " (the collection's update authority was not read, so whether they are the same key is unknown)"
+    : ua === key
+      ? ", the same key as the collection's update authority"
+      : `, which is NOT the collection's current update authority (${ua})`;
+  return `The oracle account is an SPL token mint whose mint authority, ${key}${name ? ` (${name})` : ""}, can change the answer at any time by minting${relation}`;
+}
+
+/**
  * Turn decoded plugins into custody facts. Collection plugins are inherited
  * by the asset unless the asset carries the same plugin type itself. Oracle
  * answers come from `oracleReadings`, keyed by oracle account; an oracle with
  * no reading stays a gap.
  */
-export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount | null, oracleReadings?: Map<string, OracleReading>): CoreTrust {
+export function deriveTrust(
+  asset: DecodedAccount,
+  collection?: DecodedAccount | null,
+  oracleReadings?: Map<string, OracleReading>,
+  /** The collection's update authority as read, and a namer for keys the server knows, for the oracle-controller sentence. */
+  context: { updateAuthority?: string | null; nameKey?: (address: string) => string | null } = {},
+): CoreTrust {
   const plugins: DecodedPlugin[] = [...asset.plugins];
   if (collection) {
     for (const cp of collection.plugins) {
@@ -589,10 +658,10 @@ export function deriveTrust(asset: DecodedAccount, collection?: DecodedAccount |
     if (ptd && heldByOther(ptd) && blocked.has("transfer")) exceptions.push(`transfers by the permanent transfer delegate (${ptd.authority})`);
     if (pbd && heldByOther(pbd) && blocked.has("burn")) exceptions.push(`burns by the permanent burn delegate (${pbd.authority})`);
     out.warnings.unshift(
-      `BLOCKED BY AN ORACLE when read: ${out.blockedByOracle.join(", ")}. The program asks oracle account ${accounts} before ${out.blockedByOracle.length === 1 ? "this action" : "these actions"} and the answer was no${failing.length ? ` (${failing.join("; ")})` : ""}, so ${effects.join(", and ")}, until that answer changes.${viaCollection} Whoever controls that account can change the answer at any time, so this describes the moment of the read.${exceptions.length ? ` The exception is ${exceptions.join(" and ")}: the program force-approves those before it asks the oracle.` : ""}`,
+      `BLOCKED BY AN ORACLE when read: ${out.blockedByOracle.join(", ")}. The program asks oracle account ${accounts} before ${out.blockedByOracle.length === 1 ? "this action" : "these actions"} and the answer was no${failing.length ? ` (${failing.join("; ")})` : ""}, so ${effects.join(", and ")}, until that answer changes.${viaCollection} ${oracleController(out.oracleChecks, context, "Whoever controls that account can change the answer at any time")}, so this describes the moment of the read.${exceptions.length ? ` The exception is ${exceptions.join(" and ")}: the program force-approves those before it asks the oracle.` : ""}`,
     );
   } else if (out.oracleChecks.some((c) => c.reading.state === "answered")) {
-    out.assurances.push(`Oracle check${out.oracleChecks.length === 1 ? "" : "s"} attached (${[...new Set(out.oracleChecks.map((c) => c.account))].join(", ")}) answered without refusing anything when read. Its controller can change that answer at any time.`);
+    out.assurances.push(`Oracle check${out.oracleChecks.length === 1 ? "" : "s"} attached (${[...new Set(out.oracleChecks.map((c) => c.account))].join(", ")}) answered without refusing anything when read. ${oracleController(out.oracleChecks, context, "Its controller can change that answer at any time")}.`);
   }
   if (unreadExternal > 0) {
     out.incomplete = true;

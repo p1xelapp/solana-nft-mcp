@@ -11,6 +11,7 @@
  * the MCP protocol channel. Diagnostics go to stderr (console.error).
  */
 
+import "./lib/env.js";
 import { createRequire } from "node:module";
 import { Transform } from "node:stream";
 
@@ -23,14 +24,14 @@ import * as me from "./sources/magiceden.js";
 import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
-import { reconcileFloors, type FloorQuote } from "./lib/reconcile.js";
+import { reconcileFloors, oneListingTwoVenues, type FloorQuote } from "./lib/reconcile.js";
 import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
-import { identify } from "./identify.js";
-import { roleOf, knownIssuer } from "./issuers.js";
-import { RECIPES, RECIPE_GOALS } from "./recipes.js";
+import { identify, wrongShape, base58ByteLength, fungibleToken, tokenWording, isLoader } from "./identify.js";
+import { roleOf, knownIssuer, describeIssuerKey } from "./issuers.js";
+import { RECIPES, RECIPE_GOALS, SOURCE_TERMS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
-import { decodeCoreAccountPlugins, decodeOracleValidation, deriveTrust, oracleAccountsToRead, oracleReadingKey, type OracleReading } from "./lib/coreplugins.js";
-import { clean, cleanFields, inspectUntrusted, profileLinkUrl, safeHttpsUrl, withoutLinks } from "./lib/untrusted.js";
+import { decodeCoreAccountPlugins, decodeOracleValidation, deriveTrust, oracleAccountsToRead, oracleReadingKey, splMintAuthority, type OracleReading } from "./lib/coreplugins.js";
+import { clean, cleanFields, inspectUntrusted, neutraliseStructure, profileLinkUrl, safeHttpsUrl, withoutLinks } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
 import { explorerLinks } from "./sources/catalog.js";
@@ -39,14 +40,15 @@ import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, 
 import { resolveName, symbolForCollectionName, collectionNameKey, nameForSymbol } from "./names.js";
 import { classifyAirdrop, summariseAirdrops } from "./spam.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
-import { explainMechanics, mechanicsForTrust } from "./mechanics.js";
+import { explainMechanics, mechanicsForTrust, mentions } from "./mechanics.js";
 import { PROMPT_TEXTS, PROMPT_LIST } from "./prompts.js";
 import { NotFoundError, WrongKindError, AmbiguousError, BadInputError, TypedError, firstTypedFailure } from "./lib/errors.js";
 import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { fitRows, omit } from "./lib/fit.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError } from "./lib/http.js";
-import { runWithSignal } from "./lib/context.js";
+import { runWithSignal, ambientSignal } from "./lib/context.js";
+import { checkedFloor, checkTraitFloorsAgainstRows, custodyOfListings, floorNotRequested, withinBudget, usableAsk, type CheckedFloor, type Custody } from "./lib/custody.js";
 import { containsSecret, redactSecrets, redactDeep } from "./lib/secrets.js";
 
 // Single-sourced from package.json so the MCP handshake, the startup banner,
@@ -79,7 +81,13 @@ const INSTRUCTIONS = [
 // The element bound stops a request of 190,000 array items from being
 // validated item by item before any handler runs: the largest real argument
 // set here (20 collections, 6 serials, 6 traits) is a few dozen elements.
-const server = new McpServer({ name: "solana-nft-mcp", version: VERSION }, { instructions: INSTRUCTIONS, maxToolInputElements: 512 });
+// Title and website are what a client shows in its server list; without them
+// it shows the package name and nowhere to read more. Same address as
+// server.json and package.json's homepage.
+const server = new McpServer(
+  { name: "solana-nft-mcp", title: "Solana NFT MCP", version: VERSION, websiteUrl: "https://p1xel.app/solana-nft-mcp/" },
+  { instructions: INSTRUCTIONS, maxToolInputElements: 512 },
+);
 
 /**
  * Errors the SDK writes itself (argument validation, unknown methods) never
@@ -88,10 +96,17 @@ const server = new McpServer({ name: "solana-nft-mcp", version: VERSION }, { ins
  * process is capped and redacted here, at the last point before the wire.
  */
 const MAX_ERROR_TEXT = 2_000;
+/** How long in-flight answers get to finish after the client closes stdin. */
+const STDIN_CLOSED_GRACE_MS = 30_000;
 function boundErrorText(transport: StdioServerTransport): void {
   const send = transport.send.bind(transport);
   const bound = (s: string) => {
-    const r = redactSecrets(s);
+    // The library quotes what the caller sent: an argument in a validation
+    // error, the tool name in "Tool x not found". That quote is caller text
+    // inside our answer, so it loses its delimiters, invisible characters and
+    // links like any other, and a not-found line cannot span lines.
+    const r0 = neutraliseStructure(redactSecrets(s));
+    const r = /^(?:MCP error -?\d+: )?Tool [\s\S]* not found$/.test(r0) ? r0.replace(/\s+/g, " ") : r0;
     const suffix = ` [error text cut at ${MAX_ERROR_TEXT} characters]`;
     return r.length > MAX_ERROR_TEXT ? `${r.slice(0, MAX_ERROR_TEXT - suffix.length)}${suffix}` : r;
   };
@@ -148,6 +163,10 @@ type ToolResult = {
 // key setup into its own tool would turn the one selling point - it works with
 // no setup - into a setup.
 const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
+// The two tools that answer from text bundled with this package and make no
+// request at all. Marking them open-world told a client they reach outside
+// sources, which is the wrong reason to ask a person before calling them.
+const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
 
 /**
  * Every tool result carries the same payload twice, on purpose.
@@ -195,7 +214,34 @@ function scrubbed(result: ToolResult): ToolResult {
  * upstream's and always comes with the one thing to do next; nothing here
  * ever reads as a fault in the user's setup or in this server unless it is.
  */
-function explain(err: unknown): { headline: string; next: string; kind: string } {
+/**
+ * The arguments that make each tool's read smaller, named per tool. "Narrow
+ * the request" told a person who had passed only a wallet to narrow something
+ * they had never set.
+ */
+const SMALLER_READ: Record<string, string> = {
+  get_wallet_profile: "a smaller maxItems or priceTop, or includeAge false",
+  get_wallet_holdings: "a smaller limit",
+  get_wallet_activity: "fewer pages, or includeOpenSea false",
+  get_collection_holders: "a smaller max, or a namePrefix or a trait and value pair",
+  get_collection_sales: "fewer days or a smaller maxPages",
+  get_recent_sales: "a smaller limit",
+  get_floor_prices: "fewer symbols in one call",
+  find_listings: "a smaller limit or a trait filter",
+  find_in_group: "a smaller batch or fewer pagesPerCollection",
+  get_top_traders: "a smaller limit",
+  get_asset_provenance: "a lower depth (faster, but it can skip the part of the history that answers who bought it)",
+};
+
+/** A timeout's next step: ask again, and which of this tool's own arguments make the read smaller. */
+function timeoutNext(tool: string): string {
+  const smaller = SMALLER_READ[tool];
+  return smaller
+    ? `Ask again in a minute. If it keeps happening, ask with ${smaller}: that makes the read smaller.`
+    : "Ask again in a minute. The source was slow; nothing about the request itself was wrong.";
+}
+
+function explain(err: unknown, tool = ""): { headline: string; next: string; kind: string } {
   const msg = err instanceof Error ? err.message : String(err);
   // An ambiguous identifier carries its own headline: the list of candidates
   // IS the answer, and a generic "try again" is advice to repeat a question
@@ -233,8 +279,10 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   // upstream-authored sentence can promote itself to "this does not exist".
   if (err instanceof BusyError)
     return { kind: "busy", headline: "This server already has more requests queued for that source than it will politely send.", next: "Wait a few seconds and ask again, or ask for fewer things at once." };
-  if (err instanceof AbortedError)
-    return { kind: "timeout", headline: "That request ran past its time budget and was abandoned rather than left running.", next: "Ask again, or narrow the request (fewer pages, fewer collections) so it fits the budget." };
+  // A per-attempt timeout or an abort reaches here as the runtime's own
+  // DOMException, named by the runtime rather than by any upstream text.
+  if (err instanceof AbortedError || (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")))
+    return { kind: "timeout", headline: "That request ran past its time budget and was abandoned rather than left running.", next: timeoutNext(tool) };
   if (err instanceof HttpError) {
     const who = venue() ?? "the upstream source";
     if (err.status === 429) {
@@ -250,6 +298,17 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
     return { kind: "upstream-refused", headline: `${who} refused that request (HTTP ${err.status}).`, next: "Check the identifier, or try again shortly - a refusal from a marketplace is theirs, not a fault in your setup." };
   }
   if (err instanceof TypedError) {
+    // The place that threw knew what the thing is; its sentences win.
+    if (err.wording) {
+      const kinds: Record<string, string> = { "chain-unavailable": "upstream-unavailable", unsupported: "source-unsupported" };
+      return { kind: kinds[err.kind] ?? err.kind, headline: err.wording.headline, next: err.wording.next };
+    }
+    // Our own refusals are written as sentences for the reader already; the
+    // generic "not in a form the tool can use" sat above "trait and value go
+    // together" and talked about addresses nobody had passed.
+    if (err instanceof BadInputError) {
+      return { kind: "bad-input", headline: msg, next: "Nothing was read. Ask again with that corrected." };
+    }
     switch (err.kind) {
       case "not-found":
         return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
@@ -265,7 +324,12 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
           : {
               kind: "wrong-kind",
               headline: "That address is not a Metaplex Core item, so the byte-level decode does not apply to it.",
-              next: "get_asset still shows the marketplace and asset-index view for it; explain_mechanics describes what its standard supports.",
+              // Never the tool that just refused: inside get_asset this sent
+              // the reader straight back to get_asset.
+              next:
+                tool === "get_asset"
+                  ? "identify says what the address is; explain_mechanics describes what its standard supports."
+                  : "get_asset still shows the marketplace and asset-index view for it; explain_mechanics describes what its standard supports.",
             };
       case "escrow":
         return { kind: "escrow", headline: "Magic Eden refuses to list holdings for that address, which is what it does for its own escrow and program accounts rather than for people's wallets.", next: "If the address came from a provenance trail, the item is most likely listed for sale and held in escrow; the seller is the wallet that transferred it in." };
@@ -282,8 +346,15 @@ function explain(err: unknown): { headline: string; next: string; kind: string }
   if (err instanceof z.ZodError)
     return { kind: "bad-input", headline: "That input is not in a form the tool can use.", next: "Use a full Solana address, a Magic Eden symbol, or a marketplace link; identify accepts any of them." };
   if (err instanceof OversizedBodyError) {
-    const who = venue() ?? "that source";
-    return { kind: "upstream-unavailable", headline: `${who} sent more data than this server will read, so the response was discarded.`, next: "Ask for a narrower slice (fewer pages, a smaller limit). If it persists, that source's shape has changed." };
+    const who = venue() ?? "That source";
+    const smaller = SMALLER_READ[tool];
+    return {
+      kind: "upstream-unavailable",
+      headline: `${who} sent more data than this server will read, so the response was discarded.`,
+      next: smaller
+        ? `Ask again with ${smaller}. If it persists, that source's shape has changed.`
+        : "Nothing about the request was wrong: that one record is larger than this server will read. An explorer such as solscan.io shows it.",
+    };
   }
   // No type: a generic answer. Nothing here tries to divine a meaning from an
   // error string, because the string can be somebody else's.
@@ -319,7 +390,7 @@ const guard =
         logCall(tool, args[0], Math.round(performance.now() - started), result.isError ? { ok: false, kind: typeof errKind === "string" ? errKind : "error" } : { ok: true });
         return scrubbed(result);
       } catch (err) {
-        const e0 = explain(err);
+        const e0 = explain(err, tool);
         logCall(tool, args[0], Math.round(performance.now() - started), { ok: false, kind: e0.kind });
         // An upstream error message is attacker-influenced text that this layer
         // serialises TWICE - once as prose, once as structured content. A 50 MB
@@ -328,7 +399,7 @@ const guard =
         // unchanged. It is neutralised and capped before either copy is built.
         const raw = err instanceof Error ? err.message : String(err);
         const detail = inspectUntrusted(redactSecrets(raw).replace(/\s+/g, " ").trim().slice(0, 300)).value;
-        const e = explain(err);
+        const e = explain(err, tool);
         return scrubbed({
           content: [{ type: "text", text: `${e.headline} ${e.next}
 (detail: ${detail})` }],
@@ -343,12 +414,21 @@ const guard =
 // emitted JSON Schema, which is the only thing a client validates against - so
 // an agent that pre-validates would happily send a megabyte "address". The
 // length bounds are declared, so the published schema carries them too.
+//
+// The refusal names what was pasted when its shape says: a .sol name, an
+// Ethereum address and a transaction signature all used to get "too big" or
+// "must be base58", which tells nobody what to paste instead. Each check
+// stops the rest so one paste gets one sentence.
+const addressRefusal = (input: unknown): string => {
+  const shape = typeof input === "string" ? wrongShape(input) : null;
+  return shape ? `${shape.wording.headline} ${shape.wording.next}` : "must be a base58 Solana address (32-44 chars)";
+};
 const addressSchema = z
   .string()
   .trim()
-  .min(32)
-  .max(44)
-  .refine(sol.isBase58Address, "must be a base58 Solana address (32-44 chars)");
+  .min(32, { error: (i) => addressRefusal(i.input), abort: true })
+  .max(44, { error: (i) => addressRefusal(i.input), abort: true })
+  .refine((s) => sol.isBase58Address(s) && base58ByteLength(s) === 32, { error: (i) => addressRefusal(i.input) });
 
 /**
  * One sentence, on every tool that returns prices or market figures.
@@ -358,6 +438,32 @@ const addressSchema = z
  * model reading tool output.
  */
 const NOT_ADVICE = "Figures, sources and gaps; not financial advice.";
+
+/** Symbols per get_floor_prices call whose listings are checked against the chain. */
+const FLOOR_CUSTODY_SYMBOLS = 5;
+/** Wall clock for one get_floor_prices call; ten symbols were measured at 64.6 s. */
+const FLOOR_BUDGET_MS = 40_000;
+/** Rows a wallet no longer holds are counted in full and shown up to this many, to keep the answer whole. */
+const NO_LONGER_HELD_SHOWN = 25;
+/** Distinct holders of a census whose account kind is read to spot OpenSea listing accounts. */
+const HOLDER_KIND_CHECKS = 1_000;
+
+/** A checked floor as the fields every floor-bearing answer shares. */
+function floorRow(f: CheckedFloor) {
+  return {
+    floorSol: f.floorSol,
+    venueReportedFloorSol: f.venueReportedFloorSol,
+    listingValidityChecked: f.checked,
+    floorCheck: {
+      status: f.status,
+      sentence: f.sentence,
+      listingsChecked: f.listingsChecked,
+      staleBelowFloor: f.staleBelowFloor,
+      ...(f.floorListing ? { floorListing: f.floorListing } : {}),
+      ...(f.staleExamples.length ? { staleExamples: f.staleExamples } : {}),
+    },
+  };
+}
 
 /**
  * A wallet's role, when it has one worth saying before anything else: an
@@ -374,7 +480,7 @@ function walletRole(wallet: string): { walletRole?: string; walletRoleNote?: str
   if (k) {
     return {
       walletRole: "issuer-key",
-      walletRoleNote: `${k.issuer}'s key: the update authority of ${k.collections} collection(s) in the bundled registry as of ${k.derivedAt.slice(0, 10)}. An identity from a dated table, not a claim about how anything here was acquired; get_collection_holders reads each collection's authority live`,
+      walletRoleNote: `${describeIssuerKey(k)} An identity from a dated table, not a claim about how anything here was acquired; get_collection_holders reads each collection's authority live`,
     };
   }
   return {};
@@ -404,12 +510,17 @@ function addNewListings(into: me.MeListing[], seenMints: Set<string>, page: me.M
   return added;
 }
 
+// Magic Eden symbols are lower case, and the venue answered "Mad_Lads" as an
+// unknown collection after a 20 s check. The case is folded before the
+// pattern runs, and the pattern carries both cases so the published schema
+// accepts exactly what the server does.
 const symbolSchema = z
   .string()
   .trim()
+  .toLowerCase()
   .min(1)
   .max(80)
-  .regex(/^[a-z0-9_\-.]+$/i, "must be a Magic Eden collection symbol (letters, digits, _ - .)")
+  .regex(/^[A-Za-z0-9_\-.]+$/, "must be a Magic Eden collection symbol (letters, digits, _ - .)")
   .refine((s) => !/^\.+$/.test(s), "must be a Magic Eden collection symbol, not only dots");
 
 /**
@@ -571,7 +682,8 @@ function resolve(idOrSymbolOrAddress: string): {
     return entry;
   }
   if (sol.isBase58Address(q)) return { coreCollection: q };
-  if (!symbolSchema.safeParse(q).success) {
+  const asSymbol = symbolSchema.safeParse(q);
+  if (!asSymbol.success) {
     // A plain name the registry does not hold ("Mad Lads"): the venue
     // directory knows most collections by name, and a hit there carries the
     // same "matched, not verified" note as every other name lookup.
@@ -579,7 +691,7 @@ function resolve(idOrSymbolOrAddress: string): {
     if (found) return { meSymbol: found.symbol, symbolNote: found.note };
     throw new BadInputError("Collection must be a registry id or name, a Solana address, or a Magic Eden symbol. Use identify to search for another name.");
   }
-  return { meSymbol: q };
+  return { meSymbol: asSymbol.data };
 }
 
 // ------------------------------------------------------------------ tools
@@ -636,7 +748,13 @@ registerTool(
         .trim()
         .min(1)
         .max(120)
-        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_]{1,64}$/i, "an address for supply, never-traded and ownership, or a marketplace symbol for floor")
+        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_]{1,64}$/i, {
+          error: (i) => (typeof i.input === "string" && wrongShape(i.input) ? addressRefusal(i.input) : "an address for supply, never-traded and ownership, or a marketplace symbol for floor"),
+          abort: true,
+        })
+        // An Ethereum address is 42 letters and digits, so it passed the
+        // symbol half of the pattern and went on to spend chain reads.
+        .refine((s) => wrongShape(s) === null, { error: (i) => addressRefusal(i.input) })
         .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor"),
       value: z
         .number()
@@ -668,12 +786,40 @@ async function readOracles(accounts: { account: string; resultsOffset: number }[
       if (!fetched.has(account)) fetched.set(account, await sol.getAccountRaw(account));
       const got = fetched.get(account);
       if (!got) { out.set(key, { account, state: "missing" }); continue; }
-      out.set(key, { account, owner: got.owner, slot: got.slot, ...decodeOracleValidation(got.data, resultsOffset) });
+      // The same bytes also say who can rewrite them when the account is a
+      // token mint; nothing extra is fetched for it.
+      const mintAuthority = splMintAuthority(got.data, got.owner);
+      out.set(key, { account, owner: got.owner, slot: got.slot, ...decodeOracleValidation(got.data, resultsOffset), ...(mintAuthority !== undefined ? { mintAuthority } : {}) });
     } catch (e) {
       out.set(key, { account, state: "unread", note: e instanceof Error ? e.message : String(e) });
     }
   }
   return out;
+}
+
+/**
+ * The failure for an address with no account, after one question to the
+ * asset index. A compressed NFT has no account of its own, so a holder asking
+ * for its custody rules or its history was told it might be burned or did not
+ * exist. When the index knows the id, the answer says what it is and which
+ * tool reads it; when the index does not (or cannot be read), the original
+ * not-found stands.
+ */
+async function noAccountError(mint: string, msg: string): Promise<TypedError> {
+  const a = (await das.getAsset(mint).catch(() => null))?.asset;
+  if (!a) return new NotFoundError(msg);
+  const named = a.name ? `"${a.name.slice(0, 60)}" (${mint})` : mint;
+  if (a.burnt) {
+    return new NotFoundError(msg, {
+      headline: `The chain's asset index records ${named} as burned, so there is no account left to read.`,
+      next: "get_asset shows the index's last record of it.",
+    });
+  }
+  const what = a.compressed ? "a compressed NFT" : `a ${a.standard} item`;
+  return new WrongKindError(`${mint} is ${what} with no account of its own`, {
+    headline: `${named} is ${what}: it has no account of its own on chain and lives in the asset index instead, so this tool, which decodes Metaplex Core account bytes, has nothing to read. The item exists and nothing is wrong with it.`,
+    next: "get_asset reads it from the chain's asset index, owner included.",
+  });
 }
 
 registerTool(
@@ -699,7 +845,28 @@ registerTool(
     // The custody picture is a snapshot of these bytes at this moment; it is
     // dated like every other figure the server publishes.
     const readAt = new Date().toISOString();
-    if (!raw) throw new NotFoundError(`no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
+    if (!raw) throw await noAccountError(mint, `no account at ${mint} - burned assets leave a tiny rent-exempt stub or nothing at all`);
+    if (sol.isBurnedCoreStub(raw)) {
+      // A burned asset has no plugins left to decode. The asset index keeps
+      // its last record, which names the holder at the moment of the burn;
+      // that is history, and it is labelled as history.
+      const idx = await das.getAsset(mint).catch(() => null);
+      const last = idx?.asset ?? null;
+      return ok({
+        mint,
+        readAt,
+        source: "solana-rpc (Metaplex Core account bytes, decoded locally)",
+        burned: true,
+        explanation:
+          "This Metaplex Core item was burned: the chain keeps only a one-byte stub at its address, still owned by the Core program, and nothing there can be owned, moved or traded any more. " +
+          (last?.owner
+            ? `The asset index's owner, ${last.owner}, is the last holder before the burn, not a current owner.`
+            : "The asset index did not name a last holder."),
+        lastRecordInIndex: last ? { name: last.name, lastHolder: last.owner, collection: last.collection, burntPerIndex: last.burnt, readFrom: last.readFrom } : null,
+        checkByHand: explorerLinks(mint),
+        next: "get_asset_provenance on this address shows the burn and who held it before.",
+      });
+    }
     // Everything below comes from the ONE fresh snapshot in `raw`: name, owner,
     // collection and plugins cannot disagree with each other.
     const acct = sol.decodeCoreAccount(raw);
@@ -708,16 +875,26 @@ registerTool(
     // Collection plugins apply to every member. Read them, or say we could not.
     let collectionPlugins: ReturnType<typeof decodeCoreAccountPlugins> | null = null;
     let collectionNote: string | undefined;
+    let updateAuthority: string | null = null;
     if (acct.collection) {
       try {
         const craw = await sol.getCoreAccountRaw(acct.collection);
-        if (craw) collectionPlugins = decodeCoreAccountPlugins(craw);
-        else collectionNote = "collection account not found; collection-level plugins unknown";
+        if (craw) {
+          collectionPlugins = decodeCoreAccountPlugins(craw);
+          const c = sol.decodeCoreAccount(craw);
+          if (c?.kind === "collection") updateAuthority = c.updateAuthority;
+        } else collectionNote = "collection account not found; collection-level plugins unknown";
       } catch (e) {
         collectionNote = `collection account unreadable (${e instanceof Error ? e.message : String(e)}); collection-level plugins unknown`;
       }
     }
-    const trust = deriveTrust(assetPlugins, collectionPlugins, await readOracles(oracleAccountsToRead(assetPlugins, collectionPlugins)));
+    // A key the dated issuer table knows is named beside its address, current
+    // or former, so "who can change the oracle" reads as a who.
+    const nameKey = (a: string): string | null => {
+      const k = knownIssuer(a);
+      return k ? `${k.issuer}'s ${k.former ? "former update-authority key" : "update-authority key"} in the bundled issuer table` : null;
+    };
+    const trust = deriveTrust(assetPlugins, collectionPlugins, await readOracles(oracleAccountsToRead(assetPlugins, collectionPlugins)), { updateAuthority, nameKey });
     // What living with these plugins is like, from the mechanics knowledge
     // base, keyed by the exact plugin names the decoder produced.
     const pluginTypes = [...assetPlugins.plugins, ...(collectionPlugins?.plugins ?? [])].map((p) => p.type);
@@ -760,7 +937,7 @@ registerTool(
       "trackers (a feed capped too low silently dropped 8,409 real records; an idle two-minute cron " +
       "cost $180 in a month) and are not in any API documentation. Read this BEFORE writing " +
       "integration code, not after it breaks.",
-    annotations: READ_ONLY,
+    annotations: READ_ONLY_LOCAL,
     inputSchema: {
       goal: z
         .enum(["sales-bot", "floor-dashboard", "provenance-lookup", "wallet-tracker", "pack-watcher"])
@@ -775,6 +952,10 @@ registerTool(
         ...recipe,
         readFirst:
           "Call explain_mechanics with topic \"glossary\" before writing user-facing copy - every term names the wrong answer it exists to prevent.",
+        // A recipe is copied into somebody's product, and the attribution a
+        // source asks for travels with its data whether or not the builder
+        // ever opens that source's terms.
+        sourceTerms: SOURCE_TERMS,
       }),
     );
   }),
@@ -795,7 +976,18 @@ registerTool(
     // matches" rather than "you did not ask for anything".
     inputSchema: { query: z.string().trim().min(1).max(200).describe("Free-text name search") },
   },
-  guard(async ({ query }) => {
+  guard(async ({ query: typed }) => {
+    // Folded and cleaned before anything matches it: a query of nothing but
+    // zero-width characters passed the schema and returned eight unrelated
+    // collections, and "Mad" typed in full-width letters matched nothing a person would
+    // read as the same word.
+    const query = clean(typed).normalize("NFKC").trim();
+    if (!query) {
+      throw new BadInputError("the search text is empty once invisible characters are removed", {
+        headline: "The search text is empty once invisible and formatting characters are removed, so there was nothing to search for.",
+        next: "Type the collection's name, or paste its address or marketplace link into identify.",
+      });
+    }
     const results = searchRegistry(query);
     // Plain names resolve against the whole Magic Eden directory (bundled
     // snapshot, then the live directory once it has warmed), so a person who
@@ -1031,6 +1223,7 @@ registerTool(
         "(most older Solana NFTs use a different standard). No supply figure here comes from the chain; any count below is a marketplace's own.";
     }
     const sourceErrors: Record<string, string> = {};
+    let meFloorCheck: CheckedFloor | null = null;
     /** True only when Magic Eden established an ABSENCE; a failure to read is not one. */
     let meAbsent = false;
     let meFailure: unknown;
@@ -1049,7 +1242,19 @@ registerTool(
       };
     } else if (r.meSymbol) {
       try {
-        out.market = await me.collectionStats(r.meSymbol);
+        const st = await me.collectionStats(r.meSymbol);
+        // The venue's floor is the cheapest ask in its index, and its index
+        // keeps listings whose item has since moved. For a Core collection the
+        // cheapest hundred listings are checked against the chain and the
+        // floor is the cheapest one that can be bought; the venue's own figure
+        // stays beside it under its own name.
+        if (st.floorPriceSol !== null) {
+          meFloorCheck = await checkedFloor(r.meSymbol, st.floorPriceSol);
+          const { floorSol, ...rest } = floorRow(meFloorCheck);
+          out.market = { ...st, floorPriceSol: floorSol, ...rest, ...(meFloorCheck.checked ? { floorNote: undefined } : {}) };
+        } else {
+          out.market = st;
+        }
       } catch (e) {
         // Whether the venue said "no such symbol" or simply failed is decided
         // by the error's TYPE, not by reading its sentence back later.
@@ -1265,14 +1470,35 @@ registerTool(
     // that actually returned a floor become quotes.
     const quotes: FloorQuote[] = [];
     const mkt = out.market as { floorPriceSol?: number | null; stale?: boolean } | undefined;
+    // Magic Eden's quote carries the listing behind it and every listing the
+    // check read, so OpenSea relaying one of them is recognised as one ask.
+    const meListings = meFloorCheck ? meFloorCheck.listingsRead.map((l) => ({ mint: l.mint, maker: l.seller })) : undefined;
     if (typeof mkt?.floorPriceSol === "number" && mkt.floorPriceSol > 0) {
-      quotes.push({ source: "magiceden", value: mkt.floorPriceSol, currency: "SOL", stale: Boolean(mkt.stale) });
+      quotes.push({
+        source: "magiceden",
+        value: mkt.floorPriceSol,
+        currency: "SOL",
+        stale: Boolean(mkt.stale),
+        ...(meFloorCheck?.floorListing ? { listing: { mint: meFloorCheck.floorListing.mint, maker: meFloorCheck.floorListing.seller }, listingCustody: "backed" as const } : {}),
+        ...(meListings ? { alsoListed: meListings } : {}),
+      });
     }
     const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean; onchainCollection?: string | null; onchainCollections?: unknown[] } | undefined;
-    const osQuote: FloorQuote | null =
+    let osQuote: FloorQuote | null =
       osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency
         ? { source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, stale: Boolean(osBlock.stale) }
         : null;
+    // The listing behind OpenSea's floor, checked the same way. Only when it
+    // IS the floor (same price): OpenSea's floor spans marketplaces it does not
+    // always return as listings, and a different listing proves nothing about it.
+    if (osQuote && slug) {
+      const best = await os.bestListing(slug).catch(() => null);
+      if (best && best.price !== null && Math.abs(best.price - osQuote.value) < 1e-9 && best.currency === osQuote.currency) {
+        const [c] = await custodyOfListings([{ mint: best.mint, seller: best.maker }], { venue: "opensea", explainOwners: 1 });
+        osQuote = { ...osQuote, listing: { mint: best.mint, maker: best.maker }, listingCustody: c!.state };
+        (out.opensea as Record<string, unknown>).floorListing = { mint: best.mint, maker: best.maker, custody: c!.state, why: c!.why };
+      }
+    }
     // A slug names an OpenSea collection. Nothing about it proves that is
     // THIS collection, and a caller can pass any slug: one that resolved to
     // another on-chain address had its floor ranked against this
@@ -1338,6 +1564,10 @@ registerTool(
     if (osQuote && rankable) quotes.push(osQuote);
 
     const extra: string[] = [];
+    // Magic Eden's quote is missing because every listing read is stale, or
+    // it is the venue's unchecked figure: said where the comparison is read,
+    // not only in the market block.
+    if (meFloorCheck && meFloorCheck.status !== "backed") extra.push(`Magic Eden: ${meFloorCheck.sentence}`);
     if (out.onchain && mkt?.floorPriceSol !== undefined) {
       extra.push(
         "On-chain supply counts every asset that exists; a marketplace's listed count only covers what is currently for sale on that marketplace. They answer different questions and will not match.",
@@ -1353,16 +1583,19 @@ registerTool(
         // identity verdict in its place.
         const full = reconcileFloors([...quotes, osQuote], extra);
         const oneCurrency = new Set([...quotes, osQuote].map((q) => q.currency)).size === 1;
+        const mirror = oneListingTwoVenues([...quotes, osQuote]);
         out.reconciliation = oneCurrency
           ? {
               ...rec,
               comparable: false,
               verdict:
-                identity.verdict === "conflict"
+                (mirror ? `${mirror.sentence} ` : "") +
+                (osQuote.listingCustody === "not-backed" ? "The chain shows that listing's item is no longer held by its seller, so nobody can buy at that price. " : "") +
+                (identity.verdict === "conflict"
                   ? `Not compared: the OpenSea slug names a different on-chain collection (${identity.openseaCollection}), so its floor of ${osQuote.value} ${osQuote.currency} is not this collection's floor. Magic Eden's ${quotes[0] ? `${quotes[0].value} ${quotes[0].currency}` : "floor was not returned"}.`
                   : identity.verdict === "group"
                     ? `Not ranked: ${identity.note}`
-                    : `Not ranked: the OpenSea slug was supplied by the caller and its collection identity could not be verified. Both floors are listed; ${identity.note}`,
+                    : `Not ranked: the OpenSea slug was supplied by the caller and its collection identity could not be verified. Both floors are listed; ${identity.note}`),
               floors: [...rec.floors, osQuote],
               identity,
             }
@@ -1390,28 +1623,88 @@ registerTool(
     inputSchema: { symbols: z.array(symbolSchema).min(1).max(10).describe("Magic Eden collection symbols") },
   },
   guard(async ({ symbols }) => {
-    const floors = [];
-    for (const s of symbols) {
-      // Sequential on purpose: one shared rate gate protects the keyless API.
-      try {
-        // Per row: one unknown symbol must not cost the other nine their answer.
-        if (!(await me.symbolIsKnown(s))) {
-          floors.push({ symbol: s, symbolKnown: false, message: me.SYMBOL_UNKNOWN_MESSAGE });
-          continue;
-        }
-        const st = await me.collectionStats(s);
-        floors.push({ symbol: s, symbolKnown: true, floorSol: st.floorPriceSol, currency: "SOL", source: "magiceden", listed: st.listedCount, listingValidityChecked: st.listingValidityChecked, floorNote: st.floorNote, stale: st.stale, readAt: st.cachedAt });
-      } catch (e) {
-        floors.push({ symbol: s, error: e instanceof Error ? e.message : String(e) });
-      }
-    }
+    // Sequential on purpose: one shared rate gate protects the keyless API.
+    // Each symbol costs a stats read, a listing page and a chain read, so the
+    // custody check runs for the first few only, and the whole call answers
+    // inside a budget with whatever it has rather than running past the
+    // point a client stops waiting.
+    const tasks = symbols.map((s, i) => async () => {
+      // Per row: one unknown symbol must not cost the other nine their answer.
+      if (!(await me.symbolIsKnown(s))) return { symbol: s, symbolKnown: false, message: me.SYMBOL_UNKNOWN_MESSAGE };
+      const st = await me.collectionStats(s);
+      const floor =
+        i < FLOOR_CUSTODY_SYMBOLS
+          ? st.floorPriceSol === null
+            ? floorNotRequested(null, "Magic Eden reports no current floor, so there was nothing to check.")
+            : await checkedFloor(s, st.floorPriceSol)
+          : floorNotRequested(st.floorPriceSol, `Not checked against the chain: only the first ${FLOOR_CUSTODY_SYMBOLS} symbols of one call are checked. Ask for fewer at once to have this one checked; this is Magic Eden's own figure.`);
+      return { symbol: s, symbolKnown: true, ...floorRow(floor), currency: "SOL", source: "magiceden", listed: st.listedCount, ...(floor.checked ? {} : { floorNote: st.floorNote }), stale: st.stale, readAt: st.cachedAt };
+    });
+    const results = await withinBudget(
+      FLOOR_BUDGET_MS,
+      tasks.map((t) => () => t()),
+      (signal, fn) => runWithSignal(signal, fn),
+      ambientSignal(),
+    );
+    const floors = results.map((r, i) =>
+      r.done
+        ? r.value
+        : r.timedOut
+          ? { symbol: symbols[i], notRead: true, message: `Not read, ask again: this call reached its ${FLOOR_BUDGET_MS / 1000} s budget before this symbol was answered. Asking for fewer symbols at once helps.` }
+          : { symbol: symbols[i], error: r.error instanceof Error ? r.error.message : String(r.error) },
+    );
     return ok({
       floors,
       source: "magiceden",
-      readThis: `These are Magic Eden's index-reported asks and listing counts. Custody and active orders were not checked, so an ask can remain after the item moves. readAt dates the API response, not the validity of its listings. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
+      readThis: `Each floorSol is Magic Eden's cheapest ask whose item the chain shows is still held by its seller or Magic Eden's escrow, when floorCheck says it was checked; venueReportedFloorSol is Magic Eden's own figure, which can be a listing left behind after the item moved. A row whose floorCheck says it was not checked carries Magic Eden's own figure. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
     });
   }),
 );
+
+/**
+ * Mark OpenSea sale rows that are the same transaction as a Magic Eden row.
+ *
+ * Both feeds index a fill that settles through a program the other one also
+ * watches, so one Candy sale on 7 Nov came back twice: 0.01 SOL in Magic
+ * Eden's list and 0.0112 SOL in OpenSea's, which reports what the buyer paid
+ * with the royalty and the fee on top. Read as two sales, it doubled the count
+ * and gave the item two prices. Neither row is dropped (each is that feed's
+ * honest record) and nothing is added; the OpenSea row says which Magic Eden
+ * row it is. Matched on the transaction signature and, when both carry one,
+ * the item, since one transaction can settle several items.
+ */
+function markSameFills(meSales: { signature: string | null; tokenMint: string | null; priceSol: number | null }[], openseaPart: Record<string, unknown>): Record<string, unknown> {
+  const osSales = Array.isArray(openseaPart.sales) ? (openseaPart.sales as { transaction?: string | null; mint?: string | null; price?: number | null; currency?: string | null }[]) : [];
+  const meBySignature = new Map<string, { mint: string | null; priceSol: number | null }[]>();
+  for (const s of meSales) if (s.signature) meBySignature.set(s.signature, [...(meBySignature.get(s.signature) ?? []), { mint: s.tokenMint, priceSol: s.priceSol }]);
+  let matched = 0;
+  const sales = osSales.map((row) => {
+    const rows = row.transaction ? meBySignature.get(row.transaction) : undefined;
+    const twin = rows?.find((m) => m.mint === null || !row.mint || m.mint === row.mint);
+    if (!twin) return row;
+    matched++;
+    // Read live on 2026-11-10: three Krypto #1 fills were 0.01 SOL on Magic
+    // Eden and 0.0112 on OpenSea (10% royalty and 2% fee on top), while a
+    // fourth carried the same price in both. The sentence follows the pair.
+    const differs = row.currency === "SOL" && typeof row.price === "number" && typeof twin.priceSol === "number" && row.price !== twin.priceSol;
+    return {
+      ...row,
+      sameTransactionAs: "magiceden" as const,
+      sameTransactionNote:
+        "Magic Eden's list above has this same transaction. It is one sale, not two: count it once and do not add the two prices. " +
+        (differs
+          ? `OpenSea gives ${row.price} SOL where Magic Eden gives ${twin.priceSol} SOL: OpenSea's figure includes the royalty and the marketplace fee paid on top of the seller's price.`
+          : "Both feeds give it the same price here."),
+    };
+  });
+  if (matched === 0) return openseaPart;
+  return {
+    ...openseaPart,
+    sales,
+    sameTransactions: matched,
+    sameTransactionsNote: `${matched} of OpenSea's rows are the same transactions as rows in Magic Eden's list, matched by signature and marked sameTransactionAs. Distinct sales across both lists: count each signature once.`,
+  };
+}
 
 registerTool(
   "get_recent_sales",
@@ -1493,7 +1786,11 @@ registerTool(
               : { verdict: "conflict", slug, requestedCollection: expected, openseaCollection: osChain, note: `OpenSea's record of the slug "${slug}" names on-chain collection ${osChain}, which is not ${expected}. These sales describe a different collection and are shown for the record only, not as this collection's.` }
             : { verdict: "unverified", slug, requestedCollection: expected, openseaCollection: osChain, note: `The slug "${slug}" was supplied by the caller and ${expected ? "OpenSea's record of it carries no Solana collection address" : "this collection has no on-chain address on record to compare it with"}, so whether these are the same collection could not be checked. Treat the OpenSea sales as sales of that slug, not proven to be this collection's.` };
       }
-      openseaPart = { ...sales, identity };
+      // The link back OpenSea's terms ask for, and only for a slug proved
+      // against this collection's address: a link under an unproved slug
+      // would send a reader to somebody else's collection.
+      const openseaUrl = identity.verdict === "verified" || identity.verdict === "group" ? os.collectionPageUrl(slug) : null;
+      openseaPart = { ...sales, identity, ...(openseaUrl ? { openseaUrl } : {}) };
     }
     // A sales answer from one marketplace has to say the other one was not
     // read, and why, or it reads as complete coverage.
@@ -1517,7 +1814,7 @@ registerTool(
       const unknown = await refuseUnknownSymbol(r.meSymbol);
       if (unknown) return unknown;
       const magiceden = await me.recentSales(r.meSymbol, limit);
-      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: openseaPart } : { ...magiceden, symbolKnown: true, ...openseaNotRead });
+      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: markSameFills(magiceden.sales, openseaPart) } : { ...magiceden, symbolKnown: true, ...openseaNotRead });
     } catch (e) {
       if (openseaPart) return ok({ requested: collection, sourceErrors: { magiceden: e instanceof Error ? e.message : String(e) }, opensea: openseaPart });
       throw e;
@@ -1565,29 +1862,71 @@ registerTool(
     if (core?.kind === "collection") {
       throw new WrongKindError(`${mint} is a Core COLLECTION account ("${core.name}"), not an asset. Use get_collection_stats for it.`);
     }
-    if (!meToken && !core && !indexed) {
+    if (!meToken && !core && !indexed && !coreRead?.burned) {
       // Before "try again": is this an ASSET at all? The Magic Eden escrow
       // address, pasted here because it shows as the owner of every listed
       // item, came back as "could not be completed, try again", which sent a
       // reader round in circles. The account's owning program settles it.
       const venue = sol.knownVenueAccount(mint);
-      if (venue) throw new WrongKindError(`${mint} is ${venue}. It is not an asset: get_wallet_holdings lists what it holds, and get_asset_provenance on one of those items shows who handed it over.`);
+      if (venue) {
+        const m = `${mint} is ${venue}. It is not an asset: get_wallet_holdings lists what it holds, and get_asset_provenance on one of those items shows who handed it over.`;
+        throw new WrongKindError(m, { headline: `${mint} is ${venue}, not an item.`, next: "get_wallet_holdings lists what it holds, and get_asset_provenance on one of those items shows who handed it over." });
+      }
       const nature = await sol.accountNature(mint).catch(() => null);
       if (nature?.looksLikeAWallet === true) {
-        throw new WrongKindError(`${mint} is a wallet (a System Program account), not an asset. Use get_wallet_holdings, get_wallet_profile or get_wallet_activity for it.`);
+        throw new WrongKindError(`${mint} is a wallet (a System Program account), not an asset. Use get_wallet_holdings, get_wallet_profile or get_wallet_activity for it.`, {
+          headline: `${mint} is a wallet (an account owned by the System Program), not an item.`,
+          next: "get_wallet_holdings, get_wallet_profile and get_wallet_activity take a wallet.",
+        });
+      }
+      if (isLoader(nature?.ownerProgram)) {
+        throw new WrongKindError(`${mint} is a program account owned by ${nature?.ownerProgram}, not an asset.`, {
+          headline: `${mint} is ${mint === sol.CORE_PROGRAM ? "the Metaplex Core program itself, the code every Core item runs under" : "a program (code deployed on chain)"}, not an item, so there is nothing to look up.`,
+          next: "Pass an item's mint address; identify says what any other address is.",
+        });
       }
       if (nature?.ownerProgram && nature.ownerProgram !== sol.CORE_PROGRAM) {
-        throw new WrongKindError(`${mint} is an account owned by ${nature.ownerName ?? nature.ownerProgram}, not a Metaplex Core asset, and neither Magic Eden nor the chain's asset index has it as a token. identify says more about what it is.`);
+        throw new WrongKindError(`${mint} is an account owned by ${nature.ownerName ?? nature.ownerProgram}, not a Metaplex Core asset, and neither Magic Eden nor the chain's asset index has it as a token. identify says more about what it is.`, {
+          headline: `${mint} is an account owned by ${nature.ownerName ?? `the program ${nature.ownerProgram}`}, not an item: neither Magic Eden nor the chain's asset index has it as one.`,
+          next: "identify says what the address is.",
+        });
       }
-      if (Object.keys(sourceErrors).length) throw new Error(`could not read ${mint}: ${Object.entries(sourceErrors).map(([k, v]) => `${k}: ${v}`).join("; ")}`);
-      throw new NotFoundError(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`);
+      // "No account" and "not a Core account" are the chain ANSWERING, not a
+      // failure to read it, and Magic Eden's empty answer is an answer too.
+      // Counting them as source errors turned a mistyped address into "try
+      // again" beside a claim that Magic Eden was down.
+      const failed = [meRes, dasRes, coreRes].filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected" && !(r === coreRes && (r.reason instanceof NotFoundError || r.reason instanceof WrongKindError)),
+      );
+      const lone: unknown = failed.length === 1 ? failed[0]?.reason : undefined;
+      const typed = firstTypedFailure(failed) ?? failed.map((r): unknown => r.reason).find((e): e is OversizedBodyError => e instanceof OversizedBodyError) ?? (lone instanceof Error ? lone : undefined);
+      if (typed) throw typed;
+      if (failed.length) {
+        // Clipped per source, so the wording layer's one cap (about 200
+        // characters once neutralised) cannot cut the last reader's reason off
+        // the end. The mint is the caller's own argument and is left out.
+        const prefix = "could not read it: ";
+        const per = Math.max(30, Math.floor((190 - prefix.length) / failed.length) - 15);
+        const name = (r: PromiseRejectedResult) => (r === meRes ? "magiceden" : r === dasRes ? "asset-index" : "solana-rpc");
+        throw new Error(`${prefix}${failed.map((r) => `${name(r)}: ${(r.reason instanceof Error ? r.reason.message : String(r.reason)).replace(/\s+/g, " ").slice(0, per)}`).join("; ")}`);
+      }
+      throw new NotFoundError(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`, {
+        headline: `Nothing is known at ${mint}: Magic Eden does not carry it, the chain's asset index has no record of it, and there is no item account at that address. The sources answered; nothing is wrong with the service.`,
+        next: "Check the address for a typo (one wrong character still looks like a valid address), or run identify on it to see what it is.",
+      });
+    }
+    // USD Coin came back as one asset with one owner. A token mint has many
+    // holders and no owner to report, so it is named as a token instead.
+    if (!core && !meToken && indexed) {
+      const token = await fungibleToken(mint, indexed);
+      if (token) throw new WrongKindError(`${mint} is a fungible token, not a collectible`, tokenWording(mint, token));
     }
     // Agreement is a claim about two CURRENT reads. When either side came from
     // cache after a failed refresh, the comparison is not evaluated at all and
     // the answer names which reader was stale - two stale copies of the same
     // old owner would otherwise read as corroboration.
     const bothLive = coreRead?.stale === false && dasRead?.stale === false;
-    const ownerAgreement =
+    const indexAgreement =
       core?.kind === "asset" && indexed?.owner
         ? bothLive
           ? core.owner === indexed.owner
@@ -1597,6 +1936,97 @@ registerTool(
               .filter(Boolean)
               .join(" and ")} came from cache after a failed refresh, so it is a last-known value, not current ownership.`
         : null;
+
+    // The chain owner, only when it was read live: a cached owner cannot
+    // overrule anybody's record.
+    const chainOwner = core?.kind === "asset" && coreRead?.stale === false ? core.owner : null;
+    // What kind of account holds the item, when it is not a person's wallet.
+    // OpenSea opens an account per listing, so only its owning program can say
+    // it is one; Magic Eden's escrow is a single known address.
+    let heldIn: "magic-eden-escrow" | "opensea-listing-account" | null = null;
+    let ownerIsWallet = false;
+    if (chainOwner === sol.MAGIC_EDEN_ESCROW) heldIn = "magic-eden-escrow";
+    else if (chainOwner) {
+      const nature = await sol.accountNature(chainOwner).catch(() => null);
+      if (nature?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM) heldIn = "opensea-listing-account";
+      ownerIsWallet = nature?.looksLikeAWallet === true;
+    }
+
+    // Magic Eden's row against the chain. Its index keeps a listing, and the
+    // owner who made it, after the item has moved on; relayed as it stood, a
+    // listing nobody can fill read as "listed at 10 SOL" beside a chain owner
+    // that was an OpenSea listing account at 13 SOL.
+    let market: (ReturnType<typeof marketView> & Record<string, unknown>) | null = meToken ? marketView(meToken as unknown as Record<string, unknown>) : null;
+    const meOwner = market?.owner ?? null;
+    let marketAgreement: string | null = null;
+    if (market && coreRead?.burned === true) {
+      // Nothing can be listed that no longer exists. Magic Eden's index keeps
+      // the row, and a burned item came back "listed" with a price beside the
+      // chain's own statement that it was burned.
+      const staleMarketRow = {
+        ownerOnRecord: meOwner,
+        listedOnRecord: market.listed,
+        priceSolOnRecord: market.listed ? market.priceSol : null,
+        sentence: market.listed
+          ? `Magic Eden still shows this item listed${market.priceSol !== null ? ` for ${market.priceSol} SOL` : ""}, but the chain shows it was burned. The item no longer exists, so nobody can buy it through that listing.`
+          : "Magic Eden still has a record of this item, but the chain shows it was burned and no longer exists.",
+      };
+      market = { ...market, owner: null, listed: false, priceSol: null, staleMarketRow };
+      marketAgreement = "Magic Eden's record is left over from before the item was burned; see market.staleMarketRow.";
+    } else if (market && chainOwner) {
+      const where =
+        heldIn === "opensea-listing-account"
+          ? `an OpenSea listing account (${chainOwner}), so it is listed on OpenSea now`
+          : ownerIsWallet
+            ? `another wallet (${chainOwner})`
+            : `${chainOwner}`;
+      if (meOwner && meOwner !== chainOwner && heldIn === "opensea-listing-account" && !market.listed) {
+        // An OpenSea listing keeps the item in its own account, and the wallet
+        // Magic Eden names may simply be the one that listed it there. That is
+        // not a stale record, and it is not said to be one.
+        marketAgreement = `Magic Eden's record names ${meOwner} as the owner while the chain shows the item in an OpenSea listing account (${chainOwner}). That is how an OpenSea listing looks, and ${meOwner} may be its seller; the chain cannot confirm that from here.`;
+      } else if (meOwner && meOwner !== chainOwner && heldIn === null && !ownerIsWallet) {
+        // Neither a wallet nor an account this server can name. A venue's pool
+        // holds items this way, so no verdict is given on the listing.
+        marketAgreement = `Magic Eden's record names ${meOwner} while the chain names ${chainOwner}, an account that is not an ordinary wallet and that this server could not identify. Whether Magic Eden's listing is live was not checked.`;
+        market = { ...market, listingNotChecked: true };
+      } else if (meOwner && meOwner !== chainOwner && heldIn !== "magic-eden-escrow") {
+        const staleMarketRow = {
+          ownerOnRecord: meOwner,
+          listedOnRecord: market.listed,
+          priceSolOnRecord: market.listed ? market.priceSol : null,
+          sentence: market.listed
+            ? `Magic Eden still shows this item listed${market.priceSol !== null ? ` for ${market.priceSol} SOL` : ""} by ${meOwner}, but the chain shows the item now sits with ${where}. That listing is left over from a previous owner: nobody can buy the item through it.`
+            : `Magic Eden's record names ${meOwner} as the owner, but the chain shows the item now sits with ${where}. Magic Eden's record is out of date.`,
+        };
+        market = { ...market, owner: null, listed: false, priceSol: null, staleMarketRow };
+        marketAgreement = `Magic Eden's record names a different owner (${meOwner}) and is left over from before the item moved; see market.staleMarketRow.`;
+      } else if (heldIn === "magic-eden-escrow") {
+        marketAgreement = market.listed
+          ? `Magic Eden's record names the seller ${meOwner ?? "(none given)"} while the chain names Magic Eden's escrow, which is how a live Magic Eden listing looks.`
+          : "The chain names Magic Eden's escrow while Magic Eden's record does not show the item listed, so the two do not agree about the listing.";
+      } else if (meOwner === chainOwner) {
+        marketAgreement = "Magic Eden's record names the same owner as the chain.";
+      } else {
+        marketAgreement = "Magic Eden's record names no owner, so it could not be compared with the chain.";
+      }
+    } else if (market) {
+      marketAgreement = "Magic Eden's record was not compared with the chain, because the chain owner was not read live in this call.";
+    }
+    // Items minted in the last few days come back from Magic Eden with an
+    // empty image and no traits. The asset index read in this same call
+    // usually has both; the metadata URI itself is never fetched.
+    if (market && market.image === null && market.attributes.length === 0) {
+      const fromIndex = indexed !== null && (indexed.image !== null || indexed.attributes.length > 0);
+      market = {
+        ...market,
+        ...(fromIndex && indexed ? { image: indexed.image, attributes: indexed.attributes.map((t) => ({ trait: t.trait, value: t.value })) } : {}),
+        metadataNote: fromIndex
+          ? "Magic Eden's index has no metadata for this item yet (its record has no image and no traits), so the image and traits here come from the chain's asset index, read in this same call."
+          : "Magic Eden's index has no metadata for this item yet (its record has no image and no traits), and the chain's asset index had none to offer either.",
+      };
+    }
+    const ownerAgreement = [indexAgreement, marketAgreement].filter(Boolean).join(" ") || null;
     return ok({
       mint,
       onchain:
@@ -1608,11 +2038,25 @@ registerTool(
               standard: "metaplex-core",
               stale: coreRead?.stale === true,
               readAt: coreRead?.cachedAt,
+              ...(heldIn ? { heldIn } : {}),
               note: coreRead?.stale
                 ? "The RPC did not answer, so this is the last owner seen at readAt - a previous state, not current ownership. Ask again for a live read."
-                : "Owner read directly from the Core account just now - the chain's own state, but it may be a marketplace escrow if the item is listed.",
+                : heldIn === "opensea-listing-account"
+                  ? `This item is in an OpenSea listing account: the owner above is ${sol.OPENSEA_LISTING_ACCOUNT_LABEL}.`
+                  : heldIn === "magic-eden-escrow"
+                    ? "This item is in Magic Eden's escrow, which is where a live Magic Eden listing keeps it; the seller is the wallet that moved it in."
+                    : "Owner read directly from the Core account just now - the chain's own state, but it may be a marketplace escrow if the item is listed.",
             }
-          : undefined,
+          : coreRead?.burned
+            ? {
+                standard: "metaplex-core",
+                burned: true,
+                readAt: coreRead.cachedAt,
+                note:
+                  "This Metaplex Core item was burned: the chain keeps only a one-byte stub at its address, still owned by the Core program. " +
+                  (indexed?.owner ? `The asset index's owner below (${indexed.owner}) is the last holder before the burn, not a current owner.` : "Nobody owns it now."),
+              }
+            : undefined,
       chainIndex: indexed
         ? {
             standard: indexed.standard,
@@ -1624,6 +2068,7 @@ registerTool(
             frozen: indexed.frozen,
             delegated: indexed.delegated,
             royaltyPct: indexed.royaltyPct,
+            ...(indexed.royaltyNote ? { royaltyNote: indexed.royaltyNote } : {}),
             burnt: indexed.burnt,
             compressed: indexed.compressed,
             pluginNames: indexed.pluginNames,
@@ -1637,7 +2082,7 @@ registerTool(
         : undefined,
       ownerAgreement,
       checkByHand: explorerLinks(mint),
-      market: meToken ? { ...marketView(meToken as unknown as Record<string, unknown>), stale: meToken.stale, cachedAt: meToken.cachedAt } : undefined,
+      market: meToken && market ? { ...market, stale: meToken.stale, cachedAt: meToken.cachedAt } : undefined,
       facts: meToken
         ? {
             compressed: (() => {
@@ -1649,7 +2094,7 @@ registerTool(
               "sellerFeeBasisPoints is the royalty requested by the metadata. Missing or invalid values are null. Enforcement depends on the standard and marketplace; get_asset_trust checks the Royalties plugin on Core assets.",
           }
         : undefined,
-      sources: [core ? "solana-rpc" : null, indexed ? "asset-index" : null, meToken ? "magiceden" : null].filter(Boolean),
+      sources: [core || coreRead?.burned ? "solana-rpc" : null, indexed ? "asset-index" : null, meToken ? "magiceden" : null].filter(Boolean),
       ...(Object.keys(sourceErrors).length ? { sourceErrors } : {}),
     });
   }),
@@ -1684,7 +2129,14 @@ registerTool(
         .describe("Max transactions to decode (each is one paced RPC call). historyComplete says whether this covered everything, and an unread_gap row in events shows where anything was left out. Lower it only to go faster, never to answer who owned something. Default 15."),
     },
   },
-  guard(async ({ mint, depth = 15 }) => ok(await sol.getProvenance(mint, depth))),
+  guard(async ({ mint, depth = 15 }) => {
+    try {
+      return ok(await sol.getProvenance(mint, depth));
+    } catch (e) {
+      if (e instanceof NotFoundError) throw await noAccountError(mint, e.message);
+      throw e;
+    }
+  }),
 );
 
 registerTool(
@@ -1743,6 +2195,62 @@ registerTool(
         addressNote = nature.note;
       }
     }
+    // Both readers are indexes, and both keep a row after the item leaves: a
+    // wallet emptied by an issuer's migration came back with 91 rows and held
+    // none of them. Every Core row shown is checked against its account bytes
+    // in batched reads, and a row the wallet no longer holds is separated out
+    // and counted rather than listed as a holding.
+    const shownIndex = (index?.items ?? []).slice(0, limit);
+    const rowMints = [...new Set([...(marketplace?.tokens ?? []).map((t) => t.mint), ...shownIndex.map((a) => a.id)].filter((m): m is string => typeof m === "string"))];
+    const owners = rowMints.length ? await sol.readAssetOwners(rowMints) : new Map<string, sol.AssetOwnerRead>();
+    const foreignOwners = [...new Set([...owners.values()].flatMap((o) => (o.kind === "core-asset" && o.owner !== wallet && o.owner !== sol.MAGIC_EDEN_ESCROW ? [o.owner] : [])))];
+    const ownerPrograms = foreignOwners.length ? await sol.readOwnerPrograms(foreignOwners.slice(0, 100)) : new Map<string, sol.OwnerProgramRead>();
+    type HeldState = "held" | "in-marketplace-custody" | "not-held" | "not-checked" | "unread";
+    const heldOf = (mint: string | null): { state: HeldState; note: string } => {
+      const o = mint ? owners.get(mint) : undefined;
+      if (!o || o.kind === "unread") return { state: "unread", note: "the chain could not be read for this item just now" };
+      if (o.kind === "not-core" || o.kind === "no-account" || o.kind === "core-other") return { state: "not-checked", note: "not a Metaplex Core item, so its current owner was not read here" };
+      if (o.kind === "burned") return { state: "not-held", note: "burned: the item no longer exists" };
+      if (o.owner === wallet) return { state: "held", note: "the chain names this wallet as the owner now" };
+      if (o.owner === sol.MAGIC_EDEN_ESCROW) return { state: "in-marketplace-custody", note: "in Magic Eden's escrow, which is where a Magic Eden listing keeps it; whose listing it is cannot be read from the chain" };
+      const p = ownerPrograms.get(o.owner);
+      if ((p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM) || sol.isOpenSeaListingAccount(o.owner)) {
+        return { state: "in-marketplace-custody", note: `in an OpenSea listing account (${o.owner}); whose listing it is cannot be read from the chain` };
+      }
+      // "No longer held" is only said about an owner whose kind was read. An
+      // owner past the hundred read, or one the read failed for, could be a
+      // marketplace's own account holding this wallet's listing.
+      if (!p || p.kind === "unread") return { state: "unread", note: `the chain names ${o.owner} as the owner now, and what kind of account that is could not be read just now` };
+      if (p.kind === "program" && sol.isMagicEdenProgram(p.program)) {
+        return { state: "in-marketplace-custody", note: `in an account of ${sol.knownProgram(p.program) ?? "a Magic Eden program"} (${o.owner}); whose listing it is cannot be read from the chain` };
+      }
+      if (p.kind === "program" && !sol.isWalletProgram(p.program)) {
+        return { state: "not-checked", note: `held by an account of another program (${sol.knownProgram(p.program) ?? p.program}); whether that is on this wallet's behalf was not checked` };
+      }
+      return { state: "not-held", note: `the chain names ${o.owner} as the owner now` };
+    };
+    const tally: Record<HeldState, number> = { held: 0, "in-marketplace-custody": 0, "not-held": 0, "not-checked": 0, unread: 0 };
+    for (const m of rowMints) tally[heldOf(m).state]++;
+    const meChecked = (marketplace?.tokens ?? []).map((t) => ({ row: t, held: heldOf(t.mint) }));
+    const meKept = meChecked.filter((x) => x.held.state !== "not-held").map((x) => ({ ...x.row, heldNow: x.held.state === "held" ? true : x.held.state === "unread" || x.held.state === "not-checked" ? null : false, heldNote: x.held.note }));
+    const meGone = meChecked.filter((x) => x.held.state === "not-held").map((x) => ({ mint: x.row.mint, name: x.row.name, why: x.held.note }));
+    const heldNowSummary = {
+      rowsChecked: rowMints.length,
+      held: tally.held,
+      inMarketplaceCustody: tally["in-marketplace-custody"],
+      noLongerHeld: tally["not-held"],
+      notChecked: tally["not-checked"],
+      unread: tally.unread,
+      sentence:
+        `${tally.held} of the ${rowMints.length} distinct item(s) shown are held by this wallet now, read from each Core account just now` +
+        (tally["in-marketplace-custody"] ? `; ${tally["in-marketplace-custody"]} sit in a marketplace's escrow or listing account, where the chain cannot say whose listing it is` : "") +
+        (tally["not-held"] ? `; ${tally["not-held"]} that the indexes still show here are no longer held (moved to another owner or burned) and are listed separately under noLongerHeld` : "") +
+        (tally["not-checked"] ? `; ${tally["not-checked"]} are not Metaplex Core and were not checked` : "") +
+        (tally.unread ? `; ${tally.unread} could not be read from the chain just now` : "") +
+        "." +
+        ((index?.items.length ?? 0) > shownIndex.length ? ` The asset index lists ${index!.items.length} item(s); only the ${shownIndex.length} shown were checked.` : ""),
+    };
+
     // A capped page and a truncated walk are lower bounds, not totals: two
     // readers both stopping at the caller's limit are not agreeing about the
     // wallet, they are agreeing about the limit.
@@ -1755,7 +2263,7 @@ registerTool(
     // biggest field on a row and the one thing a model cannot use; the mint
     // beside it fetches the item in full when somebody actually wants it.
     const fittedMe = marketplace
-      ? fitRows(marketplace.tokens ?? [], {
+      ? fitRows(meKept, {
           budget: 18_000,
           slim: (tk) => omit(tk as typeof tk & { image?: unknown }, ["image"]) as typeof tk,
           slimmedAway: "each item's image URL",
@@ -1763,7 +2271,9 @@ registerTool(
           moreHint: "Lower limit, or read the chain index list below, to see a different slice.",
         })
       : null;
-    const shapedIndexItems = (index?.items ?? []).slice(0, limit).map((a) => {
+    const indexChecked = shownIndex.map((a) => ({ a, held: heldOf(a.id) }));
+    const indexGone = indexChecked.filter((x) => x.held.state === "not-held").map((x) => ({ mint: x.a.id, name: x.a.name, why: x.held.note }));
+    const shapedIndexItems = indexChecked.filter((x) => x.held.state !== "not-held").map(({ a, held }) => {
       const verdict = classifyAirdrop(a);
       return {
         mint: a.id,
@@ -1774,6 +2284,8 @@ registerTool(
         frozen: a.frozen,
         compressed: a.compressed,
         burnt: a.burnt,
+        heldNow: held.state === "held" ? true : held.state === "unread" || held.state === "not-checked" ? null : false,
+        heldNote: held.note,
         ...(verdict.likelySpam ? { likelySpam: true, spamSignals: verdict.signals } : {}),
       };
     });
@@ -1787,10 +2299,14 @@ registerTool(
 
     return ok({
       wallet,
-      ownershipVerifiedOnchain: false,
-      ownershipNote: "These are index entries, not verified current holdings. A fresh API response can still contain an old owner after a transfer or listing. get_asset reads the current Core owner from account bytes.",
+      heldNow: heldNowSummary,
+      /** True only when every row shown was a Core item whose owner was read just now and none sits in a marketplace's custody, where the chain cannot say whose it is. */
+      ownershipVerifiedOnchain: rowMints.length > 0 && tally["not-checked"] === 0 && tally.unread === 0 && tally["in-marketplace-custody"] === 0,
+      ownershipNote: `${heldNowSummary.sentence} Each row carries heldNow (true, false, or null when it could not be checked). The two readers below are indexes: a row in them is a record, not a holding, which is why each was checked.`,
       ...walletRole(wallet),
-      magicEden: marketplace ? { ...marketplace, tokens: fittedMe?.rows ?? [], ...(fittedMe?.note ? { answerSize: fittedMe.note } : {}) } : undefined,
+      magicEden: marketplace
+        ? { ...marketplace, tokens: fittedMe?.rows ?? [], ...(meGone.length ? { noLongerHeld: meGone.slice(0, NO_LONGER_HELD_SHOWN), noLongerHeldCount: meGone.length } : {}), ...(fittedMe?.note ? { answerSize: fittedMe.note } : {}) }
+        : undefined,
       chainIndex: index
         ? {
             count: idxCount,
@@ -1818,6 +2334,7 @@ registerTool(
             // collects were invisible underneath them.
             airdropSpam: summariseAirdrops(index.items.map((a) => classifyAirdrop(a))),
             items: fittedIndex?.rows ?? [],
+            ...(indexGone.length ? { noLongerHeld: indexGone.slice(0, NO_LONGER_HELD_SHOWN), noLongerHeldCount: indexGone.length } : {}),
             ...(fittedIndex?.note ? { answerSize: fittedIndex.note } : {}),
           }
         : undefined,
@@ -1853,7 +2370,8 @@ registerTool(
       "`trait`/`value` (e.g. Item Type = Pack) or `namePrefix` (e.g. 'Gold Series - Aces'). Returns the " +
       "rows plus a holder count per address, largest first. " +
       "Every holder row carries a ROLE: issuer (the collection's update authority, read from the chain: the issuer's " +
-      "key, which says nothing about how an item got there), venue-escrow (listed), wallet, or unknown (the collection " +
+      "key, which says nothing about how an item got there), venue-escrow (listed on Magic Eden), opensea-listing (an " +
+      "account OpenSea's program keeps a listed item in), wallet, or unknown (the collection " +
       "account could not be read, so nobody could be checked against the issuer's key). " +
       "An item currently listed for sale shows the MARKETPLACE'S ESCROW as its owner, not the seller: " +
       "call get_asset_provenance on that mint to see who handed it over.",
@@ -1877,7 +2395,12 @@ registerTool(
     // Checked BEFORE the census: it used to be checked after, which spent two
     // index pages on a request that was always going to be refused.
     if ((wantTrait && !wantValue) || (wantValue && !wantTrait)) {
-      throw new BadInputError("trait and value go together: pass both, or neither.");
+      throw new BadInputError("trait and value go together: pass both, or neither.", {
+        headline: wantTrait
+          ? `The trait "${clean(trait ?? "").slice(0, 64)}" came without a value, and a trait filter needs both.`
+          : `The value "${clean(value ?? "").slice(0, 64)}" came without a trait name, and a trait filter needs both.`,
+        next: "Pass trait and value together (for example trait \"Item Type\" with value \"Pack\"), or leave both out to count the whole collection. Nothing was read.",
+      });
     }
 
     const page = await das.getAssetsByGroup(collection, max);
@@ -1889,8 +2412,38 @@ registerTool(
   // authority was presented as live.
     const authorityRead = await sol.getCoreAccountWithMeta(collection).then(
       (r) => ({ status: "ok" as const, account: r.account, cachedAt: r.cachedAt, stale: r.stale, contextSlot: r.contextSlot, reason: null }),
-      (e: unknown) => ({ status: "unavailable" as const, account: null, cachedAt: null, stale: null, contextSlot: null, reason: (e instanceof Error ? e.message : String(e)).slice(0, 160) }),
+      (e: unknown) => ({ status: "unavailable" as const, account: null, cachedAt: null, stale: null, contextSlot: null, reason: (e instanceof Error ? e.message : String(e)).slice(0, 160), error: e }),
     );
+    // An item, a wallet or an address with no account came back as an
+    // all-zero census marked complete, which reads as "a collection nobody
+    // holds". An item is refused at once; anything else only when the index
+    // also grouped nothing under it, because a legacy collection's address
+    // is not a Core account and still has a real census.
+    if (authorityRead.account?.kind === "asset") {
+      const parent = authorityRead.account.collection;
+      throw new WrongKindError(`${collection} is a single Core item, not a collection`, {
+        headline: `${collection} is a single item, not a collection${parent ? `. Its collection is ${parent}` : ", and it belongs to no Core collection"}.`,
+        next: parent ? `Pass ${parent} to get_collection_holders. get_asset reads the item itself.` : "get_asset reads the item itself, owner included.",
+      });
+    }
+    if (page.items.length === 0 && authorityRead.account?.kind !== "collection") {
+      const e = "error" in authorityRead ? authorityRead.error : null;
+      if (e instanceof NotFoundError) {
+        throw new NotFoundError(`no account at ${collection}`, {
+          headline: `No account exists at ${collection} on mainnet and the asset index groups nothing under it, so there is no collection there to count.`,
+          next: "Check the address for a typo. identify or search_collections turn a collection's name into its address.",
+        });
+      }
+      if (e instanceof WrongKindError) {
+        const nature = await sol.accountNature(collection).catch(() => null);
+        throw new WrongKindError(`${collection} is not a collection`, {
+          headline: nature?.looksLikeAWallet
+            ? `${collection} is a wallet, not a collection, and nothing is grouped under it.`
+            : `${collection} is an account owned by ${nature?.ownerName ?? (nature?.ownerProgram ? `the program ${nature.ownerProgram}` : "another program")}, not a collection, and the asset index groups nothing under it.`,
+          next: nature?.looksLikeAWallet ? "get_wallet_holdings lists what a wallet holds." : "identify says what the address is.",
+        });
+      }
+    }
     const updateAuthority = authorityRead.account?.kind === "collection" ? authorityRead.account.updateAuthority : null;
     const issuerReadStatus: "ok" | "unavailable" | "not-applicable" =
       authorityRead.status === "unavailable" ? "unavailable" : updateAuthority ? "ok" : "not-applicable";
@@ -1932,26 +2485,36 @@ registerTool(
     }
     /** Rows with an owner the index actually reported: the denominator of every share. */
     const ownerKnown = held.length - unknownOwner;
-    const holders = [...byOwner.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([owner, count]) => {
-        const r = roleOf(owner, updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
-        return {
-          owner,
-          held: count,
-          shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
-          /** issuer (the collection's own key), venue-escrow (listed items), or wallet. */
-          role: r.role,
-          ...(r.note ? { roleNote: r.note } : {}),
-          explorer: `https://solscan.io/account/${owner}`,
-        };
-      });
+    const ranked = [...byOwner.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    // OpenSea opens an account per listing, so a listed item's holder is an
+    // address no table can know. Its owning program says what it is: read in
+    // batches for the distinct holders, largest first, up to a ceiling, and
+    // any holder past the ceiling is counted as not checked.
+    const kindChecked = ranked.slice(0, HOLDER_KIND_CHECKS).map(([o]) => o).filter((o) => o !== updateAuthority && !sol.KNOWN_VENUE_ACCOUNTS[o]);
+    const holderPrograms = kindChecked.length ? await sol.readOwnerPrograms(kindChecked) : new Map<string, sol.OwnerProgramRead>();
+    const kindUnread = [...holderPrograms.values()].filter((p) => p.kind === "unread").length;
+    const kindNotChecked = Math.max(0, ranked.length - HOLDER_KIND_CHECKS);
+    const holders = ranked.map(([owner, count]) => {
+      const r = roleOf(owner, updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
+      const p = holderPrograms.get(owner);
+      const openSeaListing = r.role !== "issuer" && p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM;
+      return {
+        owner,
+        held: count,
+        shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
+        /** issuer (the collection's own key), venue-escrow (listed on Magic Eden), opensea-listing (listed on OpenSea), wallet, or unknown. */
+        role: openSeaListing ? ("opensea-listing" as const) : r.role,
+        ...(openSeaListing ? { roleNote: `${sol.OPENSEA_LISTING_ACCOUNT_LABEL}; it holds an item that is listed on OpenSea, not a collector` } : r.note ? { roleNote: r.note } : {}),
+        explorer: `https://solscan.io/account/${owner}`,
+      };
+    });
     const issuerHeld = holders.filter((h) => h.role === "issuer").reduce((s, h) => s + h.held, 0);
     const escrowHeld = holders.filter((h) => h.role === "venue-escrow").reduce((s, h) => s + h.held, 0);
+    const openSeaListingHeld = holders.filter((h) => h.role === "opensea-listing").reduce((s, h) => s + h.held, 0);
     const unknownRoleHeld = holders.filter((h) => h.role === "unknown").reduce((s, h) => s + h.held, 0);
     // Over the rows whose OWNER IS KNOWN, never over every non-burned row: a
     // row with no owner reported was being counted as a collector's.
-    const otherOwnersHeld = ownerKnown - issuerHeld - escrowHeld - unknownRoleHeld;
+    const otherOwnersHeld = ownerKnown - issuerHeld - escrowHeld - openSeaListingHeld - unknownRoleHeld;
 
     // The COUNTS above cover every row read. The two lists are bounded
     // separately so the whole answer stays inside what a client carries:
@@ -2006,6 +2569,12 @@ registerTool(
     }
     if (burnt > 0) readThis.push(`${burnt} matched asset(s) are burned; they are listed below with burnt: true and left out of the holder counts and shares.`);
     if (nonCore > 0) readThis.push(`${nonCore} matched asset(s) are not Metaplex Core (a legacy Token Metadata or compressed standard) and are counted on the index's word alone; the byte-level Core reads cannot check them.`);
+    if (openSeaListingHeld > 0) readThis.push(`${openSeaListingHeld} matched item(s) sit in OpenSea listing accounts (role opensea-listing): they are listed for sale on OpenSea, and each account's seller is the wallet that moved the item in, which get_asset_provenance shows.`);
+    if (kindNotChecked > 0 || kindUnread > 0) {
+      readThis.push(
+        `Whether a holder is an OpenSea listing account was ${kindUnread > 0 ? `not readable for ${kindUnread} holder(s) just now` : ""}${kindUnread > 0 && kindNotChecked > 0 ? " and " : ""}${kindNotChecked > 0 ? `not checked for the ${kindNotChecked} smallest holder(s) past the first ${HOLDER_KIND_CHECKS}` : ""}; those keep the wallet role by default.`,
+      );
+    }
     if (fittedHolders.note) readThis.push(fittedHolders.note);
     if (fittedAssets.note) readThis.push(fittedAssets.note);
 
@@ -2039,6 +2608,8 @@ registerTool(
       ownershipVerifiedOnchain: false,
       heldByIssuer: issuerHeld,
       heldInVenueEscrow: escrowHeld,
+      /** Items in OpenSea listing accounts: listed for sale on OpenSea, not held by a collector. */
+      heldInOpenSeaListings: openSeaListingHeld,
       /** Known-owner rows that are neither the update authority nor a known escrow. "Collector" is the ordinary reading, not a proven identity. Rows with no owner reported are NOT in this number; see assetsWithNoOwnerReported. */
       heldByCollectors: otherOwnersHeld,
       /** Known-owner rows whose role could not be settled because the collection account was unreadable. */
@@ -2073,6 +2644,14 @@ registerTool(
   }),
 );
 
+/**
+ * When each step of a wallet profile must be done, counted from the start of
+ * the call. Holdings are the answer, so they get most of it; floors and the
+ * wallet's age are extras that are named as not read when the time is gone.
+ * The last mark stays well inside the 60 s most clients wait for a tool.
+ */
+const PROFILE_BUDGET_MS = { holdings: 25_000, pricing: 36_000, age: 42_000 } as const;
+
 registerTool(
   "get_wallet_profile",
   {
@@ -2100,7 +2679,34 @@ registerTool(
     },
   },
   guard(async ({ wallet, maxItems = 1000, priceTop = 5, includeAge = true }) => {
-    const held = await me.walletTokensAll(wallet, maxItems);
+    // One time budget for the whole answer. Each step is one or more paced
+    // requests with 15 s timeouts and retries, so a slow Magic Eden page and
+    // a slow RPC used to add up: a default call took 47 to 64 s and then
+    // failed, after the client's own 60 s timeout had usually given up. Each
+    // step now runs against the time left, and a step that runs out is
+    // named as not read instead of taking the answer down with it.
+    const started = Date.now();
+    const outer = ambientSignal();
+    const within = async <T,>(untilMs: number, fn: () => Promise<T>): Promise<{ value: T } | { timedOut: true }> => {
+      const left = started + untilMs - Date.now();
+      if (left <= 0) return { timedOut: true };
+      const timer = AbortSignal.timeout(left);
+      try {
+        return { value: await runWithSignal(outer ? AbortSignal.any([outer, timer]) : timer, fn) };
+      } catch (e) {
+        // The person cancelling is not this budget running out.
+        if (timer.aborted && !outer?.aborted) return { timedOut: true };
+        throw e;
+      }
+    };
+    const heldRead = await within(PROFILE_BUDGET_MS.holdings, () => me.walletTokensAll(wallet, maxItems));
+    if ("timedOut" in heldRead) {
+      throw new Error(
+        `Magic Eden did not return this wallet's holdings within ${PROFILE_BUDGET_MS.holdings / 1000} s, so nothing else was read. ` +
+          "Retry shortly, or pass a smaller maxItems (the default reads up to 1000 items in pages of 500).",
+      );
+    }
+    const held = heldRead.value;
     const holdings = summarizeHoldings(held.tokens);
 
     // Price the biggest positions. Each is one paced Magic Eden call, so the
@@ -2108,14 +2714,20 @@ registerTool(
     const quotes: FloorQuoteForValue[] = [];
     const supplyShare: { collection: string; count: number; totalSupply: number; pct: number; supplySource: string }[] = [];
     const toPrice = holdings.byCollection.filter((c) => c.collection !== "(no collection)").slice(0, priceTop);
+    const notPriced: string[] = [];
     for (const c of toPrice) {
       let stats: Awaited<ReturnType<typeof me.collectionStats>> | null = null;
       let statsError: string | undefined;
-      try {
-        stats = await me.collectionStats(c.collection);
-      } catch (e) {
-        statsError = e instanceof Error ? e.message : String(e);
+      const statsRead = await within(PROFILE_BUDGET_MS.pricing, () => me.collectionStats(c.collection)).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+      if ("timedOut" in statsRead) {
+        // Kept as an unpriced row, so the ceiling below counts it as a hole
+        // rather than leaving it out of the arithmetic in silence.
+        notPriced.push(c.collection);
+        quotes.push({ collection: c.collection, count: c.count, floorSol: null, listedCount: null, error: "not read: this answer's time budget ran out before this collection's floor was asked for" });
+        continue;
       }
+      if ("error" in statsRead) statsError = statsRead.error;
+      else stats = statsRead.value;
       quotes.push({
         collection: c.collection,
         count: c.count,
@@ -2127,7 +2739,9 @@ registerTool(
       // Supply: registry Core collection (chain) first, then OpenSea's index when a key is set.
       const reg = REGISTRY.find((e) => e.meSymbol === c.collection);
       if (reg?.coreCollection) {
-        const acct = await sol.getCoreAccount(reg.coreCollection).catch(() => null);
+        const coreCollection = reg.coreCollection;
+        const acctRead = await within(PROFILE_BUDGET_MS.pricing, () => sol.getCoreAccount(coreCollection)).catch(() => null);
+        const acct = acctRead && "value" in acctRead ? acctRead.value : null;
         if (acct?.kind === "collection" && acct.currentSize > 0) {
           supplyShare.push({ collection: c.collection, count: c.count, totalSupply: acct.currentSize, pct: Math.round((c.count / acct.currentSize) * 100_000) / 1000, supplySource: "solana-rpc (Core collection currentSize)" });
           continue;
@@ -2135,12 +2749,29 @@ registerTool(
       }
       const slug = reg?.openseaSlug;
       if (slug && (await os.openSeaAvailable())) {
-        const d = await os.collectionDetail(slug).catch(() => null);
+        const dRead = await within(PROFILE_BUDGET_MS.pricing, () => os.collectionDetail(slug)).catch(() => null);
+        const d = dRead && "value" in dRead ? dRead.value : null;
         if (d?.totalSupply) supplyShare.push({ collection: c.collection, count: c.count, totalSupply: d.totalSupply, pct: Math.round((c.count / d.totalSupply) * 100_000) / 1000, supplySource: "opensea (total_supply)" });
       }
     }
 
-    const age = includeAge ? await sol.walletAge(wallet, 3).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) })) : undefined;
+    let age: Awaited<ReturnType<typeof sol.walletAge>> | { error: string } | { notRead: string } | undefined;
+    if (includeAge) {
+      const ageRead = await within(PROFILE_BUDGET_MS.age, () => sol.walletAge(wallet, 3)).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+      age = "timedOut" in ageRead
+        ? { notRead: "The wallet's age and transaction count were not read: this answer's time budget ran out first. Ask again with priceTop 0, or call get_wallet_activity." }
+        : "error" in ageRead
+          ? ageRead
+          : ageRead.value;
+    }
+    const timeBudget =
+      notPriced.length > 0 || (age && "notRead" in age)
+        ? {
+            budgetSeconds: PROFILE_BUDGET_MS.age / 1000,
+            ...(notPriced.length ? { notPriced } : {}),
+            note: `This answer stops reading at about ${PROFILE_BUDGET_MS.age / 1000} s so it arrives inside a client's usual 60 s timeout. What is named here was not read, not found empty${notPriced.length ? `; the floor ceiling treats the unpriced collections as unknown` : ""}.`,
+          }
+        : undefined;
 
     return ok({
       wallet,
@@ -2185,6 +2816,7 @@ registerTool(
         raise: "maxItems",
       }),
       account: age,
+      ...(timeBudget ? { timeBudget } : {}),
       readThis: [
         "Holdings are what Magic Eden indexes for this address. The index can omit items or retain old owners and listings after a wallet migration. A fresh response does not prove current custody; get_asset checks a Core item against account bytes.",
         ...(held.capped
@@ -2324,6 +2956,66 @@ const traitSchema = z.object({
   value: z.string().trim().min(1).max(120).describe("Trait value, e.g. Rex"),
 });
 
+/**
+ * OpenSea's sale count for the same window as a Magic Eden sales summary,
+ * as its own figure.
+ *
+ * The summary reads Magic Eden's feed only, and on 2026-11-10 it answered 0
+ * sales for a Candy collection whose one sale that week had settled through
+ * OpenSea's protocol. The count is attached only under a slug proved against
+ * the collection's on-chain address, is never added to Magic Eden's, and says
+ * when it is a lower bound because OpenSea had older rows than were read.
+ */
+async function openSeaSalesInWindow(symbol: string, sinceUnix: number, nowUnix: number): Promise<Record<string, unknown>> {
+  if (!(await os.openSeaAvailable())) return { status: "not-read", note: `OpenSea was not read: ${os.openSeaState().note}` };
+  const entry =
+    REGISTRY.find((e) => e.meSymbol === symbol && e.coreCollection) ??
+    REGISTRY.find((e) => e.coreCollection && [e.name, ...(e.aliases ?? [])].some((n) => symbolForCollectionName(n)?.symbol === symbol));
+  const core = entry?.coreCollection;
+  if (!entry || !core) {
+    return { status: "not-read", note: "No on-chain collection address is known for this symbol, so no OpenSea slug could be proved to be the same collection, and OpenSea's sales were not read." };
+  }
+  let found: { slug: string; solanaContracts?: number } | null = await os.slugForOnchainCollection(core).catch(() => null);
+  // Each name costs up to three OpenSea lookups, so only the first few.
+  for (const candidate of [...new Set([entry.name, ...(entry.aliases ?? [])])].slice(0, 3)) {
+    if (found) break;
+    found = await os.slugByNameForCollection(candidate, core).catch(() => null);
+  }
+  if (!found) {
+    return { status: "not-read", note: `No OpenSea slug carrying this collection's on-chain address (${core}) was found, so OpenSea's sales were not read.` };
+  }
+  const read = await os.recentSales(found.slug, 50).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const openseaUrl = os.collectionPageUrl(found.slug);
+  const group = (found.solanaContracts ?? 1) > 1;
+  if ("error" in read) {
+    return { status: "error", slug: found.slug, ...(openseaUrl ? { openseaUrl } : {}), note: `OpenSea's sales for this slug could not be read: ${clean(read.error).slice(0, 200)}. Not read is not zero.` };
+  }
+  const times = read.sales.map((s) => (s.time ? Date.parse(s.time) / 1000 : NaN));
+  const inWindow = times.filter((t) => Number.isFinite(t) && t >= sinceUnix && t <= nowUnix).length;
+  const oldestRead = times.filter(Number.isFinite).reduce((m, t) => Math.min(m, t), Infinity);
+  // Every row read is inside the window and OpenSea had more: older sales in
+  // the window may exist past what was read.
+  const lowerBound = (read.truncated || read.moreAvailable === true) && oldestRead >= sinceUnix;
+  return {
+    status: "read",
+    source: "OpenSea collection sale events",
+    slug: found.slug,
+    ...(openseaUrl ? { openseaUrl } : {}),
+    identity: group ? "group" : "verified",
+    sales: inWindow,
+    countIsLowerBound: lowerBound,
+    rowsRead: read.sales.length,
+    stale: read.stale,
+    cachedAt: read.cachedAt,
+    note:
+      `OpenSea's own count of sales in the same window${lowerBound ? " (at least this many: OpenSea had older rows than were read)" : ""}. ` +
+      `It is a separate figure, not added to Magic Eden's above: a fill both feeds index would be counted twice. ` +
+      (group
+        ? `The slug was found from this collection's on-chain address, but OpenSea files ${found.solanaContracts} Solana contracts under it, so this count is the whole group's.`
+        : "The slug was found from, and carries, this collection's on-chain address."),
+  };
+}
+
 registerTool(
   "get_collection_sales",
   {
@@ -2336,7 +3028,8 @@ registerTool(
       "Answers 'how many sales this week', 'how many Ohtani cards sold', 'which player sold the most', 'what was " +
       "the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
       "The result says how far back the feed was read and whether older sales exist beyond the page budget; " +
-      "it never fills a gap with an estimate. Magic Eden's API feed only: each row carries the execution marketplace that feed reported, and fills it did not index are not here.",
+      "it never fills a gap with an estimate. Magic Eden's API feed only: each row carries the execution marketplace that feed reported, and fills it did not index are not here. " +
+      "When OpenSea can be read and its slug is proved against the collection's on-chain address, OpenSea's own sale count for the same window is attached as a separate figure (openseaSameWindow), never added in.",
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
@@ -2392,6 +3085,9 @@ registerTool(
   // item name contains Ohtani".
     const byNameScope: "filtered" | "collection-wide" = filtered ? "filtered" : "collection-wide";
     const byName = names ? breakdownByName(filtered ?? windowEvents, names.names) : null;
+    // OpenSea's figure is collection-wide; under a name filter it would answer
+    // a different question, so it is only read without one.
+    const openseaSameWindow = needle ? undefined : await openSeaSalesInWindow(symbol, sinceUnix, nowUnix);
     return ok({
       symbol,
       collectionName: nameForSymbol(symbol),
@@ -2405,9 +3101,10 @@ registerTool(
       /** What the figures above are actually about. */
       figuresCover: needle
         ? nameFilterAvailable
-          ? `sales in the window whose item name contains "${needle}"${nameFilterIncomplete ? ` - a lower bound: ${nameFilterRun.unresolved} sale(s) could not be judged, see nameFilter` : ""}`
-          : "the WHOLE collection - the name filter could not run, see nameFilter"
-        : "the whole collection over the window",
+          ? `sales in Magic Eden's feed over the window whose item name contains "${needle}"${nameFilterIncomplete ? ` - a lower bound: ${nameFilterRun.unresolved} sale(s) could not be judged, see nameFilter` : ""}`
+          : "the WHOLE collection as Magic Eden's feed recorded it - the name filter could not run, see nameFilter"
+        : "the collection's sales in Magic Eden's activity feed over the window; fills that feed did not index (for example OpenSea's own Solana sales) are not counted, see openseaSameWindow",
+      ...(openseaSameWindow ? { openseaSameWindow } : {}),
       ...(needle
         ? nameFilterAvailable
           ? {
@@ -2506,6 +3203,15 @@ registerTool(
     // "nothing is for sale" rather than "no such collection".
     const unknown = await refuseUnknownSymbol(symbol);
     if (unknown) return unknown;
+    // "#13" found nothing while "(13/810)" was listed: Candy prints the serial
+    // as a fraction, so the text never appears. A search that is only a
+    // number also matches the serial read from each name, the same reading
+    // the lowest-serials hunt uses.
+    const serialAsked = ((m) => (m ? Number(m[1]) : null))(/^#?\s*(\d{1,7})$/.exec((nameContains ?? "").trim()));
+    const isSerialMatch = (l: me.MeListing) => serialAsked !== null && parseSerial(l.token?.name ?? null)?.serial === serialAsked;
+    const nameOrSerial = (l: me.MeListing, needle: string) => matchesName(l, needle) || isSerialMatch(l);
+    // Where the match was: a serial match is never "the surrounding title".
+    const matchFor = (l: me.MeListing, needle: string) => ({ ...nameMatchDetail(l, needle), ...(serialAsked !== null ? { serialMatch: isSerialMatch(l) } : {}) });
     if (lowestSerials) {
       // Low serials are scattered across the price-ordered book, so the hunt
       // reads the book in pages and sorts by the number printed in the name.
@@ -2538,7 +3244,11 @@ registerTool(
       }
       const floorRes = await me.collectionStats(symbol).then((v) => ({ ok: true as const, v }), (e: unknown) => ({ ok: false as const, e }));
       const floorStale = floorRes.ok ? floorRes.v.stale : true;
-      const floor = floorRes.ok ? floorRes.v.floorPriceSol : null;
+      // The multiple is taken against the cheapest ask that can be bought.
+      // Magic Eden's own floor can be a listing whose item moved long ago, and
+      // "0.4x floor" against that is arithmetic on a price nobody can pay.
+      const floorCheck = floorRes.ok && floorRes.v.floorPriceSol !== null ? await checkedFloor(symbol, floorRes.v.floorPriceSol) : null;
+      const floor = floorCheck ? floorCheck.floorSol : null;
       // A multiple of the floor is arithmetic across two reads and is only
       // true about NOW if both of them are. A stale listing page against a
       // live floor - or a live page against a stale floor - produced
@@ -2553,7 +3263,7 @@ registerTool(
       // Same trait recheck as ordinary mode: the marketplace's filter is
       // trusted for the walk, never for the row.
       const serialTraitCheck = checkTraitFilters(seen, traits);
-      const nameMatched = serialNeedle ? serialTraitCheck.rows.filter((l) => matchesName(l, serialNeedle)) : serialTraitCheck.rows;
+      const nameMatched = serialNeedle ? serialTraitCheck.rows.filter((l) => nameOrSerial(l, serialNeedle)) : serialTraitCheck.rows;
       // A price is money only when it is a finite amount above zero, the same
       // rule ordinary mode and every sales figure use. A -2 ask became a
       // -2x floor multiple here.
@@ -2564,7 +3274,24 @@ registerTool(
         .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
         .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
         .sort((a, b) => a.s.serial - b.s.serial || (askOf(a.l) ?? Infinity) - (askOf(b.l) ?? Infinity));
-      const rows = parsed.slice(0, limit).map(({ l, s }) => {
+      // Checked against the chain in serial order, a hundred at a time, until
+      // enough rows that are not known stale are in hand. A low serial whose
+      // seller no longer holds it is the most misleading row this mode can
+      // show, because it is the one a collector acts on.
+      const chosen: { l: me.MeListing; s: { serial: number; of: number | null }; c: Custody }[] = [];
+      const staleSerials: { l: me.MeListing; s: { serial: number; of: number | null }; c: Custody }[] = [];
+      let serialsChecked = 0;
+      for (let i = 0; i < parsed.length && chosen.length < limit; i += 100) {
+        const chunk = parsed.slice(i, i + 100);
+        const cs = await custodyOfListings(chunk.map(({ l }) => ({ mint: l.tokenMint, seller: l.seller })), { explainOwners: 100 });
+        serialsChecked += chunk.length;
+        chunk.forEach((x, j) => {
+          const c = cs[j]!;
+          if (c.state === "not-backed") staleSerials.push({ ...x, c });
+          else if (chosen.length < limit) chosen.push({ ...x, c });
+        });
+      }
+      const rows = chosen.map(({ l, s, c }) => {
         const price = askOf(l);
         return {
           serial: s.serial,
@@ -2574,7 +3301,8 @@ registerTool(
           priceSol: price,
           currency: "SOL" as const,
           source: "magiceden" as const,
-          ...(serialNeedle ? { nameMatch: nameMatchDetail(l, serialNeedle) } : {}),
+          chainCheck: { state: c.state, why: c.why },
+          ...(serialNeedle ? { nameMatch: matchFor(l, serialNeedle) } : {}),
           vsFloor:
             price !== null && multiplesComparable && floor
               ? { floorSol: floor, currency: "SOL" as const, multiple: Math.round((price / floor) * 100) / 100 }
@@ -2586,8 +3314,19 @@ registerTool(
         collectionName: nameForSymbol(symbol),
         symbolKnown: true,
         mode: "lowest-serials",
-        listingValidityChecked: false,
-        listingValidityNote: "Advertised asks from Magic Eden's index. Custody and active orders were not checked; a listing can remain after the item moves to another wallet.",
+        listingValidityChecked: chosen.length > 0 && chosen.every(({ c }) => c.state === "backed"),
+        listingValidityNote:
+          `Asks from Magic Eden's index, checked against the chain in serial order: ${serialsChecked} listing(s) checked, ${staleSerials.length} left out because the seller no longer holds the item. ` +
+          "Each row's chainCheck says whether its item is still with the seller or Magic Eden's escrow (backed), could not be read (unread), or is not a Core item (not-checked).",
+        ...(staleSerials.length
+          ? {
+              staleListings: {
+                count: staleSerials.length,
+                sentence: `${staleSerials.length} low-serial listing(s) are on Magic Eden's book but cannot be bought: the chain shows the seller no longer holds the item. They are left out of lowestSerials and every floor multiple.`,
+                examples: staleSerials.slice(0, 5).map(({ l, s, c }) => ({ serial: s.serial, name: clean(l.token?.name ?? ""), tokenMint: sol.venueAddress(l.tokenMint), priceSol: askOf(l), seller: sol.venueAddress(l.seller), why: c.why })),
+              },
+            }
+          : {}),
         filters: {
           traits: traits ?? [],
           nameContains: nameContains ?? null,
@@ -2613,10 +3352,10 @@ registerTool(
               : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
         },
         floorMultiples: multiplesComparable
-          ? "available: both the listing pages and the floor were read live"
-          : `not computed: ${[stale ? "at least one listing page came from cache after a failed refresh" : null, floorStale ? "the floor came from cache after a failed refresh" : null, floor === null ? "no floor was returned" : null].filter(Boolean).join("; ")}. A multiple of the floor is only true if both sides were read just now, so the asks are shown as they are.`,
+          ? `available: both the listing pages and the floor were read live${floorCheck?.checked ? ", and the floor is the cheapest ask the chain shows can be bought" : "; the floor is Magic Eden's own figure, not checked against the chain (see floor.floorCheck)"}`
+          : `not computed: ${[stale ? "at least one listing page came from cache after a failed refresh" : null, floorStale ? "the floor came from cache after a failed refresh" : null, floor === null ? (floorCheck?.status === "none-backed" ? "none of the cheapest listings can be bought, so there is no floor" : "no floor was returned") : null].filter(Boolean).join("; ")}. A multiple of the floor is only true if both sides were read just now, so the asks are shown as they are.`,
         floor: floorRes.ok
-          ? { floorSol: floor, currency: "SOL", source: "magiceden", listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
+          ? { ...(floorCheck ? floorRow(floorCheck) : { floorSol: null }), currency: "SOL", source: "magiceden", listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
           : { error: floorRes.e instanceof Error ? floorRes.e.message : String(floorRes.e) },
         readThis: `Asks on Magic Eden, not what buyers pay. A serial is read from the item name and does not prove uniqueness or an enforced print run. Distinct assets can share a serial. Items whose names carry no number, or whose fraction is impossible (#101/100), are not in this list. get_collection_sales with nameContains shows what similar items actually sold for. ${NOT_ADVICE}`,
         stale,
@@ -2668,7 +3407,7 @@ registerTool(
         const added = addNewListings(readSoFar, seenMints, read.listings);
         const fresh = readSoFar.slice(before);
         listingsSeen += added;
-        kept.push(...fresh.filter((l) => matchesName(l, needle)));
+        kept.push(...fresh.filter((l) => nameOrSerial(l, needle)));
         // Only an empty page ends the book; a short one does not (see
         // collectionListings), so this stops on that or on the budget.
         if (!read.more) {
@@ -2700,10 +3439,20 @@ registerTool(
     // the filter anyway, and a row whose own metadata contradicts it is
     // dropped and counted rather than presented under the filter it fails.
     const traitCheck = checkTraitFilters(kept, traits);
+    // Every row is checked against the chain before it can be a deal. A
+    // listing whose seller no longer holds the item leaves the deals and the
+    // trait floors and is reported on its own; one the chain could not be
+    // read for stays, marked, because "unknown" is not "stale".
+    const custody = await custodyOfListings(traitCheck.rows.map((l) => ({ mint: l.tokenMint, seller: l.seller })), { explainOwners: 100 });
+    const checkedRows = traitCheck.rows.map((l, i) => ({ l, c: custody[i]! }));
+    const liveRows = checkedRows.filter(({ c }) => c.state !== "not-backed");
+    const staleRows = checkedRows.filter(({ c }) => c.state === "not-backed");
+    const custodyByMint = new Map(checkedRows.flatMap(({ l, c }) => (typeof l.tokenMint === "string" ? [[l.tokenMint, c] as const] : [])));
+    const traitFloorCheck = checkTraitFloorsAgainstRows(attrs?.attributes ?? [], checkedRows, !needle && !(traits && traits.length > 0));
     // Both sides of a discount have to be current, and a trait index that
     // refused a refresh is not. The comparison is either made from two live
     // reads or not made at all, with the read times named.
-    const deals = bestDeals(traitCheck.rows.slice(0, limit), attrs?.attributes ?? [], {
+    const deals = bestDeals(liveRows.map(({ l }) => l).slice(0, limit), traitFloorCheck.attributes, {
       listingsStale: listings.stale,
       listingsReadAt: listings.cachedAt,
       traitFloorsStale: attrs === null || attrs.stale,
@@ -2792,13 +3541,49 @@ registerTool(
     // whose item name contains the word while its own Card Name does not is a
     // match on the set or deck title, which is how "cheapest Charizard"
     // returned a Ho-Oh card.
-    const matchDetail = needle ? new Map(kept.map((l) => [l.tokenMint ?? "", nameMatchDetail(l, needle)])) : null;
-    const titleOnlyMatches = matchDetail ? [...matchDetail.values()].filter((d) => d.inItemName && d.nameTrait !== null && !d.nameTrait.matched).length : 0;
+    const matchDetail = needle ? new Map(kept.map((l) => [l.tokenMint ?? "", matchFor(l, needle)])) : null;
+    // A number in an item name is a serial or an issue number, never a set or
+    // deck title, so a numeric search carries serialMatch per row instead of
+    // the title label.
+    const titleOnlyMatches = matchDetail && serialAsked === null ? [...matchDetail.values()].filter((d) => d.inItemName && d.nameTrait !== null && !d.nameTrait.matched).length : 0;
+    const serialMiss =
+      serialAsked !== null && kept.length === 0
+        ? `No listing name contains "${clean(nameContains ?? "")}" and no listing's printed serial is ${serialAsked} in the ${listingsSeen} listing(s) read, cheapest first` +
+          `${searchTruncated ? " (not the whole book)" : " (the whole book this filter returned)"}. Both the text and the serial read from each name, written like (${serialAsked}/N), were compared. ` +
+          `find_in_group with {"collections":["${symbol}"],"serials":[${serialAsked}],"pagesPerCollection":5} hunts that serial by number, and with a group instead of collections it covers the related collections too; ` +
+          `find_listings with lowestSerials true reads up to 1,000 listings of this one.`
+        : undefined;
 
+    const tallyOf = (s: Custody["state"]) => checkedRows.filter(({ c }) => c.state === s).length;
+    const byReason: Record<string, number> = {};
+    for (const { c } of staleRows) if (c.state === "not-backed") byReason[c.reason] = (byReason[c.reason] ?? 0) + 1;
     return ok({
       ...(openSeaTraitFloors ? { openSeaTraitFloors } : {}),
-      listingValidityChecked: false,
-      listingValidityNote: "Advertised asks from Magic Eden's index. Custody and active orders were not checked; a listing can remain after the item moves to another wallet.",
+      listingValidityChecked: checkedRows.length > 0 && tallyOf("unread") === 0 && tallyOf("not-checked") === 0,
+      listingValidityNote:
+        `Asks from Magic Eden's index, each checked against the chain: ${tallyOf("backed")} backed (the seller or Magic Eden's escrow still holds the item), ${staleRows.length} stale and left out, ` +
+        `${tallyOf("unread")} could not be read just now and ${tallyOf("not-checked")} are not Core items; those last two stay in the deals with chainCheck saying so.`,
+      ...(staleRows.length
+        ? {
+            staleListings: {
+              count: staleRows.length,
+              byReason,
+              sentence:
+                `${staleRows.length} of the ${checkedRows.length} listing(s) read are on Magic Eden's book but cannot be bought: the chain shows the seller no longer holds the item. They are left out of the deals and the trait floors.` +
+                (liveRows.length === 0 ? " Every listing read was stale: a larger limit reads further into the book, and get_floor_prices gives the cheapest listing that can be bought." : ""),
+              examples: staleRows.slice(0, 5).map(({ l, c }) => ({ tokenMint: sol.venueAddress(l.tokenMint), name: l.token?.name ? clean(l.token.name) : null, priceSol: usableAsk(l.price), seller: sol.venueAddress(l.seller), why: c.why })),
+            },
+          }
+        : {}),
+      ...(traitFloorCheck.replaced || traitFloorCheck.withdrawn
+        ? {
+            traitFloorCheck: {
+              replaced: traitFloorCheck.replaced,
+              withdrawn: traitFloorCheck.withdrawn,
+              note: `${traitFloorCheck.replaced + traitFloorCheck.withdrawn} of Magic Eden's trait floors were stale listings. ${traitFloorCheck.replaced} were replaced with the cheapest listing carrying that trait that the chain shows can be bought; ${traitFloorCheck.withdrawn} had no such listing among the rows read and are left with no floor rather than a stale one.`,
+            },
+          }
+        : {}),
       symbol,
       collectionName: nameForSymbol(symbol),
       symbolKnown: true,
@@ -2810,7 +3595,10 @@ registerTool(
           : {}),
       },
       ...deals,
-      deals: matchDetail ? fitted.rows.map((d) => ({ ...d, nameMatch: matchDetail.get(d.tokenMint ?? "") ?? null })) : fitted.rows,
+      deals: fitted.rows.map((d) => {
+        const c = d.tokenMint ? custodyByMint.get(d.tokenMint) : undefined;
+        return { ...d, chainCheck: c ? { state: c.state, why: c.why } : { state: "not-checked", why: "no usable item address on the listing" }, ...(matchDetail ? { nameMatch: matchDetail.get(d.tokenMint ?? "") ?? null } : {}) };
+      }),
       ...(fitted.note ? { answerSize: fitted.note } : {}),
       // After the spread on purpose: bestDeals carries its own readThis list
       // and the not-advice line has to survive alongside it.
@@ -2840,6 +3628,8 @@ registerTool(
                   nameMatchNote: `${titleOnlyMatches} of these matched the text in the surrounding title (a set, deck or box name) while the item's own name trait does not contain it. Each row carries nameMatch; say which kind a row is before calling it the cheapest one.`,
                 }
               : {}),
+            ...(serialAsked !== null ? { serialSearched: serialAsked } : {}),
+            ...(serialMiss ? { serialNote: serialMiss } : {}),
           }
         : undefined,
       traitFloors: attrs ? { count: attrs.attributes.length, stale: attrs.stale, cachedAt: attrs.cachedAt } : undefined,
@@ -2907,17 +3697,24 @@ registerTool(
     };
     const chosen: (ReturnType<typeof resolve> & { requested: string; unresolved?: string })[] = collections?.length
       ? collections.map((c) => safely(c))
-      : REGISTRY.filter((e) => (e.group ?? "").toLowerCase() === (group ?? "").toLowerCase()).map((e) => {
+      : REGISTRY.filter((e) => (e.group ?? "").toLowerCase() === clean(group ?? "").toLowerCase()).map((e) => {
           const r = resolve(e.id);
           return { requested: e.name, ...r };
         });
     if (chosen.length === 0) {
+      // Typed, with the valid groups in the headline: as a plain error the
+      // answer was "could not be completed, try again" with the list buried
+      // in the detail, and trying again can never work.
       const groups = [...new Set(REGISTRY.map((e) => e.group).filter(Boolean))].sort();
-      throw new Error(
-        group
-          ? `No collections are filed under "${group}". The groups this registry knows are: ${groups.join(", ")}.`
-          : "Pass a group or a list of collections to scan.",
-      );
+      throw group
+        ? new BadInputError(`No collections are filed under "${clean(group)}". The groups this registry knows are: ${groups.join(", ")}.`, {
+            headline: `There is no group called "${clean(group).slice(0, 40)}". The groups are ${groups.join(", ")}.`,
+            next: "Pass one of those as group (any case), or name the collections yourself with collections. Nothing was read.",
+          })
+        : new BadInputError("Pass a group or a list of collections to scan.", {
+            headline: `Nothing to scan: pass a group (${groups.join(", ")}) or a list of collections.`,
+            next: "Nothing was read.",
+          });
     }
     const slice = chosen.slice(startAt, startAt + batch);
     const scanned: Record<string, unknown>[] = [];
@@ -3015,11 +3812,17 @@ registerTool(
       matches,
       scanned,
       ...(noSymbol.length ? { noMarketSymbol: noSymbol } : {}),
+      ...(startAt >= chosen.length ? { pastTheEnd: true } : {}),
       readThis: [
-        remaining > 0
+        // A start past the end read nothing, and "every collection has now
+        // been read" said the opposite.
+        startAt >= chosen.length
+          ? `startAt ${startAt} is past the end: this set has ${chosen.length} collections, numbered 0 to ${chosen.length - 1}, so nothing was read. Start at 0, or at any number below ${chosen.length}.`
+          : remaining > 0
           ? `This call read ${slice.length} of ${chosen.length} collections. Call again with startAt ${nextStartAt} for the next batch; a "no match" only covers what has been read so far.`
           : `Every collection in this set has now been read.`,
         "Prices are asks on Magic Eden, not what anyone paid, and each floor is the cheapest ask in that collection's own book at the moment it was read.",
+        "Those floors are Magic Eden's own reported figures and are not checked against the chain here. Where listings outlived a move of the items (Candy collections after October 2026) a floor can be a listing nobody can buy; get_floor_prices checks one collection's floor against the chain.",
         "Symbols carrying a symbolNote were matched by name and are NOT checked against the chain here, because that would double the reads for a scan this size. " +
           "get_collection_stats on any single row does check it, and says so.",
         ...(noSymbol.length
@@ -3133,7 +3936,7 @@ registerTool(
       "(Magic Eden order book and pools, Tensor, OpenSea, Candy Digital, Collector Crypt). Every entry cites " +
       "the documentation or program source it came from and says when observed behaviour differs from what " +
       "is documented. Answers 'what does frozen mean', 'can they burn my card', 'is Magic Eden custodial'.",
-    annotations: READ_ONLY,
+    annotations: READ_ONLY_LOCAL,
     inputSchema: { topic: z.string().trim().min(2).max(200).describe("A question or a term: 'escrow', 'royalties on Tensor', 'permanent transfer delegate'") },
   },
   guard(async ({ topic }) => {
@@ -3145,12 +3948,11 @@ registerTool(
     const q = topic.toLowerCase().trim();
     const wantsAll = /^(glossary|terms|vocabulary|definitions|jargon)$/.test(q);
     const words = q.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+    // Whole words only: a substring test let "ab" match every definition
+    // containing "table" or "label".
     const vocabulary = wantsAll
       ? GLOSSARY
-      : GLOSSARY.filter((g) => {
-          const hay = `${g.term} ${g.meaning} ${g.pitfall ?? ""}`.toLowerCase();
-          return hay.includes(q) || words.some((w) => g.term.toLowerCase().includes(w));
-        });
+      : GLOSSARY.filter((g) => mentions(`${g.term} ${g.meaning} ${g.pitfall ?? ""}`, q) || words.some((w) => mentions(g.term, w)));
     return Promise.resolve(
       ok({
         topic: clean(topic),
@@ -3321,6 +4123,18 @@ async function main() {
   // stderr too: a host that closes the diagnostic pipe while leaving stdout
   // open would otherwise take the process down with an unhandled stream error.
   process.stderr.on("error", closedPipe);
+  // A client that closes its end of stdin has left; the specification makes
+  // that the shutdown signal for a stdio server. Calls in flight still get
+  // time to answer, because a one-shot pipe closes stdin straight after its
+  // request and then reads the reply; with nothing in flight the process ends
+  // on its own at once. What is bounded is the long tail: measured, 98 of 100
+  // requests of one call were sent after the client had gone, over 61 s.
+  process.stdin.on("end", () => {
+    setTimeout(() => {
+      console.error(`solana-nft-mcp: input closed ${STDIN_CLOSED_GRACE_MS / 1000} s ago with a call still running; stopping.`);
+      process.exit(0);
+    }, STDIN_CLOSED_GRACE_MS).unref();
+  });
   const input = boundedLines(MAX_INCOMING_MESSAGE_BYTES);
   process.stdin.pipe(input);
   const transport = new StdioServerTransport(input, process.stdout);

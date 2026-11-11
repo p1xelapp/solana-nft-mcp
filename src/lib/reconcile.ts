@@ -27,6 +27,55 @@ export interface FloorQuote {
   currency: string;
   /** True when the venue did not answer and this is a cached value from a failed refresh. */
   stale?: boolean;
+  /** The listing behind this floor, when the venue named it: the item and the wallet that listed it. */
+  listing?: { mint: string; maker: string | null };
+  /**
+   * Whether the chain shows that listing's item still held by its maker or by
+   * the venue's own listing account. `not-backed` means nobody can buy it.
+   */
+  listingCustody?: "backed" | "not-backed" | "unread" | "not-checked";
+  /** Other listings this venue showed, so the same listing relayed by another venue can be recognised. */
+  alsoListed?: { mint: string; maker: string | null }[];
+}
+
+const sameListing = (a: { mint: string; maker: string | null }, b: { mint: string; maker: string | null }) =>
+  a.mint === b.mint && a.maker !== null && a.maker === b.maker;
+
+/**
+ * The sentence for one listing quoted by two venues, or null.
+ *
+ * OpenSea relays other marketplaces' books, so its best listing can be the very
+ * listing Magic Eden shows, with OpenSea's own charges on top. Printed as two
+ * floors, that read as "OpenSea is 12% higher": a spread between two venues
+ * made out of one seller's one ask.
+ */
+export function oneListingTwoVenues(quotes: FloorQuote[]): { sentence: string; sources: [string, string]; sameFloor: boolean } | null {
+  for (const q of quotes) {
+    if (!q.listing) continue;
+    for (const p of quotes) {
+      if (p === q) continue;
+      // Both floors are the one listing: the gap between them is not a spread.
+      if (p.listing && sameListing(p.listing, q.listing)) {
+        return {
+          sources: [p.source, q.source],
+          sameFloor: true,
+          sentence:
+            `The lowest listing on ${q.source} (${q.value} ${q.currency}) is the same item from the same seller as the lowest on ${p.source}: one listing seen on two marketplaces, ` +
+            `not two separate offers, so the gap between the two figures is not a price difference between marketplaces.`,
+        };
+      }
+      // It is one of the other venue's listings, just not its floor: the two
+      // floors are still different asks, so no claim is made about the gap.
+      if ((p.alsoListed ?? []).some((l) => sameListing(l, q.listing!))) {
+        return {
+          sources: [p.source, q.source],
+          sameFloor: false,
+          sentence: `The lowest listing on ${q.source} (${q.value} ${q.currency}) is the same item from the same seller as a listing ${p.source} also shows: one listing seen on two marketplaces, not a separate offer.`,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export interface Reconciliation {
@@ -63,18 +112,28 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   // A cached quote from a failed refresh is shown but never ranked: naming a
   // "cheapest venue" during an outage is a confident wrong answer.
   const staleQuotes = allQuotes.filter((q) => q.stale);
-  const quotes = allQuotes.filter((q) => !q.stale);
-  // Everything below ranks `quotes` (fresh only) but reports `allQuotes`.
+  // So is a floor whose listing the chain shows cannot be filled: the item
+  // left the seller, and the number is a record of an old ask.
+  const deadQuotes = allQuotes.filter((q) => !q.stale && q.listingCustody === "not-backed");
+  const quotes = allQuotes.filter((q) => !q.stale && q.listingCustody !== "not-backed");
+  // Everything below ranks `quotes` (fresh and fillable only) but reports `allQuotes`.
   if (staleQuotes.length > 0) {
     caveats.push(
       `${staleQuotes.map((q) => q.source).join(", ")}: the marketplace did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
     );
   }
+  if (deadQuotes.length > 0) {
+    caveats.push(
+      `${deadQuotes.map((q) => `${q.source} (${q.value} ${q.currency})`).join(", ")}: the chain shows the listing behind this floor is no longer held by its seller or the marketplace, so nobody can buy at that price; it is shown and excluded from the comparison.`,
+    );
+  }
+  const mirror = oneListingTwoVenues(allQuotes);
+  const lead = mirror ? `${mirror.sentence} ` : "";
 
   if (quotes.length === 0) {
     return {
       comparable: false,
-      verdict: "No marketplace returned a floor price for this collection.",
+      verdict: `${lead}No marketplace returned a floor price for this collection${deadQuotes.length ? " that the chain shows can be bought" : ""}.`,
       floors: allQuotes,
       caveats,
     };
@@ -85,11 +144,16 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     return {
       comparable: false,
       verdict:
-        `Only ${only.source} returned a floor (${only.value} ${only.currency}), so there is nothing to compare it ` +
+        `${lead}Only ${only.source} returned a floor${deadQuotes.length ? " that the chain shows can be bought" : ""} (${only.value} ${only.currency}), so there is nothing to compare it ` +
         `against. This is one marketplace's view, not the market's.`,
       floors: allQuotes,
       caveats,
     };
+  }
+
+  // Both floors are the same listing: there is one ask, not two to rank.
+  if (mirror?.sameFloor && mirror.sources.every((s) => quotes.some((q) => q.source === s))) {
+    return { comparable: false, verdict: mirror.sentence, floors: allQuotes, caveats };
   }
 
   const currencies = [...new Set(quotes.map((q) => q.currency))];
@@ -117,10 +181,11 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   return {
     comparable: true,
     verdict:
-      spreadPct === 0
+      lead +
+      (spreadPct === 0
         ? `Both sources report the same floor (${cheapest.value} ${cheapest.currency}).`
         : `Lowest reported by ${cheapest.source} at ${cheapest.value} ${cheapest.currency}; ` +
-          `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.`,
+          `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.`),
     floors: sorted,
     cheapest,
     spreadPct,
