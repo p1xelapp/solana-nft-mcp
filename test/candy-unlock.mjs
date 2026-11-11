@@ -106,7 +106,8 @@ await check('burn-only, transfer-and-burn, no checks, removed and unread oracle 
   assert.deepEqual(deriveTrust(a,removed).oracleChecks,[]);
   assert.equal(deriveTrust(a,col).incomplete,true);
   const override={...a,externalPlugins:1,external:[{...ext,checks:[]}]};
-  assert.deepEqual(deriveTrust(override,col,new Map([[key,reading]])).blockedByOracle,[]);
+  // With no registered events, this adapter cannot replace the collection's burn check.
+  assert.deepEqual(deriveTrust(override,col,new Map([[key,reading]])).blockedByOracle,['burn']);
 });
 console.log(`candy-unlock: ${passed} passed, ${failed} failed`);
 process.exitCode = failed ? 1 : 0;

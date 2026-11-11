@@ -11,7 +11,7 @@
  * a zero-key server viable.
  */
 
-import { cached, fetchJson, HttpError, OversizedBodyError, rateLimiter } from "../lib/http.js";
+import { cached, fetchJson, HttpError, OversizedBodyError, rateLimiter, StopError } from "../lib/http.js";
 import { clean, safeHttpsUrl } from "../lib/untrusted.js";
 import { USER_AGENT } from "../lib/version.js";
 import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
@@ -60,7 +60,12 @@ async function me<T>(path: string, signal?: AbortSignal, opts: { background?: bo
     throw new HttpError(`Magic Eden asked readers to pause; about ${Math.ceil(remaining / 1000)} s of that pause is left`, 429, "rate limited", remaining);
   }
   try {
-    return await fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate, signal, background: opts.background });
+    const pausedGate = async (signal?: AbortSignal, options?: Parameters<typeof gate>[1]) => {
+      await gate(signal, options);
+      const left = (pausedUntil.get(kind) ?? 0) - Date.now();
+      if (left > 0) throw new StopError("Magic Eden asked readers to pause", left);
+    };
+    return await fetchJson<T>("Magic Eden", `${BASE}${path}`, { headers: HEADERS }, { gate: pausedGate, signal, background: opts.background });
   } catch (e) {
     if (e instanceof HttpError && e.status === 429) {
       const wait = Math.min(Math.max(e.retryAfterMs ?? PAUSE_DEFAULT_MS, 1_000), PAUSE_MAX_MS);
@@ -953,7 +958,7 @@ export interface CollectionListingsRead {
  */
 export async function collectionListings(
   symbol: string,
-  opts: { attributes?: TraitFilter[]; limit: number; offset?: number; sort?: ListingSort; direction?: SortDirection },
+  opts: { attributes?: TraitFilter[]; limit: number; offset?: number; sort?: ListingSort; direction?: SortDirection; fresh?: boolean },
 ): Promise<CollectionListingsRead> {
   const requestedLimit = Math.max(1, Math.floor(opts.limit));
   const appliedLimit = Math.min(requestedLimit, LISTING_PAGE_MAX);
@@ -991,6 +996,7 @@ export async function collectionListings(
     me<unknown>(
       `/collections/${encodeURIComponent(symbol)}/listings?offset=${offset}&limit=${venueLimit}&sort=${sort}&sort_direction=${direction}${attrParam}`,
     ),
+    { fresh: opts.fresh },
   );
   const served = page<MeListing>("collection listings", data);
   // The venue has answered 41 rows to a request for 25. Over-delivery below

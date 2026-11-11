@@ -71,7 +71,7 @@ for (const dead of ["collector://", "get_pack_pulls", "cryptoslam"]) {
 // bundle root, so the file it names has to be inside the bundle.
 const entry = manifest.server?.mcp_config?.args?.find((a) => a.endsWith(".js"));
 check(Boolean(entry), `names a server entry point (${entry ?? "none"})`);
-const entryPath = join(work, (entry ?? "").replace("${__dirname}/", "").replaceAll("/", "\\"));
+const entryPath = join(work, ...(entry ?? "").replace("${__dirname}/", "").split("/"));
 check(entry ? existsSync(entryPath) : false, "the entry point it names is inside the bundle");
 check(existsSync(join(work, "node_modules")), "carries its dependencies, so it runs with no install step");
 check(existsSync(join(work, "data", "me-collections.json.gz")), "carries the marketplace directory snapshot that name lookups need");

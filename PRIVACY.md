@@ -16,8 +16,9 @@ name) to the service that can answer it, and to nobody else:
 | OpenSea | `api.opensea.io` | Stats, listings and sales that OpenSea carries | Collection slugs, mint and wallet addresses, and an API key |
 | npm registry | `registry.npmjs.org` | Once at start | A request for this package's latest version number. No identifier is added |
 
-Each of those services sees your IP address and a user-agent naming this package and its
-version, as any website does. What they keep is covered by their own policies. Your
+Each of those services sees your IP address and HTTP request headers. Marketplace data
+reads and the update check name this package and its version in the user-agent; chain reads
+and key issuance use the runtime's user-agent. What they keep is covered by their own policies. Your
 questions, the assistant's answers and your chat never go to any of them: only the addresses
 and names a tool call needs.
 

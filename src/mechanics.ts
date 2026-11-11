@@ -100,14 +100,14 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "standard",
     title: "Core plugins: owner-managed, authority-managed, permanent",
     plain:
-      "Three families. Owner-managed plugins need your signature to add and fall away when the item is sold. Authority-managed plugins belong to the issuer and can be changed while you hold the item. Permanent plugins can only be attached when the item is first created - and then they never go away, for any owner, ever.",
+      "Owner-managed plugins need the holder's approval to add; delegated authority resets on transfer. Authority-managed plugins follow the update authority or their assigned authority. Permanent plugins can only be added at creation and survive transfers. Some can still be removed under the program's permission checks; read the asset and collection for the rules attached now.",
     pitfall:
       "Treating 'delegate' as one thing. An owner-approved transfer delegate is you lending a key; a permanent transfer delegate is the issuer keeping one.",
     documented:
       "Permanent plugins are plugins that may only be added to a Core Asset at the time of creation. Owner-managed authority is automatically revoked upon transfer.",
     verified: true,
-    source: CORE,
-    sourceRead: READ,
+    source: `${CORE_SRC}/utils/mod.rs`,
+    sourceRead: "2026-11-11",
     keywords: ["owner managed", "authority managed", "permanent", "families", "revoked", "creation"],
   },
   {
@@ -478,9 +478,9 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Add blocker",
     pluginType: "AddBlocker",
     power: "Stops new issuer-controlled plugins being attached later.",
-    heldBy: "The issuer's update authority.",
+    heldBy: "Usually no authority; read the plugin's authority to see whether it can be removed.",
     plain:
-      "A promise that the rules will not grow. With it in place the issuer cannot bolt on new authority-managed plugins after you buy. You can still add your own owner-managed ones, such as a freeze for staking or a transfer delegate for a listing.",
+      "While attached, it blocks new authority-managed plugins. Owner-managed plugins, such as a staking freeze or listing transfer delegate, can still be added. Existing plugins keep their own update rules, and external adapters need a separate check.",
     pitfall:
       "It is not always permanent - the authority can remove it unless it was itself locked - and it never blocks the owner-managed plugins.",
     documented:
@@ -810,20 +810,18 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-tensor-custody",
     category: "venue",
-    title: "What Tensor does with a listed item is not published",
+    title: "Tensor Core listing custody",
     venue: "tensor",
     plain:
-      "Tensor's own documentation describes prices, fees and order types but never says whether listing moves an item into a program account or leaves it in your wallet under a delegate. Anyone telling you which it is, without a transaction to point at, is guessing.",
+      "Tensor's public marketplace program transfers a Core item into its listing account. That account records the seller and order terms. Other standards and pools need separate checks.",
     pitfall:
-      "Assuming Tensor works the way Magic Eden's pools do. The mechanics differ per program and per standard, and this one is undocumented.",
+      "Custody alone does not establish an order's expiry, currency, buyer restrictions or execution.",
     documented:
-      "Tensor publishes five program addresses - Marketplace, AMM, Escrow, Whitelist and Fees - with no description of listing custody.",
-    verified: false,
-    unverifiedReason:
-      "Neither the fees page, the sell-or-list page nor the protocols page states whether a listing escrows the item or delegates it, and Tensor's programs are not published as readable source.",
-    source: "https://docs.tensor.foundation/protocols",
-    sourceRead: READ,
-    keywords: ["tensor", "listing", "custody", "escrow", "delegate", "unknown", "undocumented"],
+      "The published Core list instruction creates ListState and transfers the asset to it.",
+    verified: true,
+    source: "https://raw.githubusercontent.com/tensor-foundation/marketplace/main/program/src/instructions/mpl_core/list.rs",
+    sourceRead: "2026-11-11",
+    keywords: ["tensor", "listing", "custody", "escrow", "core", "liststate"],
   },
   {
     id: "venue-opensea-solana",

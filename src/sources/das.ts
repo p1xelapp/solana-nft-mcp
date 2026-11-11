@@ -41,6 +41,8 @@ function upstreamText(e: unknown): string {
 
 const PUBLIC_DAS = "https://api.mainnet-beta.solana.com";
 const SOURCE = "the public Solana RPC asset index (DAS)";
+/** The whole message an index sends for an asset it has no record of; see where it is used. */
+const MISSING_ASSET_MESSAGE = /^(?:Database Error: )?(?:RecordNotFound Error: )?(?:Asset not found|Record not found: Asset)[.!]?$/i;
 
 // The Foundation endpoint documents 100 requests per 10 seconds per IP and
 // shares that budget with the plain RPC reads in solana.ts. The gate is keyed
@@ -71,6 +73,8 @@ interface RpcError {
   message?: string;
 }
 
+class AssetMissingError extends Error {}
+
 async function call<T>(method: string, params: Record<string, unknown>, signal?: AbortSignal): Promise<{ result: T; endpoint: string }> {
   // The request this read serves may be cancelled without anyone passing the
   // signal down; the ambient one is joined so the gate wait below ends too.
@@ -80,6 +84,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
   // fate: a plain RPC set as DAS_RPC_URL would otherwise take the built-in
   // endpoint that does serve DAS down with it.
   const withoutTheMethod: string[] = [];
+  const missingAsset: string[] = [];
   const all = endpoints();
   for (const ep of all) {
     assertOnline(ep.url);
@@ -96,6 +101,11 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     // meant a caller who had already left still waited out the whole queue.
     await gateFor(ep.url)(signal);
     if (signal?.aborted) throw new AbortedError(`${SOURCE} was not reached before the caller's deadline passed`);
+    const queuedPause = originPauseLeftMs(ep.url);
+    if (queuedPause > 0) {
+      last = `${ep.id} asked for a pause; ${Math.ceil(queuedPause / 1000)} s of it is left, so it was not asked`;
+      continue;
+    }
     let j: { result?: T; error?: RpcError } | null = null;
     try {
       const r = await fetch(ep.url, {
@@ -149,6 +159,15 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       continue;
     }
     if (j.error) {
+      // The public index words a missing asset as "Database Error:
+      // RecordNotFound Error: Asset not found" (read 2026-11-11); other
+      // providers say "Asset Not Found" or "Record not found: Asset". Only
+      // that code with one of those whole messages counts. Anything longer
+      // ("asset not found in a temporarily unavailable shard") stays an error,
+      // because absence is a claim about the world.
+      if (method === "getAsset" && j.error.code === -32000 && typeof j.error.message === "string" && MISSING_ASSET_MESSAGE.test(j.error.message.trim())) {
+        missingAsset.push(ep.id);
+      }
       // The index's own words, redacted against every registered credential
       // and cut short: an upstream message is text it controls.
       // The person's own index is reported by code only: its text can echo
@@ -168,6 +187,9 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
   if (withoutTheMethod.length === all.length) {
     throw new DasUnsupported(`no configured endpoint serves ${method} (${withoutTheMethod.join(", ")})`);
   }
+  // An endpoint that does not serve the method has no opinion about the
+  // asset, so absence needs every endpoint that DOES serve it to say missing.
+  if (missingAsset.length > 0 && missingAsset.length + withoutTheMethod.length === all.length) throw new AssetMissingError("The asset index returned an explicit missing-asset response.");
   throw new Error(`${SOURCE} did not answer (${last}). That is the free public endpoint being busy, not a problem with what you asked; the other sources still work.`);
 }
 
@@ -559,7 +581,11 @@ export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}):
       // deadline. The caller's own signal is passed to cached() below and ends
       // only its wait.
       const { result, endpoint } = await call<RawAsset | null>("getAsset", { id }, producer);
-      if (!result || typeof result !== "object") return null;
+      // A reply with no record is not the same as the index saying the asset
+      // is missing (that arrives as an explicit error, handled below). Read as
+      // absence and cached for a minute, an empty reply told people an asset
+      // did not exist.
+      if (!result || typeof result !== "object") throw new Error(`${SOURCE} answered getAsset for ${id} with an empty result (outage or API change)`);
       // An answer carrying a different id is not this asset. Caching it under
       // the requested id would show one asset's owner beneath another's mint.
       if (result.id !== id) {
@@ -570,7 +596,7 @@ export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}):
       return { raw: result, endpoint };
     } catch (e) {
       // DAS reports an unknown id as an error rather than an empty result.
-      if (e instanceof Error && /not found|does not exist|Asset Not Found/i.test(e.message)) return null;
+      if (e instanceof AssetMissingError) return null;
       throw e;
     }
   }, { signal: opts.signal });

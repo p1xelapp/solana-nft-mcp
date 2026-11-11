@@ -281,6 +281,15 @@ clone you built from source is just a folder to delete. Then delete `~/.solana-n
 if it exists, which is the one folder this server ever writes to. npm keeps its own
 download cache separately; `npm cache clean --force` clears that.
 
+**Does a checked floor guarantee that an order will fill?**
+No. The check reads the cheapest 100 Magic Eden listings and compares Core
+ownership with the seller or recognized venue custody. It does not simulate
+a purchase, inspect every order condition, or read beyond that window.
+`verify_claim` rereads the book and custody before issuing a floor receipt.
+If either cannot be checked, including pool and non-Core custody, the receipt
+is unverifiable. Other tools can still show the venue's reported floor with
+its unchecked status. A floor is an ask, not a valuation.
+
 **Something is wrong or missing.**
 Open an issue with the tool name and the input. If it is a security matter, see
 SECURITY.md instead.

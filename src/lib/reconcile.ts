@@ -102,6 +102,14 @@ const pct = (a: number, b: number) => Math.round(((a - b) / b) * 1000) / 10;
  * answered" is distinguishable from "one venue exists".
  */
 export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] = []): Reconciliation {
+  const mirror = oneListingTwoVenues(allQuotes);
+  // The matching rows are evidence for the comparison, not another listing
+  // page to repeat in both the text and structured answer.
+  allQuotes = allQuotes.map((q) => {
+    const quote = { ...q };
+    delete quote.alsoListed;
+    return quote;
+  });
   const caveats = [
     "A floor is the lowest current ASK, not a valuation and not a recent trade price. On a thin order book one listing sets it.",
     ...extraCaveats,
@@ -116,7 +124,8 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   // left the seller, and the number is a record of an old ask.
   const deadQuotes = allQuotes.filter((q) => !q.stale && q.listingCustody === "not-backed");
   const quotes = allQuotes.filter((q) => !q.stale && q.listingCustody !== "not-backed");
-  // Everything below ranks `quotes` (fresh and fillable only) but reports `allQuotes`.
+  // The remaining quotes can include unchecked custody. Ranking reported
+  // amounts does not establish that their orders can be filled.
   if (staleQuotes.length > 0) {
     caveats.push(
       `${staleQuotes.map((q) => q.source).join(", ")}: the marketplace did not answer just now; the value shown is the last one seen and is excluded from the comparison.`,
@@ -127,7 +136,6 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       `${deadQuotes.map((q) => `${q.source} (${q.value} ${q.currency})`).join(", ")}: the chain shows the listing behind this floor is no longer held by its seller or the marketplace, so nobody can buy at that price; it is shown and excluded from the comparison.`,
     );
   }
-  const mirror = oneListingTwoVenues(allQuotes);
   const lead = mirror ? `${mirror.sentence} ` : "";
 
   if (quotes.length === 0) {
@@ -144,7 +152,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     return {
       comparable: false,
       verdict:
-        `${lead}Only ${only.source} returned a floor${deadQuotes.length ? " that the chain shows can be bought" : ""} (${only.value} ${only.currency}), so there is nothing to compare it ` +
+        `${lead}Only ${only.source} returned a floor${deadQuotes.length ? " not excluded as stale" : ""} (${only.value} ${only.currency}), so there is nothing to compare it ` +
         `against. This is one marketplace's view, not the market's.`,
       floors: allQuotes,
       caveats,

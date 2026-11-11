@@ -105,7 +105,8 @@ function boundErrorText(transport: StdioServerTransport): void {
     // error, the tool name in "Tool x not found". That quote is caller text
     // inside our answer, so it loses its delimiters, invisible characters and
     // links like any other, and a not-found line cannot span lines.
-    const r0 = neutraliseStructure(redactSecrets(s));
+    // Removing an invisible character can join two pieces of a credential.
+    const r0 = redactSecrets(neutraliseStructure(redactSecrets(s)));
     const r = /^(?:MCP error -?\d+: )?Tool [\s\S]* not found$/.test(r0) ? r0.replace(/\s+/g, " ") : r0;
     const suffix = ` [error text cut at ${MAX_ERROR_TEXT} characters]`;
     return r.length > MAX_ERROR_TEXT ? `${r.slice(0, MAX_ERROR_TEXT - suffix.length)}${suffix}` : r;
@@ -748,7 +749,7 @@ registerTool(
         .trim()
         .min(1)
         .max(120)
-        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_]{1,64}$/i, {
+        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_.-]{1,80}$/i, {
           error: (i) => (typeof i.input === "string" && wrongShape(i.input) ? addressRefusal(i.input) : "an address for supply, never-traded and ownership, or a marketplace symbol for floor"),
           abort: true,
         })
@@ -768,7 +769,7 @@ registerTool(
       wallet: addressSchema.optional().describe("The wallet said to own it - required for ownership claims"),
     },
   },
-  guard(async (args) => ok(await verifyClaim(args))),
+  guard(async (args) => ok(await verifyClaim(args.claim === "floor" ? { ...args, subject: symbolSchema.parse(args.subject) } : args))),
 );
 
 /**
@@ -1662,39 +1663,34 @@ registerTool(
 );
 
 /**
- * Mark OpenSea sale rows that are the same transaction as a Magic Eden row.
- *
- * Both feeds index a fill that settles through a program the other one also
- * watches, so one Candy sale on 7 Nov came back twice: 0.01 SOL in Magic
- * Eden's list and 0.0112 SOL in OpenSea's, which reports what the buyer paid
- * with the royalty and the fee on top. Read as two sales, it doubled the count
- * and gave the item two prices. Neither row is dropped (each is that feed's
- * honest record) and nothing is added; the OpenSea row says which Magic Eden
- * row it is. Matched on the transaction signature and, when both carry one,
- * the item, since one transaction can settle several items.
+ * A transaction can settle several items, or sell the same item more than
+ * once. Match only a unique signature, item, buyer and seller in both feeds.
+ * Missing identities and repeated candidates stay unmatched. Both original
+ * rows remain visible because each feed can report a different amount.
  */
-function markSameFills(meSales: { signature: string | null; tokenMint: string | null; priceSol: number | null }[], openseaPart: Record<string, unknown>): Record<string, unknown> {
-  const osSales = Array.isArray(openseaPart.sales) ? (openseaPart.sales as { transaction?: string | null; mint?: string | null; price?: number | null; currency?: string | null }[]) : [];
-  const meBySignature = new Map<string, { mint: string | null; priceSol: number | null }[]>();
-  for (const s of meSales) if (s.signature) meBySignature.set(s.signature, [...(meBySignature.get(s.signature) ?? []), { mint: s.tokenMint, priceSol: s.priceSol }]);
+function markSameFills(meSales: { signature: string | null; tokenMint: string | null; priceSol: number | null; buyer: string | null; seller: string | null }[], openseaPart: Record<string, unknown>): Record<string, unknown> {
+  const osSales = Array.isArray(openseaPart.sales) ? (openseaPart.sales as { transaction?: string | null; mint?: string | null; price?: number | null; currency?: string | null; buyer?: string | null; seller?: string | null }[]) : [];
+  const meBySignature = new Map<string, { mint: string | null; priceSol: number | null; buyer: string | null; seller: string | null }[]>();
+  for (const s of meSales) if (s.signature) meBySignature.set(s.signature, [...(meBySignature.get(s.signature) ?? []), { mint: s.tokenMint, priceSol: s.priceSol, buyer: s.buyer, seller: s.seller }]);
   let matched = 0;
   const sales = osSales.map((row) => {
     const rows = row.transaction ? meBySignature.get(row.transaction) : undefined;
-    const twin = rows?.find((m) => m.mint === null || !row.mint || m.mint === row.mint);
+    const candidates = row.mint && row.buyer && row.seller ? rows?.filter((m) => m.mint === row.mint && m.buyer === row.buyer && m.seller === row.seller) : undefined;
+    const twin = candidates?.length === 1 && osSales.filter((s) => s.transaction === row.transaction && s.mint === row.mint && s.buyer === row.buyer && s.seller === row.seller).length === 1 ? candidates[0] : undefined;
     if (!twin) return row;
     matched++;
-    // Read live on 2026-11-10: three Krypto #1 fills were 0.01 SOL on Magic
-    // Eden and 0.0112 on OpenSea (10% royalty and 2% fee on top), while a
-    // fourth carried the same price in both. The sentence follows the pair.
-    const differs = row.currency === "SOL" && typeof row.price === "number" && typeof twin.priceSol === "number" && row.price !== twin.priceSol;
+    // The feeds report amounts, not the reason they differ. Fees need a
+    // transaction-level read, and a signature alone can contain several fills.
+    const comparable = row.currency === "SOL" && typeof row.price === "number" && typeof twin.priceSol === "number";
+    const differs = comparable && row.price !== twin.priceSol;
     return {
       ...row,
       sameTransactionAs: "magiceden" as const,
       sameTransactionNote:
         "Magic Eden's list above has this same transaction. It is one sale, not two: count it once and do not add the two prices. " +
         (differs
-          ? `OpenSea gives ${row.price} SOL where Magic Eden gives ${twin.priceSol} SOL: OpenSea's figure includes the royalty and the marketplace fee paid on top of the seller's price.`
-          : "Both feeds give it the same price here."),
+          ? `OpenSea gives ${row.price} SOL where Magic Eden gives ${twin.priceSol} SOL. The reason for the difference was not checked; these feeds alone do not establish fees or royalties.`
+          : comparable ? "Both feeds give it the same price here." : "The prices could not be compared: a currency differs or a usable amount is missing."),
     };
   });
   if (matched === 0) return openseaPart;
@@ -1702,7 +1698,7 @@ function markSameFills(meSales: { signature: string | null; tokenMint: string | 
     ...openseaPart,
     sales,
     sameTransactions: matched,
-    sameTransactionsNote: `${matched} of OpenSea's rows are the same transactions as rows in Magic Eden's list, matched by signature and marked sameTransactionAs. Distinct sales across both lists: count each signature once.`,
+    sameTransactionsNote: `${matched} of OpenSea's rows uniquely match a sale in Magic Eden's list by transaction signature, item, buyer and seller, and are marked sameTransactionAs. Count each matched combination once. Different items or parties remain separate sales; missing identities and repeated candidates cannot be matched here.`,
   };
 }
 
@@ -2020,10 +2016,12 @@ registerTool(
       const fromIndex = indexed !== null && (indexed.image !== null || indexed.attributes.length > 0);
       market = {
         ...market,
-        ...(fromIndex && indexed ? { image: indexed.image, attributes: indexed.attributes.map((t) => ({ trait: t.trait, value: t.value })) } : {}),
+        ...(fromIndex && indexed ? { image: indexed.image, attributes: indexed.attributes, attributesOmitted: indexed.attributesOmitted } : {}),
         metadataNote: fromIndex
           ? "Magic Eden's index has no metadata for this item yet (its record has no image and no traits), so the image and traits here come from the chain's asset index, read in this same call."
-          : "Magic Eden's index has no metadata for this item yet (its record has no image and no traits), and the chain's asset index had none to offer either.",
+          : dasRes.status === "rejected"
+            ? "Magic Eden's record has no image and no traits. The chain's asset index could not be read, so its metadata is unknown."
+            : "Magic Eden's record has no image and no traits, and the chain's asset index returned none either.",
       };
     }
     const ownerAgreement = [indexAgreement, marketAgreement].filter(Boolean).join(" ") || null;
@@ -2062,6 +2060,9 @@ registerTool(
             standard: indexed.standard,
             interface: indexed.interface,
             name: indexed.name,
+            image: indexed.image,
+            attributes: indexed.attributes,
+            attributesOmitted: indexed.attributesOmitted,
             owner: indexed.owner,
             collection: indexed.collection,
             collectionVerified: indexed.collectionVerified,
@@ -2498,13 +2499,14 @@ registerTool(
       const r = roleOf(owner, updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
       const p = holderPrograms.get(owner);
       const openSeaListing = r.role !== "issuer" && p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM;
+      const kindUnknown = r.role === "wallet" && (!p || p.kind === "unread" || (p.kind === "program" && !sol.isWalletProgram(p.program) && !openSeaListing));
       return {
         owner,
         held: count,
         shareOfOwnerKnownPct: ownerKnown > 0 ? Number(((count / ownerKnown) * 100).toFixed(1)) : 0,
         /** issuer (the collection's own key), venue-escrow (listed on Magic Eden), opensea-listing (listed on OpenSea), wallet, or unknown. */
-        role: openSeaListing ? ("opensea-listing" as const) : r.role,
-        ...(openSeaListing ? { roleNote: `${sol.OPENSEA_LISTING_ACCOUNT_LABEL}; it holds an item that is listed on OpenSea, not a collector` } : r.note ? { roleNote: r.note } : {}),
+        role: openSeaListing ? ("opensea-listing" as const) : kindUnknown ? ("unknown" as const) : r.role,
+        ...(openSeaListing ? { roleNote: `${sol.OPENSEA_LISTING_ACCOUNT_LABEL}; it holds an item that is listed on OpenSea, not a collector` } : kindUnknown ? { roleNote: p?.kind === "program" ? "A program owns this account; whose items it holds was not checked." : "The account's owning program was not read, so its role is unknown." } : r.note ? { roleNote: r.note } : {}),
         explorer: `https://solscan.io/account/${owner}`,
       };
     });
@@ -2572,7 +2574,7 @@ registerTool(
     if (openSeaListingHeld > 0) readThis.push(`${openSeaListingHeld} matched item(s) sit in OpenSea listing accounts (role opensea-listing): they are listed for sale on OpenSea, and each account's seller is the wallet that moved the item in, which get_asset_provenance shows.`);
     if (kindNotChecked > 0 || kindUnread > 0) {
       readThis.push(
-        `Whether a holder is an OpenSea listing account was ${kindUnread > 0 ? `not readable for ${kindUnread} holder(s) just now` : ""}${kindUnread > 0 && kindNotChecked > 0 ? " and " : ""}${kindNotChecked > 0 ? `not checked for the ${kindNotChecked} smallest holder(s) past the first ${HOLDER_KIND_CHECKS}` : ""}; those keep the wallet role by default.`,
+        `Whether a holder is an OpenSea listing account was ${kindUnread > 0 ? `not readable for ${kindUnread} holder(s) just now` : ""}${kindUnread > 0 && kindNotChecked > 0 ? " and " : ""}${kindNotChecked > 0 ? `not checked for the ${kindNotChecked} smallest holder(s) past the first ${HOLDER_KIND_CHECKS}` : ""}; accounts without a known role remain unknown and are excluded from heldByCollectors.`,
       );
     }
     if (fittedHolders.note) readThis.push(fittedHolders.note);
@@ -2603,8 +2605,8 @@ registerTool(
         : null,
       /** Whether the collection account was read: ok, unavailable (with the reason), or not-applicable (not a Core collection). */
       issuerRead: { status: issuerReadStatus, ...(authorityRead.reason ? { reason: authorityRead.reason } : {}) },
-      /** True when the authority could not be read, so no role below could be settled. */
-      rolesIncomplete: issuerReadStatus === "unavailable",
+      /** True when the authority or any holder's role could not be established. */
+      rolesIncomplete: issuerReadStatus === "unavailable" || holders.some((h) => h.role === "unknown"),
       ownershipVerifiedOnchain: false,
       heldByIssuer: issuerHeld,
       heldInVenueEscrow: escrowHeld,
@@ -2612,7 +2614,14 @@ registerTool(
       heldInOpenSeaListings: openSeaListingHeld,
       /** Known-owner rows that are neither the update authority nor a known escrow. "Collector" is the ordinary reading, not a proven identity. Rows with no owner reported are NOT in this number; see assetsWithNoOwnerReported. */
       heldByCollectors: otherOwnersHeld,
-      /** Known-owner rows whose role could not be settled because the collection account was unreadable. */
+      /**
+       * Known-owner rows whose role could not be settled: the collection account
+       * was unreadable, the holder account's owning program could not be read
+       * or is not one this server can name, or the holder is past the first
+       * thousand whose account kind is read. An OpenSea listing account holds a
+       * single item, so it sits in that tail, and counting the tail as
+       * collectors would count listings as people.
+       */
       heldByUnknownRole: unknownRoleHeld,
       assetsInCollection: page.items.length,
       matched: rows.length,
@@ -2840,7 +2849,7 @@ registerTool(
     description:
       "How a wallet trades: buys and sells with SOL totals, net flow, listings and bids, which marketplace " +
       "(Magic Eden order book vs AMM pools; OpenSea with a key), the collections it trades most, every " +
-      "flip (bought then sold: hold time and P&L before fees), a behaviour label (flipper / holder / " +
+      "flip (bought then sold: hold time and the difference between reported prices), a behaviour label (flipper / holder / " +
       "mixed / lister / quiet) with the reason, and the first purchase inside the window. With " +
       "OpenSea readable (a self-issued free key, or OPENSEA_API_KEY), plain transfers are included so 'was this airdropped, gifted or bought?' " +
       "gets an evidence-based answer. Every figure says which feed it came from and what that feed " +

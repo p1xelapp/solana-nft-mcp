@@ -571,11 +571,10 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       // "owned by another program" and "no such account" are ANSWERS from the
       // chain, not failures to read it. Filing them as errors is what made a
       // plain wallet come back as "the chain could not be read just now".
-      // These two sentences are OURS - getCoreAccountWithMeta writes them from
-      // a decoded account, not from anything a third party sent - so matching
-      // on them is matching on our own vocabulary, not on attacker text.
+      // A public endpoint can put those same words in an error message.
+      // Only the reader's typed outcomes establish absence or another owner.
       const msg = e instanceof Error ? e.message : String(e);
-      const answered = e instanceof NotFoundError || e instanceof WrongKindError || /not Metaplex Core|does not exist on mainnet/i.test(msg);
+      const answered = e instanceof NotFoundError || e instanceof WrongKindError;
       if (addressToProbe === q) coreAbsence = e instanceof NotFoundError ? "no-account" : e instanceof WrongKindError ? "other-owner" : null;
       checked.push({
         source: "solana-rpc",

@@ -233,7 +233,7 @@ await check("one fill in both feeds is marked as the same transaction, neither d
   const same = rows.filter((x) => x.sameTransactionAs === "magiceden");
   assert.strictEqual(same.length, 1, "only the row with the same signature AND item is the same sale");
   assert.strictEqual(same[0].transaction, P.sig("fill-1"));
-  assert.match(same[0].sameTransactionNote, /includes the royalty and the marketplace fee/);
+  assert.match(same[0].sameTransactionNote, /reason for the difference was not checked/);
   assert.strictEqual(r.opensea.sameTransactions, 1);
   // Control: a shared signature on a different item, and an OpenSea-only sale, stay unmarked.
   assert.ok(rows.filter((x) => x.transaction !== P.sig("fill-1")).every((x) => !x.sameTransactionAs));
