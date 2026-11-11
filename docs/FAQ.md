@@ -182,8 +182,15 @@ and reports how many activity rows it scanned. `coverage` says whether the read 
 stopped at its page budget, or met a repeated page. Even an exhausted feed describes that marketplace's index only. Use
 `get_collection_sales` for a dated window and keep other venues' coverage separate.
 Listing validity is separate from API freshness. Magic Eden can retain an ask after
-the asset moves to another wallet. Floors and listing searches report
-`listingValidityChecked: false`; their read times do not prove an order can fill.
+the asset moves to another wallet, which is what happened to Candy listings after the
+October 2026 wallet move. For Metaplex Core collections the server compares each
+listing with the owner named in the item's own account: a floor is the cheapest ask
+whose item is still with its seller or in Magic Eden's escrow, Magic Eden's own figure
+is given beside it as `venueReportedFloorSol`, and stale listings are counted
+separately. Anything it could not check (other token standards, a listing with no
+seller, a chain read that failed) is marked `listingValidityChecked: false` and is
+neither called stale nor called buyable. A checked listing is one that could fill when
+it was read; nothing here places an order to prove it.
 
 **Does it understand packs?**
 Yes. Sealed packs are separate assets from the cards they open into. On past Candy
@@ -255,13 +262,15 @@ tools get added; existing names stay.
 Yes, and the rule is worth knowing exactly. Every credential this process sends is
 registered before it is sent, and every string that leaves for a client, a model or a
 log is checked against that registry. From a `SOLANA_RPC_URL` or `DAS_RPC_URL` the
-server registers the userinfo password and any query field whose NAME says credential
-(`?api-key=`, `?token=`) from four characters up, and any path segment of eight or
-more characters that is not a known route word. The eight-character floor on path
-segments is deliberate: a shorter one is as likely to be a route word as a key, and
-redacting `main` would eat the word out of `mainnet` in every answer. A key shorter
-than eight characters sitting in a PATH is the one shape not covered, so put it in a
-query field or the userinfo instead, where the four-character floor applies.
+server registers any query field whose NAME says credential (`?api-key=`, `?token=`)
+from four characters up, and any path segment of eight or more characters that is not
+a known route word. The eight-character floor on path segments is deliberate: a shorter
+one is as likely to be a route word as a key, and redacting `main` would eat the word
+out of `mainnet` in every answer. A key shorter than eight characters sitting in a PATH
+is the one shape not covered, so put it in a query field instead, where the
+four-character floor applies. A URL written as `https://user:password@host` is refused
+with a message naming the variable: it cannot be sent in that form, so it never worked
+as a way to carry a key.
 
 **How do I remove it completely?**
 First remove it from your client, or the client will download and start it again: remove

@@ -18,7 +18,7 @@
 
 import { createHash } from "node:crypto";
 
-import { AbortedError, assertOnline, cached, combineSignals, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint } from "../lib/http.js";
+import { AbortedError, assertOnline, cached, combineSignals, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean, safeHttpsUrl } from "../lib/untrusted.js";
 import { USER_AGENT } from "../lib/version.js";
@@ -84,11 +84,18 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
   for (const ep of all) {
     assertOnline(ep.url);
     // A caller whose deadline has passed gets no further requests spent on it.
-    if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
+    if (signal?.aborted) throw new AbortedError(`${SOURCE} was not reached before the caller's deadline passed`);
+    // A pause the host asked for binds this reader too: the plain RPC reads
+    // share the host, and a 429 with a Retry-After was addressed to both.
+    const pausedFor = originPauseLeftMs(ep.url);
+    if (pausedFor > 0) {
+      last = `${ep.id} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`;
+      continue;
+    }
     // The signal goes INTO the gate. Checking it only after the turn arrived
     // meant a caller who had already left still waited out the whole queue.
     await gateFor(ep.url)(signal);
-    if (signal?.aborted) throw new Error(`${SOURCE} was not reached before the caller's deadline passed`);
+    if (signal?.aborted) throw new AbortedError(`${SOURCE} was not reached before the caller's deadline passed`);
     let j: { result?: T; error?: RpcError } | null = null;
     try {
       const r = await fetch(ep.url, {
@@ -106,7 +113,9 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
         continue;
       }
       if (r.status === 429 || r.status >= 500) {
-        last = `${ep.id} answered HTTP ${r.status}`;
+        const asked = r.status === 429 ? retryAfterMs(r.headers.get("retry-after")) : 0;
+        await r.body?.cancel().catch(() => undefined);
+        last = asked > 0 ? `${ep.id} answered HTTP 429 and asked for a ${Math.round(pauseOrigin(ep.url, asked) / 1000)} s pause` : `${ep.id} answered HTTP ${r.status}`;
         continue;
       }
       // Bounded read: a hostile or broken endpoint answering a one-line
@@ -295,6 +304,8 @@ export interface DasAsset {
   delegated: boolean | null;
   delegate: string | null;
   royaltyPct: number | null;
+  /** Set when royaltyPct is null on purpose: where the royalty actually lives. */
+  royaltyNote?: string;
   burnt: boolean;
   compressed: boolean;
   /** Plugin names the index reports for Core assets; the byte-level decode in coreplugins.ts remains authoritative. */
@@ -470,8 +481,14 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   // it throws and takes the whole read down.
   const grouping = Array.isArray(a.grouping) ? a.grouping : [];
   const collection = grouping.find((g) => g && typeof g === "object" && g.group_key === "collection");
-  const pct =
-    typeof a.royalty?.basis_points === "number"
+  // A Core asset's royalty is a Royalties plugin, usually on the collection,
+  // and the index answers its royalty block with 0 for every Core asset read,
+  // including Candy cards whose collections enforce 10%. A zero there reads as
+  // "no royalty", so for Core it is not relayed at all.
+  const isCore = iface === "MplCoreAsset";
+  const pct = isCore
+    ? null
+    : typeof a.royalty?.basis_points === "number"
       ? a.royalty.basis_points / 100
       : typeof a.royalty?.percent === "number"
         ? a.royalty.percent * 100
@@ -495,6 +512,9 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     delegated: typeof a.ownership?.delegated === "boolean" ? a.ownership.delegated : null,
     delegate: addr(a.ownership?.delegate),
     royaltyPct: pct !== null && Number.isFinite(pct) ? Math.round(pct * 100) / 100 : null,
+    ...(isCore
+      ? { royaltyNote: "Not reported for Metaplex Core: a Core royalty lives in a Royalties plugin on the asset or its collection, which this index does not reflect. get_asset_trust decodes that plugin from the chain." }
+      : {}),
     burnt: a.burnt === true,
     compressed,
     // Plugin KEYS are index-supplied strings too: a key carrying line breaks

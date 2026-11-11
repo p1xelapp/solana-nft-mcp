@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.19.0 - 2026-11-08
+## 1.19.0 - 2026-11-11
 
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
@@ -14,6 +14,136 @@ what tends to follow trouble at a custodian: phishing links and leaked keys.
 Outside reviews before and after Candy reopened found 75 issues between them, none
 critical or high, several of them the same issue seen from different sides. All
 are fixed here or explained below, and each fix is pinned by a test.
+
+Checked once more on November 10, before publishing, against the market as it
+stood four days after Candy reopened. That pass found two serious problems, both
+about listings, and some sixty smaller ones. They are fixed in this release
+too, and listed here separately because they change what a floor means.
+
+Listings are checked against the chain:
+
+- **A floor is now an ask somebody can pay.** When Candy moved every holder's
+  items to new wallets in October, Magic Eden kept the old listings. On
+  November 10, 98 of the 100 cheapest listings in 2026 MLB Gold Series ICONs
+  and 46 of 48 in Absolute Batman #1 named a seller who no longer held the
+  item. The server passed those on as the floor (0.175 SOL where the cheapest
+  ask that could be bought was 0.499, and 0.147 where it was 2.5), as the
+  cheapest listings, and as a `CONFIRMED` floor receipt. A Metaplex Core item
+  names its owner in its own account, so each listing is now compared with it,
+  one batched read per hundred listings. `get_floor_prices`,
+  `get_collection_stats`, `find_listings` and `verify_claim` use the cheapest
+  listing whose item is still with its seller or in Magic Eden's escrow, give
+  Magic Eden's own figure beside it as `venueReportedFloorSol`, and say how
+  many cheaper stale listings were skipped. Stale rows leave the deals, the
+  low-serial list, the trait floors and every "times floor" figure, and are
+  counted in a block of their own.
+- **What is not checked says so.** Items that are not Metaplex Core, a listing
+  with no seller, an item held in a Magic Eden pool, and any read the chain
+  did not answer are reported as not checked. None of them is called stale,
+  and none is called buyable. `get_wallet_profile` and `find_in_group` still
+  use Magic Eden's reported floor and now say that in the answer.
+- **`get_asset` no longer repeats a leftover listing.** An item listed for
+  13 SOL on OpenSea was shown as "listed at 10 SOL" by the wallet that held it
+  before the move. When Magic Eden's owner and the chain's owner differ, the
+  listing is reported as left over from a previous owner, and the sentence
+  that says the sources agree now covers the marketplace row as well. A burned
+  item is never shown as listed.
+- **`get_wallet_holdings` says what the wallet holds now.** A wallet emptied
+  by the migration came back with 91 rows and held none of them. Each Core row
+  is checked, and rows the wallet no longer holds are counted and set apart.
+- **OpenSea's Solana program is known.** A listing on OpenSea moves the item
+  into an account of its program (`7Aru291A...`, named in OpenSea's own API
+  answers and on every Candy allow-list). That account used to be called "a
+  wallet", counted as one more holder, and used to tell the real seller that
+  their ownership claim was contradicted. It is now named in `identify`,
+  `get_asset`, the history and the holder census, and an ownership claim about
+  a listed item is answered "cannot be checked from the chain", with the reason.
+- **One listing on two marketplaces is not a spread.** OpenSea relays Magic
+  Eden's book at a markup, so the same stale listing appeared as a second,
+  "12% higher" floor. It is recognised by item and seller and said once.
+
+Candy facts, reread on November 10:
+
+- **Candy's signing key changed.** On November 5 the update authority of all
+  401 registered collections moved to `7wixESei...`. `identify` still called
+  the old key Candy's current one and the new one "most likely a wallet". The
+  table is regenerated, the old key is described as the former authority (it
+  is still the mint authority of the oracle account), and both a release check
+  and the weekly live check now fail if the table and the chain disagree.
+- **`get_asset_trust` names who controls the oracle** when the oracle account
+  is a token mint, and says when that is not the collection's update
+  authority.
+- **Items minted on November 5 came back with no picture and no traits.**
+  Magic Eden had not indexed their metadata. The answer says so and uses the
+  asset index's copy.
+- **New explanations** for a listing that outlives a move, "Sealed Item"
+  placeholders, two live items with the same serial, and why no dollar value
+  is given. Six dated sentences about Candy were corrected.
+- **Sales.** `get_collection_sales` reads Magic Eden's feed and now says that
+  instead of "the whole collection", with OpenSea's count for the same window
+  beside it, never added. `get_recent_sales` marks a sale that both feeds
+  carry as one transaction and explains the two prices.
+
+Wrong pastes get an answer:
+
+- A mistyped address used to get "Try again" and a Magic Eden outage that had
+  not happened. It now says nothing is known at that address and to check for
+  a typo.
+- `identify` reads marketplace and explorer links (without opening them), and
+  recognises a `.sol` name, an Ethereum address and a transaction signature in
+  milliseconds instead of searching for them for half a minute.
+- A name spelled with look-alike letters still resolves, at low confidence,
+  with a warning that this is how copies are written.
+- A compressed NFT is no longer reported as missing or possibly burned by the
+  two Core-only tools, a token such as USDC is called a token, and a burned
+  item is called burned.
+- `get_collection_holders` refuses an item or a wallet instead of returning an
+  empty census marked complete. `find_listings` finds a serial asked for as
+  "#13". A timeout names the arguments that make the read smaller.
+
+Security:
+
+- **Links in names and error text.** Link removal covered descriptions only.
+  A claim link or a markdown image in an item's name, a trait or an upstream
+  error message came back unchanged from most tools. They are now removed
+  everywhere third-party text is cleaned, and reported. An image address can
+  no longer carry markdown that turns it into a second link.
+- **More hidden characters and more delimiters.** Variation selectors and four
+  more ranges of invisible characters are stripped, and the turn markers of
+  other model families lose their brackets.
+- **A padded name could stall the server.** One pattern ran on an uncapped
+  listing name; 4,000 spaces cost 29 seconds. The name is capped first.
+- **A pause is a pause for everyone.** A `Retry-After` from a Solana endpoint
+  was honoured by one reader and ignored by two others. It is kept per host.
+- **An endpoint URL with a username or password** was silently unusable, and
+  its refusal text, URL included, appeared in an answer. It is refused by
+  name, and errors from your own endpoint are relayed by kind only.
+- **A client that leaves.** The server now stops within 30 seconds of its
+  input closing instead of finishing a long read for nobody.
+- **The update notice** accepts a plain version number only.
+
+Packaging:
+
+- The desktop bundle has a settings dialog for every documented option, and
+  the server reads blank and unfilled values as unset. It also links a new
+  [PRIVACY.md](PRIVACY.md), which lists every request the server makes and the
+  one file it writes.
+- OpenSea figures carry a link to the collection on OpenSea, built only from a
+  slug already proved against the on-chain address.
+- `server.json` lists all six environment variables.
+
+Known and left for later:
+
+- The server speaks protocol revision 2025-11-25. The 2026-07-28 revision
+  needs the next major version of the protocol library and is planned as its
+  own release. Clients that support both work today.
+- The npm package is not yet published with provenance.
+- The seller behind an item held in a marketplace's escrow or listing account
+  cannot be read from the chain here, so those ownership claims stay
+  unverifiable.
+- Tensor is not read: its API needs a key issued on request.
+
+The earlier rounds, as written at the time:
 
 New:
 
@@ -32,9 +162,7 @@ New:
   this is the tool that tells them apart.
 - **Recent sales say how far they looked.** `get_recent_sales` reports
   `coverage`: pages read, whether Magic Eden's feed ended, whether a page
-  repeated, and whether the read stopped at its budget. Magic Eden floors and
-  listings carry `listingValidityChecked: false`, because an ask can stay in
-  the index after the item moves to another wallet.
+  repeated, and whether the read stopped at its budget.
 
 Wrong answers, fixed:
 

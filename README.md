@@ -98,6 +98,10 @@ environment):
   registered and redacted from every answer (details in [docs/FAQ.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/FAQ.md)).
 - `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1` - skip the one startup request to npm for a newer version.
 
+In the Claude Desktop extension the same options are in the extension's settings, so there is
+no config file to edit. What the server sends, to whom, and the one file it writes are listed
+in [PRIVACY.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/PRIVACY.md).
+
 ## Ask it anything
 
 Nobody types a tool name. These are asked in plain words and the assistant picks the calls.

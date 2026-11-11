@@ -14,11 +14,25 @@
 /** The failure kinds the public error layer can word specifically. */
 export type FailureKind = "not-found" | "wrong-kind" | "escrow" | "unsupported" | "bad-input" | "chain-unavailable";
 
+/**
+ * The two sentences a person reads, written where the failure is understood.
+ *
+ * The wording layer only knows the kind, so a transaction signature pasted as
+ * a mint and a program id pasted as a mint both came back as "not a Metaplex
+ * Core item", with advice to call the tool that had just refused. The place
+ * that worked out WHAT the thing is can say so, and the layer uses it as is.
+ */
+export interface Wording {
+  headline: string;
+  next: string;
+}
+
 /** Base class carrying the kind, so one `instanceof` covers every typed failure. */
 export class TypedError extends Error {
   constructor(
     msg: string,
     public readonly kind: FailureKind,
+    public readonly wording?: Wording,
   ) {
     super(msg);
     this.name = new.target.name;
@@ -27,15 +41,15 @@ export class TypedError extends Error {
 
 /** The sources looked and nothing matched. Only thrown where an ABSENCE was actually established. */
 export class NotFoundError extends TypedError {
-  constructor(msg: string) {
-    super(msg, "not-found");
+  constructor(msg: string, wording?: Wording) {
+    super(msg, "not-found", wording);
   }
 }
 
 /** The identifier is real but is a different kind of thing than the tool takes (a collection passed to an item tool). */
 export class WrongKindError extends TypedError {
-  constructor(msg: string) {
-    super(msg, "wrong-kind");
+  constructor(msg: string, wording?: Wording) {
+    super(msg, "wrong-kind", wording);
   }
 }
 
@@ -81,8 +95,8 @@ export class ChainUnavailableError extends TypedError {
 
 /** What the caller passed cannot be used, decided by us rather than by an upstream body. */
 export class BadInputError extends TypedError {
-  constructor(msg: string) {
-    super(msg, "bad-input");
+  constructor(msg: string, wording?: Wording) {
+    super(msg, "bad-input", wording);
   }
 }
 

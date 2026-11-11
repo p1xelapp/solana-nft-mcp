@@ -21,7 +21,7 @@
  * winners, 0 untraced.
  */
 
-import { cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs } from "../lib/http.js";
+import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs } from "../lib/http.js";
 import { withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
@@ -36,12 +36,26 @@ const SYSTEM_PROGRAM = "11111111111111111111111111111111";
 // TransferV1's account list and must never be mistaken for one.
 const LOG_WRAPPER = "noopb9bkMVfRPU8AsbpTUg8AQkHtKwMYZiFUjNRtMmV";
 
+/**
+ * OpenSea's Solana protocol program. OpenSea's own API names it as the
+ * `protocol_address` of its Solana listing orders (read 2026-11-10 on a Candy
+ * Gold Series listing), and a listing moves the item into a per-listing
+ * account this program owns. Before it was named, that account was called a
+ * wallet everywhere: the seller of a real OpenSea listing was told they did
+ * not own their item, and the listing account was counted as a collector.
+ */
+export const OPENSEA_SOLANA_PROGRAM = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V";
+
+/** Magic Eden's escrow: the owner of every item listed through its order book. */
+export const MAGIC_EDEN_ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix";
+
 /** Marketplace program ids -> label, used to annotate provenance events. */
 const MARKETPLACE_PROGRAMS: Record<string, string> = {
   M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden",
   mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden (pools)",
   TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor",
   TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor cNFT",
+  [OPENSEA_SOLANA_PROGRAM]: "OpenSea",
 };
 
 /**
@@ -62,18 +76,61 @@ const MARKETPLACE_PROGRAMS: Record<string, string> = {
  * get_asset can say what it is and where to look next.
  */
 export const KNOWN_VENUE_ACCOUNTS: Record<string, string> = {
-  "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix": "Magic Eden's escrow account: it holds every asset listed for sale on Magic Eden, so it appears as the owner of a listed item",
+  [MAGIC_EDEN_ESCROW]: "Magic Eden's escrow account: it holds every asset listed for sale on Magic Eden, so it appears as the owner of a listed item",
 };
+
+/** What an account owned by OpenSea's Solana program is, in the words every tool uses. */
+export const OPENSEA_LISTING_ACCOUNT_LABEL =
+  "an account of OpenSea's Solana protocol program: OpenSea moves a listed item into an account like this one and keeps it there until the listing is filled or cancelled, so the seller is the wallet that moved the item in (get_asset_provenance shows it), not this address";
+
+/**
+ * Accounts seen owned by OpenSea's program, address -> owning program.
+ *
+ * Unlike Magic Eden's single escrow, OpenSea opens a new account per listing,
+ * so no fixed table can name them. Every read in this module that learns an
+ * account's owning program records it here, which is how identify and the
+ * role labels recognise one without a read of their own. Ten minutes, because
+ * a listing account closes when the listing ends.
+ */
+const listingAccounts = new BoundedMap<string>(5_000, 10 * 60_000);
+function noteOwnerProgram(address: string, program: string): void {
+  if (program === OPENSEA_SOLANA_PROGRAM) listingAccounts.set(address, program);
+}
+
+/** True when the chain was seen, recently, to give this account to OpenSea's program. */
+export function isOpenSeaListingAccount(address: string): boolean {
+  return listingAccounts.get(address) === OPENSEA_SOLANA_PROGRAM;
+}
 
 /** The venue account label for an address, or null. */
 export function knownVenueAccount(address: string): string | null {
-  return KNOWN_VENUE_ACCOUNTS[address] ?? null;
+  return KNOWN_VENUE_ACCOUNTS[address] ?? (isOpenSeaListingAccount(address) ? OPENSEA_LISTING_ACCOUNT_LABEL : null);
+}
+
+/** Programs this server can name when someone pastes the program's own address. */
+const PROGRAM_DESCRIPTIONS: Record<string, string> = {
+  [OPENSEA_SOLANA_PROGRAM]:
+    "OpenSea's Solana protocol program (OpenSea's API names it as the protocol of its Solana listings). A listing through OpenSea moves the item into an account this program owns, which then shows as the item's owner until the listing is filled or cancelled",
+  M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden's order book program (M2). Items listed through it sit in Magic Eden's escrow account",
+  mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden's pool program (MMM)",
+  TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor's pool program (TSwap)",
+  TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor's marketplace program (TComp)",
+};
+
+/** A marketplace program's description, or null. */
+export function knownProgram(address: string): string | null {
+  return PROGRAM_DESCRIPTIONS[address] ?? null;
 }
 
 const MAGIC_EDEN_PROGRAMS = new Set([
   "M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K",
   "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc",
 ]);
+
+/** True for Magic Eden's order book and pool programs, whose accounts can hold a listed item. */
+export function isMagicEdenProgram(program: string): boolean {
+  return MAGIC_EDEN_PROGRAMS.has(program);
+}
 
 // Be polite to the free endpoints: one request per 350ms per HOST, and retry
 // 429/5xx with a real backoff - the public RPC rate-limits bursts hard. The
@@ -178,9 +235,8 @@ const cooldown = new Map<string, number>();
 // A 429 is a request to stay away, not a failure to retry 1.5 s later. The
 // pause the endpoint names is kept apart from the failure cooldown above:
 // a cooling endpoint is still asked as a last resort, a paused one is not.
-const RATE_PAUSE_MIN_MS = 10_000;
-const RATE_PAUSE_MAX_MS = 60 * 60_000;
-const ratePause = new Map<string, number>();
+// The pause itself is kept per origin in lib/http.ts, so every reader of the
+// same host honours it, not only this one.
 class RateLimitedEndpoint extends Error {}
 
 let rpcId = 0;
@@ -284,7 +340,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   const problems: string[] = [];
   for (const ep of list) {
     const wasCooling = isCooling(ep);
-    const pausedFor = (ratePause.get(ep.id) ?? 0) - Date.now();
+    const pausedFor = originPauseLeftMs(ep.url);
     if (pausedFor > 0) {
       problems.push(`${label(ep)} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`);
       continue;
@@ -293,7 +349,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
     for (let attempt = 0; attempt < ATTEMPTS_PER_ENDPOINT; attempt++) {
       // A caller that has already given up gets no further requests spent on
       // its behalf, and none of the source's rate budget either.
-      if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
+      if (signal?.aborted) throw new AbortedError("the Solana read was abandoned: the caller's deadline passed");
   // Both waits take the signal. Measured: a read aborted 10 ms
       // in still settled at 356 ms, because the gate wait ignored the signal
       // and only the check AFTER it looked. A deadline consulted after the
@@ -304,7 +360,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       // error that came back read as an outage rather than a refusal.
       assertOnline(ep.url);
       await gateFor(ep.url)(signal);
-      if (signal?.aborted) throw new Error("the Solana read was abandoned: the caller's deadline passed");
+      if (signal?.aborted) throw new AbortedError("the Solana read was abandoned: the caller's deadline passed");
       try {
         const res = await fetch(ep.url, {
           method: "POST",
@@ -325,8 +381,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         const asked = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : 0;
         if (asked > 0) {
           await res.body?.cancel().catch(() => undefined);
-          const wait = Math.min(Math.max(asked, RATE_PAUSE_MIN_MS), RATE_PAUSE_MAX_MS);
-          ratePause.set(ep.id, Date.now() + wait);
+          const wait = pauseOrigin(ep.url, asked);
           throw new RateLimitedEndpoint(`HTTP 429: asked for a ${Math.round(wait / 1000)} s pause`);
         }
         if (!res.ok) {
@@ -357,7 +412,13 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           const own = ep.url === process.env.SOLANA_RPC_URL?.trim();
           const code = Number.isSafeInteger(j.error.code) ? String(j.error.code) : "unknown";
           if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
-          throw new ChainError(own ? `Solana RPC ${code} from your SOLANA_RPC_URL (its message is not relayed, because a provider can echo your key in it)` : `Solana RPC ${code}: ${upstreamMessage(j.error.message)}`);
+          const msg = own ? `Solana RPC ${code} from your SOLANA_RPC_URL (its message is not relayed, because a provider can echo your key in it)` : `Solana RPC ${code}: ${upstreamMessage(j.error.message)}`;
+          // A free public node answers "internal error" or "busy" when it is
+          // overloaded, and that is the endpoint's state, not an answer about
+          // the account: typed so the wording says the RPC was busy instead
+          // of "try a narrower request".
+          if (!own && BUSY_CODES.has(j.error.code)) throw new ChainError(msg, true);
+          throw new ChainError(msg);
         }
         // A malformed envelope with neither result nor error must not read as
         // "no account" or "no history" downstream.
@@ -376,16 +437,24 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         }
         return j.result as T;
       } catch (e) {
-        if (e instanceof ChainError) throw new Error(e.message);
+        if (e instanceof ChainError) throw e.busy ? new ChainUnavailableError(e.message) : new Error(e.message);
         if (e instanceof OversizedBodyError) throw e;
         lastErr = e;
         if (e instanceof RateLimitedEndpoint) break;
       }
     }
     if (!(lastErr instanceof RateLimitedEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
-    problems.push(
-      `${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
-    );
+    // Our own error classes carry text written here. Anything else is the
+    // runtime's or the endpoint's, and for the person's own endpoint that text
+    // can quote the URL, key and all, so only its kind is relayed.
+    const ours = lastErr instanceof EndpointError || lastErr instanceof RateLimitedEndpoint;
+    const why =
+      ep.id === "your SOLANA_RPC_URL" && !ours
+        ? `could not be read (${lastErr instanceof Error ? lastErr.name : "error"}; the message is not relayed, because it can contain your endpoint's URL)`
+        : lastErr instanceof Error
+          ? lastErr.message
+          : String(lastErr);
+    problems.push(`${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${why}`);
   }
   if (pin) {
     // The pinned endpoint is gone. The caller restarts the whole walk against
@@ -406,7 +475,18 @@ class EndpointError extends Error {}
 
 
 /** The chain answered, and the answer was an error. Every endpoint would say the same. */
-class ChainError extends Error {}
+class ChainError extends Error {
+  constructor(
+    msg: string,
+    /** The public endpoint said it was overloaded rather than answering about the account. */
+    readonly busy = false,
+  ) {
+    super(msg);
+  }
+}
+
+/** JSON-RPC codes a public node uses for its own overload: internal error, node behind or busy, rate limited. */
+const BUSY_CODES = new Set([-32603, -32005, -32429]);
 
 export interface RpcEndpointHealth {
   /** Human-safe label: id plus host, never a URL that could carry a key. */
@@ -446,6 +526,13 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
       out.push({ endpoint: label(ep), ok: false, latencyMs: null, slot: null, note: "not checked: the status check's budget ran out before this endpoint was reached" });
       continue;
     }
+    // A health check is still a request. An endpoint that asked for a pause is
+    // reported as paused, not probed.
+    const pausedFor = originPauseLeftMs(ep.url);
+    if (pausedFor > 0) {
+      out.push({ endpoint: label(ep), ok: false, latencyMs: null, slot: null, note: `not checked: it asked for a pause after a rate limit and ${Math.ceil(pausedFor / 1000)} s of it is left` });
+      continue;
+    }
     try {
       await gateFor(ep.url)(signal);
       const res = await fetch(ep.url, {
@@ -465,6 +552,8 @@ export async function rpcHealth(timeoutMs = 6_000, signal?: AbortSignal): Promis
       const latencyMs = Date.now() - started;
       if (!res.ok) {
         await res.body?.cancel().catch(() => undefined);
+        const asked = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : 0;
+        if (asked > 0) pauseOrigin(ep.url, asked);
         out.push({ endpoint: label(ep), ok: false, latencyMs, slot: null, note: `refused with HTTP ${res.status}` });
         continue;
       }
@@ -645,7 +734,21 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
   }
 }
 
-/** Fetch + decode one Core account. Distinguishes "missing" from "not Core". */
+/**
+ * True for what a burn leaves behind: the Core program shrinks the asset's
+ * account to a single byte holding key 0 and keeps owning it. That stub used
+ * to decode as "not a Metaplex Core item", which sent a reader looking for
+ * another standard when the plain answer was that the item no longer exists.
+ */
+export function isBurnedCoreStub(b64: string): boolean {
+  try {
+    const buf = Buffer.from(b64, "base64");
+    return buf.length === 1 && buf[0] === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Raw base64 account data for a Core-owned account, or null when it does not exist. */
 export async function getCoreAccountRaw(address: string): Promise<string | null> {
   const info = await rpc<{ value: { data: [string, string]; owner: string } | null }>("getAccountInfo", [
@@ -685,6 +788,8 @@ export async function getAccountRaw(address: string, signal?: AbortSignal): Prom
 
 export interface CoreAccountRead {
   account: CoreAsset | CoreCollection | null;
+  /** Set when the account is a burned asset's stub: one zero byte, still owned by the Core program. */
+  burned?: true;
   /**
    * The slot the endpoint says this account read describes, when it reported
    * one. It is the anchor for the rest of a walk: every later read in the same
@@ -729,8 +834,11 @@ export async function getCoreAccountWithMeta(
     // describes that value and nothing else.
     const slot = typeof info?.context?.slot === "number" && Number.isFinite(info.context.slot) ? info.context.slot : null;
     if (!info?.value) return { missing: true as const, slot };
-    if (info.value.owner !== CORE_PROGRAM) return { notCore: true as const, owner: info.value.owner, slot };
-    return { decoded: decodeCoreAccount(info.value.data[0]), slot };
+    if (info.value.owner !== CORE_PROGRAM) {
+      noteOwnerProgram(address, info.value.owner);
+      return { notCore: true as const, owner: info.value.owner, slot };
+    }
+    return { decoded: decodeCoreAccount(info.value.data[0]), burned: isBurnedCoreStub(info.value.data[0]), slot };
   };
   // `fresh` bypasses the stale-on-error cache: a verification must never
   // confirm ownership or supply from a value kept alive by a failed refresh.
@@ -744,7 +852,7 @@ export async function getCoreAccountWithMeta(
       `account ${address} is owned by ${data.owner}, not Metaplex Core. ` +
         `v1 decodes Metaplex Core assets only (SPL/compressed NFTs: use get_asset, which reads Magic Eden instead).`,
     );
-  return { account: data.decoded, contextSlot: data.slot, stale: hit.stale, cachedAt: hit.cachedAt };
+  return { account: data.decoded, ...(data.burned ? { burned: true as const } : {}), contextSlot: data.slot, stale: hit.stale, cachedAt: hit.cachedAt };
 }
 
 export async function getCoreAccount(
@@ -752,6 +860,161 @@ export async function getCoreAccount(
   opts: { fresh?: boolean; trace?: RpcTrace; pin?: EndpointPin; signal?: AbortSignal } = {},
 ): Promise<CoreAsset | CoreCollection | null> {
   return (await getCoreAccountWithMeta(address, opts)).account;
+}
+
+// ------------------------------------------------- batched custody reads
+
+/** What the chain says holds one listed or indexed item, from a batched read. */
+export type AssetOwnerRead =
+  | { kind: "core-asset"; owner: string }
+  | { kind: "burned" }
+  /** Owned by the Core program but not an asset: a collection, or a layout this version does not know. */
+  | { kind: "core-other" }
+  /** No account at the address: a compressed item has none, and neither does a closed one. */
+  | { kind: "no-account" }
+  | { kind: "not-core"; ownerProgram: string }
+  | { kind: "unread"; reason: string };
+
+/** The program that owns an account, from a batched read. */
+export type OwnerProgramRead = { kind: "program"; program: string } | { kind: "no-account" } | { kind: "unread"; reason: string };
+
+/** The endpoint's page size for getMultipleAccounts. */
+const MULTIPLE_ACCOUNTS_MAX = 100;
+
+// Thirty seconds, the same as a listing page: a floor, a listing search and a
+// lowest-serial hunt asked together read the same cheapest page, and each of
+// them would otherwise pay for the same owners again.
+const assetOwnerCache = new BoundedMap<AssetOwnerRead>(20_000, 30_000);
+// Ten minutes: what owns an account is structural, but a listing account is
+// closed when its listing ends.
+const ownerProgramCache = new BoundedMap<OwnerProgramRead>(20_000, 10 * 60_000);
+
+/**
+ * One getMultipleAccounts per 100 addresses, through the same paced and
+ * rotating rpc() path as every other chain read. A chunk the endpoint does
+ * not answer, or answers in a shape that does not line up with the request,
+ * comes back as `unread` for each of its addresses: a failed read is never a
+ * verdict about the item.
+ */
+async function multipleAccounts<T>(
+  addresses: string[],
+  dataLength: number,
+  classify: (address: string, value: unknown) => T,
+  unread: (reason: string) => T,
+): Promise<Map<string, T>> {
+  const out = new Map<string, T>();
+  for (let i = 0; i < addresses.length; i += MULTIPLE_ACCOUNTS_MAX) {
+    const chunk = addresses.slice(i, i + MULTIPLE_ACCOUNTS_MAX);
+    let values: unknown;
+    try {
+      const res = await rpc<{ value?: unknown }>("getMultipleAccounts", [chunk, { encoding: "base64", dataSlice: { offset: 0, length: dataLength } }]);
+      values = res && typeof res === "object" ? res.value : undefined;
+    } catch (e) {
+      const reason = `the chain could not be read just now (${upstreamMessage(e instanceof Error ? e.message : String(e)).slice(0, 160)})`;
+      for (const a of chunk) out.set(a, unread(reason));
+      continue;
+    }
+    if (!Array.isArray(values) || values.length !== chunk.length) {
+      for (const a of chunk) out.set(a, unread("the endpoint answered with a list that does not line up with the addresses asked for"));
+      continue;
+    }
+    chunk.forEach((a, j) => out.set(a, classify(a, values[j])));
+  }
+  return out;
+}
+
+function sliceOf(value: unknown): { owner: string; bytes: Buffer } | null {
+  if (value === null || typeof value !== "object") return null;
+  const v = value as { owner?: unknown; data?: unknown };
+  if (typeof v.owner !== "string" || !isBase58Address(v.owner)) return null;
+  const b64 = Array.isArray(v.data) && typeof v.data[0] === "string" ? v.data[0] : null;
+  if (b64 === null) return null;
+  return { owner: v.owner, bytes: Buffer.from(b64, "base64") };
+}
+
+/**
+ * The current holder of each address, read in batches.
+ *
+ * Only the first 33 bytes are asked for: AssetV1 keeps its key in byte 0 and
+ * its owner in bytes 1 to 32, and a burned asset is a single zero byte. A
+ * marketplace's listing rows are checked against this, so a listing whose item
+ * moved months ago is not presented as something anyone can buy.
+ */
+export async function readAssetOwners(addresses: string[], opts: { fresh?: boolean } = {}): Promise<Map<string, AssetOwnerRead>> {
+  const out = new Map<string, AssetOwnerRead>();
+  const todo: string[] = [];
+  for (const a of new Set(addresses)) {
+    if (!isBase58Address(a)) {
+      out.set(a, { kind: "unread", reason: "not a Solana address" });
+      continue;
+    }
+    const hit = opts.fresh ? undefined : assetOwnerCache.get(a);
+    if (hit) out.set(a, hit);
+    else todo.push(a);
+  }
+  const read = await multipleAccounts<AssetOwnerRead>(
+    todo,
+    33,
+    (address, value) => {
+      if (value === null) return { kind: "no-account" };
+      const s = sliceOf(value);
+      if (!s) return { kind: "unread", reason: "the endpoint answered with an account this server could not read" };
+      if (s.owner !== CORE_PROGRAM) {
+        noteOwnerProgram(address, s.owner);
+        return { kind: "not-core", ownerProgram: s.owner };
+      }
+      if (s.bytes.length === 1 && s.bytes[0] === 0) return { kind: "burned" };
+      if (s.bytes.length >= 33 && s.bytes[0] === 1) return { kind: "core-asset", owner: base58Encode(s.bytes.subarray(1, 33)) };
+      return { kind: "core-other" };
+    },
+    (reason) => ({ kind: "unread", reason }),
+  );
+  for (const [a, r] of read) {
+    out.set(a, r);
+    if (r.kind !== "unread") assetOwnerCache.set(a, r);
+  }
+  return out;
+}
+
+/**
+ * The owning program of each account, read in batches with no data at all.
+ * This is what tells a person's wallet (the System Program) from a
+ * marketplace's listing account (the marketplace's program).
+ */
+export async function readOwnerPrograms(addresses: string[]): Promise<Map<string, OwnerProgramRead>> {
+  const out = new Map<string, OwnerProgramRead>();
+  const todo: string[] = [];
+  for (const a of new Set(addresses)) {
+    if (!isBase58Address(a)) {
+      out.set(a, { kind: "unread", reason: "not a Solana address" });
+      continue;
+    }
+    const hit = ownerProgramCache.get(a);
+    if (hit) out.set(a, hit);
+    else todo.push(a);
+  }
+  const read = await multipleAccounts<OwnerProgramRead>(
+    todo,
+    0,
+    (address, value) => {
+      if (value === null) return { kind: "no-account" };
+      const owner = value && typeof value === "object" ? (value as { owner?: unknown }).owner : undefined;
+      if (typeof owner !== "string" || !isBase58Address(owner)) return { kind: "unread", reason: "the endpoint answered with an account this server could not read" };
+      noteOwnerProgram(address, owner);
+      return { kind: "program", program: owner };
+    },
+    (reason) => ({ kind: "unread", reason }),
+  );
+  for (const [a, r] of read) {
+    out.set(a, r);
+    if (r.kind !== "unread") ownerProgramCache.set(a, r);
+  }
+  return out;
+}
+
+/** True for the System Program, which owns every ordinary wallet. */
+export function isWalletProgram(program: string): boolean {
+  return program === SYSTEM_PROGRAM;
 }
 
 // ---------------------------------------------------------- provenance
@@ -796,6 +1059,11 @@ export interface ProvenanceEvent {
    * claim about somebody's wallet.
    */
   escrowDirection?: "into" | "out_of" | "unknown";
+  /**
+   * On a transfer into an account OpenSea's program owns (an OpenSea listing),
+   * or the transfer that follows it out again: which way the item moved.
+   */
+  openSeaListing?: "into" | "out_of";
   /**
    * On an `unread_gap` row: why the hole exists. `depth` is the caller's
    * bound, `budget` is the wall clock, `unreadable` is a transaction the
@@ -1419,18 +1687,55 @@ export async function getProvenance(
   }
   const { account, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead } = value;
 
+  // OpenSea opens one account per listing, so unlike Magic Eden's escrow the
+  // recipient cannot be recognised by address. Its owning program says it.
+  // Read only when a row ran OpenSea's program, in one batched request, and
+  // a failed read leaves the rows as they were rather than guessing.
+  let currentOwnerInOpenSeaListing = false;
+  if (events.some((e) => e.marketplace === "OpenSea")) {
+    const recipients = events.filter((e) => e.event === "transferred" && e.newOwner).map((e) => e.newOwner!);
+    const programs = await readOwnerPrograms([...recipients, account.owner]).catch(() => new Map<string, OwnerProgramRead>());
+    const isListing = (a: string | undefined) => {
+      const p = a ? programs.get(a) : undefined;
+      return p?.kind === "program" && p.program === OPENSEA_SOLANA_PROGRAM;
+    };
+    currentOwnerInOpenSeaListing = isListing(account.owner);
+    let inListing = false;
+    for (const e of events) {
+      if (e.event === "unread_gap") { inListing = false; continue; }
+      if (e.event !== "transferred") continue;
+      if (inListing) {
+        // Neutral on purpose: a fill, a cancellation and an issuer's
+        // permanent delegate moving the item all take it out the same way.
+        const out = "transfer out of an OpenSea listing account (chain read): the item left the listing account, so that listing has ended";
+        e.openSeaListing = "out_of";
+        e.label = e.label ? `${e.label}; ${out}` : out;
+        inListing = false;
+        continue;
+      }
+      if (isListing(e.newOwner)) {
+        e.openSeaListing = "into";
+        e.label = "transfer into an OpenSea listing account (chain read): the item was listed for sale through OpenSea's protocol, and that account holds it until the listing is filled or cancelled";
+        inListing = true;
+      } else if (e.marketplace === "OpenSea" && e.newOwner && programs.get(e.newOwner)?.kind === "no-account") {
+        e.label = "transfer in a transaction that ran OpenSea's protocol program (chain read); the receiving account no longer exists, which is how a closed listing account looks, but that alone does not prove it was one";
+      }
+    }
+  }
+
   return {
     mint,
     explorer: `https://solscan.io/token/${mint}`,
     name: account.name,
     collection: account.collection,
     currentOwner: account.owner,
-    currentOwnerNote:
-      "If the asset is listed on a marketplace, currentOwner may be an escrow account, not the seller's wallet.",
+    currentOwnerNote: currentOwnerInOpenSeaListing
+      ? `currentOwner is ${OPENSEA_LISTING_ACCOUNT_LABEL}.`
+      : "If the asset is listed on a marketplace, currentOwner may be an escrow or listing account, not the seller's wallet.",
     events,
     /** What the rows above are, so a marketplace label on one cannot be read as a venue's report. */
     eventsReadFrom:
-      "Every event is decoded from Solana transaction instructions by this server. A `marketplace` on a row is the program id seen in that transaction, not a statement from that marketplace - no marketplace API was called. Rows labelled as a Magic Eden escrow are chain observations of the marketplace's own escrow or pool account taking or releasing custody.",
+      "Every event is decoded from Solana transaction instructions by this server. A `marketplace` on a row is the program id seen in that transaction, not a statement from that marketplace - no marketplace API was called. Rows labelled as a Magic Eden escrow are chain observations of the marketplace's own escrow or pool account taking or releasing custody, and rows labelled as an OpenSea listing account are transfers to or from an account the chain shows OpenSea's program owns.",
     skippedTransactions: skipped,
     /** Signatures whose transaction could not be fetched, or which carried neither logs nor a decodable Core instruction. */
     unreadableTransactions: unreadable,
@@ -1631,6 +1936,7 @@ export async function walletAge(wallet: string, maxPages = 3) {
 const NAMED_PROGRAMS: Record<string, string> = {
   M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden's order book program",
   mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden's pool program (MMM)",
+  [OPENSEA_SOLANA_PROGRAM]: "OpenSea's Solana protocol program",
 };
 
 export interface AccountNature {
@@ -1666,7 +1972,10 @@ const natureCache = new BoundedMap<AccountNature>(5_000, 6 * 60 * 60_000);
  */
 export async function accountNature(address: string, opts: { signal?: AbortSignal } = {}): Promise<AccountNature> {
   const hit = natureCache.get(address);
-  if (hit) return hit;
+  if (hit) {
+    if (hit.ownerProgram) noteOwnerProgram(address, hit.ownerProgram);
+    return hit;
+  }
   const keep = (value: AccountNature): AccountNature => {
     // A failed read is never cached: it would turn one bad minute into six
     // hours of "unknown" for an address the chain can answer for.
@@ -1690,6 +1999,7 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
       };
     }
     const owner = info.value.owner;
+    noteOwnerProgram(address, owner);
     const isWallet = owner === SYSTEM_PROGRAM;
     const named = NAMED_PROGRAMS[owner];
     return keep({
@@ -1699,7 +2009,9 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
       ...(named ? { ownerName: named } : {}),
       note: isWallet
         ? "Owned by the System Program, which is what a person's wallet looks like."
-        : `Owned by ${named ?? `the program ${owner}`}, so it is a program account rather than a person's wallet. Items counted here are most likely held on someone else's behalf.`,
+        : owner === OPENSEA_SOLANA_PROGRAM
+          ? `This is ${OPENSEA_LISTING_ACCOUNT_LABEL}.`
+          : `Owned by ${named ?? `the program ${owner}`}, so it is a program account rather than a person's wallet. Items counted here are most likely held on someone else's behalf.`,
     });
   } catch {
     return {

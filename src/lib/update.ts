@@ -32,8 +32,12 @@ export interface UpdateInfo {
 }
 
 const REGISTRY = "https://registry.npmjs.org/solana-nft-mcp/latest";
-/** A complete semantic version, bounded: digits, dots, an optional short pre-release tag, nothing else. */
-const SEMVER = /^\d{1,5}\.\d{1,5}\.\d{1,5}(?:-[0-9A-Za-z.-]{1,32})?$/;
+/**
+ * A complete release version: three numbers and nothing else. The `latest`
+ * tag never points at a pre-release, and a pre-release tag is 32 characters
+ * of somebody else's text in a line we print ("99.0.0-get.fix.at.some-site").
+ */
+const SEMVER = /^\d{1,5}\.\d{1,5}\.\d{1,5}$/;
 const HOW_TO = "git pull && npm install && npm run build (or npm i -g solana-nft-mcp@latest if installed from npm), then restart your AI app";
 
 /** Numeric semver compare on the dotted core only: 1 if a > b, -1 if a < b, 0 if equal or unreadable. */

@@ -55,7 +55,13 @@ address reads like a claim or wallet page is withheld and the answer says so.
 Web addresses inside a collection's description are replaced with "[link
 removed]" (full URLs, defanged ones, markdown links and bare domains on the
 common endings), and a profile's X handle is passed on only when it is a
-handle. Nothing this server
+handle. Names, traits and upstream error text lose anything with a scheme or
+a `www.` prefix and any markdown link or image syntax, and the answer says a
+link was removed. A bare domain in a name is left alone, because real names
+are written that way ("pump.fun", "name.sol"), so a name can still mention a
+site in plain text. An image address has its brackets and parentheses
+percent-escaped, so it cannot close one markdown link and open another.
+Nothing this server
 returns asks anyone to connect a wallet or sign anything, and while a
 custodian is moving its users to new wallets, as Candy did in October 2026, a
 page that does should be treated as hostile.
@@ -125,7 +131,13 @@ when two conditions hold together: the file is under `test/fixtures` AND the
 matched value is shaped like a base58 chain address. It is not a path
 exception. This was checked with planted controls: a base58 address in a
 fixture field named `api_key` is allowed through, and a forty-character
-generic key in the same field is caught.
+generic key in the same field is caught when it contains any character a
+chain address cannot (`0`, `O`, `I` or `l`). The limit is worth stating: a key
+that happens to be 32 to 44 base58 characters looks exactly like an address,
+and a random forty-character key has roughly a one in ten chance of being
+one. No pattern can tell those apart, so the
+rule that actually protects the fixtures is that they hold captured public
+responses and nothing typed by hand.
 
 The offline suite (`npm test`) runs every child server with
 `SOLANA_NFT_MCP_OFFLINE=1` or with every upstream stubbed by a preload, so a

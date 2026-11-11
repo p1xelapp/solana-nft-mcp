@@ -31,8 +31,8 @@
  */
 const INVISIBLE = new RegExp(
   "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u00AD\\u061C\\u180E" +
-    "\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF\\uFFF9-\\uFFFB]" +
-    "|\\u034F|[\\u115F-\\u1160]|[\\u17B4-\\u17B5]|\\u3164|\\uFFA0",
+    "\\u200B-\\u200F\\u2028\\u2029\\u202A-\\u202E\\u2060-\\u206F\\uFEFF\\uFFF0-\\uFFFB]" +
+    "|\\u034F|[\\u115F-\\u1160]|[\\u17B4-\\u17B5]|[\\u180B-\\u180D]|\\u180F|\\u3164|\\uFFA0|[\\uFE00-\\uFE0E]",
   "g",
 );
 /**
@@ -41,7 +41,15 @@ const INVISIBLE = new RegExp(
  * invisible to a person and legible to a tokenizer, so they go the same way
  * as the zero-width characters above.
  */
-const INVISIBLE_SUPPLEMENTARY = /[\u{E0000}-\u{E007F}]/gu;
+const INVISIBLE_SUPPLEMENTARY = /[\u{E0000}-\u{E0FFF}\u{13430}-\u{1343F}\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}]/gu;
+/**
+ * Variation selectors pick a glyph and draw nothing themselves, so a run of
+ * them is a second hidden alphabet: bytes can be spelt in selectors behind one
+ * visible letter. The 240 supplementary ones and the text-style ones go with
+ * the invisibles above. U+FE0F stays, because emoji need it, but only one at
+ * a time and only directly after a character it can apply to.
+ */
+const EMOJI_SELECTOR_MISUSE = /\uFE0F{2,}|^\uFE0F|(?<=\s)\uFE0F/g;
 
 /**
  * Structural markers an injection uses to fake a message boundary. These are
@@ -53,11 +61,26 @@ const INVISIBLE_SUPPLEMENTARY = /[\u{E0000}-\u{E007F}]/gu;
  * capped before these run, so an unbounded class is still linear work.
  */
 const STRUCTURE: RegExp[] = [
-  /<\|[^|>]{0,200}(?:\|>)?/g, // <|im_start|> and relatives, closed or not
-  /<\/?(?:system|assistant|user|tool|function|result|instructions?)\b[^>]{0,200}>?/gi,
+  // <|im_start|> and relatives, closed or not, in ASCII or in the full-width
+  // brackets and bars some model families use for the same job.
+  /[<\uFF1C][|\uFF5C][^|\uFF5C>\uFF1E]{0,200}(?:[|\uFF5C][>\uFF1E])?/g,
+  /<\/?(?:system|assistant|user|human|model|developer|tool_call|tool_response|tool_result|function_calls?|function_results?|tool|function|result|instructions?|invoke|parameter|thinking|think|start_of_turn|end_of_turn)\b[^>]{0,200}>?/gi,
+  /<\/?s>/g, // sentence-boundary tokens
+  /<<\/?SYS>>/gi,
   /```+/g, // a code fence can visually close our own JSON block
   /\[\/?INST\]/gi,
 ];
+
+/**
+ * A link inside a name, a trait or an error message. None of those needs one,
+ * and "claim at https://..." in an item name is the oldest trick there is, so
+ * anything with a scheme or a www prefix comes out. Bare domains stay: real
+ * names are written that way ("pump.fun", "name.sol") and a bare domain is
+ * not rendered as a link. Descriptions get the stricter `withoutLinks` too.
+ */
+const LINK_IN_NAME = /\b(?:https?|hxxps?|ipfs|ipns|ar|ftp|wss?):\/\/[^\s<>"'\])]+|\bwww\.[^\s<>"'\])]+/gi;
+/** Markdown link and image syntax, which a client may render as a clickable link or fetch as an image. */
+const MARKDOWN_LINK = /!?\[([^\]]{0,200})\]\(/g;
 
 /**
  * Hard cap applied before any pattern runs. A name is never this long; a
@@ -70,7 +93,7 @@ const HARD_CAP = 2_000;
 const IMPERATIVE =
   /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|the\s+|your\s+|previous\s+|prior\s+|above\s+|earlier\s+)*(?:instruction|prompt|rule|direction|context|message)/i;
 const ROLEPLAY =
-  /\b(?:you\s+are\s+now|new\s+instructions?|system\s*(?:prompt|message)|act\s+as\s+(?:a|an|the))\b/i;
+  /\b(?:you\s+are\s+now|new\s+instructions?|system\s*(?:prompt|message)|act\s+as\s+(?:a|an|the))\b|#{2,}\s*(?:instructions?|response|system)\s*:/i;
 
 /** Longest a name may be before it is truncated. Real names are far shorter. */
 const MAX = 200;
@@ -113,7 +136,12 @@ export function safeHttpsUrl(v: unknown, opts: { max?: number; host?: string } =
   // A published link names a public site by name. An address literal or a
   // local name points a client that fetches images at the user's own network.
   if (!isPublicHostName(u.hostname)) return null;
-  const out = u.href;
+  // The parser leaves brackets and parentheses alone, and those are exactly
+  // the characters markdown reads as the end of one link and the start of the
+  // next: an image address ending in ")[Claim](https://..." became a clickable
+  // claim link in any client that renders ![name](image). Percent-escaped,
+  // the address still points at the same file and can only ever be an address.
+  const out = u.href.replace(/[()[\]!`*<>]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0"));
   return out.length <= max ? out : null;
 }
 
@@ -184,6 +212,21 @@ export function withoutLinks(text: string): string {
   return text.replace(LINK_IN_TEXT, "[link removed]");
 }
 
+/**
+ * The structural half of the cleaning, for text that is long and partly ours:
+ * an error the protocol library wrote that quotes a caller's argument or an
+ * unknown tool name. Invisible characters go, fake delimiters are defanged and
+ * links come out, but the length and the wording are left to the caller.
+ */
+export function neutraliseStructure(text: string): string {
+  let v = text.replace(INVISIBLE, "").replace(INVISIBLE_SUPPLEMENTARY, "");
+  for (const re of STRUCTURE) {
+    re.lastIndex = 0;
+    v = v.replace(re, (m) => m.replace(/[<>|`[\]\uFF1C\uFF1E\uFF5C]/g, "／"));
+  }
+  return v.replace(LINK_IN_NAME, "[link removed]").replace(MARKDOWN_LINK, "$1 (");
+}
+
 /** Clean one piece of third-party text, discarding the report. */
 export function clean(raw: unknown): string {
   return inspectUntrusted(raw).value;
@@ -212,6 +255,13 @@ export function inspectUntrusted(raw: unknown): Untrusted {
   }
   INVISIBLE.lastIndex = 0; // `g` regexes are stateful across .test() calls
   INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
+  if (v.includes("\uFE0F")) {
+    const kept = v.replace(EMOJI_SELECTOR_MISUSE, (m) => (m.length > 1 ? "\uFE0F" : "")).replace(/^\uFE0F|(?<=\s)\uFE0F/g, "");
+    if (kept !== v) {
+      if (!flags.includes("invisible or direction-override characters")) flags.push("invisible or direction-override characters");
+      v = kept;
+    }
+  }
 
   // Line breaks are how a payload fakes a turn boundary. A real name never
   // needs one, so they collapse to spaces.
@@ -225,9 +275,24 @@ export function inspectUntrusted(raw: unknown): Untrusted {
     if (re.test(v)) {
       flags.push("markup imitating a message delimiter");
       re.lastIndex = 0;
-      v = v.replace(re, (m) => m.replace(/[<>|`[\]]/g, "／"));
+      v = v.replace(re, (m) => m.replace(/[<>|`[\]\uFF1C\uFF1E\uFF5C]/g, "／"));
     }
   }
+
+  LINK_IN_NAME.lastIndex = 0;
+  if (LINK_IN_NAME.test(v)) {
+    flags.push("a web link (removed; never open a link taken from an item's name or an error message)");
+    LINK_IN_NAME.lastIndex = 0;
+    v = v.replace(LINK_IN_NAME, "[link removed]");
+  }
+  LINK_IN_NAME.lastIndex = 0;
+  MARKDOWN_LINK.lastIndex = 0;
+  if (MARKDOWN_LINK.test(v)) {
+    flags.push("markdown link or image syntax");
+    MARKDOWN_LINK.lastIndex = 0;
+    v = v.replace(MARKDOWN_LINK, "$1 (");
+  }
+  MARKDOWN_LINK.lastIndex = 0;
 
   if (IMPERATIVE.test(v) || ROLEPLAY.test(v)) {
     flags.push("reads as an instruction aimed at an AI model rather than as a name");

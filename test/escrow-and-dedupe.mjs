@@ -185,9 +185,11 @@ const mintTx = (tag) => ({ signature: signature(`mint-${tag}`), tx: tx([coreIx("
 // update authority is the issuer's key, read from the chain.
 {
   const { roleOf, knownIssuer } = await import("../dist/issuers.js");
-  const CANDY = "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2";
+  // The key that signs the Candy registry since 2026-11-05; the one before it
+  // stays in the table as a former key.
+  const CANDY = "7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL";
   const k = knownIssuer(CANDY);
-  assert.ok(k && k.collections >= 300, `the table knows the key that signs the Candy registry: ${JSON.stringify(k)}`);
+  assert.ok(k && k.collections >= 300 && !k.former, `the table knows the key that signs the Candy registry: ${JSON.stringify(k)?.slice(0, 200)}`);
   // The table names the key; it does not decide a role on a collection whose
   // authority was not read.
   assert.strictEqual(roleOf(CANDY, null).role, "unknown");

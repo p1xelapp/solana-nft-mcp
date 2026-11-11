@@ -27,24 +27,39 @@ try {
 } catch {
   /* no previous table: every authority is unattributed */
 }
-const knownNames = new Map((Array.isArray(prior?.issuers) ? prior.issuers : []).map((row) => [row.address, row.issuer]));
+const priorRows = Array.isArray(prior?.issuers) ? prior.issuers : [];
+const knownNames = new Map(priorRows.map((row) => [row.address, row.issuer]));
 const byAuthority = new Map();
 let read = 0;
-let failed = 0;
-for (const c of list) {
-  try {
-    const raw = await sol.getCoreAccountRaw(c.address);
-    const d = raw ? sol.decodeCoreAccount(raw) : null;
-    if (!d || d.kind !== "collection") { failed++; continue; }
-    read++;
-    const entry = byAuthority.get(d.updateAuthority) ?? { address: d.updateAuthority, collections: 0, sample: [] };
-    entry.collections++;
-    if (entry.sample.length < 3) entry.sample.push({ address: c.address, name: d.name });
-    byAuthority.set(d.updateAuthority, entry);
-  } catch {
-    failed++;
+// A public endpoint refuses some reads in any long run. The unread ones get
+// two more passes after a pause, so a busy minute is not reported as
+// collections the table could not see. A pass that reads nothing at all is
+// an outage, not throttling, and ends the attempt.
+let pending = list;
+for (let pass = 0; pass < 3 && pending.length > 0; pass++) {
+  if (pass > 0) await new Promise((r) => setTimeout(r, 20_000));
+  const retry = [];
+  let readThisPass = 0;
+  for (const c of pending) {
+    try {
+      const raw = await sol.getCoreAccountRaw(c.address);
+      const d = raw ? sol.decodeCoreAccount(raw) : null;
+      if (!d || d.kind !== "collection") { retry.push(c); continue; }
+      read++;
+      readThisPass++;
+      const entry = byAuthority.get(d.updateAuthority) ?? { address: d.updateAuthority, collections: 0, sample: [], addresses: [] };
+      entry.collections++;
+      entry.addresses.push(c.address);
+      if (entry.sample.length < 3) entry.sample.push({ address: c.address, name: d.name });
+      byAuthority.set(d.updateAuthority, entry);
+    } catch {
+      retry.push(c);
+    }
   }
+  pending = retry;
+  if (readThisPass === 0) break;
 }
+const failed = pending.length;
 // An outage must not replace the last good table with an empty one that
 // carries a fresh date. Nothing is written unless nearly every collection
 // was read; a partial table would drop keys that are still real.
@@ -61,8 +76,32 @@ const issuers = [...byAuthority.values()]
     role: "update authority of the collections listed in data/candy-collections.json; signs the mints",
     collections: e.collections,
     sample: e.sample,
+    // Every collection this key signs, so a release check can hold the table
+    // against the registry one collection at a time and the weekly live check
+    // can compare any of them with the chain.
+    collectionAddresses: e.addresses.sort(),
+    // A hand-written, dated note (how the name was established, what else the
+    // key controls) survives regeneration; the chain cannot rewrite it.
+    ...(priorRows.find((p) => p.address === e.address)?.note ? { note: priorRows.find((p) => p.address === e.address).note } : {}),
   }));
-const out = { derivedAt: new Date().toISOString(), collectionsRead: read, collectionsUnreadable: failed, issuers };
+// A key that signed for these collections and no longer does is kept, marked
+// former, with the last date it was seen as their authority. Dropping it made
+// identify call the old key "most likely a wallet" while it still controls
+// other accounts and appears in every older transaction.
+const derivedAt = new Date().toISOString();
+for (const p of priorRows) {
+  if (byAuthority.has(p.address)) continue;
+  issuers.push({
+    ...p,
+    role: "former update authority of the collections listed in data/candy-collections.json",
+    collections: 0,
+    collectionAddresses: [],
+    former: true,
+    lastSeenAsAuthority: p.former ? p.lastSeenAsAuthority : String(prior.derivedAt ?? "").slice(0, 10) || null,
+    formerAsOf: p.former ? p.formerAsOf : derivedAt.slice(0, 10),
+  });
+}
+const out = { derivedAt, collectionsRead: read, collectionsUnreadable: failed, unreadable: pending.map((c) => c.address).sort(), issuers };
 writeFileSync(path.join(root, "data", "issuers.json"), JSON.stringify(out, null, 2) + "\n");
 console.log(`issuers.json: ${issuers.length} key(s) over ${read} collections (${failed} unreadable)`);
 for (const i of issuers) console.log(`  ${i.address} ${i.collections}`);

@@ -1,10 +1,14 @@
 /**
  * Magic Eden public v2 API - keyless, read-only marketplace data.
  *
- * TOS note: ME's public Solana API is free at ~2 req/sec and their API terms
- * license read access for building apps. We pace every call through one gate,
- * cache aggressively, and identify ourselves with a real User-Agent. Being a
- * polite client is a feature: it is what keeps a zero-key server viable.
+ * Limits: the public API answers with `x-ratelimit-limit: 180` and an
+ * `x-ratelimit-reset` time under a minute ahead (read 2026-11-10), so the
+ * allowance looks like 180 requests a minute per caller. Magic Eden's own
+ * documentation and terms sit behind a bot check and were not read, so that
+ * figure is what the header says, not a published promise. We pace every call
+ * through one gate well under it, cache aggressively, and identify ourselves
+ * with a real User-Agent. Being a polite client is a feature: it is what keeps
+ * a zero-key server viable.
  */
 
 import { cached, fetchJson, HttpError, OversizedBodyError, rateLimiter } from "../lib/http.js";
@@ -21,7 +25,8 @@ const HEADERS = {
   Accept: "application/json",
 };
 
-// 600ms between calls ≈ 1.6 req/s, under ME's ~2/s public allowance.
+// 600ms between calls is at most 100 a minute, about half of the 180 the
+// header advertises, leaving room for other callers sharing an address.
 const gate = rateLimiter(600, "Magic Eden");
 
 // A 429 used to end only the request that got it: the next tool call went
@@ -451,8 +456,12 @@ export async function token(mint: string): Promise<(MeToken & { stale: boolean; 
   const { data, stale, cachedAt } = await cached(`me:token:${mint}`, 300_000, async () => {
     try {
       const t = await me<MeToken>(`/tokens/${mint}`);
-      // HTTP 200 with no mint address is a shape change or an outage page,
-      // not "ME does not know it".
+      // An empty object is how Magic Eden answers a mint it does not carry
+      // (a typo, a wallet, USD Coin): HTTP 200 and `{}`, observed 2026-11-10.
+      // Calling that an outage told people with a mistyped address that the
+      // marketplace was down. Any OTHER shape without a mint address is still
+      // a shape change or an outage page, not "ME does not know it".
+      if (t && typeof t === "object" && !Array.isArray(t) && Object.keys(t).length === 0) return null;
       if (!t || typeof t !== "object" || typeof t.mintAddress !== "string") {
         throw new Error("Magic Eden returned an unexpected token shape (outage or API change)");
       }
@@ -465,6 +474,53 @@ export async function token(mint: string): Promise<(MeToken & { stale: boolean; 
     }
   });
   return data && data.mintAddress ? { ...data, stale, cachedAt } : null;
+}
+
+/**
+ * Sales Magic Eden recorded for one item, newest page only.
+ *
+ * Read for items whose history this server cannot decode from the chain (a
+ * legacy or programmable NFT), so "has it ever been sold" gets an answer when
+ * the venue holds one: a Mad Lad that sold twice in the hour was reported as
+ * unverifiable. Only a row that is fully a fill counts - a sale type, this
+ * mint, a real signature, a price above zero and a time that is not ahead of
+ * this clock - because one counted row is enough to contradict "never sold".
+ * Never cached: the answer is evidence for a verdict, read at the moment.
+ *
+ * Paged, and the walk stops at the first page holding a sale: the venue
+ * ignores a type filter on this route, and a listed item's newest hundred
+ * events were all relists, with its two sales on the second page (observed
+ * 2026-11-10).
+ */
+export async function tokenSales(mint: string, opts: { signal?: AbortSignal; maxPages?: number } = {}) {
+  const batch: MeActivity[] = [];
+  let pagesRead = 0;
+  let reachedEnd = false;
+  for (let p = 0; p < (opts.maxPages ?? 5); p++) {
+    const rows = page<MeActivity>("token activities", await me<unknown>(`/tokens/${encodeURIComponent(mint)}/activities?offset=${p * 100}&limit=100`, opts.signal));
+    assertPageSize("Magic Eden", "token activities", rows, 100);
+    pagesRead++;
+    batch.push(...rows);
+    if (rows.length < 100) {
+      reachedEnd = true;
+      break;
+    }
+    if (rows.some((a) => a.type === "buyNow" || a.type === "buy")) break;
+  }
+  const futureCutoff = Date.now() + FUTURE_TOLERANCE_MS;
+  const sales = batch
+    .filter((a) => a.type === "buyNow" || a.type === "buy")
+    .filter((a) => a.tokenMint === undefined || a.tokenMint === mint)
+    .map((a) => ({
+      signature: typeof a.signature === "string" && TX_SIGNATURE.test(a.signature) ? a.signature : null,
+      time: isoFromBlockTime(a.blockTime),
+      priceSol: finitePositive(a.price),
+      buyer: typeof a.buyer === "string" && isBase58Address(a.buyer) ? a.buyer : null,
+      seller: typeof a.seller === "string" && isBase58Address(a.seller) ? a.seller : null,
+      marketplace: typeof a.source === "string" && VENUE_LABEL.test(a.source) ? a.source : "magiceden",
+    }))
+    .filter((s) => s.signature !== null && s.priceSol !== null && s.time !== null && Date.parse(s.time) <= futureCutoff);
+  return { mint, sales, eventsRead: batch.length, pagesRead, reachedEnd, readAt: new Date().toISOString(), source: "magiceden" as const };
 }
 
 /** Wallet holdings as Magic Eden sees them (indexed collections only). */

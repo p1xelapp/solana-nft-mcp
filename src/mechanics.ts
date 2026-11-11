@@ -883,17 +883,17 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "Candy Digital royalties come with a program allow-list",
     venue: "candy",
     plain:
-      "Candy's MLB collections set a 10% royalty split three ways and attach a program allow-list, so only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. What the list does guarantee is that a marketplace not on it cannot trade these cards.",
+      "On 2026-11-10 every registered Candy collection set a 10% royalty, split in several ways, and a program allow-list: only accounts owned by the named programs can move a card. The rule checks which programs are involved, not whether the fee was paid. The list includes the System Program, so a direct wallet-to-wallet transfer passes this rule paying nothing, though another rule can still refuse it. A marketplace not on the list cannot trade these cards.",
     pitfall:
       "A failed sale does not identify which rule refused it. On 2026-11-08 all 401 registered Candy collections' oracle records checked burn only. Other plugins or marketplace requirements can still prevent a transfer. Read get_asset_trust on the item instead of treating the October 2026 pause as its current state.",
     documented:
       "Metaplex Core embeds royalty enforcement directly into the code. That protects creators, licensors, and rights holders every time a collectible changes hands.",
     observed:
-      "Decoding the Royalties plugin on both collections this session showed 10% with rule set ProgramAllowList naming the System Program, Magic Eden's M2 program, Tensor's marketplace program and one further program not identified here.",
+      "On 2026-11-10 the Royalties plugin of all 401 registered collections decoded to 10% with rule set ProgramAllowList naming the same four programs: the System Program, Magic Eden's M2 program, Tensor's marketplace program (TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp) and OpenSea's Solana protocol (7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V, the protocol_address OpenSea's API gave that day for orders on a Candy card). Creator splits: 33/33/34 on 89 of 103 MLB collections, 50/50 on all 272 DC collections; 8 percentage patterns across the 401.",
     verified: true,
     source: "https://blog.candy.io/candy-collectibles-migration-to-solana-what-fans-need-to-know/",
     sourceRead: READ,
-    keywords: ["candy", "royalty", "10%", "allowlist", "enforced", "mlb", "program list"],
+    keywords: ["candy", "royalty", "10%", "allowlist", "enforced", "mlb", "program list", "split", "opensea protocol"],
   },
   {
     id: "venue-collector-crypt",
@@ -966,12 +966,12 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "One key is the update authority of every Candy collection, and that key is not a collector",
     venue: "candy",
     plain:
-      "On 2026-10-08 all 401 Candy collections in the registry had one update authority, the key that signs the mints and holds the permanent delegates. In a holder list it is the issuer, not a whale. The match does not say why an item sits there (unsold, held back, returned after an opening, parked during the October wallet move) or which other wallets Candy runs. The tools read the authority live, so a change of key is noticed.",
+      "All 401 registered Candy collections share one update authority, the key that signs mints and holds the permanent delegates; in a holder list it is the issuer, not a whale. It changed on 2026-11-05 UTC, from BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2 to 7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL (read 2026-11-10). The match does not say why an item sits there or which other wallets Candy runs. Holder lists read the authority live; identify uses a dated table that a weekly check compares with the chain.",
     pitfall:
       "Reading the issuer's wallet at the top of a holder ranking as a collector who bought a large share. Asked who held the 36 packs of an auction, a reader called the treasury a whale with eleven packs; all eleven had been won by collectors and returned on opening.",
     documented: "Not published by Candy; established from the chain.",
     observed:
-      "On 2026-10-08 the update authority of all 401 collections in data/candy-collections.json decoded to the same address (data/issuers.json). On the 36 Gold Series Aces packs, every pack then sitting in that wallet had first been transferred to a collector and then transferred back, signed by that key, six signatures each.",
+      "On 2026-10-08 the update authority of all 401 collections in data/candy-collections.json decoded to BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2. On 2026-11-05 UTC that key signed UpdateCollection transactions naming 7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL, and on 2026-11-10 all 401 decoded to the new key (data/issuers.json). The old key was still the mint authority of the SPL token mint the collections' oracle reads (FsrQuCFEGaokcnFtaSAM2zdczrPcRzcWeDHqZjzQu8ox) on 2026-11-10. On the 36 Gold Series Aces packs, every pack then sitting in that wallet had first been transferred to a collector and then transferred back, signed by that key, six signatures each.",
     verified: true,
     source: "https://metaplex.com/docs/core/collections",
     sourceRead: "2026-09-18",
@@ -1125,15 +1125,77 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "venue",
     title: "Candy's October 2026 wallet migration",
     venue: "candy",
-    plain: "On October 19, 2026 Candy started moving every holder's items from the old custodial wallets into new ones. Unlike Candy's earlier move onto Solana, each card keeps its asset address and its whole history; only the owner changes. Look the card up by its asset address and the move shows as one more transfer. That transfer is not a sale, not a pack opening, and not proof that the old and new wallets belong to the same person.",
+    plain: "On October 19, 2026 Candy announced it was moving every holder's items from the old custodial wallets into new ones; the one card checked here moved on October 22. Each card keeps its asset address and whole history; only the owner changes. Looked up by its address, the move shows as one more transfer. That transfer is not a sale, not a pack opening, and not proof that the old and new wallets belong to the same person.",
     pitfall: "Reading an emptied old wallet as a theft or a sell-off, or a brand-new wallet holding valuable cards as suspicious. Check the card's own history first. Wallet age is the age of the address, not of the collection or the collector.",
-    documented: "Candy said NFTs would leave old wallets for new wallets and that open listings were being cancelled. New wallet access and trading were separate rollout steps.",
+    documented: "Candy's October 19 post said NFTs would leave old wallets for new wallets and that all active marketplace listings were being cancelled as part of the migration. New wallet access and trading were separate rollout steps.",
     observed:
-      "That a moved card keeps its address and history is how a Metaplex Core transfer works, and it shows on chain: Absolute Batman #1 card 59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4 was transferred on 2026-10-22 under the same address, with its history back to July 2026 still readable.",
+      "That a moved card keeps its address and history is how a Metaplex Core transfer works, and it shows on chain: Absolute Batman #1 card 59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4 was transferred on 2026-10-22 under the same address, with its history back to July 2026 still readable (re-read 2026-11-10). The cancelling did not reach every marketplace's display: on 2026-11-10 Magic Eden still showed pre-migration listings whose items had moved (see q-stale-listing-after-move).",
     verified: true,
     source: "https://blog.candy.io/candy-community-update-your-nfts-and-sol-are-on-the-move/",
-    sourceRead: "2026-10-26",
+    sourceRead: "2026-11-10",
     keywords: ["candy", "moonpay", "wallet", "migration", "october", "moved", "new wallet", "old wallet"],
+  },
+  {
+    id: "q-stale-listing-after-move",
+    category: "question",
+    title: "Why does my item show as listed when I never listed it?",
+    plain:
+      "A marketplace can keep showing a listing after the item has moved to another wallet. The old holder's listing was never removed from the marketplace's book. It cannot be filled: the seller it names no longer holds the item, so there is nothing to hand over. The chain owner is what counts. If you hold an item that shows as listed and you never listed it, this is the most likely explanation.",
+    pitfall:
+      "Taking that price as the item's floor or as an offer you could accept, or deciding the item is not yours because it shows a different seller. Check the owner with get_asset or get_asset_provenance, and compare the listing's seller with it.",
+    observed:
+      "Candy's October 19, 2026 post said active listings were being cancelled for the wallet migration. On 2026-11-10 none of the 20 cheapest Magic Eden listings of 2026 MLB Gold Series ICONs was backed: each item's Core account named an owner that was neither the listing's seller nor Magic Eden's escrow.",
+    verified: true,
+    source: "https://blog.candy.io/candy-community-update-your-nfts-and-sol-are-on-the-move/",
+    sourceRead: "2026-11-10",
+    keywords: ["stale listing", "ghost listing", "listed", "never listed", "still listed", "cannot buy", "dead listing", "old listing", "migration", "candy", "listed but not mine"],
+  },
+  {
+    id: "venue-candy-sealed-item",
+    category: "venue",
+    title: "Candy items named \"Sealed Item\" with no traits",
+    venue: "candy",
+    plain:
+      "Some Candy items are named just \"Sealed Item\" and carry no traits. They are real items on chain with owners, but the name and traits do not say which card or pack they are. Treat them as unrevealed placeholders, not as a card of their own, and do not price one from another collection's \"Sealed Item\".",
+    pitfall:
+      "Counting them as a separate card, matching them to a player or character by name, or reading the missing traits as an error in this server. The chain index carries exactly what Candy wrote.",
+    observed:
+      "On 2026-11-10 the asset index listed 485 live items named \"Sealed Item\" in Justice League Membership Cards (collection HaM3zbHaqbP9Aq2ZDsmGN1oLKfes3G2BVC29HoTcGXw5), none with traits. What they become, and when, was not established.",
+    verified: true,
+    source: "https://www.metaplex.com/docs/dev-tools/das-api",
+    sourceRead: "2026-11-10",
+    keywords: ["sealed item", "sealed", "placeholder", "unrevealed", "no traits", "mystery", "candy", "justice league"],
+  },
+  {
+    id: "venue-candy-duplicate-serials",
+    category: "venue",
+    title: "Two live Candy items can carry the same name and serial",
+    venue: "candy",
+    plain:
+      "Two different items can share a name and a serial number, for example two copies of \"(4805/6024)\" in one collection. They are separate items with separate addresses and owners. The asset address is the identity, not the name or the serial. When counting, pricing or proving which one you hold, use the address.",
+    pitfall:
+      "Treating a second item with your serial as a copy of yours, a fake, or a sign yours was duplicated, or deduplicating sales and holdings by name and serial and losing one of the two.",
+    observed:
+      "On 2026-11-10 the asset index showed 7 pairs of live items in Justice League Membership Cards sharing both name and serial_number, for example H2F3vbzWQ3bNP7L9kpytjmkyAoHTFuR85tDQ8uxzpeS and 5LSFEDqr4PoMekUWQWaHBSwneGspc5JSv6qdenNcRJ8R, both \"Justice League Membership Cards (4805/6024)\". Why they share a serial was not established.",
+    verified: true,
+    source: "https://www.metaplex.com/docs/dev-tools/das-api",
+    sourceRead: "2026-11-10",
+    keywords: ["same serial", "duplicate serial", "serial twice", "twice", "duplicate", "twin", "two copies", "serial number", "candy"],
+  },
+  {
+    id: "q-prices-not-converted-to-dollars",
+    category: "question",
+    title: "Why are prices not in dollars?",
+    plain:
+      "Every price from this server is in the currency the marketplace gave it in, usually SOL and sometimes a stablecoin such as USDC, and it is labelled with that currency. Nothing is converted to dollars: a conversion needs an exchange rate at a moment, and a figure converted at the wrong moment is a wrong number someone repeats.",
+    pitfall:
+      "Multiplying a SOL figure by today's SOL price and presenting the result as what the item sold for, or adding a USDC figure to a SOL figure. Convert only with a rate and time you name, and say you did it.",
+    documented:
+      "Every money figure names its currency and the API it came from. No valuations and no currency conversion.",
+    verified: true,
+    source: "https://github.com/p1xelapp/solana-nft-mcp#readme",
+    sourceRead: "2026-11-10",
+    keywords: ["usd", "dollar", "dollars", "convert", "conversion", "fiat", "currency", "usdc", "sol price", "exchange rate"],
   },
   {
     id: "q-standard-migration",
@@ -1251,26 +1313,46 @@ function terms(topic: unknown): { phrase: string; words: string[] } {
 /** camelCase is a word boundary: FreezeDelegate is also "freeze" and "delegate". */
 const splitCamel = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
 
-/** The distinct words in a string, camelCase split, for boundary matching. */
-function tokensOf(s: string): Set<string> {
-  return new Set(
-    splitCamel(s)
-      .toLowerCase()
-      .split(/[^a-z0-9+]+/)
-      .filter(Boolean),
-  );
+/**
+ * Text reduced to its words, space-padded, for whole-word phrase tests.
+ *
+ * Hyphens, slashes and the seam between letters and digits are all word
+ * breaks, on both sides of the comparison, so "token-2022", "Token2022" and
+ * "token 2022" are one spelling. Before this, a hyphenated query was one
+ * token that no entry's words could equal, and "token-2022 nft" found nothing
+ * while the Token-2022 entry carried that exact keyword.
+ */
+function wordsOf(s: string): string {
+  const w = splitCamel(s)
+    .toLowerCase()
+    .replace(/([a-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([a-z])/g, "$1 $2")
+    .replace(/[^a-z0-9+]+/g, " ")
+    .trim();
+  return ` ${w} `;
 }
 
 /**
- * Does a search term appear as a WORD here?
+ * Does a search term (one word or several) appear as WHOLE words here?
  *
- * Substring matching is what made "plugin" score against every plugin entry
- * and "delegate" against half the knowledge base. A multi-word synonym (for
- * example "permanent transfer") has no single token to match, so it falls back
- * to a phrase test on the joined text.
+ * Substring matching is what made "plugin" score against every plugin entry,
+ * "delegate" against half the knowledge base, and a two-letter query like
+ * "ab" against ten entries through "table" and "label". `text` is the output
+ * of wordsOf; a term matches only on word boundaries.
  */
-const hasTerm = (tokens: Set<string>, joined: string, w: string): boolean =>
-  w.includes(" ") ? joined.includes(w) : tokens.has(w);
+const hasTerm = (text: string, w: string): boolean => {
+  const needle = wordsOf(w);
+  return needle.trim().length > 0 && text.includes(needle);
+};
+
+/**
+ * Whole-word containment for callers outside this file: the glossary filter
+ * beside explain_mechanics used a bare substring test and had the same
+ * two-letter problem.
+ */
+export function mentions(haystack: string, query: string): boolean {
+  return hasTerm(wordsOf(haystack), query);
+}
 
 /**
  * Find the entries that answer a topic, best match first.
@@ -1302,20 +1384,18 @@ export function explainMechanics(topic: string): MechanicsEntry[] {
   const scored: { entry: MechanicsEntry; score: number }[] = [];
   for (const entry of MECHANICS) {
     if (exactIds.has(entry.id)) continue;
-    const id = entry.id.replace(/-/g, " ");
-    const title = entry.title.toLowerCase();
-    const keys = entry.keywords.join(" ").toLowerCase();
-    const body = `${entry.plain} ${entry.pitfall} ${entry.power ?? ""} ${entry.venue ?? ""} ${entry.pluginType ?? ""}`.toLowerCase();
-    const keyTokens = tokensOf(keys);
-    const titleTokens = tokensOf(`${title} ${id}`);
-    const bodyTokens = tokensOf(body);
+    // Keywords are joined with a separator no word contains, so a phrase can
+    // match inside one keyword but never across two of them.
+    const keys = entry.keywords.map((k) => wordsOf(k)).join("|");
+    const titled = wordsOf(`${entry.title} ${entry.id}`);
+    const body = wordsOf(`${entry.plain} ${entry.pitfall} ${entry.power ?? ""} ${entry.venue ?? ""} ${entry.pluginType ?? ""}`);
     let score = 0;
     // An exact phrase in a keyword or title is the strongest signal we have.
-    if (keys.includes(phrase) || title.includes(phrase) || id.includes(phrase)) score += 8;
+    if (hasTerm(keys, phrase) || hasTerm(titled, phrase)) score += 8;
     for (const w of words) {
-      if (hasTerm(keyTokens, keys, w)) score += 3;
-      else if (hasTerm(titleTokens, `${title} ${id}`, w)) score += 2;
-      else if (hasTerm(bodyTokens, body, w)) score += 1;
+      if (hasTerm(keys, w)) score += 3;
+      else if (hasTerm(titled, w)) score += 2;
+      else if (hasTerm(body, w)) score += 1;
     }
     if (score >= MIN_SCORE) scored.push({ entry, score });
   }

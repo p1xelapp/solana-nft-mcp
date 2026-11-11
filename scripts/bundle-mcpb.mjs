@@ -79,7 +79,7 @@ const manifest = {
   long_description:
     "Ask your AI about any Solana NFT or collectible and get an answer from the chain and the marketplaces, not from memory. " +
     "Who owned it, what it sold for, where the floor is, whether it can still be frozen or burned. Every number says which " +
-    "marketplace it came from and when it was read. Builders get the same answers as clean, typed data, so an agent, a bot or a " +
+    "marketplace it came from and when it was read. Builders get the same answers as structured data, so an agent, a bot or a " +
     "dashboard can use them without a parser. 21 tools. No sign-up, no telemetry, read-only: it cannot touch a wallet.",
   author: { name: "p1xel", url: "https://p1xel.app" },
   homepage: "https://p1xel.app/solana-nft-mcp/",
@@ -89,8 +89,60 @@ const manifest = {
   server: {
     type: "node",
     entry_point: "dist/index.js",
-    mcp_config: { command: "node", args: ["${__dirname}/dist/index.js"] },
+    mcp_config: {
+      command: "node",
+      args: ["${__dirname}/dist/index.js"],
+      // Every documented setting, reachable from the install dialog. The server
+      // treats an empty value, an unfilled placeholder and "false" as unset
+      // (src/lib/env.ts), so a box left blank changes nothing.
+      env: {
+        OPENSEA_API_KEY: "${user_config.opensea_api_key}",
+        SOLANA_RPC_URL: "${user_config.solana_rpc_url}",
+        DAS_RPC_URL: "${user_config.das_rpc_url}",
+        SOLANA_NFT_MCP_NO_AUTO_KEYS: "${user_config.no_auto_keys}",
+        SOLANA_NFT_MCP_NO_UPDATE_CHECK: "${user_config.no_update_check}",
+      },
+    },
   },
+  user_config: {
+    opensea_api_key: {
+      type: "string",
+      title: "OpenSea API key (optional)",
+      description: "Leave empty and the server gets a free key from OpenSea the first time a question needs it.",
+      sensitive: true,
+      required: false,
+    },
+    no_auto_keys: {
+      type: "boolean",
+      title: "Never create an OpenSea key for me",
+      description: "With this on and no key above, OpenSea is not read at all. Magic Eden and the chain still are.",
+      default: false,
+      required: false,
+    },
+    no_update_check: {
+      type: "boolean",
+      title: "Skip the update check",
+      description: "By default the server asks npm once at start whether a newer version exists.",
+      default: false,
+      required: false,
+    },
+    solana_rpc_url: {
+      type: "string",
+      title: "Solana RPC endpoint (optional)",
+      description: "Your own https endpoint. Empty uses the free public ones.",
+      sensitive: true,
+      required: false,
+    },
+    das_rpc_url: {
+      type: "string",
+      title: "Asset index (DAS) endpoint (optional)",
+      description: "Your own https endpoint that serves the DAS methods. Empty uses the public one.",
+      sensitive: true,
+      required: false,
+    },
+  },
+  // What leaves the machine, where it goes and what is kept on disk.
+  privacy_policies: ["https://github.com/p1xelapp/solana-nft-mcp/blob/main/PRIVACY.md"],
   tools: [
     { name: "identify", description: "What is this address or name" },
     { name: "get_asset_provenance", description: "Who owned it, from the chain, back to the mint" },

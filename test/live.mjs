@@ -9,6 +9,7 @@
  *   get_source_status     -> the undocumented DAS capability on the public RPC
  *   get_asset             -> that capability actually feeding an asset read
  *   identify              -> the routing that decides which source to ask
+ * and three direct collection reads that hold data/issuers.json to the chain.
  *
  * The two DAS checks exist because the asset and wallet coverage added in 1.8
  * rests entirely on an UNDOCUMENTED capability: the public RPC can withdraw
@@ -193,6 +194,49 @@ try {
   }
 } catch (e) {
   fail("identify (multi-source)", "identify", e.message);
+}
+
+// -- the dated issuer table against the chain ---------------------------
+// data/issuers.json names the key that signs every Candy collection. Candy
+// moved all 401 to a new key in November 2026 and the table went on naming
+// the old one for days, while identify called the new key "most likely a
+// wallet". Three collections spread across the table are read live each week;
+// a different authority on any of them means the table needs regenerating.
+try {
+  const { readFileSync } = await import("node:fs");
+  const sol = await import("../dist/sources/solana.js");
+  const table = JSON.parse(readFileSync(new URL("../data/issuers.json", import.meta.url), "utf8"));
+  const expected = new Map();
+  for (const row of table.issuers ?? []) for (const a of row.collectionAddresses ?? []) expected.set(a, row.address);
+  const all = [...expected.keys()];
+  const picks = [...new Set([all[0], all[Math.floor(all.length / 2)], all[all.length - 1]].filter(Boolean))];
+  if (picks.length === 0) {
+    fail("issuer table", "data/issuers.json", "the table lists no collections, so nothing could be compared with the chain");
+  } else {
+    const moved = [];
+    const unread = [];
+    for (const a of picks) {
+      try {
+        const raw = await sol.getCoreAccountRaw(a);
+        const d = raw ? sol.decodeCoreAccount(raw) : null;
+        if (!d || d.kind !== "collection") unread.push(a);
+        else if (d.updateAuthority !== expected.get(a)) moved.push(`${a} is signed by ${d.updateAuthority}, the table says ${expected.get(a)}`);
+      } catch (e) {
+        unread.push(`${a} (${e.message.slice(0, 80)})`);
+      }
+    }
+    if (moved.length > 0) {
+      fail("issuer table", "data/issuers.json", `a collection's update authority changed since the table was derived on ${String(table.derivedAt).slice(0, 10)}: ${moved.join("; ")}. Run npm run data:issuers and name the new key by hand.`);
+    } else if (unread.length === picks.length) {
+      // Not read is not agreement: the RPC check above already says why.
+      degraded.push(`issuer table not compared: none of ${picks.length} collection reads answered`);
+      console.log(`⚠️  issuer table [public Solana RPC] not compared: ${unread.join(", ")} (${elapsed()})`);
+    } else {
+      pass("issuer table", "data/issuers.json", `${picks.length - unread.length}/${picks.length} sampled collections still signed by the key the table names${unread.length ? ` (${unread.length} not read)` : ""}`);
+    }
+  }
+} catch (e) {
+  fail("issuer table", "data/issuers.json", e.message);
 }
 
 // -----------------------------------------------------------------------

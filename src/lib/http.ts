@@ -414,6 +414,40 @@ const originGates = new Map<string, Gate>();
  * one could see. Sharing one gate per origin makes the pace real, and the
  * strictest interval any caller asks for wins.
  */
+const ORIGIN_PAUSE_MIN_MS = 10_000;
+const ORIGIN_PAUSE_MAX_MS = 60 * 60_000;
+const originPauses = new Map<string, number>();
+function urlOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * A host that answers 429 with a Retry-After has asked to be left alone, and
+ * the request is addressed to everyone reading from it, not to the one reader
+ * that happened to receive it. The pause is therefore kept here, per origin:
+ * when it lived inside the RPC reader, the asset-index reader and the status
+ * probe went on asking the same host twelve more times inside a 600 s pause.
+ * Returns the pause actually recorded, clamped to between ten seconds and an hour.
+ */
+export function pauseOrigin(url: string, askedMs: number): number {
+  const wait = Math.min(Math.max(askedMs, ORIGIN_PAUSE_MIN_MS), ORIGIN_PAUSE_MAX_MS);
+  const origin = urlOrigin(url);
+  originPauses.set(origin, Math.max(originPauses.get(origin) ?? 0, Date.now() + wait));
+  return wait;
+}
+
+/** Milliseconds left of a pause this origin asked for, or 0 when it may be asked. */
+export function originPauseLeftMs(url: string): number {
+  const origin = urlOrigin(url);
+  const left = (originPauses.get(origin) ?? 0) - Date.now();
+  if (left <= 0) originPauses.delete(origin);
+  return Math.max(0, left);
+}
+
 export function originGate(url: string, minIntervalMs: number): Gate {
   let origin: string;
   try {
@@ -663,6 +697,15 @@ export function requireSecureEndpoint(variable: string, url: string): void {
     u = new URL(url);
   } catch {
     throw new BadInputError(`${variable} is not a valid URL. Set it to an https endpoint, or unset it to use the public ones.`);
+  }
+  // `https://user:pass@host` looks like a way to carry a key and is not one:
+  // fetch refuses to send to such a URL at all, so every read quietly went to
+  // the public endpoints instead, and the refusal text (which quotes the URL)
+  // was relayed in a normal answer. Refused here, by name, before any request.
+  if (u.username !== "" || u.password !== "") {
+    throw new BadInputError(
+      `${variable} has a username or password in front of the host, which cannot be sent. Put the key where your provider documents it (a query field or the path), or unset the variable to use the public endpoints.`,
+    );
   }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
   if (u.protocol === "https:" || (u.protocol === "http:" && local)) return;

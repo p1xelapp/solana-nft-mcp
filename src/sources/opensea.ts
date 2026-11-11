@@ -602,6 +602,12 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
       : "OpenSea's floor spans the marketplaces it indexes. It may be below the cheapest listing fulfillable through OpenSea's API.",
     totalVolume: dust ? 0 : volume,
     volumeCurrency: ticker(t.volume_symbol),
+    // OpenSea has answered "ETH" here for Solana collections. The label is
+    // relayed as given, because replacing it would be a guess too; the
+    // sentence stops a reader converting it at an ether price.
+    ...(ticker(t.volume_symbol)?.toUpperCase() === "ETH"
+      ? { volumeCurrencyNote: "ETH is OpenSea's own label for this volume figure, passed on as OpenSea gave it; for a Solana collection this server has not confirmed which currency the figure is actually summed in, so do not convert it at an ether price or set it beside a SOL figure." }
+      : {}),
     ...(dust
       ? {
           volumeNote:
@@ -664,6 +670,19 @@ function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuanti
   // which no real price has, and the raw units travel alongside regardless.
   const price = Number(q / scale) + Number(q % scale) / Number(scale);
   return Number.isFinite(price) ? { price, rawQuantity, decimals } : { price: null, rawQuantity, decimals, problem: "amount does not fit a number" };
+}
+
+/**
+ * OpenSea's own page for a collection, for the link back its API terms ask
+ * for wherever its figures are shown.
+ *
+ * Built from the slug, never from the `opensea_url` OpenSea returns: that is
+ * venue text, and a link is the one field a reader clicks. Callers attach it
+ * only when the slug was proved against the collection's on-chain address;
+ * the shape check here is the last line, not the proof.
+ */
+export function collectionPageUrl(slug: string): string | null {
+  return /^[a-z0-9][a-z0-9_-]{0,119}$/i.test(slug) ? `https://opensea.io/collection/${slug}` : null;
 }
 
 /**
@@ -1248,6 +1267,31 @@ export async function floorHistory(slug: string, interval: FloorInterval = "7d")
       currency: points[0]!.currency,
     },
   };
+}
+
+interface OsBestListing {
+  asset?: { identifier?: string };
+  svm_order?: { maker?: string; asset_id?: string };
+  price?: { current?: { currency?: string; decimals?: number; value?: string } };
+}
+
+/**
+ * The single cheapest listing OpenSea holds for a slug: which item, which
+ * wallet listed it, and its price. The floor alone cannot say whether it is
+ * a listing Magic Eden also shows, or whether its item is still held; these
+ * three fields can, and the rest of the record is not passed on.
+ */
+export async function bestListing(slug: string) {
+  const { data, stale, cachedAt } = await cached(`os:best:${slug}`, 60_000, (producer) =>
+    os<{ listings?: unknown }>(`/listings/collection/${encodeURIComponent(slug)}/best?limit=1`, producer),
+  );
+  const row = Array.isArray(data?.listings) ? (data.listings[0] as OsBestListing | undefined) : undefined;
+  if (!row || typeof row !== "object") return null;
+  const mint = venueAddress(row.svm_order?.asset_id) ?? venueAddress(row.asset?.identifier);
+  if (!mint) return null;
+  const p = row.price?.current;
+  const amount = paymentAmount({ quantity: p?.value, decimals: p?.decimals, symbol: p?.currency });
+  return { mint, maker: venueAddress(row.svm_order?.maker), price: amount.price, currency: ticker(p?.currency), stale, cachedAt };
 }
 
 interface OsHolder {
