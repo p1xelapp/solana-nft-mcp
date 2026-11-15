@@ -1,0 +1,21 @@
+{
+ "readAt": "2026-11-14T22:03:31.536Z",
+ "endpoint": "https://api.mainnet-beta.solana.com",
+ "about": "The reply, exactly as read, to getSignaturesForAddress with a `before` signature this node has never seen (a well-formed 64-byte value no transaction has).",
+ "method": "getSignaturesForAddress",
+ "params": [
+  "AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9",
+  {
+   "limit": 1000,
+   "before": "77e2U9j2u1m399pnQ9RLk57ZZpxrwQoQA3S5eBMSobRSCn2kQ42MPGrCGCzsoL7E9z4anyPPUZJ6tXzzbGBeMna"
+  }
+ ],
+ "reply": {
+  "jsonrpc": "2.0",
+  "error": {
+   "code": -32020,
+   "message": "Transaction 77e2U9j2u1m399pnQ9RLk57ZZpxrwQoQA3S5eBMSobRSCn2kQ42MPGrCGCzsoL7E9z4anyPPUZJ6tXzzbGBeMna not found"
+  },
+  "id": 1
+ }
+}

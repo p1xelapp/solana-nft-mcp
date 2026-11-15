@@ -27,6 +27,8 @@ import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
 import { registerSecret, MIN_NAMED_SECRET_LENGTH } from "../lib/secrets.js";
 import { isoFromBlockTime } from "../lib/time.js";
+import { classifyPaymentToken } from "../lib/reconcile.js";
+import { saleRowFlags } from "../market.js";
 import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api.opensea.io/api/v2";
@@ -627,7 +629,8 @@ export async function collectionStats(slug: string, opts: { fresh?: boolean; sig
 
 interface OsEvent {
   event_type?: string;
-  payment?: { quantity?: string; decimals?: number; symbol?: string };
+  /** `token_address` is required by OpenSea's own schema; the currency is decided by it, never by `symbol`. */
+  payment?: { quantity?: string; decimals?: number; symbol?: string; token_address?: string };
   nft?: { identifier?: string; name?: string };
   buyer?: string;
   seller?: string;
@@ -733,7 +736,7 @@ export async function recentSales(slug: string, limit: number) {
     otherEventTypes[kind] = (Object.hasOwn(otherEventTypes, kind) ? otherEventTypes[kind]! : 0) + 1;
     return false;
   });
-  const sales = saleRows.slice(0, limit).map((e) => {
+  const baseSales = saleRows.slice(0, limit).map((e) => {
     const malformed: string[] = [];
     const absent = (v: unknown) => v === undefined || v === null || v === "";
     const time = isoFromBlockTime(e.event_timestamp);
@@ -741,8 +744,15 @@ export async function recentSales(slug: string, limit: number) {
     const pay = paymentAmount(e.payment);
     if (pay.problem) malformed.push(`payment (${pay.problem})`);
     const symbol = e.payment?.symbol;
-    const currency = typeof symbol === "string" && CURRENCY_SYMBOL.test(symbol) ? symbol : null;
-    if (!absent(symbol) && currency === null) malformed.push("currency (not a ticker)");
+    if (!absent(symbol) && !(typeof symbol === "string" && CURRENCY_SYMBOL.test(symbol))) malformed.push("currency (not a ticker)");
+    // The currency is the payment token's address, never its symbol: OpenSea
+    // takes any SPL token as payment, and a token's symbol is whatever its
+    // creator typed. A token named "SOL" is not SOL. A sale with no payment
+    // object at all names no currency and is not assumed to be SOL either.
+    const tokenAddress = e.payment?.token_address;
+    if (!absent(tokenAddress) && !(typeof tokenAddress === "string" && isBase58Address(tokenAddress))) malformed.push("payment token (not a Solana address)");
+    const paid = e.payment === undefined || e.payment === null ? null : classifyPaymentToken(tokenAddress, symbol, "OpenSea");
+    const currency = paid?.currency ?? null;
     const address = (v: unknown, field: string): string | null => {
       if (absent(v)) return null;
       if (typeof v === "string" && isBase58Address(v)) return v;
@@ -771,6 +781,9 @@ export async function recentSales(slug: string, limit: number) {
       rawQuantity: pay.rawQuantity,
       decimals: pay.decimals,
       currency,
+      paymentToken: paid?.paymentToken ?? null,
+      ...(paid?.kind === "other-token" ? { paidInOtherToken: true as const } : {}),
+      ...(paid?.note ? { currencyNote: paid.note } : {}),
       mint,
       item: e.nft?.name || e.nft?.identifier ? clean(e.nft?.name ?? e.nft?.identifier) : null,
       buyer,
@@ -784,9 +797,25 @@ export async function recentSales(slug: string, limit: number) {
         : {}),
     };
   });
+  // The range check only ever compares SOL with SOL; a sale in another
+  // currency is neither judged nor used to judge.
+  const flags = saleRowFlags(baseSales.map((s) => ({ signature: s.transaction, mint: s.mint, buyer: s.buyer, seller: s.seller, priceSol: s.currency === "SOL" ? s.price : null })));
+  const sales = baseSales.map((s, i) => ({ ...s, ...flags[i] }));
+  const notSol = sales.filter((s) => s.currency !== "SOL").length;
+  const flagNotes = [
+    notSol ? `${notSol} sale(s) were not paid in SOL as proved by the payment token's address (paidInOtherToken, or a currency that is not established): their price is in that token's units and belongs in no SOL figure.` : "",
+    flags.some((f) => f.selfFill) ? "selfFill marks a sale with one wallet as buyer and seller: no money changed hands between two parties." : "",
+    flags.some((f) => f.sharedTransaction) ? "sharedTransaction marks a sale that shares its transaction with other item sales: a per-item price cannot be proven from the buyer's total." : "",
+    flags.some((f) => f.farAboveRecentRange) ? "farAboveRecentRange marks a SOL price far above the other SOL sales listed here, with the numbers; it is shown as reported, not dropped or adjusted." : "",
+  ].filter(Boolean);
   return {
     slug,
     sales,
+    // What OpenSea's figure is, from its own schema and from transactions read
+    // on 2026-11-14: on its own program the buyer paid exactly this amount.
+    priceBasis:
+      "price is the amount OpenSea reports for the sale, in the currency of its payment token's address. On OpenSea's own Solana program that was exactly what the buyer paid. OpenSea also lists sales that settled on other marketplaces; for a Magic Eden fill its amount can differ from Magic Eden's order price, so a sale both lists carry is one sale and its two amounts are never added.",
+    ...(flagNotes.length ? { flagsNote: flagNotes.join(" ") } : {}),
     activitiesScanned: data.activitiesScanned,
     pagesRead: data.pagesRead,
     truncated: data.truncated,
@@ -1040,7 +1069,7 @@ export interface OsAccountEvent {
   to_address?: string;
   buyer?: string;
   seller?: string;
-  payment?: { quantity?: string; decimals?: number; symbol?: string };
+  payment?: { quantity?: string; decimals?: number; symbol?: string; token_address?: string };
   nft?: { identifier?: string; name?: string; collection?: string };
 }
 
@@ -1053,14 +1082,15 @@ export interface OsAccountEvent {
  * The identity of one account event, for the exact-copy check. Two rows
  * are one event only when EVERY claim matches: the payment's currency and
  * scale are claims too (1000000 USDC at six decimals and 1000000 lamports
- * at nine were being collapsed into one sale). Shared with the wallet view
- * so the reader and the summary cannot disagree.
+ * at nine were being collapsed into one sale). The token's address is the
+ * currency, so two payments with one symbol and two addresses are two claims.
+ * Shared with the wallet view so the reader and the summary cannot disagree.
  */
 export function accountEventFingerprint(e: OsAccountEvent): string {
   return JSON.stringify([
     e.event_type, e.transaction, e.event_timestamp, e.nft?.identifier, e.nft?.collection,
     e.buyer, e.seller, e.from_address, e.to_address, e.transfer_type,
-    e.payment?.quantity, e.payment?.symbol, e.payment?.decimals,
+    e.payment?.quantity, e.payment?.symbol, e.payment?.decimals, e.payment?.token_address,
   ]);
 }
 

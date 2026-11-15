@@ -36,7 +36,33 @@ export interface FloorQuote {
   listingCustody?: "backed" | "not-backed" | "unread" | "not-checked";
   /** Other listings this venue showed, so the same listing relayed by another venue can be recognised. */
   alsoListed?: { mint: string; maker: string | null }[];
+  /**
+   * "symbol" when the venue named this floor's currency by a symbol only, with
+   * no token address to check it against. OpenSea's floor, listing and trait
+   * endpoints answer that way; a sale row from the same venue carries the
+   * address and is classified by it instead.
+   */
+  currencyBasis?: "symbol";
+  /**
+   * What the number is. Magic Eden's floor is the seller's asking price.
+   * OpenSea's is what a buyer pays to fill the listing through OpenSea, which
+   * its own API schema says can include OpenSea's fee on a listing it relays
+   * from another marketplace (read 2026-11-14). Two different things.
+   */
+  priceIs?: "seller-ask" | "buyer-pays-through-venue";
 }
+
+/** The sentence for two floors that are not the same kind of number. */
+function basisSentence(quotes: FloorQuote[]): string | null {
+  const kinds = new Set(quotes.map((q) => q.priceIs).filter(Boolean));
+  if (kinds.size < 2) return null;
+  const pays = quotes.filter((q) => q.priceIs === "buyer-pays-through-venue").map((q) => q.source);
+  const asks = quotes.filter((q) => q.priceIs === "seller-ask").map((q) => q.source);
+  return `${pays.join(" and ")}'s figure is what a buyer pays to fill through it, which for a listing relayed from another marketplace can include charges added to the seller's price; ${asks.join(" and ")}'s is the seller's asking price. Part or all of a gap between them can be those charges rather than a cheaper listing.`;
+}
+
+const SYMBOL_ONLY_CAVEAT =
+  "OpenSea gives the currency of its floor as a symbol only, with no token address, so that label is OpenSea's and could not be checked against a token's address the way a sale's currency is.";
 
 const sameListing = (a: { mint: string; maker: string | null }, b: { mint: string; maker: string | null }) =>
   a.mint === b.mint && a.maker !== null && a.maker === b.maker;
@@ -164,6 +190,13 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
     return { comparable: false, verdict: mirror.sentence, floors: allQuotes, caveats };
   }
 
+  // Two floors are about to be set beside each other by currency, and one of
+  // those currencies rests on a venue's word alone.
+  if (quotes.some((q) => q.currencyBasis === "symbol")) caveats.push(SYMBOL_ONLY_CAVEAT);
+  // An ask and a buyer's cost are not the same number; their gap is not a spread.
+  const basis = basisSentence(quotes);
+  if (basis) caveats.push(basis);
+
   const currencies = [...new Set(quotes.map((q) => q.currency))];
 
   if (currencies.length > 1) {
@@ -193,7 +226,8 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       (spreadPct === 0
         ? `Both sources report the same floor (${cheapest.value} ${cheapest.currency}).`
         : `Lowest reported by ${cheapest.source} at ${cheapest.value} ${cheapest.currency}; ` +
-          `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.`),
+          `${dearest.source} is ${spreadPct}% higher at ${dearest.value} ${dearest.currency}.` +
+          (basis ? ` ${basis}` : "")),
     floors: sorted,
     cheapest,
     spreadPct,
@@ -202,4 +236,177 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
       "Marketplace floors move independently and these were read seconds apart, so a small spread may be timing rather than a real arbitrage.",
     ],
   };
+}
+
+// ------------------------------------------------------- payment currency
+
+/**
+ * What OpenSea names as the payment token of a sale in native SOL: the System
+ * Program's address (seen on every SOL sale in its Solana event feed,
+ * 2026-11-14).
+ */
+export const NATIVE_SOL = "11111111111111111111111111111111";
+/** Wrapped SOL's mint. A sale settled in it is a sale in SOL. */
+export const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+
+/** The currencies this server names from a token's address. Any other token is "another token". */
+export type KnownCurrency = "SOL" | "USDC" | "USDT" | "PYUSD";
+
+/**
+ * Dollar stablecoins, by mint. Each address was read from its issuer's own
+ * page (Circle, Tether, Paxos) and checked on chain as a 6-decimal mint on
+ * 2026-11-14. A symbol is never enough: anyone can create a token called USDC.
+ * This is the only table of them: the feed rows, the sale decoder and
+ * verify_claim all name a currency through it.
+ */
+const STABLECOINS: ReadonlyMap<string, Exclude<KnownCurrency, "SOL">> = new Map([
+  ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "USDC"],
+  ["Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USDT"],
+  // Token-2022; its on-chain metadata names it PayPal USD.
+  ["2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo", "PYUSD"],
+]);
+
+/** The currency a token address stands for: native or wrapped SOL, a listed stablecoin, or null for any other token. */
+export function currencyByMint(address: string): KnownCurrency | null {
+  if (address === NATIVE_SOL || address === WRAPPED_SOL) return "SOL";
+  return STABLECOINS.get(address) ?? null;
+}
+
+/** Names a token can give itself to pass for a currency it is not. */
+const CLAIMED_NAMES = new Set(["SOL", "WSOL", "USDC", "USDT", "PYUSD"]);
+const TOKEN_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const TICKER = /^[A-Za-z0-9._-]{1,12}$/;
+
+export interface PaymentCurrency {
+  /**
+   * "SOL", a named stablecoin, or, for another token, the symbol the venue
+   * gave it (for display only). Null when the currency is not established, or
+   * when another token's symbol is the name of a currency it is not.
+   */
+  currency: string | null;
+  kind: "sol" | "stablecoin" | "other-token" | "unknown";
+  /** The payment token's address, when the venue gave one that is an address. */
+  paymentToken: string | null;
+  /** Why the currency reads the way it does, when a reader needs telling. */
+  note?: string;
+}
+
+/**
+ * The currency a payment was made in, decided by the payment token's ADDRESS.
+ *
+ * OpenSea accepts any SPL token as payment and relays the token's own symbol,
+ * and a token's symbol is whatever its creator typed. A sale paid in a token
+ * named "SOL" used to arrive as `currency: "SOL"` and be compared with Magic
+ * Eden's SOL prices as if it were one. The symbol now only labels a token
+ * this server cannot name; it never makes a payment SOL or a dollar.
+ */
+export function classifyPaymentToken(address: unknown, symbol: unknown, venue: string): PaymentCurrency {
+  const sym = typeof symbol === "string" && TICKER.test(symbol.trim()) ? symbol.trim() : null;
+  const given = address !== undefined && address !== null && address !== "";
+  const addr = typeof address === "string" && TOKEN_ADDRESS.test(address) ? address : null;
+  if (addr === NATIVE_SOL || addr === WRAPPED_SOL) {
+    const odd = sym !== null && !/^w?sol$/i.test(sym);
+    return {
+      currency: "SOL",
+      kind: "sol",
+      paymentToken: addr,
+      ...(odd ? { note: `${venue} labels this payment "${sym}", but its token address is SOL's, so it is counted as SOL.` } : {}),
+    };
+  }
+  const stable = addr !== null ? STABLECOINS.get(addr) : undefined;
+  if (addr !== null && stable !== undefined) {
+    const odd = sym !== null && sym.toUpperCase() !== stable;
+    return {
+      currency: stable,
+      kind: "stablecoin",
+      paymentToken: addr,
+      ...(odd ? { note: `${venue} labels this payment "${sym}", but its token address is ${stable}'s, so it is counted as ${stable}.` } : {}),
+    };
+  }
+  if (addr !== null) {
+    const posing = sym !== null && CLAIMED_NAMES.has(sym.toUpperCase());
+    return {
+      currency: posing ? null : sym,
+      kind: "other-token",
+      paymentToken: addr,
+      note: posing
+        ? `${venue} labels this payment "${sym}", but its token address ${addr} is not ${sym.toUpperCase()}'s: anyone can create a token with that name. It was paid in another token and is not counted as ${sym.toUpperCase()}.`
+        : `Paid in another token (${sym ?? "no symbol given"}, address ${addr}), not SOL or a dollar stablecoin. The amount is in that token's own units, and the sale is left out of every SOL figure.`,
+    };
+  }
+  return {
+    currency: null,
+    kind: "unknown",
+    paymentToken: null,
+    note: given
+      ? `${venue} gave a payment token that is not an address, so the currency is not established and the sale is left out of every SOL figure.`
+      : `${venue} gave no payment token address${sym ? ` (only the label "${sym}")` : ""}, so the currency is not established and the sale is left out of every SOL figure.`,
+  };
+}
+
+/**
+ * Raw token units as an amount: a non-negative integer and a whole number of
+ * decimals, or null. The whole part is exact; the fraction is a double, lossy
+ * only past 15 digits, which no real price has.
+ */
+export function unitsToAmount(raw: unknown, decimals: unknown): number | null {
+  const s = typeof raw === "string" ? raw : typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : null;
+  if (s === null || !/^\d{1,40}$/.test(s)) return null;
+  if (typeof decimals !== "number" || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) return null;
+  const q = BigInt(s);
+  const scale = 10n ** BigInt(decimals);
+  const amount = Number(q / scale) + Number(q % scale) / Number(scale);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+/** What a sale was paid in and how much, from one Magic Eden activity row. */
+export interface MePayment extends PaymentCurrency {
+  /** The amount paid, in `currency` (token units for another token). Null when it cannot be read. */
+  amount: number | null;
+  /** The amount in SOL, only when the payment was SOL. */
+  priceSol: number | null;
+  /** Magic Eden's `price` on a stablecoin sale: a SOL equivalent at its own rate, not what was paid. */
+  priceSolEquivalent: number | null;
+}
+
+const positive = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+
+/**
+ * Magic Eden's `price` is SOL, except on a sale paid in an SPL token, where it
+ * is a SOL equivalent at Magic Eden's rate and the amount paid sits in
+ * `priceInfo.splPrice` (an 800 USDC sale arrived as price 6.733786, read
+ * against its transaction on 2026-11-14). A row without `splPrice` is SOL, as
+ * Magic Eden reports it. What `price` holds for a token that is neither SOL
+ * nor a dollar stablecoin was not checked, so it is passed on as nothing.
+ */
+export function mePayment(row: { price?: unknown; priceInfo?: unknown } | null | undefined): MePayment {
+  const info = row?.priceInfo;
+  const spl = info !== null && typeof info === "object" ? (info as { splPrice?: unknown }).splPrice : undefined;
+  if (spl === undefined || spl === null) {
+    const sol = positive(row?.price);
+    return { currency: "SOL", kind: "sol", paymentToken: null, amount: sol, priceSol: sol, priceSolEquivalent: null };
+  }
+  const s = typeof spl === "object" ? (spl as { address?: unknown; rawAmount?: unknown; decimals?: unknown }) : {};
+  const c = classifyPaymentToken(s.address, undefined, "Magic Eden");
+  const amount = unitsToAmount(s.rawAmount, s.decimals);
+  if (c.kind === "sol") return { ...c, amount, priceSol: amount, priceSolEquivalent: null };
+  if (c.kind === "stablecoin") {
+    return {
+      ...c,
+      amount,
+      priceSol: null,
+      priceSolEquivalent: positive(row?.price),
+      note: `Paid in ${c.currency}${amount === null ? "; the amount Magic Eden sent could not be read" : ""}. Magic Eden's price on this row (priceSolEquivalent) is a SOL equivalent at its own rate, not what was paid, so the sale is left out of every SOL figure.`,
+    };
+  }
+  if (c.kind === "other-token") {
+    return {
+      ...c,
+      amount,
+      priceSol: null,
+      priceSolEquivalent: null,
+      note: `${c.note} What Magic Eden's price field holds for such a token was not checked, so it is given neither as SOL nor as a SOL equivalent.`,
+    };
+  }
+  return { ...c, amount: null, priceSol: null, priceSolEquivalent: null };
 }

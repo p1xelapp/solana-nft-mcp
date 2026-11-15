@@ -824,6 +824,24 @@ export const MECHANICS: MechanicsEntry[] = [
     keywords: ["tensor", "listing", "custody", "escrow", "core", "liststate"],
   },
   {
+    id: "venue-tensor-sales-from-chain",
+    category: "venue",
+    title: "Tensor sales are read from the chain, not from Tensor",
+    venue: "tensor",
+    plain:
+      "This server does not call Tensor's API, which gives access on request. A Tensor sale of a Metaplex Core item still leaves its record on chain: the item's transfer inside Tensor's marketplace program, with the payment beside it. verify_claim with claim sale decodes one such transaction, and get_recent_sales with chainScan lists recent ones for a Core collection. Tensor's listings, bids and floor are not read.",
+    pitfall:
+      "Treating one marketplace feed as the whole market. On 2026-11-14 Magic Eden's sales feed for Batman: The Long Halloween ended on October 8, while an OpenSea sale from it settled on November 12.",
+    documented:
+      "Tensor's API page says access to its API is requested through a form. The marketplace program's published IDL 0.7.1 defines buy_core, buy_core_spl and take_bid_core for Core items.",
+    observed:
+      "Six Candy sales through TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp (August 3 to September 25, 2026) were decoded from their transactions on 2026-11-14. In buy_core the seller receives the list price and the buyer pays royalties and fees on top; take_bid_core pays from the bid by moving lamports directly, with no transfer instruction to read.",
+    verified: true,
+    source: "https://docs.tensor.trade/trade/api-and-sdk.md",
+    sourceRead: "2026-11-14",
+    keywords: ["tensor", "tensor sale", "tcmp", "on chain", "chain scan", "verify sale", "not in the feed"],
+  },
+  {
     id: "venue-opensea-solana",
     category: "venue",
     title: "OpenSea on Solana",

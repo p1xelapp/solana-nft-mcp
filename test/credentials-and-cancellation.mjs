@@ -505,7 +505,8 @@ const serverEnvBase = () => {
         },
         {
           event_type: "sale",
-          payment: { quantity: "2000000000", decimals: 9, symbol: "SOL" },
+          // OpenSea's schema requires the token address; SOL is proved by it, not by the symbol.
+          payment: { quantity: "2000000000", decimals: 9, symbol: "SOL", token_address: "11111111111111111111111111111111" },
           // A clean Solana row: the identifier is a mint, so it is an address.
           nft: { identifier: address("clean-item"), name: "clean item" },
           buyer: address("buyer"),

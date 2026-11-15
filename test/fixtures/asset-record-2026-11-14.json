@@ -1,0 +1,637 @@
+{
+ "readAt": "2026-11-14T21:54:11.516Z",
+ "about": "Replies exactly as read for one Candy Digital Gold Series card: Magic Eden's token record, the public asset index's getAsset and the Core account.",
+ "mint": "ENsQTfzEREn7P1TWCzno7LqGcVNh49mzVwurzotYD67F",
+ "magicEdenToken": {
+  "url": "https://api-mainnet.magiceden.dev/v2/tokens/ENsQTfzEREn7P1TWCzno7LqGcVNh49mzVwurzotYD67F",
+  "status": 200,
+  "body": {
+   "mintAddress": "ENsQTfzEREn7P1TWCzno7LqGcVNh49mzVwurzotYD67F",
+   "owner": "jiY25VMssADHZJep2K2TqiePDNiwKdx7jbnP9YZPhua",
+   "supply": 1,
+   "collection": "gold_series_auction_1_candy_digital",
+   "collectionName": "2026 MLB Gold Series ICONS - Candy Digital",
+   "name": "Gold Series - Power (20/36)",
+   "updateAuthority": "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
+   "primarySaleHappened": false,
+   "sellerFeeBasisPoints": 1000,
+   "image": "https://arweave.net/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+   "externalUrl": "https://candy.io/item/8a579410-0fc1-4fb8-b2a9-b31f9099e755",
+   "attributes": [
+    {
+     "trait_type": "Item Type",
+     "value": "Pack"
+    },
+    {
+     "trait_type": "Created",
+     "value": 1785992363
+    },
+    {
+     "trait_type": "Serial Number",
+     "value": "20/36"
+    },
+    {
+     "trait_type": "serial_number",
+     "value": "20",
+     "isOnChain": true
+    },
+    {
+     "trait_type": "merkle_root",
+     "value": "8951b53562d46337970803d2a34aeaa9bdda1777de23dbbc5831dbc93d01f78b",
+     "isOnChain": true
+    }
+   ],
+   "properties": {
+    "files": [
+     {
+      "uri": "https://arweave.net/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+      "role": "image",
+      "tags": [],
+      "type": "image/jpeg",
+      "paths": [
+       {
+        "uri": "https://arweave.net/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+        "type": "gateway_direct"
+       },
+       {
+        "uri": "https://permaweb.candy.io/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+        "type": "gateway_candy"
+       },
+       {
+        "uri": "ar://tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+        "type": "ar_url"
+       }
+      ]
+     },
+     {
+      "uri": "https://arweave.net/JdBaa6N5ByG7Jmu-zzvheuonyN4TJKTXWSRtX2mnGZ8",
+      "role": "animation",
+      "tags": [],
+      "type": "video/mp4",
+      "paths": [
+       {
+        "uri": "https://arweave.net/JdBaa6N5ByG7Jmu-zzvheuonyN4TJKTXWSRtX2mnGZ8",
+        "type": "gateway_direct"
+       },
+       {
+        "uri": "https://permaweb.candy.io/JdBaa6N5ByG7Jmu-zzvheuonyN4TJKTXWSRtX2mnGZ8",
+        "type": "gateway_candy"
+       },
+       {
+        "uri": "ar://JdBaa6N5ByG7Jmu-zzvheuonyN4TJKTXWSRtX2mnGZ8",
+        "type": "ar_url"
+       }
+      ]
+     },
+     {
+      "uri": "https://arweave.net/Z_Em8kju3coAiDlAx2PC7zwg4Uv2YjXhVtg8B3aecQw",
+      "role": "spin_loop",
+      "tags": [],
+      "type": "video/mp4",
+      "paths": [
+       {
+        "uri": "https://arweave.net/Z_Em8kju3coAiDlAx2PC7zwg4Uv2YjXhVtg8B3aecQw",
+        "type": "gateway_direct"
+       },
+       {
+        "uri": "https://permaweb.candy.io/Z_Em8kju3coAiDlAx2PC7zwg4Uv2YjXhVtg8B3aecQw",
+        "type": "gateway_candy"
+       },
+       {
+        "uri": "ar://Z_Em8kju3coAiDlAx2PC7zwg4Uv2YjXhVtg8B3aecQw",
+        "type": "ar_url"
+       }
+      ]
+     },
+     {
+      "uri": "https://arweave.net/bPLaAkq07rXS3I2sPvfQqbCkGCMuUeXicTII_mAIHNw",
+      "role": "explode",
+      "tags": [],
+      "type": "video/mp4",
+      "paths": [
+       {
+        "uri": "https://arweave.net/bPLaAkq07rXS3I2sPvfQqbCkGCMuUeXicTII_mAIHNw",
+        "type": "gateway_direct"
+       },
+       {
+        "uri": "https://permaweb.candy.io/bPLaAkq07rXS3I2sPvfQqbCkGCMuUeXicTII_mAIHNw",
+        "type": "gateway_candy"
+       },
+       {
+        "uri": "ar://bPLaAkq07rXS3I2sPvfQqbCkGCMuUeXicTII_mAIHNw",
+        "type": "ar_url"
+       }
+      ]
+     }
+    ],
+    "badges": [],
+    "category": "image",
+    "candy_sku": "42bbd8c1-a4da-5a2b-9e81-4facde31dcc6",
+    "unlockables": [],
+    "edition_size": 36,
+    "candy_item_id": "8a579410-0fc1-4fb8-b2a9-b31f9099e755",
+    "serial_number": 20,
+    "candy_collection_id": "585eccc1-c256-4377-b82b-8fab9451a5d5",
+    "contents_merkle_root": "8951b53562d46337970803d2a34aeaa9bdda1777de23dbbc5831dbc93d01f78b"
+   },
+   "isCompressed": false,
+   "listStatus": "unlisted"
+  }
+ },
+ "getAsset": {
+  "jsonrpc": "2.0",
+  "result": {
+   "interface": "MplCoreAsset",
+   "id": "ENsQTfzEREn7P1TWCzno7LqGcVNh49mzVwurzotYD67F",
+   "content": {
+    "$schema": "https://schema.metaplex.com/nft1.0.json",
+    "json_uri": "https://arweave.net/bVvsiV-jPqPd1L09IRqCEgNlnR8SJpoKNZObYs6-0Fc",
+    "files": [
+     {
+      "uri": "https://arweave.net/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+      "mime": "image/jpeg"
+     },
+     {
+      "uri": "https://arweave.net/JdBaa6N5ByG7Jmu-zzvheuonyN4TJKTXWSRtX2mnGZ8",
+      "mime": "video/mp4"
+     },
+     {
+      "uri": "https://arweave.net/bPLaAkq07rXS3I2sPvfQqbCkGCMuUeXicTII_mAIHNw",
+      "mime": "video/mp4"
+     },
+     {
+      "uri": "https://arweave.net/Z_Em8kju3coAiDlAx2PC7zwg4Uv2YjXhVtg8B3aecQw",
+      "mime": "video/mp4"
+     }
+    ],
+    "metadata": {
+     "attributes": [
+      {
+       "value": "Pack",
+       "trait_type": "Item Type"
+      },
+      {
+       "value": 1785992363,
+       "trait_type": "Created",
+       "display_type": "date"
+      },
+      {
+       "value": "20/36",
+       "trait_type": "Serial Number"
+      }
+     ],
+     "description": "Candy ICONs 2026 Gold Series - Power\nFeaturing: Shohei Ohtani, Juan Soto, Freddie Freeman, Kyle Schwarber, Vladimir Guerrero Jr. and Manny Machado",
+     "name": "Gold Series - Power (20/36)",
+     "symbol": ""
+    },
+    "links": {
+     "image": "https://arweave.net/tW7nHi6yJG4gm2G0usZgFPTY9jhZx2YwEnt92dAxMP4",
+     "external_url": "https://candy.io/item/8a579410-0fc1-4fb8-b2a9-b31f9099e755"
+    },
+    "category": "image"
+   },
+   "authorities": [
+    {
+     "address": "7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL",
+     "scopes": [
+      "full"
+     ]
+    }
+   ],
+   "compression": {
+    "eligible": false,
+    "compressed": false,
+    "data_hash": "",
+    "creator_hash": "",
+    "asset_hash": "",
+    "tree": "",
+    "seq": 0,
+    "leaf_id": 0
+   },
+   "grouping": [
+    {
+     "group_key": "collection",
+     "group_value": "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K"
+    }
+   ],
+   "royalty": {
+    "royalty_model": "creators",
+    "target": null,
+    "percent": 0,
+    "basis_points": 0,
+    "primary_sale_happened": false,
+    "locked": false
+   },
+   "creators": [],
+   "ownership": {
+    "frozen": false,
+    "delegated": false,
+    "delegate": null,
+    "ownership_model": "single",
+    "owner": "jiY25VMssADHZJep2K2TqiePDNiwKdx7jbnP9YZPhua"
+   },
+   "mutable": true,
+   "burnt": false,
+   "plugins": {
+    "attributes": {
+     "data": {
+      "attribute_list": [
+       {
+        "key": "serial_number",
+        "value": "20"
+       },
+       {
+        "key": "merkle_root",
+        "value": "8951b53562d46337970803d2a34aeaa9bdda1777de23dbbc5831dbc93d01f78b"
+       }
+      ]
+     },
+     "index": 1,
+     "offset": 176,
+     "authority": {
+      "type": "UpdateAuthority",
+      "address": null
+     }
+    },
+    "permanent_freeze_delegate": {
+     "data": {
+      "frozen": false
+     },
+     "index": 0,
+     "offset": 174,
+     "authority": {
+      "type": "UpdateAuthority",
+      "address": null
+     }
+    }
+   },
+   "mpl_core_info": {
+    "plugins_json_version": 1
+   },
+   "external_plugins": [],
+   "is_agent": false,
+   "asset_signer": "C1bvDDDt7RprPPsZNeffxKAiacwhDLn6CPQ1nLp8NNeY"
+  },
+  "id": 1
+ },
+ "getAccountInfo": {
+  "jsonrpc": "2.0",
+  "result": {
+   "context": {
+    "apiVersion": "4.4.0",
+    "slot": 469485631
+   },
+   "value": {
+    "data": [
+     "AQrxW4dCrknQp2j57PL26RkSW0XDD0nflJgALqEpOFtZAmrN3OBlCGJT51uRZBw8hUiVOt/08Qy1shAM3CepDwSUGwAAAEdvbGQgU2VyaWVzIC0gUG93ZXIgKDIwLzM2KT8AAABodHRwczovL2Fyd2VhdmUubmV0L2JWdnNpVi1qUHFQZDFMMDlJUnFDRWdObG5SOFNKcG9LTlpPYllzNi0wRmMAAx8BAAAAAAAABQAGAgAAAA0AAABzZXJpYWxfbnVtYmVyAgAAADIwCwAAAG1lcmtsZV9yb290QAAAADg5NTFiNTM1NjJkNDYzMzc5NzA4MDNkMmEzNGFlYWE5YmRkYTE3NzdkZTIzZGJiYzU4MzFkYmM5M2QwMWY3OGIEAgAAAAUCrgAAAAAAAAAGArAAAAAAAAAAAAAAAA==",
+     "base64"
+    ],
+    "executable": false,
+    "lamports": 2255520,
+    "owner": "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d",
+    "rentEpoch": 18446744073709552000,
+    "space": 316
+   }
+  },
+  "id": 1
+ },
+ "secondItem": {
+  "readAt": "2026-11-14T22:54:12.159Z",
+  "about": "A Candy Digital DC comic whose account name and metadata file name differ: Magic Eden's token record and the public asset index's getAsset, exactly as read. Its account is getAccountInfo in transaction-versions-2026-11-14.json.",
+  "mint": "AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9",
+  "magicEdenToken": {
+   "url": "https://api-mainnet.magiceden.dev/v2/tokens/AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9",
+   "status": 200,
+   "body": {
+    "mintAddress": "AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9",
+    "owner": "h4FoDwkztwipWbqdNV4jEa7FJkL32fz5hjE9w5q67zv",
+    "supply": 1,
+    "collection": "batman_the_long_halloween",
+    "collectionName": "Batman: The Long Halloween",
+    "name": "Batman: The Long Halloween (51/800)",
+    "updateAuthority": "pUqAP37Cvdh8YEr8YssSC84hngnBWcPEaBNdqsvh4mA",
+    "primarySaleHappened": false,
+    "sellerFeeBasisPoints": 1000,
+    "image": "https://arweave.net/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+    "externalUrl": "https://candy.io/item/3f35b0d9-894f-4899-bed0-065da157d005",
+    "attributes": [
+     {
+      "trait_type": "Character",
+      "value": "Bruce Wayne"
+     },
+     {
+      "trait_type": "Writer",
+      "value": "Jeph Loeb"
+     },
+     {
+      "trait_type": "Penciler",
+      "value": "Tim Sale"
+     },
+     {
+      "trait_type": "Inker",
+      "value": "Tim Sale"
+     },
+     {
+      "trait_type": "Cover Artist",
+      "value": "Tim Sale"
+     },
+     {
+      "trait_type": "Colorist",
+      "value": "Gregory Wright"
+     },
+     {
+      "trait_type": "RarityDriver",
+      "value": "Modern"
+     },
+     {
+      "trait_type": "Type",
+      "value": "Comic"
+     },
+     {
+      "trait_type": "Item Type",
+      "value": "Collectible"
+     },
+     {
+      "trait_type": "Created",
+      "value": 1704067200
+     },
+     {
+      "trait_type": "Rarity",
+      "value": "CORE"
+     },
+     {
+      "trait_type": "Serial Number",
+      "value": "51/800"
+     },
+     {
+      "trait_type": "serial_number",
+      "value": "51",
+      "isOnChain": true
+     },
+     {
+      "trait_type": "rarity",
+      "value": "CORE",
+      "isOnChain": true
+     }
+    ],
+    "properties": {
+     "files": [
+      {
+       "uri": "https://arweave.net/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+       "role": "image",
+       "tags": [
+        "card-front"
+       ],
+       "type": "image/png",
+       "paths": [
+        {
+         "uri": "https://arweave.net/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+         "type": "gateway_direct"
+        },
+        {
+         "uri": "https://permaweb.candy.io/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+         "type": "gateway_candy"
+        },
+        {
+         "uri": "ar://pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+         "type": "ar_url"
+        }
+       ],
+       "thumbnail": {
+        "uri": "https://arweave.net/RGLf8Fvf4gRBhHXijoXNYaaVoZYyG1XnI75YZ0dPPb4",
+        "type": "image/jpeg",
+        "paths": [
+         {
+          "uri": "https://arweave.net/RGLf8Fvf4gRBhHXijoXNYaaVoZYyG1XnI75YZ0dPPb4",
+          "type": "gateway_direct"
+         },
+         {
+          "uri": "https://permaweb.candy.io/RGLf8Fvf4gRBhHXijoXNYaaVoZYyG1XnI75YZ0dPPb4",
+          "type": "gateway_candy"
+         },
+         {
+          "uri": "ar://RGLf8Fvf4gRBhHXijoXNYaaVoZYyG1XnI75YZ0dPPb4",
+          "type": "ar_url"
+         }
+        ]
+       }
+      }
+     ],
+     "badges": [],
+     "category": "image",
+     "candy_sku": "1c0d5f9c-6509-4782-8ccb-033e42b1008e",
+     "unlockables": [
+      {
+       "cbz": {
+        "uri": "https://arweave.net/4IyDBg-_f29kY_wgl-kRJ2YugWFZcTXZBibv7biyADA",
+        "type": "application/vnd.comicbook+zip",
+        "paths": [
+         {
+          "uri": "https://arweave.net/4IyDBg-_f29kY_wgl-kRJ2YugWFZcTXZBibv7biyADA",
+          "type": "gateway_direct"
+         },
+         {
+          "uri": "https://permaweb.candy.io/4IyDBg-_f29kY_wgl-kRJ2YugWFZcTXZBibv7biyADA",
+          "type": "gateway_candy"
+         },
+         {
+          "uri": "ar://4IyDBg-_f29kY_wgl-kRJ2YugWFZcTXZBibv7biyADA",
+          "type": "ar_url"
+         }
+        ]
+       },
+       "json": {
+        "uri": "https://arweave.net/k2omCZtG7AsT_fIytsnjqY4xwtowz0yWljvZJpj52Y8",
+        "type": "application/json",
+        "paths": [
+         {
+          "uri": "https://arweave.net/k2omCZtG7AsT_fIytsnjqY4xwtowz0yWljvZJpj52Y8",
+          "type": "gateway_direct"
+         },
+         {
+          "uri": "https://permaweb.candy.io/k2omCZtG7AsT_fIytsnjqY4xwtowz0yWljvZJpj52Y8",
+          "type": "gateway_candy"
+         },
+         {
+          "uri": "ar://k2omCZtG7AsT_fIytsnjqY4xwtowz0yWljvZJpj52Y8",
+          "type": "ar_url"
+         }
+        ]
+       },
+       "kind": "comic",
+       "tags": [
+        "comic"
+       ]
+      }
+     ],
+     "edition_size": 800,
+     "candy_item_id": "3f35b0d9-894f-4899-bed0-065da157d005",
+     "serial_number": 51,
+     "candy_collection_id": "49a222cd-2152-4c95-9661-2dad81b61527"
+    },
+    "isCompressed": false,
+    "listStatus": "unlisted"
+   }
+  },
+  "getAsset": {
+   "jsonrpc": "2.0",
+   "result": {
+    "interface": "MplCoreAsset",
+    "id": "AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9",
+    "content": {
+     "$schema": "https://schema.metaplex.com/nft1.0.json",
+     "json_uri": "https://permaweb.candy.io/mqxAn9NMCFVuQdHhjjHtr1mi15aCiJpbu5fimbTy6F0",
+     "files": [
+      {
+       "uri": "https://arweave.net/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs",
+       "mime": "image/png"
+      }
+     ],
+     "metadata": {
+      "attributes": [
+       {
+        "value": "Bruce Wayne",
+        "trait_type": "Character"
+       },
+       {
+        "value": "Jeph Loeb",
+        "trait_type": "Writer"
+       },
+       {
+        "value": "Tim Sale",
+        "trait_type": "Penciler"
+       },
+       {
+        "value": "Tim Sale",
+        "trait_type": "Inker"
+       },
+       {
+        "value": "Tim Sale",
+        "trait_type": "Cover Artist"
+       },
+       {
+        "value": "Gregory Wright",
+        "trait_type": "Colorist"
+       },
+       {
+        "value": "Modern",
+        "trait_type": "RarityDriver"
+       },
+       {
+        "value": "Comic",
+        "trait_type": "Type"
+       },
+       {
+        "value": "Collectible",
+        "trait_type": "Item Type"
+       },
+       {
+        "value": 1704067200,
+        "trait_type": "Created",
+        "display_type": "date"
+       },
+       {
+        "value": "CORE",
+        "trait_type": "Rarity"
+       },
+       {
+        "value": "51/800",
+        "trait_type": "Serial Number"
+       }
+      ],
+      "description": "\"THE LONG HALLOWEEN is more than a comic book. It's an epic tragedy.\"\u2014Christopher Nolan (director THE DARK KNIGHT RISES) Taking place during Batman's early days of crime fighting, this new edition of the classic mystery tells the story of a mysterious killer who murders his prey only on holidays. Working with District Attorney Harvey Dent and Lieutenant James Gordon, Batman races against the clock as he tries to discover who Holiday is before he claims his next victim each month. A mystery that has the reader continually guessing the identity of the killer, this story also ties into the events that transform Harvey Dent into Batman's deadly enemy, Two-Face.\n\n**Original Print Date: October 31, 2024**",
+      "name": "Batman: The Long Halloween 51",
+      "symbol": ""
+     },
+     "links": {
+      "external_url": "https://candy.io/item/3f35b0d9-894f-4899-bed0-065da157d005",
+      "image": "https://arweave.net/pLOpUyR4LiQPrXtzueKJpHy6oRNeyBUnUOYaUNJgkrs"
+     },
+     "category": "image"
+    },
+    "authorities": [
+     {
+      "address": "7wixESeixiY4f2A6JaDKNewNoiip9Tk9s5u1dze7nRwL",
+      "scopes": [
+       "full"
+      ]
+     }
+    ],
+    "compression": {
+     "eligible": false,
+     "compressed": false,
+     "data_hash": "",
+     "creator_hash": "",
+     "asset_hash": "",
+     "tree": "",
+     "seq": 0,
+     "leaf_id": 0
+    },
+    "grouping": [
+     {
+      "group_key": "collection",
+      "group_value": "pUqAP37Cvdh8YEr8YssSC84hngnBWcPEaBNdqsvh4mA"
+     }
+    ],
+    "royalty": {
+     "royalty_model": "creators",
+     "target": null,
+     "percent": 0,
+     "basis_points": 0,
+     "primary_sale_happened": false,
+     "locked": false
+    },
+    "creators": [],
+    "ownership": {
+     "frozen": false,
+     "delegated": false,
+     "delegate": null,
+     "ownership_model": "single",
+     "owner": "h4FoDwkztwipWbqdNV4jEa7FJkL32fz5hjE9w5q67zv"
+    },
+    "mutable": true,
+    "burnt": false,
+    "plugins": {
+     "attributes": {
+      "data": {
+       "attribute_list": [
+        {
+         "key": "serial_number",
+         "value": "51"
+        },
+        {
+         "key": "rarity",
+         "value": "CORE"
+        }
+       ]
+      },
+      "index": 1,
+      "offset": 184,
+      "authority": {
+       "type": "UpdateAuthority",
+       "address": null
+      }
+     },
+     "permanent_freeze_delegate": {
+      "data": {
+       "frozen": false
+      },
+      "index": 0,
+      "offset": 182,
+      "authority": {
+       "type": "UpdateAuthority",
+       "address": null
+      }
+     }
+    },
+    "mpl_core_info": {
+     "plugins_json_version": 1
+    },
+    "external_plugins": [],
+    "is_agent": false,
+    "asset_signer": "F1isf1jokrmvMmPNo6RrHtsop8Rpg4d4Cx5r4thWkyJw"
+   },
+   "id": 1
+  }
+ }
+}

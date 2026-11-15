@@ -17,6 +17,8 @@ import { USER_AGENT } from "../lib/version.js";
 import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
+import { mePayment } from "../lib/reconcile.js";
+import { saleRowFlags } from "../market.js";
 import { isBase58Address, venueAddress } from "./solana.js";
 
 const BASE = "https://api-mainnet.magiceden.dev/v2";
@@ -282,8 +284,46 @@ interface MeActivity {
   collection?: string;
   buyer?: string;
   seller?: string;
-  price?: number; // SOL
+  /** SOL, or a SOL equivalent when `priceInfo.splPrice` names an SPL payment. */
+  price?: number;
+  priceInfo?: unknown;
   blockTime?: number;
+}
+
+/**
+ * What one price on a sale row means, said once for the whole list. Read
+ * against transactions on 2026-11-14: a buyer taking a 0.0039 SOL listing
+ * paid 0.004368 (the 10% royalty and the 2% taker fee on top), a seller
+ * accepting a 0.0021 offer received 0.0021 less the fee, and a pool paid
+ * exactly its quoted 0.038612.
+ */
+const ME_PRICE_BASIS =
+  "priceSol is the price of the order that filled: a listing's price when a buyer took it, an offer's price when a seller accepted it, or the pool's price on a pool fill (poolFill). Magic Eden labels an accepted offer buyNow, like a bought listing, so the two cannot be told apart from this feed. It is not the buyer's total: a buyer taking a listing also pays the royalty and Magic Eden's taker fee (1.12 times the price on the Candy fills read on 2026-11-14). A sale paid in USDC or another token has priceSol null and its amount in price and currency.";
+
+/**
+ * Payment and warning fields for one sale row, shared by the readers here.
+ * A row paid in an SPL token loses its SOL figure and gains the amount that
+ * was actually paid; `price` is the amount in `currency` either way.
+ */
+function paymentFields(a: { price?: unknown; priceInfo?: unknown }): {
+  priceSol: number | null;
+  price: number | null;
+  currency: string | null;
+  extra: Record<string, unknown>;
+} {
+  const pay = mePayment(a);
+  if (pay.kind === "sol") return { priceSol: pay.priceSol, price: pay.priceSol, currency: "SOL", extra: {} };
+  return {
+    priceSol: null,
+    price: pay.amount,
+    currency: pay.currency,
+    extra: {
+      paymentToken: pay.paymentToken,
+      ...(pay.priceSolEquivalent !== null ? { priceSolEquivalent: pay.priceSolEquivalent } : {}),
+      ...(pay.kind === "other-token" ? { paidInOtherToken: true } : {}),
+      ...(pay.note ? { currencyNote: pay.note } : {}),
+    },
+  };
 }
 
 /**
@@ -366,7 +406,7 @@ export async function recentSales(symbol: string, limit: number) {
     rejected.addresses++;
     return null;
   };
-  const sales = data.collected
+  const baseSales = data.collected
     .slice(0, limit)
     .map((a) => {
       const time = isoFromBlockTime(a.blockTime);
@@ -374,8 +414,11 @@ export async function recentSales(symbol: string, limit: number) {
       return { time, a };
     })
     .map(({ time, a }) => {
-      const priceSol = finitePositive(a.price);
-      if (priceSol === null && a.price !== undefined && a.price !== null) rejected.prices++;
+      const pay = paymentFields(a);
+      const priceSol = pay.priceSol;
+      // A malformed SOL price is a rejected field. A sale paid in USDC has no
+      // SOL price by design, which is not a fault in the row.
+      if (pay.currency === "SOL" && priceSol === null && a.price !== undefined && a.price !== null) rejected.prices++;
       let signature: string | null = null;
       if (typeof a.signature === "string" && TX_SIGNATURE.test(a.signature)) signature = a.signature;
       else if (a.signature !== undefined && a.signature !== null) rejected.signatures++;
@@ -392,18 +435,40 @@ export async function recentSales(symbol: string, limit: number) {
       return {
         time,
         priceSol,
+        price: pay.price,
+        currency: pay.currency,
+        ...pay.extra,
         tokenMint: address(a.tokenMint),
         buyer: address(a.buyer),
         seller: address(a.seller),
         marketplace,
         signature,
+        // Magic Eden's AMM program. The pool's owner is the named buyer or
+        // seller, and the pool's money moves, not that wallet's.
+        ...(marketplace === "mmm" ? { poolFill: true as const } : {}),
         ...(inFuture ? { timeNote: `block time is more than ${FUTURE_TOLERANCE_MS / 60_000} minutes ahead of this machine's clock; the venue's timestamp is relayed as sent and not treated as a completed sale time` } : {}),
       };
     });
+  const flags = saleRowFlags(baseSales.map((s) => ({ signature: s.signature, mint: s.tokenMint, buyer: s.buyer, seller: s.seller, priceSol: s.priceSol })));
+  const sales = baseSales.map((s, i) => ({ ...s, ...flags[i] }));
   const rejectedTotal = rejected.prices + rejected.addresses + rejected.signatures + rejected.venues;
+  const flagged = {
+    selfFill: flags.filter((f) => f.selfFill).length,
+    shared: flags.filter((f) => f.sharedTransaction).length,
+    far: flags.filter((f) => f.farAboveRecentRange).length,
+    otherCurrency: sales.filter((s) => s.currency !== "SOL").length,
+  };
+  const flagNotes = [
+    flagged.otherCurrency ? `${flagged.otherCurrency} sale(s) were not paid in SOL: priceSol is null on them, and price and currency say what was paid.` : "",
+    flagged.selfFill ? `${flagged.selfFill} sale(s) have one wallet as buyer and seller (selfFill): no money changed hands between two parties.` : "",
+    flagged.shared ? `${flagged.shared} sale(s) share a transaction with other item sales (sharedTransaction): a per-item price cannot be proven from the buyer's total.` : "",
+    flagged.far ? `${flagged.far} sale(s) are far above the other sales listed here (farAboveRecentRange, with the numbers); they are shown as reported, not dropped or adjusted.` : "",
+  ].filter(Boolean);
   return {
     symbol,
     sales,
+    priceBasis: ME_PRICE_BASIS,
+    ...(flagNotes.length ? { flagsNote: flagNotes.join(" ") } : {}),
     activitiesScanned: data.scanned,
     coverage: {
       pagesRead: data.pagesRead,
@@ -516,15 +581,23 @@ export async function tokenSales(mint: string, opts: { signal?: AbortSignal; max
   const sales = batch
     .filter((a) => a.type === "buyNow" || a.type === "buy")
     .filter((a) => a.tokenMint === undefined || a.tokenMint === mint)
-    .map((a) => ({
-      signature: typeof a.signature === "string" && TX_SIGNATURE.test(a.signature) ? a.signature : null,
-      time: isoFromBlockTime(a.blockTime),
-      priceSol: finitePositive(a.price),
-      buyer: typeof a.buyer === "string" && isBase58Address(a.buyer) ? a.buyer : null,
-      seller: typeof a.seller === "string" && isBase58Address(a.seller) ? a.seller : null,
-      marketplace: typeof a.source === "string" && VENUE_LABEL.test(a.source) ? a.source : "magiceden",
-    }))
-    .filter((s) => s.signature !== null && s.priceSol !== null && s.time !== null && Date.parse(s.time) <= futureCutoff);
+    .map((a) => {
+      // A USDC sale is a sale: it counts as a fill, priced in USDC, and its
+      // SOL-equivalent `price` is never presented as SOL paid.
+      const pay = paymentFields(a);
+      return {
+        signature: typeof a.signature === "string" && TX_SIGNATURE.test(a.signature) ? a.signature : null,
+        time: isoFromBlockTime(a.blockTime),
+        priceSol: pay.priceSol,
+        price: pay.price,
+        currency: pay.currency,
+        ...pay.extra,
+        buyer: typeof a.buyer === "string" && isBase58Address(a.buyer) ? a.buyer : null,
+        seller: typeof a.seller === "string" && isBase58Address(a.seller) ? a.seller : null,
+        marketplace: typeof a.source === "string" && VENUE_LABEL.test(a.source) ? a.source : "magiceden",
+      };
+    })
+    .filter((s) => s.signature !== null && finitePositive(s.price) !== null && s.time !== null && Date.parse(s.time) <= futureCutoff);
   return { mint, sales, eventsRead: batch.length, pagesRead, reachedEnd, readAt: new Date().toISOString(), source: "magiceden" as const };
 }
 
@@ -585,7 +658,9 @@ export interface MeWalletActivity {
   blockTime?: number;
   buyer?: string;
   seller?: string;
-  price?: number; // SOL
+  /** SOL, or a SOL equivalent when `priceInfo.splPrice` names an SPL payment. */
+  price?: number;
+  priceInfo?: unknown;
 }
 
 /**
@@ -1106,7 +1181,7 @@ export async function collectionLeaderboard(symbol: string, limit: number): Prom
     stale,
     cachedAt,
     caveat:
-      "Volume as Magic Eden's API counts it. How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established, so this ranks what Magic Eden indexed, not a collection's whole trading.",
+      "Volume as Magic Eden's API counts it. How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established, so this ranks what Magic Eden indexed, not a collection's whole trading. Magic Eden records a sale paid in USDC or another token with a SOL equivalent at its own rate; whether such sales are in this volume, and at which rate, is not established.",
   };
 }
 
