@@ -87,7 +87,10 @@ jobs:
       || github.ref == 'refs/heads/main'
       || startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # The offline suite took 18 to 19 minutes on every platform by November
+    # 2026, and the 20-minute limit then cancelled a run that was still
+    # passing. The limit is there to stop a hung run, not a long one.
+    timeout-minutes: 40
     # The floor is 22 and the current LTS is 24: both are tested on Linux, so
     # the engines field promises nothing the suite has not run on.
     #
