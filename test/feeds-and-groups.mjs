@@ -252,17 +252,21 @@ await check("a wallet's USDC spending is totalled in USDC, not named as an examp
   assert.equal(a.buys.totalSol, Math.round(solBuys.reduce((s, e) => s + e.price, 0) * 1e9) / 1e9);
 });
 
-await check("one fill the feed labels both buy and buyNow is counted once in a wallet's figures", () => {
+await check("one fill the feed labels both buy and buyNow is one event, counted once in a wallet's figures", () => {
   const events = fixture("me-wallet-usdc-buyer-2026-11-14.json");
-  const base = wallet.summarizeActivity(USDC_BUYER, events, false);
+  // The wallet tool's own order: the feed is deduplicated, then summarised.
+  const summary = (rows) => wallet.summarizeActivity(USDC_BUYER, market.dedupeEvents(rows).events, false);
+  const base = summary(events);
   const fill = events.find((e) => e.type === "buyNow" && e.buyer === USDC_BUYER && e.seller !== USDC_BUYER && !e.priceInfo?.splPrice && typeof e.signature === "string");
   assert.ok(fill, "the captured feed has a SOL purchase");
   // The same row once more under the other label, as the API can name one fill.
-  const twice = wallet.summarizeActivity(USDC_BUYER, [...events, { ...fill, type: "buy" }], false);
+  const relabelled = [...events, { ...fill, type: "buy" }];
+  assert.equal(market.dedupeEvents(relabelled).duplicates, market.dedupeEvents(events).duplicates + 1);
+  const twice = summary(relabelled);
   assert.equal(twice.buys.count, base.buys.count);
   assert.equal(twice.buys.totalSol, base.buys.totalSol);
   // Control: a different fill, under its own signature, is counted.
-  const other = wallet.summarizeActivity(USDC_BUYER, [...events, { ...fill, type: "buy", signature: `${fill.signature.slice(0, -2)}zz` }], false);
+  const other = summary([...events, { ...fill, type: "buy", signature: `${fill.signature.slice(0, -2)}zz` }]);
   assert.equal(other.buys.count, base.buys.count + 1);
 });
 

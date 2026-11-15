@@ -79,6 +79,12 @@ export interface IdentifiableEvent {
   priceInfo?: unknown;
 }
 
+/** The type as an identity part: "buy" is "buyNow" (see eventIdentity). */
+const identityType = (t: unknown): string => {
+  const s = typeof t === "string" ? t.trim() : "";
+  return s === "buy" ? "buyNow" : s;
+};
+
 /**
  * The identity of one marketplace event, or null when it cannot be established.
  *
@@ -102,12 +108,16 @@ export interface IdentifiableEvent {
  * real sale vanished and another lost its price. A missing discriminator is
  * not proof that two rows are the same fill. A row without one has no
  * identity here and falls through to the fallback, which demands even more.
+ *
+ * "buy" and "buyNow" name the same fill on this API and every sale count
+ * takes both, so the type is compared with "buy" read as "buyNow": one fill
+ * served under each label would otherwise be two sales and two flips.
  */
 export function eventIdentity(e: IdentifiableEvent | null | undefined): string | null {
   const sig = typeof e?.signature === "string" && e.signature ? e.signature : null;
   if (!sig) return null;
   const mint = typeof e?.tokenMint === "string" ? e.tokenMint.trim() : "";
-  const type = typeof e?.type === "string" ? e.type.trim() : "";
+  const type = identityType(e?.type);
   if (!mint || !type) return null;
   return [sig, mint, type].join("\u0000");
 }
@@ -134,7 +144,7 @@ export function fallbackIdentity(e: IdentifiableEvent | null | undefined): strin
   // be present and valid in full, or this row has no identity at all and is
   // kept as its own event.
   const mint = typeof e.tokenMint === "string" ? e.tokenMint.trim() : "";
-  const type = typeof e.type === "string" ? e.type.trim() : "";
+  const type = identityType(e.type);
   const price = usablePrice(e.price);
   const blockTime = (e as { blockTime?: unknown }).blockTime;
   const at = usableBlockTime(blockTime);
