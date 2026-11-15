@@ -52,7 +52,7 @@ function rpc(b) {
       result = {context:{slot:466833163},value: empty ? null : { owner: a === ESCROW ? 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K' : CORE, data:[a === COL ? collectionBytes : assetBytes,'base64'],lamports:1000000,executable:false }}; break;
     }
     case 'getSignaturesForAddress': result=mode==='migration' && !p[1]?.before?[{signature:sig(700),blockTime:now-86400,err:null}]:[]; break;
-    case 'getTransaction': result=mode==='migration'?{slot:466833000,blockTime:now-86400,meta:{err:null,logMessages:['Program log: Instruction: TransferV1'],innerInstructions:[]},transaction:{message:{accountKeys:[],instructions:[{programId:CORE,accounts:[MINT,COL,OTHER,OTHER,WALLET,'11111111111111111111111111111111',CORE],data:encode(Buffer.from([14,0]))}]}}}:null; break;
+    case 'getTransaction': result=mode==='migration'?{version:0,slot:466833000,blockTime:now-86400,meta:{err:null,logMessages:['Program log: Instruction: TransferV1'],innerInstructions:[]},transaction:{message:{accountKeys:[],instructions:[{programId:CORE,accounts:[MINT,COL,OTHER,OTHER,WALLET,'11111111111111111111111111111111',CORE],data:encode(Buffer.from([14,0]))}]}}}:null; break;
     case 'getAsset': result= p.id === COL || p.id === '8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K' ? {id:p.id,interface:'MplCoreCollection',content:{metadata:{name:'Absolute Batman #1'}}} : empty ? null : {...dasAsset(0),id:p.id}; break;
     case 'getAssetBatch': result=(p.ids || []).map((a,i)=>({...dasAsset(i),id:a})); break;
     case 'getAssetsByOwner':

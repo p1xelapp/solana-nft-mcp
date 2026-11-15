@@ -124,10 +124,11 @@ accepted offer its order price), so a price matching any of them at the precisio
 (0.27 for 0.267, but not 0.0342 for 0.03432567) is confirmed, and the answer says which. A price
 between the figures that matches none is unverifiable; only one outside all of them is
 contradicted. A price is read only when the marketplace's own instructions account for every move
-of money touching the buyer, the seller or anyone the sale paid. If the transaction also carries
-something else that touches them, such as a side payment, a stake withdrawal, a new account or a
-cancelled bid, the price is unverifiable rather than read from it, and what the buyer paid is
-given only when it is the whole price. A listing, a delisting, a plain transfer, a delegate's move
+of money touching the buyer, the seller, anyone the sale paid, or a token account one of them
+owns. Where the price comes from balance changes, as on a Tensor take_bid, nothing but
+ComputeBudget may run beside the sale; elsewhere anything else that touches them, such as a side
+payment, a stake withdrawal, a new account or a cancelled bid, makes the price unverifiable. What
+the buyer paid is given only when it is the whole price. A listing, a delisting, a plain transfer, a delegate's move
 or a bid is not a sale. A transaction that moved several items has no per-item price, and neither does a fill with
 one wallet as buyer and seller, so a price claimed for either is unverifiable, as is a
 transaction it could not read, a compressed NFT, an address that is not an item (the answer names

@@ -95,6 +95,7 @@ const coreAccounts = (newOwner, asset = MINT) => [asset, COLLECTION, address("pa
 const coreIx = (data, newOwner, asset = MINT) => ({ programId: CORE, accounts: coreAccounts(newOwner, asset), data });
 const meIx = (...accounts) => ({ programId: ME_PROGRAM, accounts: [MINT, ...accounts], data: "1" });
 const tx = (instructions, logs, inner = []) => ({
+  version: 0,
   blockTime: 1_700_000_000,
   meta: { err: null, logMessages: logs, innerInstructions: inner },
   transaction: { message: { accountKeys: [], instructions } },

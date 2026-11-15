@@ -57,7 +57,7 @@ const COLLECTION = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n";
 const coreFixture = fs.readFileSync(path.join(here, "fixtures", "core-asset.b64"), "utf8").trim();
 const coreIx = (data, newOwner) => ({ programId: CORE, accounts: [MINT, COLLECTION, address("payer"), address("authority"), newOwner, SYSTEM, CORE], data });
 const meIx = (...accounts) => ({ programId: ME_PROGRAM, accounts: [MINT, ...accounts], data: "1" });
-const tx = (instructions, logs, inner = []) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: inner }, transaction: { message: { accountKeys: [], instructions } } });
+const tx = (instructions, logs, inner = []) => ({ version: 0, blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: inner }, transaction: { message: { accountKeys: [], instructions } } });
 const T = ["Program log: Instruction: Transfer"];
 const C = ["Program log: Instruction: Create"];
 function rpcFor(host, txs) {

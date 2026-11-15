@@ -67,13 +67,15 @@
  * 40.03. A take_bid seller who also withdrew 40 SOL of stake in the same
  * transaction read as a 40.1 SOL sale, and one who funded a new account read
  * as 0.02 where the bid paid 0.1, because the price came from the seller's
- * balance. So any other instruction that names a buyer, a seller or an
- * account the marketplace paid or used makes the amount cannot-tell. The
- * exceptions are ComputeBudget, the marketplace's own steps of the same fill
- * (Magic Eden's deposit and bid on a buy, its listing on an accepted offer)
- * and the creation of a token account that only funds itself, and only when
- * the price is read from the marketplace's transfers rather than from
- * balances.
+ * balance. So when the price is read from balances, any instruction beside
+ * the sale other than ComputeBudget makes the amount cannot-tell: balances
+ * count every move, named or not (40 SOL paid into a wrapped-SOL account the
+ * seller owns named no party at all). When it is read from the marketplace's
+ * transfers, any other instruction that names a buyer, a seller, an account
+ * the marketplace paid or used, or a token account one of them owns makes it
+ * cannot-tell, except ComputeBudget, the marketplace's own steps of the same
+ * fill (Magic Eden's deposit and bid on a buy, its listing on an accepted
+ * offer) and the creation of a token account that only funds itself.
  */
 
 import { createHash } from "node:crypto";
@@ -765,7 +767,9 @@ function describeInstruction(n: Node): string {
 /**
  * Why the money of a sale cannot be read from this transaction, or null when
  * it can: the first top-level instruction other than the sale's own that
- * names one of its parties and cannot be accounted for.
+ * cannot be accounted for. Beside figures read from balances that is any
+ * instruction but ComputeBudget; beside the venue's own transfers it is one
+ * that names a party, or a token account a party owns.
  *
  * A seller who takes a Tensor bid can add anything to the transaction. With a
  * 40 SOL stake withdrawal to themselves beside a 0.1 SOL take_bid the price
@@ -795,7 +799,12 @@ function unaccountedBeside(
   }
   // Program ids and sysvars are named by many instructions and hold nobody's money.
   const programs = new Set(nodes.map((n) => n.programId));
-  const parties = new Set([...named].filter((a) => !programs.has(a) && a !== SYSTEM && !a.startsWith("Sysvar")));
+  const people = new Set([...named].filter((a) => !programs.has(a) && a !== SYSTEM && !a.startsWith("Sysvar")));
+  // A party's token accounts are the party's money too: 40 SOL paid into a
+  // wrapped-SOL account the seller owns named neither the seller nor any
+  // account the venue used, and the seller's balance rose by it.
+  const parties = new Set(people);
+  for (const [account, t] of p.tokenAccounts) if (t.owner && people.has(t.owner)) parties.add(account);
   const fromTransfers = basis !== "balance-changes";
   const table = VENUES[vn.programId]!.table;
   let position = 0;
@@ -804,11 +813,18 @@ function unaccountedBeside(
     if (n.parent !== null) continue;
     position++;
     if (t === v || n.programId === COMPUTE_BUDGET) continue;
-    if (fromTransfers && n.programId === vn.programId && table[anchorHex(n) ?? ""]?.companion) continue;
-    if (fromTransfers && fundsOnlyItself(nodes, t)) continue;
+    // Balances count every move, named or not, so beside a price read from
+    // them nothing but the sale and ComputeBudget may run.
+    if (!fromTransfers) {
+      return `Instruction ${position} of this transaction (${describeInstruction(n)}) is not part of ${ofSale}, and this sale's figures come from balance changes, which any other instruction can move, so what was paid for the item cannot be told.`;
+    }
+    if (n.programId === vn.programId && table[anchorHex(n) ?? ""]?.companion) continue;
+    if (fundsOnlyItself(nodes, t)) continue;
     const hit = [...touchedBy(nodes, t)].find((a) => parties.has(a));
     if (!hit) continue;
-    const role = hit === sale.seller ? `the seller ${hit}` : hit === sale.buyer ? `the buyer ${hit}` : `${hit}, an account ${ofSale} paid or used`;
+    const owner = people.has(hit) ? null : (p.tokenAccounts.get(hit)?.owner ?? null);
+    const who = (a: string) => (a === sale.seller ? `the seller ${a}` : a === sale.buyer ? `the buyer ${a}` : `${a}, an account ${ofSale} paid or used`);
+    const role = owner ? `${hit}, a token account of ${who(owner)}` : who(hit);
     return `Instruction ${position} of this transaction (${describeInstruction(n)}) involves ${role} and is not part of ${ofSale}, so how much of the money that moved was paid for the item cannot be told.`;
   }
   return null;

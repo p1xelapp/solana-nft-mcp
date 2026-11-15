@@ -163,6 +163,19 @@ await check("the history refuses a format the sale decoder refuses, as an unread
   assert.match(row.label, /format version 2, which this server does not read \(it reads legacy, 0 and 1\)/);
   assert.ok(r.unreadableTransactions >= 1);
   assert.strictEqual(r.historyComplete, false);
+  // A reply that states no format at all, which a node asked with a format
+  // ceiling never sends, is not read as any format either.
+  const S3 = V1_SALE.slice(0, -4) + (V1_SALE.at(-4) === "P" ? "N" : "P") + V1_SALE.slice(-3);
+  const { version: _dropped, ...unstated } = { ...saved.result, transaction: { ...saved.result.transaction, signatures: [S3] } };
+  script = (body) => {
+    if (body.method === "getSignaturesForAddress" && body.params[0] === ASSET) return { ...list, result: list.result.map((s) => (s.signature === V1_SALE ? { ...s, signature: S3 } : s)) };
+    if (body.method === "getTransaction" && body.params[0] === S3) return { ...saved, result: unstated };
+    return realHistory(body);
+  };
+  const none = await sol.getProvenance(ASSET, 15, { fresh: true });
+  const gap = none.events.find((e) => e.signature === S3);
+  assert.strictEqual(gap?.event, "unread_gap", `read as ${gap?.event}`);
+  assert.match(gap.label, /came back without its format version/);
   // Control: the same history in its real format reads that sale as a transfer to the buyer.
   script = realHistory;
   const real = await sol.getProvenance(ASSET, 15, { fresh: true });

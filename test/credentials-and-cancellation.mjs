@@ -691,7 +691,7 @@ const serverEnvBase = () => {
     else throw new Error(`unexpected method ${body.method}`);
     return json({ jsonrpc: "2.0", id: body.id, result });
   };
-  const tx = (ix, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [] }, transaction: { message: { accountKeys: [], instructions: [ix] } } });
+  const tx = (ix, logs) => ({ version: 0, blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [] }, transaction: { message: { accountKeys: [], instructions: [ix] } } });
 
   // The audit's case: no data, empty logs.
   globalThis.fetch = rpcFor([{ signature: signature("undecodable"), tx: tx({ programId: CORE, accounts }, []) }]);
@@ -727,7 +727,7 @@ const serverEnvBase = () => {
   // The inner group hangs off a real outer instruction: an inner group with
   // no parent in the outer list is malformed evidence and a hole of its own,
   // Which is not what these cases test.
-  const txMulti = (ixs, logs) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [{ programId: "11111111111111111111111111111111", accounts: [] }] } } });
+  const txMulti = (ixs, logs) => ({ version: 0, blockTime: 1_700_000_000, meta: { err: null, logMessages: logs, innerInstructions: [{ index: 0, instructions: ixs }] }, transaction: { message: { accountKeys: [], instructions: [{ programId: "11111111111111111111111111111111", accounts: [] }] } } });
   // (a) A decoded CreateV2 for this asset beside an undecodable Core
   // instruction on it. The undecodable one could be the transfer.
   globalThis.fetch = rpcFor([{ signature: signature("mixed"), tx: txMulti([{ programId: CORE, accounts, data: "M" }, { programId: CORE, accounts }], []) }]);
@@ -821,6 +821,7 @@ const serverEnvBase = () => {
   // ones that change nothing, the transfer that answers the question, and the
   // mint at the far end.
   const tx = (data, logs) => ({
+    version: 0,
     blockTime: 1_700_000_000,
     meta: { err: null, logMessages: logs, innerInstructions: [] },
     transaction: { message: { accountKeys: [], instructions: [{ programId: CORE, accounts, data }] } },
