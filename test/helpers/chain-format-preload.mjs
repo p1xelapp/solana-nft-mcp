@@ -19,7 +19,12 @@
  *  - "undecodable": the saved list with every account's bytes replaced by
  *    bytes that are not a collection, the shape of a node answering junk;
  *  - "hang": the list and every Magic Eden request never answer, even when
- *    aborted, and the 40 s answer budget a search sets runs out after 1.5 s.
+ *    aborted, and the 40 s answer budget a search sets runs out after 1.5 s;
+ *  - "one-junk": the list with one more collection under Candy's key whose
+ *    name and uri do not fit in the bytes read per account;
+ *  - "stale": the list is served once; a read of CLOCK_FORWARD's account then
+ *    moves the clock seven hours on, past the six the list is kept for, and
+ *    every later list read fails with the public node's internal error.
  *
 
  * UNREAD_COLLECTION's account read fails with the public node's internal
@@ -69,6 +74,8 @@ export const CRAFTED_NAME_ASSET = addressOf("crafted-name-asset");
 export const RPC_ERROR_ACCOUNT = addressOf("rpc-internal-error");
 /** A collection whose account read fails the same way while the asset index answers with the record it gave for an empty Candy collection on 2026-11-15 (UTC). */
 export const UNREAD_COLLECTION = addressOf("unread-collection");
+/** In "stale", reading this address's account moves the clock on. It has no account. */
+export const CLOCK_FORWARD = addressOf("clock-forward");
 /** A real DC comic whose account name and metadata name differ; every reply for it is the saved one. */
 export const DC_COMIC = "AUjRXCikevZrK7JPEvgPE3HquYyYc2WF51pmS2ZuiQF9";
 
@@ -130,10 +137,21 @@ if (process.env.SOLANA_NFT_MCP_TEST_HOME) {
   const listRow = (address, bytes) => ({ ...realRow, pubkey: address, account: { ...realRow.account, data: [bytes.subarray(0, 320).toString("base64"), "base64"], space: bytes.length } });
   const mode = process.env.SOLANA_NFT_MCP_TEST_DISCOVERY ?? "";
   const rows = [...GPA.reply.result, listRow(NEW_DROP, synthetic.get(NEW_DROP)), listRow(NEW_EMPTY, synthetic.get(NEW_EMPTY))];
+  const junk = listRow(addressOf("long-uri-junk"), Buffer.concat([Buffer.from([5]), un58(CANDY_AUTHORITY), str("x"), str("https://example.invalid/" + "a".repeat(300)), Buffer.alloc(8)]));
   const list = {
     ...GPA.reply,
-    result: mode === "undecodable" ? rows.map((r, i) => ({ ...r, account: { ...r.account, data: [Buffer.from(`not-a-collection-${i}-`.repeat(12)).toString("base64"), "base64"] } })) : rows,
+    result:
+      mode === "undecodable"
+        ? rows.map((r, i) => ({ ...r, account: { ...r.account, data: [Buffer.from(`not-a-collection-${i}-`.repeat(12)).toString("base64"), "base64"] } }))
+        : mode === "one-junk"
+          ? [...rows, junk]
+          : rows,
   };
+  let clockMoved = false;
+  if (mode === "stale") {
+    const realNow = Date.now;
+    Date.now = () => realNow() + (clockMoved ? 7 * 3_600_000 : 0);
+  }
   const never = () => new Promise(() => {});
   if (mode === "hang") {
     const timeout = AbortSignal.timeout.bind(AbortSignal);
@@ -172,9 +190,11 @@ if (process.env.SOLANA_NFT_MCP_TEST_HOME) {
     switch (body.method) {
       case "getProgramAccounts":
         if (mode === "hang") return never();
+        if (mode === "stale" && clockMoved) return reply(body.id, { jsonrpc: "2.0", error: { code: -32603, message: "Internal JSON-RPC error." } });
         return reply(body.id, list);
       case "getAccountInfo": {
         const a = p[0];
+        if (a === CLOCK_FORWARD) clockMoved = true;
         if (a === RPC_ERROR_ACCOUNT || a === UNREAD_COLLECTION) return reply(body.id, { jsonrpc: "2.0", error: { code: -32603, message: "Internal JSON-RPC error." } });
         if (synthetic.has(a)) return reply(body.id, accountEnvelope(synthetic.get(a)));
         if (TX.getAccountInfo[a]) return reply(body.id, TX.getAccountInfo[a]);

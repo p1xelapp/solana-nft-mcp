@@ -60,18 +60,25 @@ export interface ChainFoundCollection {
  *
  * `exact` matches the whole name, the way identify needs one answer; without
  * it every word of the query has to appear in the name.
+ *
+ * `searched` holds only lists read whole and current. A list kept from an
+ * earlier read because a refresh failed goes in `stale`, and one with
+ * accounts that could not be read is counted in `setAside`: finding nothing
+ * in either is not a search that found nothing.
  */
 export async function findOnChainByName(
   query: string,
   opts: { exact: boolean; signal?: AbortSignal },
-): Promise<{ matches: ChainFoundCollection[]; searched: string[]; failed: string[] }> {
+): Promise<{ matches: ChainFoundCollection[]; searched: string[]; failed: string[]; stale: string[]; setAside: number }> {
   const want = collectionNameKey(query);
   const words = want.split(" ").filter((w) => w.length > 1 || /\d/.test(w));
   const registered = new Set(REGISTRY.flatMap((e) => (e.coreCollection ? [e.coreCollection] : [])));
   const matches: ChainFoundCollection[] = [];
   const searched: string[] = [];
   const failed: string[] = [];
-  if (!want || words.length === 0) return { matches, searched, failed };
+  const stale: string[] = [];
+  let setAside = 0;
+  if (!want || words.length === 0) return { matches, searched, failed, stale, setAside };
   for (const key of currentIssuerKeys()) {
     // The table's own collections under the key are passed so a list that
     // leaves any of them out is not taken as the chain's whole list.
@@ -80,7 +87,12 @@ export async function findOnChainByName(
       failed.push(`${key.issuer}'s collections on chain (${key.address}): ${list.note}`);
       continue;
     }
-    searched.push(`${list.collections.length} collection(s) the chain lists under ${key.issuer}'s key ${key.address}, read ${list.readAt}`);
+    setAside += list.unreadable;
+    const what =
+      `${list.collections.length} collection(s) the chain lists under ${key.issuer}'s key ${key.address}, read ${list.readAt}` +
+      (list.unreadable > 0 ? `, and ${list.unreadable} account(s) under the key that could not be read as collections and were not searched` : "");
+    if (list.staleBecause) stale.push(`${what}: that is the last list read, because ${list.staleBecause}, so a collection created since is not in it`);
+    else searched.push(what);
     for (const c of list.collections) {
       if (registered.has(c.address)) continue;
       const have = collectionNameKey(c.name);
@@ -99,7 +111,7 @@ export async function findOnChainByName(
       });
     }
   }
-  return { matches: matches.slice(0, 10), searched, failed };
+  return { matches: matches.slice(0, 10), searched, failed, stale, setAside };
 }
 
 export interface Probe {
@@ -175,7 +187,13 @@ const looksLikeSlug = (q: string) => /^[a-z0-9_\-.]{2,80}$/i.test(q);
 // "nothing matched", which reads as a missing collection.
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+/**
+ * A transaction signature by its shape: 64 bytes, which base58 writes in 64
+ * to 88 characters. Most are 87 or 88; leading zero bytes make one shorter,
+ * and a length check of 86 to 88 refused an 85-character one that the sale
+ * check itself takes.
+ */
+const isSignatureShape = (s: string): boolean => /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(s) && base58ByteLength(s) === 64;
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const NAME_SERVICE = /^[^\s/@:]{1,63}\.sol$/i;
 
@@ -220,11 +238,11 @@ export function wrongShape(raw: string): WrongShape | null {
       },
     };
   }
-  if (TX_SIGNATURE.test(q)) {
+  if (isSignatureShape(q)) {
     return {
       kind: "transaction-signature",
       wording: {
-        headline: "That is a Solana transaction signature (86 to 88 characters), the id of one transaction, not the address of an item, a collection or a wallet.",
+        headline: "That is a Solana transaction signature (64 bytes in base58, usually 87 or 88 characters), the id of one transaction, not the address of an item, a collection or a wallet.",
         // The tool that reads a transaction comes first: sending people to an
         // explorer for "was this a sale" skipped the one check this server
         // makes from the chain. No scheme on the explorer on purpose: error
@@ -312,7 +330,7 @@ export function readLink(q: string): LinkReading | null {
   const cluster = u.searchParams.get("cluster");
   const devnetNote = cluster && cluster !== "mainnet" && cluster !== "mainnet-beta" ? `The link names the ${clean(cluster).slice(0, 20)} cluster; every read here is Solana mainnet, where the same address is a different account.` : undefined;
   const base = { ok: true as const, host: shownHost, part: last, ...(devnetNote ? { devnetNote } : {}) };
-  if (TX_SIGNATURE.test(last)) return { ...base, usedAs: "transaction-signature" };
+  if (isSignatureShape(last)) return { ...base, usedAs: "transaction-signature" };
   if (sol.isBase58Address(last) && base58ByteLength(last) === 32) return { ...base, usedAs: "address" };
   if (/^[a-z0-9_\-.]{2,80}$/i.test(last) && !/^\.+$/.test(last)) return { ...base, usedAs: "symbol or slug" };
   return {
@@ -610,14 +628,28 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       source: "solana-rpc",
       looked_for: `a collection named "${shown}" among those the chain lists under a known issuer key and the bundled registry does not hold`,
       // A list that was not read whole is not a search that found nothing,
-      // even when another key's list was read.
-      result: onChain.matches.length === 1 ? "found" : onChain.matches.length > 1 ? "ambiguous" : onChain.failed.length > 0 ? "error" : onChain.searched.length > 0 ? "not_found" : "skipped",
+      // even when another key's list was read, and neither is a stale list
+      // or one with accounts set aside unread.
+      result:
+        onChain.matches.length === 1
+          ? "found"
+          : onChain.matches.length > 1
+            ? "ambiguous"
+            : onChain.failed.length > 0 || onChain.stale.length > 0 || onChain.setAside > 0
+              ? "error"
+              : onChain.searched.length > 0
+                ? "not_found"
+                : "skipped",
       detail:
         onChain.matches.length > 0
           ? `${onChain.matches.map((m) => `${m.address} (${m.name}, ${m.numMinted} minted)`).join("; ")}: found on chain, not in the registry`
           : onChain.failed.length > 0
             ? `the chain's list was not read whole, so only the bundled registry was searched for that key: ${onChain.failed.join("; ")}${onChain.searched.length ? `. Searched: ${onChain.searched.join("; ")}` : ""}`
-            : `searched ${onChain.searched.join("; ") || "nothing"}`,
+            : onChain.stale.length > 0
+              ? `the chain's current list was not read, so this is not a search that found nothing: searched a stale list, ${onChain.stale.join("; ")}${onChain.searched.length ? `. Also searched: ${onChain.searched.join("; ")}` : ""}`
+              : onChain.setAside > 0
+                ? `not found among the collections that could be read, which is not the whole list: searched ${onChain.searched.join("; ")}`
+                : `searched ${onChain.searched.join("; ") || "nothing"}`,
     });
   }
 
@@ -1005,14 +1037,17 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   } else if (coreKind === "collection") {
     kind = "core-collection";
     summary = `"${coreName}" is a Metaplex Core collection on Solana. Supply figures come straight from the on-chain account.`;
-    if (chainFound) summary += " It was found in the chain's own list of collections under a known issuer key; it is not in the bundled registry, which is older than it.";
+    // Whether it is newer than the registry is not read anywhere, so it is not said.
+    if (chainFound) summary += " It was found in the chain's own list of collections under a known issuer key; it is not in the bundled registry.";
     // Who issued it, by the one rule every tool uses: a known key on an
     // empty or unlisted collection is named, never taken as the issuer.
     if (coreCollectionAccount && identifiers.coreCollection) {
       issuer = collectionIssuer(identifiers.coreCollection, coreCollectionAccount.updateAuthority, coreCollectionAccount.numMinted);
       summary += ` ${issuer.note}`;
     }
-    confidence = "high";
+    // A collection that names an issuer's key without being in the registry
+    // is exactly what a planted copy looks like: anybody can name the key.
+    confidence = chainFound || issuer?.verdict === "not-in-registry" ? "low" : "high";
     next.push("get_collection_stats", "get_asset_provenance");
     // A collection address cannot be fed to the per-item tools, and "pick a
     // recent card" was the step the assistant kept failing at. Hand it a few
@@ -1165,8 +1200,9 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     confidence = "high";
   }
   // After the marketplace bump on purpose: a venue listing a copy does not
-  // make it any less a copy.
-  if (authenticityWarning) confidence = "low";
+  // make it any less a copy, and neither does it make a collection that names
+  // an issuer's key from outside the registry that issuer's.
+  if (authenticityWarning || (kind === "core-collection" && (chainFound || issuer?.verdict === "not-in-registry"))) confidence = "low";
 
   // "Mad Lads" typed with a Cyrillic a reached the real collection at high
   // confidence. The match is kept, because the person may well mean it, but a

@@ -28,10 +28,12 @@
  *  - Magic Eden pools (mmm3XB...). sol_mpl_core_fulfill_buy sells an item into
  *    a pool: 0 the seller, 1 the pool owner, who receives the item. The pool's
  *    escrow pays, so the buyer's own balance does not move. fulfill_sell is
- *    the reverse (0 buyer, 1 owner). Both from MMM's published source.
+ *    the reverse (0 buyer, 1 owner). Both from MMM's published source; no
+ *    real fulfill_sell has been read, so no verdict rests on that layout.
  *  - Tensor (TCMPhJ...). buy_core: 4 buyer, 6 seller; buy_core_spl: 2 buyer,
  *    7 seller; take_bid_core: 1 seller, 3 bid owner. From Tensor's published
- *    IDL 0.7.1 and four real sales. A take_bid pays by moving lamports
+ *    IDL 0.7.1 and six real sales, none of them a buy_core_spl, so no verdict
+ *    rests on that one's layout. A take_bid pays by moving lamports
  *    directly, with no transfer instruction to read, so its amounts come from
  *    balance changes. Tensor's pool program (TSWAPa...) appears only as the
  *    bid's shared escrow; no Core pool fill through it was found.
@@ -56,14 +58,22 @@
  * only when one item moved. A transaction that moves several items gives no
  * per-item price at all.
  *
- * Only money the marketplace moved is the sale. A transfer in another
- * instruction of the same transaction is somebody's side payment: one of
- * 40 SOL from the buyer to a friend made a 0.3 SOL sale read as "the buyer
- * paid 0.8", and 40 SOL sent to a Tensor seller by a stranger made a 0.0294
- * SOL take_bid read as 40.03. So the buyer's own figure counts only its
- * transfers inside the marketplace's instructions, a balance change counts
- * only accounts those instructions name, and value that reached the seller or
- * a payee from outside them makes the amount impossible to tell.
+ * Only money the marketplace moved is the sale, and a price is given only
+ * when the marketplace's own instructions account for every move of money
+ * that touches the sale's parties. A transfer in another instruction of the
+ * same transaction is somebody's side payment: one of 40 SOL from the buyer
+ * to a friend made a 0.3 SOL sale read as "the buyer paid 0.8", and 40 SOL
+ * sent to a Tensor seller by a stranger made a 0.0294 SOL take_bid read as
+ * 40.03. A take_bid seller who also withdrew 40 SOL of stake in the same
+ * transaction read as a 40.1 SOL sale, and one who funded a new account read
+ * as 0.02 where the bid paid 0.1, because the price came from the seller's
+ * balance. So any other instruction that names a buyer, a seller or an
+ * account the marketplace paid or used makes the amount cannot-tell. The
+ * exceptions are ComputeBudget, the marketplace's own steps of the same fill
+ * (Magic Eden's deposit and bid on a buy, its listing on an accepted offer)
+ * and the creation of a token account that only funds itself, and only when
+ * the price is read from the marketplace's transfers rather than from
+ * balances.
  */
 
 import { createHash } from "node:crypto";
@@ -76,6 +86,8 @@ import { farAboveRange, isSelfFill } from "../market.js";
 const CORE = sol.CORE_PROGRAM;
 const SYSTEM = "11111111111111111111111111111111";
 const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
+const COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111";
+const ASSOCIATED_TOKEN = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
 const IX_TRANSFER_V1 = 14;
 const IX_CREATE_V1 = 0;
 const IX_CREATE_V2 = 20;
@@ -140,6 +152,12 @@ interface IxDef {
   priceAt?: number;
   /** Where the slots come from: the venue's published code, real transactions, or neither yet. */
   layout?: SaleLayout;
+  /**
+   * A step of the venue's own fill that real transactions show beside its
+   * sale instruction: Magic Eden's deposit and buy_v2 on a buy, core_sell on
+   * an accepted offer. Its money is the venue's and is read with the fill.
+   */
+  companion?: true;
 }
 /**
  * `published-unchecked` is a layout from the venue's published code that no
@@ -183,11 +201,11 @@ venue("M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K", {
   name: "Magic Eden",
   ix: {
     core_execute_sale_v2: { kind: "sale", buyer: 1, seller: 2, priceAt: 8, layout: "observed" },
-    core_sell: { kind: "listing" },
+    core_sell: { kind: "listing", companion: true },
     core_cancel_sell: { kind: "delisting" },
-    deposit: { kind: "bid" },
+    deposit: { kind: "bid", companion: true },
     withdraw: { kind: "bid" },
-    buy_v2: { kind: "bid" },
+    buy_v2: { kind: "bid", companion: true },
     cancel_buy: { kind: "bid" },
     withdraw_by_mmm: { kind: "bid" },
   },
@@ -196,7 +214,9 @@ venue("mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc", {
   name: "Magic Eden pools",
   ix: {
     sol_mpl_core_fulfill_buy: { kind: "sale", seller: 0, buyer: 1, itemToAlso: [4], layout: "published" },
-    sol_mpl_core_fulfill_sell: { kind: "sale", buyer: 0, seller: 1, sellerAlso: [5], layout: "published" },
+    // No real fulfill_sell has been read (2026-11-15), so its slots name a
+    // sale and its money without a verdict resting on them.
+    sol_mpl_core_fulfill_sell: { kind: "sale", buyer: 0, seller: 1, sellerAlso: [5], layout: "published-unchecked" },
     mpl_core_deposit_sell: { kind: "escrow-move" },
     mpl_core_withdraw_sell: { kind: "escrow-move" },
     mpl_core_wrap: { kind: "escrow-move" },
@@ -212,7 +232,8 @@ venue("TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp", {
   name: "Tensor",
   ix: {
     buy_core: { kind: "sale", buyer: 4, seller: 6, layout: "published" },
-    buy_core_spl: { kind: "sale", buyer: 2, seller: 7, layout: "published" },
+    // OpenSea's buy_core_spl has been read; Tensor's own has not (2026-11-15).
+    buy_core_spl: { kind: "sale", buyer: 2, seller: 7, layout: "published-unchecked" },
     take_bid_core: { kind: "sale", seller: 1, buyer: 3, rentTo: 16, layout: "published" },
     ...TENSOR_NON_SALE,
   },
@@ -248,6 +269,19 @@ venue(sol.OPENSEA_SOLANA_PROGRAM, {
     ...TENSOR_NON_SALE,
   },
 });
+
+/**
+ * Every sale instruction the decoder knows, with its discriminator and where
+ * its slots come from, so a test can hold each `published` or `observed`
+ * layout to a real transaction of its kind.
+ */
+export function saleLayouts(): { program: string; venue: string; instruction: string; discriminator: string; layout: SaleLayout | undefined }[] {
+  return Object.entries(VENUES).flatMap(([program, { venue: v, table }]) =>
+    Object.entries(table)
+      .filter(([, d]) => d.kind === "sale")
+      .map(([discriminator, d]) => ({ program, venue: v.name, instruction: d.name, discriminator, layout: d.layout })),
+  );
+}
 
 // ------------------------------------------------------------- results
 
@@ -669,6 +703,117 @@ function signatureProblem(p: Parsed, expectSignature: string | undefined): strin
     : "The endpoint answered with a different transaction from the one asked for, so nothing in it is evidence about this signature.";
 }
 
+/** Every address an instruction and the calls it made name, as accounts or in their parsed fields. */
+function touchedBy(nodes: Node[], top: number): Set<string> {
+  const out = new Set<string>();
+  for (let j = top; j < nodes.length && (j === top || within(nodes, j, top)); j++) {
+    const n = nodes[j]!;
+    for (const a of n.accounts) out.add(a);
+    for (const val of Object.values(n.info ?? {})) {
+      for (const s of Array.isArray(val) ? val : [val]) if (typeof s === "string" && sol.isBase58Address(s)) out.add(s);
+    }
+  }
+  return out;
+}
+
+const TOKEN_ACCOUNT_SETUP = new Set(["getAccountDataSize", "initializeImmutableOwner", "initializeAccount", "initializeAccount2", "initializeAccount3"]);
+
+/**
+ * An associated token account created and paid for, and nothing else: its
+ * only money is the rent the funder puts into the new account. OpenSea's
+ * memecoin buy creates five of these before the fill.
+ */
+function fundsOnlyItself(nodes: Node[], top: number): boolean {
+  const n = nodes[top]!;
+  if (n.programId !== ASSOCIATED_TOKEN || (n.parsedType !== "create" && n.parsedType !== "createIdempotent")) return false;
+  const ata = addr(n.info?.account);
+  const funder = addr(n.info?.source);
+  if (!ata || !funder) return false;
+  for (let j = top + 1; j < nodes.length && within(nodes, j, top); j++) {
+    const c = nodes[j]!;
+    const i = c.info;
+    if (c.programId === SYSTEM) {
+      const ok =
+        (c.parsedType === "createAccount" && addr(i?.newAccount) === ata && addr(i?.source) === funder) ||
+        (c.parsedType === "transfer" && addr(i?.destination) === ata && addr(i?.source) === funder) ||
+        ((c.parsedType === "allocate" || c.parsedType === "assign") && addr(i?.account) === ata);
+      if (!ok) return false;
+    } else if (!(TOKEN_PROGRAMS.has(c.programId) && c.parsedType !== null && TOKEN_ACCOUNT_SETUP.has(c.parsedType))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const PROGRAM_NAMES: Record<string, string> = {
+  [SYSTEM]: "the System Program",
+  Stake11111111111111111111111111111111111111: "the Stake program",
+  [ASSOCIATED_TOKEN]: "the Associated Token program",
+  TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA: "the Token program",
+  TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb: "the Token-2022 program",
+  [CORE]: "Metaplex Core",
+};
+
+/** One instruction named for a reader: the venue and its instruction, or the program and what it parsed as. */
+function describeInstruction(n: Node): string {
+  const venue = VENUES[n.programId];
+  if (venue) return `${venue.venue.name} ${venue.table[anchorHex(n) ?? ""]?.name ?? "instruction this decoder does not know"}`;
+  const program = PROGRAM_NAMES[n.programId] ?? `program ${n.programId}`;
+  return n.parsedType ? `${program}'s ${n.parsedType}` : program;
+}
+
+/**
+ * Why the money of a sale cannot be read from this transaction, or null when
+ * it can: the first top-level instruction other than the sale's own that
+ * names one of its parties and cannot be accounted for.
+ *
+ * A seller who takes a Tensor bid can add anything to the transaction. With a
+ * 40 SOL stake withdrawal to themselves beside a 0.1 SOL take_bid the price
+ * read 40.1, and funding a new account with 0.08 made it 0.02, both exact and
+ * both confirmed, because a take_bid's figures come from balances. A cancelled
+ * bid of their own has the same effect, and so can any program whose effect
+ * this decoder does not know, and the venue called from inside another
+ * program leaves that program's own moves unexplained. ComputeBudget moves
+ * nothing. When the price is read from the venue's own transfers, which name
+ * each payment exactly, the venue's companion steps of the same fill and an
+ * associated token account that only funds itself are accounted for too.
+ */
+function unaccountedBeside(
+  p: Parsed,
+  v: number,
+  basis: NonNullable<ChainSale["priceBasis"]>,
+  named: Set<string>,
+  sale: { seller: string; buyer: string; venue: string; instruction: string },
+): string | null {
+  const nodes = p.nodes;
+  const vn = nodes[v]!;
+  const ofSale = `${sale.venue}'s ${sale.instruction}`;
+  if (vn.parent !== null) {
+    let q = v;
+    while (nodes[q]!.parent !== null) q = nodes[q]!.parent!;
+    return `The ${sale.venue} ${sale.instruction} instruction ran inside a call to ${describeInstruction(nodes[q]!)}, whose own effect on the buyer's and the seller's money cannot be accounted for, so what was paid for the item cannot be told.`;
+  }
+  // Program ids and sysvars are named by many instructions and hold nobody's money.
+  const programs = new Set(nodes.map((n) => n.programId));
+  const parties = new Set([...named].filter((a) => !programs.has(a) && a !== SYSTEM && !a.startsWith("Sysvar")));
+  const fromTransfers = basis !== "balance-changes";
+  const table = VENUES[vn.programId]!.table;
+  let position = 0;
+  for (let t = 0; t < nodes.length; t++) {
+    const n = nodes[t]!;
+    if (n.parent !== null) continue;
+    position++;
+    if (t === v || n.programId === COMPUTE_BUDGET) continue;
+    if (fromTransfers && n.programId === vn.programId && table[anchorHex(n) ?? ""]?.companion) continue;
+    if (fromTransfers && fundsOnlyItself(nodes, t)) continue;
+    const hit = [...touchedBy(nodes, t)].find((a) => parties.has(a));
+    if (!hit) continue;
+    const role = hit === sale.seller ? `the seller ${hit}` : hit === sale.buyer ? `the buyer ${hit}` : `${hit}, an account ${ofSale} paid or used`;
+    return `Instruction ${position} of this transaction (${describeInstruction(n)}) involves ${role} and is not part of ${ofSale}, so how much of the money that moved was paid for the item cannot be told.`;
+  }
+  return null;
+}
+
 /** Why a reply cannot stand as the transaction `signature`, or null when it can be decoded as that transaction. */
 export function replyProblem(raw: unknown, signature: string): string | null {
   const p = parse(raw);
@@ -861,16 +1006,12 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
     net.set(l.currency, m);
   }
   const single = itemsMoved === 1;
-  // Balance changes as the marketplace's instructions left them: every
-  // transfer outside them is taken back out, so a side payment or a tip
-  // neither adds to nor hides anyone's figure.
+  // Balance changes over the whole transaction. They are a price only when
+  // nothing outside the marketplace's sale instruction touched a party, which
+  // is checked below before any figure is given: taking the parsed transfers
+  // back out was not enough, because a stake withdrawal, a new account or a
+  // cancelled bid moves a seller's balance with no transfer to read.
   const changes = balanceChanges(p);
-  for (const l of outside) {
-    const m = changes.get(l.currency) ?? new Map<string, bigint>();
-    m.set(l.to, (m.get(l.to) ?? 0n) - l.raw);
-    m.set(l.from, (m.get(l.from) ?? 0n) + l.raw);
-    changes.set(l.currency, m);
-  }
   // Lamports left in accounts this transaction closed went to someone. When
   // the layout names who (the rent slot) and it is not the seller, the
   // seller's balance change is exact; otherwise that amount is the most an
@@ -966,6 +1107,9 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
     const noPrice = `The amount cannot be read: ${decimals.problem}.`;
     return { ...sale, currency, price: null, priceRaw: null, sellerReceived: null, noPriceReason: noPrice, status: "sale", notes, reason: `${aVenue} sale of this item (${def.name}). ${noPrice}` };
   }
+  // Every other instruction of the transaction, before any figure is given.
+  const beside = unaccountedBeside(p, v, money.basis, new Set([...namedByVenue, ...sellerSide, buyer, newOwner]), { seller, buyer, venue: venueInfo.venue.name, instruction: def.name });
+  if (beside) return { ...sale, status: "cannot-tell", notes, reason: beside };
   const dec = decimals.dec;
   const { cur, sellerRaw, grossRaw } = money;
   const result: Partial<ChainSale> = {
@@ -977,9 +1121,14 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
     priceExact: money.basis === "venue-transfers" || (money.basis === "balance-changes" && money.slack === 0n),
     ...(money.slack > 0n ? { priceSlack: units(money.slack, dec) } : {}),
   };
+  // The buyer's own figure only when it is the whole of what the fill paid
+  // out, as it was on all ten real buys saved with the tests. A buyer whose escrow already
+  // held most of the price deposits less: a 2.24 SOL fill whose deposit was
+  // 0.05 confirmed "the buyer paid 0.05", below the 2 the seller received.
   const buyerRaw = buyerOut(cur);
-  if (buyerRaw > 0n && (grossRaw === null || buyerRaw <= grossRaw)) result.buyerPaid = units(buyerRaw, dec);
-  else if (buyerRaw > 0n) notes.push(`The buyer sent ${units(buyerRaw, dec)} into the marketplace's instructions, more than this fill paid out (${units(grossRaw!, dec)}), so the buyer's own figure is not this item's price and is not given.`);
+  if (buyerRaw > 0n && grossRaw !== null && buyerRaw === grossRaw) result.buyerPaid = units(buyerRaw, dec);
+  else if (buyerRaw > 0n && grossRaw !== null && buyerRaw > grossRaw) notes.push(`The buyer sent ${units(buyerRaw, dec)} into the marketplace's instructions, more than this fill paid out (${units(grossRaw, dec)}), so the buyer's own figure is not this item's price and is not given.`);
+  else if (buyerRaw > 0n) notes.push(`The buyer sent ${units(buyerRaw, dec)} into the marketplace's instructions, less than this fill paid out${grossRaw !== null ? ` (${units(grossRaw, dec)})` : ""}: an escrow or bid account paid the rest, so the buyer's own figure is not this item's price and is not given.`);
   else notes.push("The buyer's own balance did not pay for this item in this transaction: an escrow, a bid account or a pool paid on the buyer's behalf.");
   // The order's own price, where the instruction carries it. It has to sit
   // between what the seller kept and what was paid in all, or the layout
@@ -1270,7 +1419,7 @@ export async function scanCollectionSales(
         : kind.kind === "no-account"
           ? " Check the address for a typo, or pass the collection's on-chain address."
           : " Pass a Metaplex Core collection's on-chain address, or one Core item's.";
-    return { refused: `${describeAddress(address, kind)}, so it has no sales of a Core collection to scan, and nothing was read for it.${pointer}`, addressKind: kind.kind };
+    return { refused: `${describeAddress(address, kind)}, so it has no sales of a Core collection to scan: its account was read to tell what it is, and nothing more was read for it.${pointer}`, addressKind: kind.kind };
   }
 
   // Concurrent scans of one address share one list read, each waiting with

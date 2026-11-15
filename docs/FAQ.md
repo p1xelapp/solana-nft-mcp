@@ -121,11 +121,14 @@ it can read: the order price, what the seller received, what the seller kept aft
 fee, and what was paid in all, in the currency named by its token's address. Marketplaces quote
 different ones (Magic Eden and Tensor what the seller receives, OpenSea what the buyer paid, an
 accepted offer its order price), so a price matching any of them at the precision you wrote it
-(0.27 for 0.267) is confirmed, and the answer says which. A price between the figures that
-matches none is unverifiable; only one outside all of them is contradicted. Only money the
-marketplace's own instruction moved counts, so a side payment in the same transaction never
-becomes the price. A listing, a delisting, a plain transfer, a delegate's move or a bid is not a
-sale. A transaction that moved several items has no per-item price, and neither does a fill with
+(0.27 for 0.267, but not 0.0342 for 0.03432567) is confirmed, and the answer says which. A price
+between the figures that matches none is unverifiable; only one outside all of them is
+contradicted. A price is read only when the marketplace's own instructions account for every move
+of money touching the buyer, the seller or anyone the sale paid. If the transaction also carries
+something else that touches them, such as a side payment, a stake withdrawal, a new account or a
+cancelled bid, the price is unverifiable rather than read from it, and what the buyer paid is
+given only when it is the whole price. A listing, a delisting, a plain transfer, a delegate's move
+or a bid is not a sale. A transaction that moved several items has no per-item price, and neither does a fill with
 one wallet as buyer and seller, so a price claimed for either is unverifiable, as is a
 transaction it could not read, a compressed NFT, an address that is not an item (the answer names
 the item that did move) and a fill through a program layout no real transaction has checked yet;

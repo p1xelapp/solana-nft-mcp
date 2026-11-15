@@ -112,6 +112,16 @@ await check("a transaction this server cannot read fails the history instead of 
   assert.match(r.wording.headline, /out of date, not a gap in the chain/);
 });
 
+await check("never-traded on a history in a format this server cannot read says to update, not to retry", async () => {
+  const { verifyClaim } = await import("../dist/verify.js");
+  script = (body) => (body.method === "getTransaction" && body.params[0] === V1_SALE ? refusal(99) : realHistory(body));
+  const r = await verifyClaim({ claim: "never-traded", subject: ASSET });
+  assert.strictEqual(r.verdict, "unverifiable");
+  assert.match(r.explanation, /out of date, not a gap in the chain/);
+  assert.ok(!/Retry shortly/.test(r.caveats.join(" ")), r.caveats.join(" "));
+  assert.match(r.caveats.join(" "), /Update solana-nft-mcp/);
+});
+
 await check("an item whose last sale is a version-1 transaction has a readable history, not a failed tool", async () => {
   requests.length = 0;
   script = realHistory;
@@ -129,6 +139,35 @@ await check("an item whose last sale is a version-1 transaction has a readable h
   assert.ok(r.events.some((e) => e.event === "minted" && e.signature.startsWith("4CkuRhTC")), "the version-0 mint is still read");
   assert.ok(r.events.some((e) => e.event === "transferred" && e.signature.startsWith("2mDLKBPD") && e.newOwner === "B1ZK9MwuGWM6rsfwheci9pyrmbNh7H7gLAcUpFegr8qG"), "the version-0 migration transfer is still read");
   assert.ok(askedVersions().every((v) => v === 1), `every read asked for version 1: ${askedVersions()}`);
+});
+
+await check("the history refuses a format the sale decoder refuses, as an unread row, never a transfer", async () => {
+  // The saved version-1 sale, served under a signature of its own (a read is
+  // kept for an hour) by a node that names version 2 and then labels its
+  // reply version 2: the shape a newer format would arrive in.
+  const S2 = V1_SALE.slice(0, -4) + (V1_SALE.at(-4) === "Q" ? "R" : "Q") + V1_SALE.slice(-3);
+  const saved = TX.getTransaction[V1_SALE];
+  const v2 = { ...saved, result: { ...saved.result, version: 2, transaction: { ...saved.result.transaction, signatures: [S2] } } };
+  const list = TX.getSignaturesForAddress[ASSET];
+  requests.length = 0;
+  script = (body) => {
+    if (body.method === "getSignaturesForAddress" && body.params[0] === ASSET) return { ...list, result: list.result.map((s) => (s.signature === V1_SALE ? { ...s, signature: S2 } : s)) };
+    if (body.method === "getTransaction" && body.params[0] === S2) return body.params[1].maxSupportedTransactionVersion >= 2 ? v2 : refusal(2);
+    return realHistory(body);
+  };
+  const r = await sol.getProvenance(ASSET, 15, { fresh: true });
+  const row = r.events.find((e) => e.signature === S2);
+  assert.ok(row, "the refused transaction is a row in the story");
+  assert.strictEqual(row.event, "unread_gap", `read as ${row.event}: ${row.label}`);
+  assert.strictEqual(row.reason, "unreadable");
+  assert.match(row.label, /format version 2, which this server does not read \(it reads legacy, 0 and 1\)/);
+  assert.ok(r.unreadableTransactions >= 1);
+  assert.strictEqual(r.historyComplete, false);
+  // Control: the same history in its real format reads that sale as a transfer to the buyer.
+  script = realHistory;
+  const real = await sol.getProvenance(ASSET, 15, { fresh: true });
+  assert.strictEqual(real.events.find((e) => e.signature === V1_SALE)?.event, "transferred");
+  assert.strictEqual(real.historyComplete, true);
 });
 
 await check("a collection whose recent transaction is version 1 still yields its members", async () => {
@@ -190,14 +229,27 @@ await check("a refusal is retried at most once, and never above the ceiling", as
   assert.strictEqual(far?.kind, "unsupported");
   assert.deepStrictEqual(askedVersions(), [before], "no retry above the ceiling");
   assert.strictEqual(sol.transactionVersionRequested(), before);
-  // A refusal that names no version is not guessed at. The saved wording with the numbers taken out.
-  requests.length = 0;
+  // A refusal that names no version is not guessed at. The saved wording with
+  // the numbers taken out. It may be one node's wording, so the next endpoint
+  // is asked, and only when every one refuses so is the format unreadable.
   const real = TX.refusedWithVersion0[V1_SALE];
   const bare = { ...real, error: { ...real.error, message: real.error.message.replace(" (1)", "").replace(/ Please try.*$/, "") } };
   script = (body) => (body.method === "getTransaction" ? bare : null);
-  const unnamed = await sol.getParsedTransaction(V1_SALE).then(() => null, (e) => e);
-  assert.strictEqual(unnamed?.kind, "unsupported");
-  assert.deepStrictEqual(askedVersions(), [before]);
+  try {
+    requests.length = 0;
+    publicScript = realHistory;
+    const served = await sol.getParsedTransaction(V1_SALE);
+    assert.strictEqual(served.version, 1, "the next endpoint served it");
+    assert.deepStrictEqual(requests.filter((r) => r.method === "getTransaction").map((r) => r.host), ["chain-format.invalid", "api.mainnet-beta.solana.com"]);
+    assert.deepStrictEqual(askedVersions(), [before, before], "never a version the refusal did not name");
+    requests.length = 0;
+    publicScript = (body) => (body.method === "getTransaction" ? bare : null);
+    const unnamed = await sol.getParsedTransaction(V1_SALE).then(() => null, (e) => e);
+    assert.strictEqual(unnamed?.kind, "unsupported");
+    assert.strictEqual(requests.filter((r) => r.method === "getTransaction").length, 4, "each endpoint once, none twice");
+  } finally {
+    publicScript = null;
+  }
 });
 
 await check("a node refusing a format the request already allowed is passed over for the next endpoint", async () => {
@@ -461,10 +513,35 @@ await check("a flood of empty collections naming the key is set aside, and the i
   assert.strictEqual(full.state, "refused");
 });
 
-await check("an answer with any undecodable account, or missing a collection the table lists, is a failed read", () => {
+/**
+ * A collection under Candy's key whose name and uri do not fit in the bytes
+ * the list asks for per account, so it cannot be decoded from them: anybody
+ * can create one for the price of its rent.
+ */
+const longUriJunk = () => {
+  const row = GPA.reply.result[0];
+  const authority = Buffer.from(row.account.data[0], "base64").subarray(1, 33);
+  const str = (s) => {
+    const b = Buffer.from(s);
+    const n = Buffer.alloc(4);
+    n.writeUInt32LE(b.length);
+    return Buffer.concat([n, b]);
+  };
+  const bytes = Buffer.concat([Buffer.from([5]), authority, str("x"), str("https://example.invalid/" + "a".repeat(300)), Buffer.alloc(8)]);
+  return { pubkey: sigOf32("long-uri-junk"), account: { ...row.account, data: [bytes.subarray(0, 320).toString("base64"), "base64"] } };
+};
+
+await check("an account that does not decode is set aside and counted; a list missing a collection the table lists, or with nothing readable, is a failed read", () => {
   const rows = GPA.reply.result;
   const table = issuers.tableCollectionsOf(CANDY_AUTHORITY);
   assert.strictEqual(table.length, 401);
+  // One junk collection beside the real 401: once enough to fail the list for every question.
+  const withJunk = sol.decodeCollectionsByAuthority(CANDY_AUTHORITY, [...rows, longUriJunk()], table);
+  assert.strictEqual(withJunk.state, "ok", withJunk.note);
+  assert.strictEqual(withJunk.collections.length, 401);
+  assert.strictEqual(withJunk.unreadable, 1);
+  assert.strictEqual(withJunk.accountsReturned, 402);
+  assert.match(withJunk.note, /1 of the 402 account\(s\) in the endpoint's answer did not decode as a collection .*, and it was set aside, so a collection among them cannot be found by name here/);
   // 400 accounts whose bytes are not collections: once "the chain lists 0 collections".
   const noise = rows.slice(0, 400).map((r, i) => ({ ...r, account: { ...r.account, data: [Buffer.from(`garbage-${i}-`.repeat(20)).toString("base64"), "base64"] } }));
   const junk = sol.decodeCollectionsByAuthority(CANDY_AUTHORITY, noise, table);
@@ -472,7 +549,9 @@ await check("an answer with any undecodable account, or missing a collection the
   assert.deepStrictEqual(junk.collections, []);
   assert.strictEqual(junk.unreadable, 400);
   assert.match(junk.note, /400 of the 400 account\(s\).*none of it was used/);
-  // One bad row among the real ones is enough: the list is not whole.
+  // And with no table to hold it to, nothing readable is still no list.
+  assert.strictEqual(sol.decodeCollectionsByAuthority(CANDY_AUTHORITY, noise).state, "failed");
+  // A bad row where a listed collection should be leaves that collection out: the list is not whole.
   const cut = { ...rows[0], account: { ...rows[0].account, data: [Buffer.from(rows[0].account.data[0], "base64").subarray(0, 60).toString("base64"), "base64"] } };
   assert.strictEqual(sol.decodeCollectionsByAuthority(CANDY_AUTHORITY, [...rows.slice(1), cut], table).state, "failed");
   // An empty answer, and one short of a collection the table lists.
@@ -569,6 +648,56 @@ await check("the list is read once and kept, and a failure is not asked again pe
   assert.strictEqual(failedAgain.state, "failed");
   assert.match(failedAgain.note, /not asked for again within half an hour/);
   assert.strictEqual(requests.filter((r) => r.method === "getProgramAccounts").length, 1);
+});
+
+await check("a list kept after a failed refresh is searched as stale, never as the chain's current list", async () => {
+  const { findOnChainByName } = await import("../dist/identify.js");
+  const table = issuers.tableCollectionsOf(CANDY_AUTHORITY);
+  const NAME = "2027 Topps Opening Day Preview";
+  script = (body) => (body.method === "getProgramAccounts" ? { jsonrpc: "2.0", result: GPA.reply.result } : null);
+  const good = await sol.collectionsByAuthority(CANDY_AUTHORITY, { fresh: true, expected: table });
+  assert.strictEqual(good.state, "ok");
+  assert.strictEqual(good.staleBecause, undefined);
+  // Control: with the list just read, finding nothing is a search of it.
+  const now = await findOnChainByName(NAME, { exact: true });
+  assert.strictEqual(now.searched.length, 1);
+  assert.deepStrictEqual(now.stale, []);
+  const realNow = Date.now;
+  try {
+    // Seven hours on, past the six the list is kept for, and every refresh fails.
+    Date.now = () => realNow() + 7 * 3_600_000;
+    script = (body) => (body.method === "getProgramAccounts" ? { jsonrpc: "2.0", error: { code: -32603, message: "Internal error" } } : null);
+    const later = await findOnChainByName(NAME, { exact: true });
+    assert.deepStrictEqual(later.searched, [], "a stale list is not a search of the chain's list");
+    assert.strictEqual(later.stale.length, 1);
+    assert.match(later.stale[0], /401 collection\(s\) the chain lists under Candy Digital's key .*: that is the last list read, because the refresh just now failed .*, so a collection created since is not in it/);
+    // Within the half hour after that failure, the same.
+    const again = await findOnChainByName(NAME, { exact: true });
+    assert.strictEqual(again.stale.length, 1);
+    assert.match(again.stale[0], /because the last attempt to refresh it/);
+  } finally {
+    Date.now = realNow;
+  }
+  // The next questions read a fresh list again.
+  script = (body) => (body.method === "getProgramAccounts" ? { jsonrpc: "2.0", result: GPA.reply.result } : null);
+  assert.strictEqual((await sol.collectionsByAuthority(CANDY_AUTHORITY, { fresh: true, expected: table })).staleBecause, undefined);
+});
+
+await check("one undecodable account under the key leaves the rest searchable, and a search that finds nothing says what was set aside", async () => {
+  const { findOnChainByName } = await import("../dist/identify.js");
+  const table = issuers.tableCollectionsOf(CANDY_AUTHORITY);
+  script = (body) => (body.method === "getProgramAccounts" ? { jsonrpc: "2.0", result: [...GPA.reply.result, longUriJunk()] } : null);
+  const list = await sol.collectionsByAuthority(CANDY_AUTHORITY, { fresh: true, expected: table });
+  assert.strictEqual(list.state, "ok", list.note);
+  assert.strictEqual(list.unreadable, 1);
+  const none = await findOnChainByName("2027 Topps Opening Day Preview", { exact: true });
+  assert.deepStrictEqual(none.failed, []);
+  assert.strictEqual(none.setAside, 1);
+  assert.match(none.searched[0], /and 1 account\(s\) under the key that could not be read as collections and were not searched/);
+  // Control: the whole saved list sets nothing aside.
+  script = (body) => (body.method === "getProgramAccounts" ? { jsonrpc: "2.0", result: GPA.reply.result } : null);
+  await sol.collectionsByAuthority(CANDY_AUTHORITY, { fresh: true, expected: table });
+  assert.strictEqual((await findOnChainByName("2027 Topps Opening Day Preview", { exact: true })).setAside, 0);
 });
 
 // ============================================================ names and art
@@ -683,6 +812,7 @@ await check("an arweave picture is the same picture through any gateway or proxy
       assert.strictEqual(hit.foundOn, "the chain (not in the bundled registry)");
       assert.strictEqual(hit.issuer.verdict, "not-in-registry");
       assert.strictEqual(hit.issuer.issuer, null);
+      assert.doesNotMatch(r.foundOnChain.readThis, /older than/, "the registry's age is not read anywhere");
       const up = await call("search_collections", { query: "Absolute Batman (2024) #99" });
       const empty = up.foundOnChain?.matches?.find((m) => m.address === NEW_EMPTY);
       assert.ok(empty, `found: ${JSON.stringify(up.foundOnChain)}`);
@@ -703,6 +833,15 @@ await check("an arweave picture is the same picture through any gateway or proxy
       assert.strictEqual(r.foundOn, "the chain (not in the bundled registry)");
       assert.strictEqual(r.issuer.verdict, "not-in-registry");
       assert.match(r.summary, /not in the bundled registry/);
+      // Naming Candy's key from outside the registry is what a planted copy
+      // looks like, and nothing read says the registry is older than it.
+      assert.strictEqual(r.confidence, "low");
+      assert.doesNotMatch(JSON.stringify(r), /older than/);
+      // Control: a registered Candy collection, by address, is identified at high confidence.
+      const registered = await call("identify", { query: REGISTERED_WITH_ITEMS });
+      assert.strictEqual(registered.kind, "core-collection");
+      assert.strictEqual(registered.issuer.verdict, "issued");
+      assert.strictEqual(registered.confidence, "high");
       // An empty one named by address: a collection, unverified, no items yet.
       const e = await call("identify", { query: EMPTY_NAMING_CANDY });
       assert.strictEqual(e.kind, "core-collection");
@@ -768,6 +907,25 @@ await check("an arweave picture is the same picture through any gateway or proxy
       }
       const slug = new RegExp(tools.find((t) => t.name === "get_recent_sales").inputSchema.properties.openseaSlug.pattern);
       assert.ok(slug.test("Candy-MLB"), "the server takes this slug, so the schema does too");
+    });
+
+    await check("a signature with leading zero bytes, shorter than the usual 87 or 88 characters, is taken as a sale subject", async () => {
+      // 64 bytes, the first three zero: 85 characters in base58.
+      const bytes = Buffer.concat([Buffer.alloc(3), Buffer.from([1, 16]), createHash("sha256").update("short-signature-a").digest(), createHash("sha256").update("short-signature-b").digest().subarray(0, 27)]);
+      assert.strictEqual(bytes.length, 64);
+      const short = sol.base58Encode(bytes);
+      assert.strictEqual(short.length, 85);
+      const { tools } = await client.listTools();
+      assert.ok(new RegExp(tools.find((t) => t.name === "verify_claim").inputSchema.properties.subject.pattern).test(short), "the published schema takes it");
+      const res = await client.callTool({ name: "verify_claim", arguments: { claim: "sale", subject: short, item: DC_COMIC } });
+      const text = res.content?.[0]?.text ?? "";
+      assert.ok(!/transaction signature for sale|86 to 88/.test(text), `refused by shape: ${text.slice(0, 200)}`);
+      assert.strictEqual(res.structuredContent?.verdict, "unverifiable", text.slice(0, 200));
+      const id = await call("identify", { query: short });
+      assert.strictEqual(id.kind, "transaction-signature");
+      // Control: 85 characters that are not 64 bytes are not a signature.
+      const wrong = await client.callTool({ name: "verify_claim", arguments: { claim: "sale", subject: "2".repeat(85), item: DC_COMIC } });
+      assert.strictEqual(wrong.isError, true);
     });
 
     await check("a collection whose account is unread is named a collection from the index, never an item with a holder", async () => {
@@ -856,6 +1014,51 @@ async function serverWith(mode) {
       // Control: the registry still answers a name it holds.
       const known = await s.call("search_collections", { query: "Batman: The Long Halloween" });
       assert.ok(known.results.some((e) => e.coreCollection === REGISTERED_WITH_ITEMS));
+    });
+  } finally {
+    await s.close();
+  }
+}
+
+{
+  const s = await serverWith("one-junk");
+  try {
+    await check("one junk collection under Candy's key does not hide the others, and a name not found is not called absent", async () => {
+      const found = await s.call("identify", { query: "Superman Unlimited (2025-) #6" });
+      assert.strictEqual(found.kind, "core-collection", found.summary);
+      const probe = found.checked.find((p) => p.source === "solana-rpc" && /known issuer key/.test(p.looked_for));
+      assert.strictEqual(probe.result, "found", probe.detail);
+      const none = await s.call("identify", { query: "2027 Topps Opening Day Preview" });
+      const miss = none.checked.find((p) => p.source === "solana-rpc" && /known issuer key/.test(p.looked_for));
+      assert.strictEqual(miss.result, "error", "a list with an account set aside is not a search that found nothing");
+      assert.match(miss.detail, /not found among the collections that could be read, which is not the whole list/);
+      const search = await s.call("search_collections", { query: "2027 Topps Opening Day Preview" });
+      assert.strictEqual(search.foundOnChain.accountsSetAside, 1);
+      assert.match(search.foundOnChain.readThis, /1 account\(s\) under the key could not be read as collections, so this is not the whole list/);
+    });
+  } finally {
+    await s.close();
+  }
+}
+
+{
+  const s = await serverWith("stale");
+  try {
+    await check("a list kept after its refresh failed is reported as stale, never as nothing found", async () => {
+      const { CLOCK_FORWARD } = await import(pathToFileURL(path.join(here, "helpers", "chain-format-preload.mjs")).href);
+      const NAME = "2027 Topps Opening Day Preview";
+      // Control: with the list just read, nothing found is a search of it.
+      const first = await s.call("identify", { query: NAME });
+      assert.strictEqual(first.checked.find((p) => /known issuer key/.test(p.looked_for)).result, "not_found");
+      await s.call("identify", { query: CLOCK_FORWARD });
+      const later = await s.call("identify", { query: NAME });
+      const probe = later.checked.find((p) => p.source === "solana-rpc" && /known issuer key/.test(p.looked_for));
+      assert.strictEqual(probe.result, "error", probe.detail);
+      assert.match(probe.detail, /the chain's current list was not read, so this is not a search that found nothing: searched a stale list/);
+      const search = await s.call("search_collections", { query: NAME });
+      assert.deepStrictEqual(search.foundOnChain.searched, []);
+      assert.strictEqual(search.foundOnChain.stale.length, 1);
+      assert.match(search.foundOnChain.readThis, /the last list read was searched \(stale says when and why\)/);
     });
   } finally {
     await s.close();

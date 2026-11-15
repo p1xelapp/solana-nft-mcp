@@ -640,8 +640,8 @@ interface OsEvent {
 
 /** A currency symbol is a short ticker. Anything else is text wearing a ticker's field. */
 const CURRENCY_SYMBOL = /^[A-Za-z0-9._-]{1,12}$/;
-/** A base58 Solana transaction signature: 64 bytes, which is 86 to 88 characters. */
-const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+/** A base58 Solana transaction signature: 64 bytes, usually 87 or 88 characters and fewer with leading zero bytes. */
+const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 
 /**
  * A payment amount from raw units, or the reason it could not be one.

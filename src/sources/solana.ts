@@ -357,6 +357,10 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   const problems: string[] = [];
   let cursorUnknown = false;
   let versionBehind = false;
+  /** Endpoints asked, and how many refused the transaction's format without naming one. */
+  let endpointsAsked = 0;
+  let unnamedRefusals = 0;
+  let unnamedRefusal = "";
   for (const ep of list) {
     const wasCooling = isCooling(ep);
     const pausedFor = originPauseLeftMs(ep.url);
@@ -364,6 +368,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       problems.push(`${label(ep)} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`);
       continue;
     }
+    endpointsAsked++;
     let lastErr: unknown;
     for (let attempt = 0; attempt < ATTEMPTS_PER_ENDPOINT; attempt++) {
       // A caller that has already given up gets no further requests spent on
@@ -452,6 +457,11 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
             if (version !== null && allowed !== null && version <= allowed) {
               throw new VersionBehindAtEndpoint(`${own ? `provider error ${code}` : `refused transaction format version ${version}`} although the request allowed version ${allowed}`);
             }
+            // A refusal that names no version gives nothing to ask again
+            // with, and it may be this node's wording alone: the next
+            // endpoint is asked. Only when every one refuses so is it the
+            // transaction's format (below).
+            if (version === null) throw new VersionUnnamedAtEndpoint(msg);
             throw new TransactionVersionError(msg, version);
           }
           // A history page asked to continue from a signature this node has
@@ -512,11 +522,16 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           versionBehind = true;
           break;
         }
+        if (e instanceof VersionUnnamedAtEndpoint) {
+          unnamedRefusals++;
+          unnamedRefusal = e.message;
+          break;
+        }
       }
     }
     // Not knowing a cursor, or one transaction format, is not being unhealthy:
     // the endpoint stays in rotation for everything else it serves.
-    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint) && !(lastErr instanceof VersionBehindAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint) && !(lastErr instanceof VersionBehindAtEndpoint) && !(lastErr instanceof VersionUnnamedAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     // Our own error classes carry text written here. Anything else is the
     // runtime's or the endpoint's, and for the person's own endpoint that text
     // can quote the URL, key and all, so only its kind is relayed.
@@ -529,6 +544,9 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           : String(lastErr);
     problems.push(`${label(ep)}${wasCooling ? " (tried as a last resort after a recent failure)" : ""} ${why}`);
   }
+  // Every endpoint asked refused the format and none named it: that is the
+  // transaction, not one node, and the reader reports a format it cannot read.
+  if (endpointsAsked > 0 && unnamedRefusals === endpointsAsked) throw new TransactionVersionError(unnamedRefusal, null);
   if (pin) {
     // The pinned endpoint is gone. The caller restarts the whole walk against
     // the next one rather than continuing against a second node.
@@ -545,6 +563,11 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   }
   // Typed and worded as the endpoints' state. It is not this server being
   // out of date: the format refused is one the request asked for.
+  // Some endpoints refused the format without naming one and the rest did not
+  // answer: nothing served it, and "none answered" would not be true.
+  if (unnamedRefusals > 0 && !versionBehind) {
+    throw new ChainUnavailableError(`no Solana endpoint asked would serve this transaction in a format the request allowed (${problems.join("; ")})`);
+  }
   if (versionBehind) {
     throw new TypedError(`no Solana endpoint asked would serve this transaction in a format the request allowed (${problems.join("; ")})`, "chain-unavailable", {
       headline: "The Solana endpoints asked refused to serve this transaction in a format this server asked for and can read. That is those endpoints running older software, not a gap in the chain or a problem with what you asked.",
@@ -602,6 +625,8 @@ class TransactionVersionError extends Error {
 
 /** One node refused a format no newer than the request allowed: the next endpoint is asked. */
 class VersionBehindAtEndpoint extends EndpointError {}
+/** One node refused the transaction's format without naming one: the next endpoint is asked. */
+class VersionUnnamedAtEndpoint extends EndpointError {}
 
 /** The format a getTransaction request allowed, or null for any other read. */
 function askedTransactionVersion(method: string, params: unknown[]): number | null {
@@ -634,6 +659,12 @@ const TRANSACTION_VERSION = 1;
  * this version cannot read, never asked for.
  */
 const TRANSACTION_VERSION_CEILING = 8;
+/**
+ * The formats whose instruction lists the decoders here were written against
+ * (2026-11-14). A newer one asked for on a node's say-so can be served, and
+ * reading it as one of these is a guess.
+ */
+const READABLE_TRANSACTION_VERSIONS = new Set<unknown>(["legacy", 0, 1]);
 
 /** The transaction format version the next read will ask for. It never changes for the life of the process. */
 export function transactionVersionRequested(): number {
@@ -1693,6 +1724,17 @@ export async function getProvenance(
         events.push(hole(sig.signature, time, "unreadable", 1, "this transaction could not be read from the endpoint; whatever it did to the asset is unknown, and anything read in order across it must start over"));
         continue;
       }
+      // A format the sale decoder refuses is refused here too, as a hole: a
+      // node that named version 2 was asked again and its reply was read as
+      // a transfer out of a listing while the decoder called the same
+      // transaction unreadable. (Every read states its version; a reply
+      // without one is read as before.)
+      if (tx.version !== undefined && !READABLE_TRANSACTION_VERSIONS.has(tx.version)) {
+        unreadable++;
+        const v = typeof tx.version === "number" && Number.isSafeInteger(tx.version) ? String(tx.version) : "(unreadable)";
+        events.push(hole(sig.signature, time, "unreadable", 1, `this transaction is in format version ${v}, which this server does not read (it reads legacy, 0 and 1); whatever it did to the asset is unknown, and anything read in order across it must start over`));
+        continue;
+      }
       if (tx.meta.err) continue; // failed transaction: nothing happened on chain
 
       // EXECUTION order: each top-level instruction followed by the inner
@@ -2354,13 +2396,24 @@ export interface CollectionDiscovery {
    */
   state: "ok" | "refused" | "failed";
   collections: DiscoveredCollection[];
-  /** Accounts in the answer that did not decode as a collection under this authority. Above zero, nothing in the answer is used. */
+  /**
+   * Accounts in the answer that did not decode as a collection under this
+   * authority. They are set aside and counted: a collection among them is not
+   * in `collections`, so a name search that finds nothing is not a search of
+   * the whole list.
+   */
   unreadable: number;
   /** Accounts the endpoint returned, before any were decoded or refused. */
   accountsReturned: number;
   readAt: string;
   endpoint: string | null;
   note: string;
+  /**
+   * Set when this is the last list read, handed back because a refresh failed
+   * or could not be made: why, in a sentence. A collection created since
+   * `readAt` is not in it.
+   */
+  staleBecause?: string;
 }
 
 /**
@@ -2407,11 +2460,14 @@ export function discoveryParams(authority: string): unknown[] {
  * each one is checked again from its own bytes, because an endpoint that
  * ignored the filter would otherwise hand any account in as this issuer's.
  *
- * Only a whole list is a list. An answer with any account that does not
- * decode, or one that leaves out a collection the issuer table lists under
- * this key (`expected`), is a failed read: 400 undecodable accounts used to
- * become "the chain lists 0 collections", kept for six hours, and every name
- * search in that time said it had searched the chain and found nothing.
+ * An account that does not decode is set aside and counted, never guessed
+ * at. Anybody can create an account under any key, and one junk collection
+ * whose name and uri did not fit the bytes read failed the list for every
+ * question for half an hour. What decodes is used, unless what remains
+ * leaves out a collection the issuer table lists under this key (`expected`),
+ * or nothing at all decoded: 400 undecodable accounts used to become "the
+ * chain lists 0 collections", kept for six hours, and every name search in
+ * that time said it had searched the chain and found nothing.
  *
  * More accounts than the cap is somebody flooding the key, since naming a key
  * costs a fraction of a cent and needs no signature from it. An empty
@@ -2450,18 +2506,20 @@ export function decodeCollectionsByAuthority(
   }
   collections.sort((a, b) => a.address.localeCompare(b.address));
   const notUsed = (note: string, state: "failed" | "refused" = "failed") => ({ state, collections: [], unreadable, accountsReturned, note });
-  if (unreadable > 0) {
-    return notUsed(`${unreadable} of the ${accountsReturned} account(s) in the endpoint's answer did not decode as a collection under ${authority}, so the answer is not a list this server can read whole, and none of it was used`);
-  }
+  const undecoded = unreadable > 0 ? `${unreadable} of the ${accountsReturned} account(s) in the endpoint's answer did not decode as a collection under ${authority}` : "";
   const listed = new Set(collections.map((c) => c.address));
   const missing = expected.filter((a) => !listed.has(a));
   if (missing.length > 0) {
     return notUsed(
-      `the endpoint's answer leaves out ${missing.length} of the ${expected.length} collection(s) the bundled issuer table lists under ${authority} (for example ${missing[0]}), so it is not the chain's whole list, and none of it was used`,
+      `${undecoded ? `${undecoded}, and ` : ""}the endpoint's answer leaves out ${missing.length} of the ${expected.length} collection(s) the bundled issuer table lists under ${authority} (for example ${missing[0]}), so it is not the chain's whole list, and none of it was used`,
     );
   }
+  if (collections.length === 0 && unreadable > 0) {
+    return notUsed(`none of the ${accountsReturned} account(s) in the endpoint's answer decoded as a collection under ${authority}, so the answer is not a list this server can read, and none of it was used`);
+  }
+  const unreadNote = unreadable > 0 ? `; ${undecoded}, and ${unreadable === 1 ? "it was" : "they were"} set aside, so a collection among them cannot be found by name here` : "";
   const note = (n: number, extra = "") =>
-    `The chain lists ${n} Metaplex Core collection(s) naming ${authority} as their update authority${extra}. Naming a key needs no signature from it, so being on this list does not by itself make a collection that key holder's.`;
+    `The chain lists ${n} Metaplex Core collection(s) naming ${authority} as their update authority${extra}${unreadNote}. Naming a key needs no signature from it, so being on this list does not by itself make a collection that key holder's.`;
   if (accountsReturned <= DISCOVERY_MAX_ACCOUNTS) return { state: "ok", collections, unreadable, accountsReturned, note: note(collections.length) };
   const known = new Set(expected);
   const kept = collections.filter((c) => c.numMinted > 0 || known.has(c.address));
@@ -2502,8 +2560,11 @@ export async function collectionsByAuthority(authority: string, opts: { signal?:
   if (!isBase58Address(authority)) return failed("not a Solana address");
   const good = discoveryGood.get(authority);
   // The last good list, marked as such, when a refresh is not possible now.
+  // It travels as stale, never as the chain's current list: seven hours
+  // after a good read with every refresh failing, a name created since was
+  // answered "not found" as if the chain had been searched.
   const kept = (why: string): CollectionDiscovery | null =>
-    good ? { ...good.value, note: `${good.value.note} This is the list read at ${good.value.readAt}; ${why}.` } : null;
+    good ? { ...good.value, staleBecause: why, note: `${good.value.note} This is the list read at ${good.value.readAt}; ${why}.` } : null;
   if (!opts.fresh && good && Date.now() - good.at < DISCOVERY_TTL_MS) return good.value;
   const recent = discoveryFailures.get(authority);
   if (!opts.fresh && recent && Date.now() - recent.at < DISCOVERY_RETRY_AFTER_MS) {

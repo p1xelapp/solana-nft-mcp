@@ -269,8 +269,8 @@ export async function collectionMeta(symbol: string) {
   return data;
 }
 
-/** A base58 Solana transaction signature: 64 bytes, which is 86 to 88 characters. */
-const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/;
+/** A base58 Solana transaction signature: 64 bytes, usually 87 or 88 characters and fewer with leading zero bytes. */
+const TX_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 /** A venue label is a short plain token (magiceden_v2, mmm, tensortrade), never text. */
 const VENUE_LABEL = /^[a-z0-9_.-]{1,40}$/i;
 /** How far ahead of this machine's clock a block time may sit before it is marked. Clock skew between nodes is seconds; this is generous. */

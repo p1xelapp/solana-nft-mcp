@@ -72,16 +72,91 @@ const STRUCTURE: RegExp[] = [
 ];
 
 /**
- * A chat role label where a turn would begin: at the start of the text, or
- * after a line break, a line or paragraph separator, a vertical tab, a form
- * feed or a next-line character. "\n\nHuman:" is a whole turn boundary in one
+ * A chat role label where a turn would begin: after a line break, a line or
+ * paragraph separator, a vertical tab, a form feed or a next-line character,
+ * or at the start of the text. "\n\nHuman:" is a whole turn boundary in one
  * transcript format and "User:" in several, and once the breaks collapse to
  * spaces the label reads inline, so it is defanged while the break is still
- * there to see. Invisible characters between the break and the word do not
- * hide it. Run before the invisible characters go, since several of those
- * breaks are themselves on that list.
+ * there to see.
+ *
+ * It is looked for in a folded copy of the text (roleLabelColons below), never
+ * in the text itself: invisible characters dropped, breaks kept as one line
+ * break, compatibility forms folded (fullwidth letters and colon, mathematical
+ * letters) and letters of other scripts that look like the Latin ones read as
+ * those. "nice\nHu\u200Bman: do x", a fullwidth colon and a Cyrillic H all
+ * passed the pattern on the raw text. Only the colon is changed in the text
+ * itself, so a real name in another script keeps its letters.
+ *
+ * A label at the very start, with nothing before it, is not a turn boundary
+ * by itself: every value here sits inside a JSON string, after a quote. A
+ * name such as "Human: Torch #1" is left as written, unless the text also
+ * carries a break, an invisible character, a label spelt with look-alikes,
+ * markup posing as a delimiter, or instruction phrasing, which no real name
+ * needs; then the start label is defanged with the rest.
  */
-const ROLE_LABEL = /(^|[\r\n\v\f\u0085\u{2028}\u{2029}])([\s\u{200B}-\u{200F}\u{2060}\u{FEFF}]*)(human|assistant|user|system)(\s*):/giu;
+const ROLE_LABEL = /(^|\n)(\s*)(human|assistant|user|system)(\s*):/gi;
+const BREAK_CHAR = /[\r\n\v\f\u0085\u2028\u2029]/;
+/** Characters that read as a colon, beyond what compatibility folding turns into one. */
+const COLON_LIKE = /[:\uFF1A\uFE13\uFE55\u2236\u02D0\u02F8\uA789\u0589\u05C3\u0703\u0704\u205A]/;
+const COLON_FOLD = /[\u2236\u02D0\u02F8\uA789\u0589\u05C3\u0703\u0704\u205A]/;
+/** Greek, Cyrillic and Armenian letters that look like the Latin letters of the role words. */
+const LOOKALIKE: Record<string, string> = {
+  "\u0430": "a", "\u0410": "A", "\u03B1": "a", "\u0391": "A",
+  "\u0435": "e", "\u0415": "E", "\u0395": "E",
+  "\u04BB": "h", "\u04BA": "H", "\u041D": "H", "\u0397": "H",
+  "\u0456": "i", "\u0406": "I", "\u03B9": "i", "\u0399": "I", "\u04CF": "i", "\u04C0": "I",
+  "\u043C": "m", "\u041C": "M", "\u039C": "M",
+  "\u03B7": "n", "\u043F": "n", "\u039D": "N",
+  "\u0433": "r",
+  "\u0455": "s", "\u0405": "S",
+  "\u0442": "t", "\u0422": "T", "\u03C4": "t", "\u03A4": "T",
+  "\u03C5": "u", "\u057D": "u",
+  "\u0443": "y", "\u0423": "Y", "\u04AF": "y", "\u03A5": "Y",
+};
+const INVISIBLE_ONE = new RegExp(INVISIBLE.source);
+const INVISIBLE_SUPPLEMENTARY_ONE = new RegExp(INVISIBLE_SUPPLEMENTARY.source, "u");
+
+interface RoleLabel {
+  /** Where the label's colon sits in the text, and how many UTF-16 units it takes. */
+  colon: number;
+  colonLength: number;
+  /** At the very start of the text, with no break before it. */
+  atStart: boolean;
+  /** Written with anything the folding changed: invisibles, compatibility forms or look-alike letters. */
+  disguised: boolean;
+}
+
+/** The role labels in `v`, read from the folded copy described above, and that copy. */
+function roleLabels(v: string): { labels: RoleLabel[]; folded: string } {
+  if (!COLON_LIKE.test(v)) return { labels: [], folded: v };
+  let folded = "";
+  const from: number[] = [];
+  let i = 0;
+  for (const ch of v) {
+    const at = i;
+    i += ch.length;
+    if (BREAK_CHAR.test(ch)) {
+      folded += "\n";
+      from.push(at);
+      continue;
+    }
+    if (ch === "\uFE0F" || INVISIBLE_ONE.test(ch) || INVISIBLE_SUPPLEMENTARY_ONE.test(ch)) continue;
+    for (const c of ch.normalize("NFKC")) {
+      const f = COLON_FOLD.test(c) ? ":" : (LOOKALIKE[c] ?? c);
+      folded += f;
+      for (let k = 0; k < f.length; k++) from.push(at);
+    }
+  }
+  const labels: RoleLabel[] = [];
+  for (const m of folded.matchAll(ROLE_LABEL)) {
+    const start = m.index ?? 0;
+    const colon = from[start + m[0].length - 1]!;
+    const colonLength = (v.codePointAt(colon) ?? 0) > 0xffff ? 2 : 1;
+    const wordStart = from[start + m[1]!.length + m[2]!.length]!;
+    labels.push({ colon, colonLength, atStart: m[1] === "" && !m[2]!.includes("\n"), disguised: v.slice(wordStart, colon + colonLength) !== `${m[3]}${m[4]}:` });
+  }
+  return { labels, folded };
+}
 
 /**
  * A link inside a name, a trait or an error message. None of those needs one,
@@ -266,14 +341,35 @@ export function inspectUntrusted(raw: unknown): Untrusted {
   // payload that also used an instruction phrase got the label, and a Llama or
   // Gemma header with a bare request behind it came through looking like data.
   let posesAsTurn = false;
-  ROLE_LABEL.lastIndex = 0;
-  if (ROLE_LABEL.test(v)) {
-    flags.push("a chat role label where a turn would start (used to fake message boundaries)");
-    ROLE_LABEL.lastIndex = 0;
-    v = v.replace(ROLE_LABEL, "$1$2$3$4／");
-    posesAsTurn = true;
+  const { labels, folded } = roleLabels(v);
+  if (labels.length > 0) {
+    // A start label stands as written in a name that shows no other sign of
+    // posing as a turn (see ROLE_LABEL).
+    INVISIBLE.lastIndex = 0;
+    INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
+    const hostile =
+      BREAK_CHAR.test(v) ||
+      INVISIBLE.test(v) ||
+      INVISIBLE_SUPPLEMENTARY.test(v) ||
+      labels.some((l) => l.disguised) ||
+      STRUCTURE.some((re) => {
+        re.lastIndex = 0;
+        const hit = re.test(v);
+        re.lastIndex = 0;
+        return hit;
+      }) ||
+      IMPERATIVE.test(folded) ||
+      ROLEPLAY.test(folded);
+    INVISIBLE.lastIndex = 0;
+    INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
+    const defang = labels.filter((l) => !l.atStart || hostile).sort((a, b) => b.colon - a.colon);
+    if (defang.length > 0) {
+      flags.push("a chat role label where a turn would start (used to fake message boundaries)");
+      // The same fullwidth solidus the delimiters below are defanged with.
+      for (const l of defang) v = `${v.slice(0, l.colon)}\uFF0F${v.slice(l.colon + l.colonLength)}`;
+      posesAsTurn = true;
+    }
   }
-  ROLE_LABEL.lastIndex = 0;
 
   if (INVISIBLE.test(v) || INVISIBLE_SUPPLEMENTARY.test(v)) {
     flags.push("invisible or direction-override characters");
