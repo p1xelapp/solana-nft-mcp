@@ -83,12 +83,29 @@ export const RECIPES: Record<string, Recipe> = {
       RPC_SOURCE,
       {
         name: "solana-nft-mcp get_recent_sales",
-        use: "The read path, already rate-gated and cached. Use it rather than calling marketplaces directly.",
+        use: "The read path, already rate-gated and cached. Use it rather than calling marketplaces directly. With chainScan: true it also decodes a Metaplex Core collection's newest transactions for sales the feeds do not carry, Tensor's among them.",
         auth: "None.",
-        rateLimit: "Inherits the source gates.",
+        rateLimit: "Inherits the source gates. chainScan is bounded at about 10 transaction reads and 15 s per call, so run it on a slower schedule than the feed poll.",
       },
     ],
     pitfalls: [
+      {
+        trap: "Posting every sale's price as SOL.",
+        why: "A sale can be paid in USDC or another token. Magic Eden's row then has priceSol null and the amount in price, and a token's symbol is whatever its creator typed, so one called SOL proves nothing. OpenSea has been seen labelling Magic Eden fills paid in USDC as SOL.",
+        instead:
+          "Post price with its currency. The server names the currency from the payment token's address: count a row as SOL only when its currency is SOL, and keep paidInOtherToken rows and rows with a null currency out of every SOL total, average and record.",
+      },
+      {
+        trap: "Posting the same fill twice because two feeds carry it.",
+        why: "OpenSea's feed relays fills that executed on Magic Eden, at a different figure: on 2026-11-14 one Leadoff fill was 0.0039 SOL on Magic Eden (the order price) and 0.004368 on OpenSea (what the buyer paid). Keyed per feed, it posts twice.",
+        instead: "Key every sale on signature and item, across feeds. Rows carrying sameTransactionAs are one sale seen twice: post it once, say which figure you show, and never add the two.",
+      },
+      {
+        trap: "Taking Magic Eden's feed as every sale.",
+        why: "It carries Magic Eden's fills. Tensor's are not in it, nor are OpenSea's own, and a feed can miss a fill, so a collection trading on Tensor looks quiet and the bot posts nothing.",
+        instead:
+          "For a Metaplex Core collection, call get_recent_sales with chainScan: true on a slower schedule and post its rows as read from the chain; it never repeats a signature either feed listed. Its coverage says how far back it read, so a scan that stopped early is not a quiet stretch. Recheck a surprising price with verify_claim, claim sale, before posting it.",
+      },
       {
         trap: "Polling a sales endpoint on a timer and posting whatever is new.",
         why: "Restarts re-post old sales, and any downtime silently swallows the sales that happened while you were down. The feed looks healthy either way.",
@@ -140,6 +157,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
       "Stop the bot long enough for more than 50 sales to happen, restart it, and confirm it reports the gap instead of looking complete.",
       "Kill the process mid-batch and restart it. Nothing may be skipped. The one sale posted just before the crash may repeat, because post-then-save is at-least-once; if the channel cannot tolerate that single repeat, make the receiver idempotent on the identity.",
       "Point it at a deliberately misspelled collection symbol. It must fail loudly, not go quiet.",
+      "Feed it a sale paid in USDC and a fill both feeds carry. The first must post in USDC and stay out of every SOL figure; the second must post once.",
       "Let it run through a period with zero sales and confirm it stays silent without erroring.",
       "Confirm the steady-state request rate against the source's published limit, with headroom.",
     ],

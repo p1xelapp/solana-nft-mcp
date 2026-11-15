@@ -97,6 +97,39 @@ A last pass on November 11 kept failed reads from turning into answers:
   hidden characters are removed, PRIVACY.md describes request headers
   correctly, and the bundle check works on macOS and Linux.
 
+Read again on November 14, against Solana's newer transaction format and the
+sales the marketplace feeds do not carry:
+
+- **Version-1 transactions are read.** One sale in the newer format failed a
+  card's whole history. Every read now asks for it, and a format the server
+  cannot read is named as that, never as a gap, a sale or a missing item.
+- **Sales are proven from the chain, Tensor's included.** `verify_claim` with
+  claim `sale` decodes the transaction and matches a price against the order
+  price, what the seller received, what the seller kept after the network fee
+  and what the buyer paid, at the precision it was written, and says which it
+  matched. Only money the marketplace's own instruction moved counts, so a side
+  payment in the same transaction no longer becomes the price. A compressed
+  item, an address that is not an item, or an unreadable transaction is
+  unverifiable, never contradicted. `get_recent_sales` with `chainScan: true`
+  lists the Tensor sales and OpenSea's own that the feeds miss; given a card it
+  reads that card's history, and given a wallet it says so and reads nothing.
+  History rows name a proven sale as a sale.
+- **The currency is the token that was paid.** A sale in USDC or any other
+  token is counted and kept out of every SOL figure. OpenSea labels some of
+  Magic Eden's USDC fills as SOL; where Magic Eden's row of the same fill says
+  otherwise, OpenSea's label is not used. A slug that carries several
+  collections, such as `candy-mlb`, is called a group, and each sale under it is
+  checked against the collection its item names. A Tensor fill that Magic Eden
+  relays shows Tensor's quote as a quote, not as a price.
+- **An issuer verdict needs items and the registry.** A collection is called
+  an issuer's only when it has items and the issuer table lists it. An empty
+  one, or an item in no collection that names an issuer's key, is unverified.
+- **Collections newer than the registry are found.** `search_collections` and
+  `identify` read the chain's list of collections under each current issuer
+  key. A list that cannot be read whole is a failed read, never "nothing
+  found", and a search answers within 40 seconds, naming what it did not read.
+  Failures read as sentences, with any code in a field of its own.
+
 Candy facts, reread on November 10:
 
 - **Candy's signing key changed.** On November 5 the update authority of all

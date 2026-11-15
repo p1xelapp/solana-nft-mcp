@@ -839,7 +839,7 @@ export const MECHANICS: MechanicsEntry[] = [
     verified: true,
     source: "https://docs.tensor.trade/trade/api-and-sdk.md",
     sourceRead: "2026-11-14",
-    keywords: ["tensor", "tensor sale", "tcmp", "on chain", "chain scan", "verify sale", "not in the feed"],
+    keywords: ["tensor", "tensor sale", "tcmp", "on chain", "chain scan", "chainscan", "verify sale", "not in the feed", "quiet", "quiet collection"],
   },
   {
     id: "venue-opensea-solana",
@@ -1229,6 +1229,68 @@ export const MECHANICS: MechanicsEntry[] = [
     source: "https://blog.candy.io/candy-collectibles-migration-to-solana-what-fans-need-to-know/",
     sourceRead: READ,
     keywords: ["migration", "migrate", "standard", "moved chain", "reissued", "history lost", "new rules"],
+  },
+  {
+    id: "q-self-fill",
+    category: "question",
+    title: "Why is a sale marked selfFill?",
+    plain:
+      "A selfFill sale has one wallet as both buyer and seller. The item did not pass between two people and no money passed between two parties, so its price is not evidence of what anyone would pay. It can be a test, a mistake or a wallet painting a price. Sales answers count it as a sale and leave it out of every SOL figure and both wallet rankings, and verify_claim never confirms a price from one.",
+    pitfall:
+      "Quoting its price as a last sale or counting it as demand. Two wallets one person controls look like two parties, so a fill without the flag can still be a wash trade (q-wash-trading).",
+    documented:
+      "Executing a transaction in which the seller is on both sides of the trade in order to paint a misleading picture of an asset's value and liquidity.",
+    verified: true,
+    source: "https://www.chainalysis.com/blog/2022-crypto-crime-report-preview-nft-wash-trading-money-laundering/",
+    sourceRead: READ,
+    keywords: ["self-fill", "selffill", "self fill", "same wallet", "buyer is seller", "own listing", "painting"],
+  },
+  {
+    id: "q-paid-in-another-token",
+    category: "question",
+    title: "Why is a sale's price not in SOL?",
+    plain:
+      "A sale can be paid in SOL, a dollar stablecoin such as USDC, or any other token. This server names the currency from the payment token's address, never its symbol, since anyone can create a token called SOL. A stablecoin sale carries that currency; one in any other token is flagged paidInOtherToken. Either way the amount is in that token's units and is kept out of every SOL figure. A null currency could not be placed.",
+    pitfall:
+      "Reading a USDC amount as SOL, adding it to SOL sales, or trusting a symbol. OpenSea has labelled Magic Eden fills paid in USDC as SOL; the payment token's address says what was paid.",
+    documented: "Every money figure names its currency and the API it came from.",
+    observed:
+      "On 2026-11-15 (UTC) OpenSea's event for Collector Crypt sale 4WrryVKuYH8ieQWL35rHaGqydc5nrpwvbFj2cs3wDQMoCxVgC9RDGH7X7WoWRUeJrkkeBFytNJsE2v7gXNjCHURc gave 0.052 with native SOL as the payment token; Magic Eden's record of the same fill gives 50 USDC.",
+    verified: true,
+    source: "https://github.com/p1xelapp/solana-nft-mcp#readme",
+    sourceRead: "2026-11-14",
+    keywords: ["paid in another token", "paidinothertoken", "other token", "stablecoin", "usdc", "not sol", "payment token", "memecoin", "currency"],
+  },
+  {
+    id: "q-chain-scan",
+    category: "question",
+    title: "What does chainScan read?",
+    plain:
+      "get_recent_sales with chainScan: true reads a Metaplex Core collection's newest transactions from the chain and decodes the sales in them, through Magic Eden, its pools, Tensor and OpenSea. It lists only sales whose signature neither marketplace feed already carries, as their own rows. It is bounded in reads and time, and its coverage says how far back it got: a scan that stops early has not shown anything older was quiet.",
+    pitfall:
+      "Adding chain rows to a marketplace's own figures, or reading an empty scan as no sales. Each row is one decoded sale, and verify_claim with claim sale rechecks any one of them.",
+    documented:
+      "Sales of Metaplex Core items through Tensor, and OpenSea's own Solana sales that Magic Eden's feed misses, are decoded from the chain: as a bounded scan by get_recent_sales with chainScan: true, each reported as its own venue row.",
+    verified: true,
+    source: "https://github.com/p1xelapp/solana-nft-mcp#readme",
+    sourceRead: "2026-11-14",
+    keywords: ["chainscan", "chain scan", "scan", "chain sales", "missing sales", "not in the feed", "tensor sales"],
+  },
+  {
+    id: "q-collection-looks-quiet",
+    category: "question",
+    title: "Why does my collection look quiet?",
+    plain:
+      "Sales answers read Magic Eden's feed, and OpenSea's when a key is available. Magic Eden's carries neither Tensor's fills nor OpenSea's own, and a feed can miss a fill, so a collection trading mostly on Tensor or OpenSea looks quiet there. For a Metaplex Core collection, get_recent_sales with chainScan: true reads its newest transactions from the chain. A misspelled symbol is refused, not shown as quiet.",
+    pitfall:
+      "Calling a collection dead, or a card unsold, from one feed's silence. Say which feeds were read and how far back each one reached.",
+    documented: "Tensor's API page says access to its API is requested through a form, so its feed is not read here.",
+    observed:
+      "On 2026-11-14 Magic Eden's sales feed for Batman: The Long Halloween ended on October 8, while an OpenSea sale from it settled on November 12.",
+    verified: true,
+    source: "https://docs.tensor.trade/trade/api-and-sdk.md",
+    sourceRead: "2026-11-14",
+    keywords: ["quiet", "looks quiet", "no sales", "not selling", "dead", "inactive", "missing sales", "tensor"],
   },
 ];
 

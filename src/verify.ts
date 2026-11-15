@@ -24,11 +24,11 @@
 
 import * as me from "./sources/magiceden.js";
 import * as sol from "./sources/solana.js";
-import { clean } from "./lib/untrusted.js";
 import { checkedFloor } from "./lib/custody.js";
 import { NotFoundError, WrongKindError, BadInputError, TypedError } from "./lib/errors.js";
-import { isSignature, readSale, type ChainSale } from "./lib/chain-sales.js";
+import { getProvenanceWithSales, isSignature, readSale, type ChainSale } from "./lib/chain-sales.js";
 import { currencyByMint } from "./lib/reconcile.js";
+import { plainReason } from "./lib/http.js";
 
 export type Verdict = "confirmed" | "contradicted" | "unverifiable";
 
@@ -50,6 +50,11 @@ export interface VerificationResult {
   /** How to reproduce this check without trusting this tool. */
   reproduce: string;
   caveats: string[];
+  /**
+   * The code behind a read that failed (an RPC or HTTP code, or "timeout"),
+   * for whoever debugs it. The explanation says the same thing in words.
+   */
+  code?: string;
   /**
    * One plain line, safe to paste anywhere. A verification that ends an
    * argument in a Discord thread is worth more than a page of JSON, and every
@@ -197,23 +202,32 @@ async function untradedFromMarketplace(
   try {
     read = await me.tokenSales(mint);
   } catch (e) {
+    const why = plainReason(e);
     return {
       ...base,
       reproduce,
       verdict: "unverifiable",
-      explanation: `${mint} is not a Metaplex Core asset, so its history is not decoded from the chain here, and Magic Eden's activity for it could not be read just now (${clean(e instanceof Error ? e.message : String(e)).slice(0, 160)}).`,
+      explanation: `${mint} is not a Metaplex Core asset, so its history is not decoded from the chain here, and Magic Eden's activity for it could not be read just now (${why.sentence}).`,
       evidence: [],
       caveats: ["This is a source failure, not a statement about the item. get_recent_sales on its collection shows the fills the marketplaces recorded."],
+      ...(why.code ? { code: why.code } : {}),
     };
   }
   const latest = read.sales[0];
   if (latest) {
+    // A Tensor fill Magic Eden relays is still a sale, but its figure is
+    // Tensor's quote, not what was paid, so it is named as that.
+    const quote = "tensorQuoteSol" in latest ? latest.tensorQuoteSol : undefined;
+    const money =
+      quote !== undefined
+        ? `, a Tensor fill Magic Eden relays, at Tensor's quote of ${quote} SOL as Magic Eden passed it on, which is not what anyone paid`
+        : ` for ${latest.price} ${latest.currency ?? "in a currency that is not established"}`;
     return {
       ...base,
       reproduce,
       verdict: "contradicted",
       explanation:
-        `Contradicted: Magic Eden recorded ${read.sales.length} sale(s) of this item, the latest at ${latest.time} for ${latest.price} ${latest.currency ?? "in a currency that is not established"} ` +
+        `Contradicted: Magic Eden recorded ${read.sales.length} sale(s) of this item, the latest at ${latest.time}${money} ` +
         `(transaction ${latest.signature}).`,
       evidence: [
         {
@@ -258,16 +272,20 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   // Fresh walk, and decode every transaction (depth 25 is the tool's ceiling;
   // anything beyond that shows up as skipped and blocks a "confirmed").
   let prov: Awaited<ReturnType<typeof sol.getProvenance>> | null = null;
-  let provError: string | undefined;
+  let provError: { sentence: string; code: string | null } | undefined;
   let provMissing = false;
   let isCollection = false;
   try {
-    prov = await sol.getProvenance(mint, 25, { fresh: true });
+    // Every marketplace transaction in the walk goes through the sale
+    // decoder, so a sale the chain proves is named as one. Without it, an
+    // item whose one transfer was a 0.3 SOL OpenSea sale (which a sale claim
+    // on the same transaction confirms) came back unverifiable.
+    prov = await getProvenanceWithSales(mint, 25, { fresh: true });
   } catch (e) {
     // "Not a Core asset" and "no such account" are answers about the subject;
     // anything else is the chain not being readable. The class says which.
     provMissing = e instanceof NotFoundError || e instanceof WrongKindError;
-    provError = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
+    provError = plainReason(e);
     // The provenance reader's own sentence for a collection account.
     isCollection = e instanceof WrongKindError && /Core COLLECTION/.test(e.message);
   }
@@ -275,9 +293,10 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `The chain could not be read for ${mint} just now (${provError}), so its history cannot be checked.`,
+      explanation: `The chain could not be read for ${mint} just now (${provError.sentence}), so its history cannot be checked.`,
       evidence: [],
       caveats: ["This is a source failure, not a statement about the asset. Retry shortly."],
+      ...(provError.code ? { code: provError.code } : {}),
     };
   }
   if (!prov && isCollection) {
@@ -298,10 +317,12 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
       method: "Core TransferV1 instructions decoded from each signature touching the asset.",
       observed: `${transfers.length} transfer(s) across ${prov.totalSignatures} total signatures (${prov.unreadableTransactions} unreadable, ${prov.skippedTransactions} not decoded)`,
     },
+    // Plain words: this text is pasted into receipts, where field names such
+    // as endpointPinned or slotFloorHonoured mean nothing to a reader.
     {
       source: `Solana RPC endpoint ${prov.endpointPinned}`,
       method: "Every read in this walk - the account, the signature pages and each transaction - came from this one endpoint, so the answer describes a state that node actually held rather than a snapshot stitched from two.",
-      observed: `endpointPinned = ${prov.endpointPinned}`,
+      observed: `every read from one endpoint, ${prov.endpointPinned}`,
     },
     {
       source: `Solana RPC endpoint ${prov.endpointPinned}`,
@@ -309,7 +330,10 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
         prov.slotFloorHonoured
           ? "The account read's own context slot was used as a minContextSlot floor on the signature pages and every transaction, so no read in this walk could come from a slot older than the account it describes."
           : "The endpoint would not take a minContextSlot floor, so the single pinned endpoint is what keeps this walk internally consistent.",
-      observed: `contextSlot = ${prov.contextSlot ?? "not reported by the endpoint"}, slotFloorHonoured = ${prov.slotFloorHonoured}`,
+      observed:
+        prov.slotFloorHonoured && prov.contextSlot !== null
+          ? `every read at slot ${prov.contextSlot} or later`
+          : "the endpoint would not hold the reads to one slot, so the single endpoint kept them consistent",
     },
   ];
 
@@ -368,6 +392,30 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     };
   }
 
+  // A sale the decoder proved from a transaction's own instructions and
+  // payments answers "never sold", whatever else the history holds. A
+  // self-fill is no sale between two parties, and a layout not yet checked
+  // against a real transaction carries no verdict.
+  const proven = transfers.filter((t) => t.sale && !t.sale.selfFill && (t.sale.layout === "published" || t.sale.layout === "observed"));
+  if (proven.length > 0) {
+    const last = proven[proven.length - 1]!;
+    const s = last.sale!;
+    const money = s.price !== null && s.price !== undefined ? ` for ${s.price} ${s.currency ?? "units of another token"}` : "";
+    const at = last.time ? ` at ${last.time}` : "";
+    evidence.unshift({
+      source: `Solana transaction ${last.signature}`,
+      method: "The item's Metaplex Core transfer inside the marketplace's sale instruction, with the payment to the seller beside it, decoded from the transaction itself.",
+      observed: `${s.venue} sale${at}${money}, seller ${s.seller}, buyer ${s.buyer}`,
+    });
+    return {
+      ...base,
+      verdict: "contradicted",
+      explanation: `Contradicted: the chain shows ${proven.length} sale(s) of this item. The latest is ${/^[AEIOU]/.test(s.venue ?? "") ? "an" : "a"} ${s.venue} sale${at}${money} (transaction ${last.signature}), from ${s.seller} to ${s.buyer}, decoded from its own instructions and payments.`,
+      evidence,
+      caveats: [...caveats, "verify_claim with claim sale on that transaction shows its figures in full."],
+    };
+  }
+
   return {
     ...base,
     verdict: "unverifiable",
@@ -391,7 +439,7 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
   };
 
   let acct: Awaited<ReturnType<typeof sol.getCoreAccount>> = null;
-  let readError: string | undefined;
+  let readError: { sentence: string; code: string | null } | undefined;
   let endpointPinned = "no endpoint was contacted for this read";
   try {
     // Pinned even though this is a single read: the result records WHICH node
@@ -401,19 +449,20 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
     acct = walk.value;
     endpointPinned = walk.endpointPinned;
   } catch (e) {
-    readError = e instanceof Error ? e.message : String(e);
+    readError = plainReason(e);
   }
   if (!acct || acct.kind !== "asset") {
     return {
       ...base,
       verdict: "unverifiable",
       explanation: readError
-        ? `The chain could not be read for ${mint} just now (${readError}), so ownership cannot be checked.`
+        ? `The chain could not be read for ${mint} just now (${readError.sentence}), so ownership cannot be checked.`
         : `${mint} does not decode as a Metaplex Core asset, so its owner field cannot be read here.`,
       evidence: [],
       caveats: readError
         ? ["This is a source failure, not a statement about the asset. Retry shortly."]
         : ["Legacy SPL and compressed NFTs store ownership elsewhere and are not decoded by this server."],
+      ...(readError?.code ? { code: readError.code } : {}),
     };
   }
 
@@ -426,7 +475,7 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
     {
       source: `Solana RPC endpoint ${endpointPinned}`,
       method: "The endpoint this read was pinned to, so the answer names the node whose state it describes.",
-      observed: `endpointPinned = ${endpointPinned}`,
+      observed: `read from ${endpointPinned}`,
     },
   ];
 
@@ -503,7 +552,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   }
 
   let stats: Awaited<ReturnType<typeof me.collectionStats>> | null = null;
-  let statsError: string | undefined;
+  let statsError: { sentence: string; code: string | null } | undefined;
   let statsMissing = false;
   try {
     stats = await me.collectionStats(symbol, { fresh: true });
@@ -512,7 +561,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
     // whose body happened to contain "has no collection" was being reported
     // as an absence, which is a claim about the market built from a failure.
     statsMissing = e instanceof NotFoundError;
-    statsError = clean(e instanceof Error ? e.message : String(e)).slice(0, 200);
+    statsError = plainReason(e);
   }
   if (!stats || stats.floorPriceSol === null) {
     const outage = Boolean(statsError) && !statsMissing;
@@ -520,12 +569,13 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       ...base,
       verdict: "unverifiable",
       explanation: outage
-        ? `Magic Eden could not be read just now (${statsError}), so the claim cannot be checked.`
+        ? `Magic Eden could not be read just now (${statsError!.sentence}), so the claim cannot be checked.`
         : `No live floor was returned for "${symbol}", so the claim cannot be checked.`,
       evidence: [],
       caveats: outage
         ? ["This is a source failure, not a statement about the collection. Retry shortly."]
         : ["A collection with no listings has no floor at all; an unknown symbol has none either."],
+      ...(outage && statsError?.code ? { code: statsError.code } : {}),
     };
   }
 
@@ -643,21 +693,43 @@ function claimedCurrency(raw: string | undefined): { code: string | null; mint: 
 
 /** Relative room for a claimed price that was rounded when it was written down. */
 const PRICE_TOLERANCE = 0.005;
+/**
+ * The most a coarsely written price may sit from a figure, as a share of it.
+ * "1" for 0.99456 is the same price rounded; "1" for 0.6 rounds the same way
+ * and is a different price.
+ */
+const PRICE_ROUNDING_CAP = 0.05;
+
+/** Decimal places a claimed number was written with: 0.27 has two, 1 has none, 1e-7 has seven. */
+function writtenDecimals(n: number): number {
+  const m = /^\d+(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(n));
+  if (!m) return 0;
+  return Math.max(0, (m[1]?.length ?? 0) - (m[2] ? Number(m[2]) : 0));
+}
+
+/** How far a figure may sit from a claim and still be the figure the person meant, at the precision they wrote it. */
+const roomFor = (claimed: number, figure: number, slack: number): number =>
+  Math.min(Math.max(0.5 * 10 ** -writtenDecimals(claimed), figure * PRICE_TOLERANCE), figure * PRICE_ROUNDING_CAP) + slack;
 
 /**
  * A sale, checked against the transaction it names.
  *
  * The feeds quote one fill differently: Magic Eden reported 0.0039 SOL and
  * OpenSea 0.004368 SOL for the same transaction, because one quotes what the
- * seller listed at and the other what the buyer paid. Both are true, so the
- * chain gives both, and a claim is confirmed when it matches either one,
- * saying which. It is contradicted only when the transaction was read and
- * shows something else: not a sale of this item, another currency, or a price
- * that matches neither figure. A transaction that could not be read, that
- * moved several items, whose buyer and seller are one wallet, or whose figures
- * carry returned rent too large to rule a claim in or out, is unverifiable
- * for a price: the same currency, multi-item and self-fill rules the
- * marketplace sale rows follow.
+ * seller listed at and the other what the buyer paid. A seller quotes what
+ * reached their wallet, after the network fee they paid, and an accepted
+ * offer is quoted at its order price, between what the seller kept and what
+ * the buyer paid in all. All of these are true, so the chain gives each one
+ * it can read, and a claim is confirmed when it matches any of them at the
+ * precision it was written, saying which. It is contradicted only when the
+ * transaction was read and shows something else: not a sale of this item,
+ * another currency, or a price outside every figure. A claim between the
+ * smallest and the largest figure that matches none is unverifiable, because
+ * a price quoted after some fees but not others reads like that. A
+ * transaction that could not be read, that moved several items, whose buyer
+ * and seller are one wallet, or whose figures carry returned rent too large
+ * to rule a claim in or out, is unverifiable for a price: the same currency,
+ * multi-item and self-fill rules the marketplace sale rows follow.
  */
 async function verifySale(signature: string, item: string, claimed: number | undefined, currencyArg: string | undefined): Promise<Omit<VerificationResult, "receipt">> {
   const wanted = claimedCurrency(currencyArg);
@@ -681,14 +753,16 @@ async function verifySale(signature: string, item: string, claimed: number | und
     // out of date, not the chain being busy: the shared reader says so, and
     // a retry would not help.
     const outdated = e instanceof TypedError && e.kind === "unsupported" ? e.wording : undefined;
+    const why = plainReason(e);
     return {
       ...base,
       verdict: "unverifiable",
       explanation: outdated
         ? `${outdated.headline} The sale cannot be checked here.`
-        : `The chain could not be read for this transaction just now (${clean(e instanceof Error ? e.message : String(e)).slice(0, 200)}), so the sale cannot be checked.`,
+        : `The chain could not be read for this transaction just now (${why.sentence}), so the sale cannot be checked.`,
       evidence: [],
       caveats: [outdated ? `This is not a statement about the sale. ${outdated.next}` : "This is a source failure, not a statement about the sale. Retry shortly."],
+      ...(why.code ? { code: why.code } : {}),
     };
   }
   const evidence: Evidence[] = [];
@@ -720,11 +794,11 @@ async function verifySale(signature: string, item: string, claimed: number | und
   const AVenue = aVenue[0]!.toUpperCase() + aVenue.slice(1);
   evidence.push({
     source: where,
-    method: `The item's Metaplex Core transfer, made inside ${sale.venue} ${sale.instruction}; buyer and seller from that instruction's accounts (${sale.layout === "published" ? "the venue's published layout" : sale.layout === "observed" ? "a layout read from real transactions" : "a layout inferred from a sibling program"}).`,
+    method: `The item's Metaplex Core transfer, made inside ${sale.venue} ${sale.instruction}; buyer and seller from that instruction's accounts (${sale.layout === "published" ? "the venue's published layout" : sale.layout === "observed" ? "a layout read from real transactions" : sale.layout === "published-unchecked" ? "the venue's published layout, not yet checked against a real transaction of this kind" : "a layout inferred from a sibling program"}).`,
     observed: `${sale.venue} sale${at}, seller ${sale.seller}, buyer ${sale.buyer}${sale.collection ? `, collection ${sale.collection}` : ""}`,
   });
   const caveats = [
-    "Marketplaces quote one fill differently. Magic Eden and Tensor quote a listing's price, which is what the seller receives, with royalties and fees added for the buyer; OpenSea and accepted offers quote the buyer's total, from which the seller's share is net. The chain gives both, and a claim matching either is confirmed.",
+    "Marketplaces quote one fill differently. Magic Eden and Tensor quote a listing's price, which is what the seller receives, with royalties and fees added for the buyer; OpenSea quotes the buyer's total, from which the seller's share is net; an accepted offer is quoted at its order price, from which the seller pays the fee. The chain gives each figure it can read, and a claim matching any of them at the precision it was written is confirmed.",
     ...sale.notes,
   ];
   if (read.endpoint) evidence.push({ source: `Solana RPC endpoint ${read.endpoint}`, method: "The endpoint that served the transaction. A confirmed transaction is the same on every node.", observed: `read at ${read.readAt}` });
@@ -732,7 +806,9 @@ async function verifySale(signature: string, item: string, claimed: number | und
   if (cur) {
     const money = [
       sale.price !== null && sale.price !== undefined ? `everything paid for the item ${sale.price}` : null,
+      sale.orderPrice !== undefined ? `order price ${sale.orderPrice}` : null,
       sale.sellerReceived !== null && sale.sellerReceived !== undefined ? `seller received ${sale.sellerReceived}` : null,
+      sale.sellerAfterFee !== undefined ? `seller kept ${sale.sellerAfterFee} after the network fee` : null,
       sale.buyerPaid !== null && sale.buyerPaid !== undefined ? `buyer paid ${sale.buyerPaid}` : null,
     ].filter(Boolean);
     evidence.push({
@@ -750,6 +826,21 @@ async function verifySale(signature: string, item: string, claimed: number | und
   }
   if (sale.selfFill) caveats.unshift("The buyer and the seller are the same wallet. A self-fill happened on chain, but it is not evidence of a market price.");
 
+  // Before the currency: which payment was the seller's rests on the slots,
+  // so a currency read through an unchecked layout is no ground for a
+  // contradiction either.
+  if (sale.layout !== "published" && sale.layout !== "observed") {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation:
+        sale.layout === "inferred"
+          ? `The chain shows ${aVenue} ${sale.instruction} that moved this item, but the buyer and seller slots for that instruction are inferred and no real transaction of its kind has been checked, so no verdict is given on it.`
+          : `The chain shows ${aVenue} ${sale.instruction} that moved this item, but the buyer and seller slots for that instruction come from the venue's published code and no real transaction of its kind has been checked against them, so no verdict is given on it.`,
+      evidence,
+      caveats,
+    };
+  }
   // The currency, by mint address. Anything else is never SOL.
   if (cur && (claimed !== undefined || currencyArg !== undefined)) {
     const same = wanted.mint ? cur.mint === wanted.mint || (wanted.code === "SOL" && cur.code === "SOL") : wanted.code !== null && cur.code === wanted.code;
@@ -763,36 +854,29 @@ async function verifySale(signature: string, item: string, claimed: number | und
       };
     }
   }
-  if (sale.layout === "inferred") {
+  // The marketplace rows' rule: a self-fill is a sale, and its amount is no
+  // evidence of what anyone paid, so it is in no money figure. A claimed price
+  // is therefore neither confirmed nor contradicted by one, and neither is a
+  // claim that the item "was sold": one wallet on both sides sold it to nobody.
+  if (sale.selfFill) {
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `The chain shows ${aVenue} ${sale.instruction} that moved this item, but the buyer and seller slots for that instruction are inferred and no real transaction of its kind has been checked, so no verdict is given on it.`,
+      explanation:
+        `${AVenue} fill of this item did happen in this transaction, but the buyer and the seller are the same wallet (a self-fill): no money changed hands between two parties, ` +
+        (claimed === undefined ? "so it is not a sale from one owner to another and the claim is neither confirmed nor contradicted by it." : `so its amount is not a price anyone paid and a ${claimed} ${wanted.label} claim is neither confirmed nor contradicted by it.`),
       evidence,
       caveats,
     };
   }
   if (claimed === undefined) {
-    // A self-fill's reason already says it is one wallet on both sides.
     return { ...base, verdict: "confirmed", explanation: `Confirmed against the chain: ${sale.reason}`, evidence, caveats };
-  }
-  // The marketplace rows' rule: a self-fill is a sale, and its amount is no
-  // evidence of what anyone paid, so it is in no money figure. A claimed price
-  // is therefore neither confirmed nor contradicted by one.
-  if (sale.selfFill) {
-    return {
-      ...base,
-      verdict: "unverifiable",
-      explanation: `${AVenue} fill of this item did happen in this transaction, but the buyer and the seller are the same wallet (a self-fill): no money changed hands between two parties, so its amount is not a price anyone paid and a ${claimed} ${wanted.label} claim is neither confirmed nor contradicted by it.`,
-      evidence,
-      caveats,
-    };
   }
   if (sale.price === null || sale.price === undefined) {
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: `${AVenue} sale of this item did happen in this transaction, but its price cannot be proven: ${sale.noPriceReason ?? "no per-item amount could be stated"}.`,
+      explanation: `${AVenue} sale of this item did happen in this transaction, but its price cannot be proven: ${(sale.noPriceReason ?? "no per-item amount could be stated").replace(/\.$/, "").replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())}.`,
       evidence,
       caveats,
     };
@@ -807,17 +891,44 @@ async function verifySale(signature: string, item: string, claimed: number | und
       caveats,
     };
   }
+  const unit = cur?.label ?? "";
   const figures = [
-    { what: "everything paid for the item (the buyer's total)", value: sale.price },
+    { what: "the order price written in the marketplace instruction", value: sale.orderPrice },
     { what: "what the seller received", value: sale.sellerReceived },
+    { what: "what the seller kept after the network fee it paid", value: sale.sellerAfterFee },
     { what: "what the buyer paid", value: sale.buyerPaid },
+    { what: "everything paid for the item (the buyer's total)", value: sale.price },
   ].filter((f): f is { what: string; value: number } => comparable(f.value));
-  const hit = figures.find((f) => near(f.value, claimed, f.value * PRICE_TOLERANCE + slack));
-  if (hit) {
+  // A figure the claim matches as written comes first; rounding at the
+  // claim's precision is used only when none does, so "1 SOL" on an order of
+  // exactly 1 is named as that, not also as the 0.98 the seller kept.
+  const close = figures.filter((f) => near(f.value, claimed, f.value * PRICE_TOLERANCE + slack));
+  const hits = close.length > 0 ? close : figures.filter((f) => near(f.value, claimed, roomFor(claimed, f.value, slack)));
+  if (hits.length > 0) {
+    // Figures that are the same amount are named together, so a reader sees
+    // that 2 SOL is both the order price and what the seller received.
+    const byValue = new Map<number, string[]>();
+    for (const h of hits) byValue.set(h.value, [...(byValue.get(h.value) ?? []), h.what]);
+    const named = [...byValue.entries()].map(([value, whats]) => `${whats.join(" and ")}, ${value} ${unit}`).join("; and ");
+    const rounded = hits.every((h) => h.value !== claimed) ? ` (${claimed} is that figure at the precision it was written)` : "";
     return {
       ...base,
       verdict: "confirmed",
-      explanation: `Confirmed against the chain: ${aVenue} sale of this item, and ${claimed} ${wanted.label} matches ${hit.what}, ${hit.value} ${cur?.label ?? ""}.`,
+      explanation: `Confirmed against the chain: ${aVenue} sale of this item, and ${claimed} ${wanted.label} matches ${named}${rounded}.`,
+      evidence,
+      caveats,
+    };
+  }
+  const listed = `${figures.map((f) => `${f.what} ${f.value}`).join(", ")} ${unit}`;
+  const lo = figures.reduce<{ what: string; value: number } | null>((a, f) => (a === null || f.value < a.value ? f : a), null);
+  const hi = figures.reduce<{ what: string; value: number } | null>((a, f) => (a === null || f.value > a.value ? f : a), null);
+  if (lo && hi && claimed > lo.value && claimed < hi.value) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation:
+        `${AVenue} sale of this item did happen here, and ${claimed} ${wanted.label} lies between ${lo.what} (${lo.value}) and ${hi.what} (${hi.value}) without matching any figure the chain shows (${listed}). ` +
+        `A price quoted after some fees but not others reads like this, so the claim is neither confirmed nor contradicted.`,
       evidence,
       caveats,
     };
@@ -825,7 +936,7 @@ async function verifySale(signature: string, item: string, claimed: number | und
   return {
     ...base,
     verdict: "contradicted",
-    explanation: `Contradicted: ${aVenue} sale of this item did happen here, but the chain shows ${figures.map((f) => `${f.what} ${f.value}`).join(", ")} ${cur?.label ?? ""}, and ${claimed} matches none of them.`,
+    explanation: `Contradicted: ${aVenue} sale of this item did happen here, but the chain shows ${listed}, and ${claimed} matches none of them.`,
     evidence,
     caveats,
   };
@@ -841,7 +952,14 @@ export function buildReceipt(r: Omit<VerificationResult, "receipt">, at = new Da
   const onChain = r.evidence.length > 0 && r.evidence.every((e) => /Solana|Core|account|transaction/i.test(e.source));
   const venue = (src: string) => src.split(/ (collection|stats|account|for) /)[0] ?? src;
   const srcLabel = r.evidence.length === 0 ? "" : onChain ? "chain shows" : `${[...new Set(r.evidence.map((e) => venue(e.source)))].join(" + ")} shows`;
-  const how = r.evidence.length === 0 ? "" : onChain ? ` · checked on-chain via solana-nft-mcp at ${at.toISOString()}, reproducible with no key` : ` · marketplace read via solana-nft-mcp at ${at.toISOString()}, reproducible with no key`;
+  // A receipt with nothing read still says when the check was tried: an
+  // UNVERIFIABLE pasted without a time cannot be told from one made last week.
+  const how =
+    r.evidence.length === 0
+      ? ` · attempted via solana-nft-mcp at ${at.toISOString()}`
+      : onChain
+        ? ` · checked on-chain via solana-nft-mcp at ${at.toISOString()}, reproducible with no key`
+        : ` · marketplace read via solana-nft-mcp at ${at.toISOString()}, reproducible with no key`;
   return (
     `${MARK[r.verdict]}: "${r.claim}" for ${short(r.subject)}` +
     (observed ? ` - ${srcLabel} ${observed}` : "") +

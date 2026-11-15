@@ -15,7 +15,7 @@ import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
 import { accountEventFingerprint } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
-import { mePayment } from "./lib/reconcile.js";
+import { classifyPaymentToken, mePayment, tensorRelayQuote, TENSOR_RELAY_NOTE } from "./lib/reconcile.js";
 import { knownVenueAccount, venueAddress } from "./sources/solana.js";
 import { isoFromBlockTime, usableBlockTime } from "./lib/time.js";
 
@@ -140,6 +140,21 @@ export interface Flip {
   heldDays: number | null;
 }
 
+/** A wallet's trades in one payment token that is not SOL. */
+export interface OtherCurrencyTrades {
+  /** USDC, USDT or PYUSD when the token's address proves it; null for another token. */
+  currency: string | null;
+  paymentToken: string | null;
+  buys: number;
+  /** Paid out in that token's own units, over the buys whose amount could be read and was settled. */
+  boughtAmount: number;
+  sells: number;
+  /** Received in that token's own units, over the sells whose amount could be read and was settled. */
+  soldAmount: number;
+  /** Trades whose amount could not be read or whose copies disagreed. */
+  amountsUnread: number;
+}
+
 export interface ActivitySummary {
   /** Every SOL figure in this object is denominated in this currency and read from this venue's API. */
   currency: "SOL";
@@ -150,6 +165,12 @@ export interface ActivitySummary {
   buys: { count: number; totalSol: number; collections: Record<string, number> };
   sells: { count: number; totalSol: number; collections: Record<string, number> };
   netFlowSol: number;
+  /**
+   * Buys and sells paid in something other than SOL, one row per payment
+   * token, each in its own units. An 800 USDC purchase is 800 USDC here and
+   * nothing in any SOL figure.
+   */
+  otherCurrencies?: OtherCurrencyTrades[];
   /** Fills with this wallet on both sides. Outside every total above. */
   selfFills: number;
   /** Money figures cover the trades this many SOL totals could actually be built from. */
@@ -160,8 +181,10 @@ export interface ActivitySummary {
     unsettled: number;
     /** Buys and sells counted on their side but left out of every SOL total. */
     unpricedTrades: number;
-    /** Of the buys and sells, those paid in USDC or another token: counted on their side, outside every SOL total and flip. */
+    /** Of the buys and sells, those paid in USDC or another token: counted on their side, outside every SOL total and flip, and totalled in otherCurrencies. */
     nonSolTrades: number;
+    /** Of the buys and sells, Tensor fills Magic Eden relays: their figure is a quote, not what was paid, so they are outside every SOL total and flip. */
+    tensorRelayed: number;
     /** Rows whose blockTime was present but not a representable time. Their times are null; the rows still count. */
     unusableTimestamps: number;
   };
@@ -242,6 +265,10 @@ export function summarizeActivity(
   let unsettledTrades = 0;
   /** Trades paid in something other than SOL. Their `price` is a SOL equivalent, not what was paid. */
   let nonSolTrades = 0;
+  /** What those trades moved, per payment token, in each token's own units. */
+  const otherPaid = new Map<string, OtherCurrencyTrades>();
+  /** Tensor fills Magic Eden relays: counted on their side, their quote kept out of every SOL figure. */
+  let tensorRelayed = 0;
   /**
    * Fills where this wallet is BOTH buyer and seller. No money left or
    * entered the wallet, so they sit outside the buy and sell totals and the
@@ -279,9 +306,15 @@ export function summarizeActivity(
       // An 800 USDC purchase arrives with `price` 6.73, a SOL equivalent at
       // Magic Eden's rate. It is a trade on its side, but no SOL moved, so it
       // stays out of every SOL total and cannot be one leg of a SOL flip.
-      const solPaid = mePayment(e).kind === "sol";
-      const parsed = solPaid ? usablePrice(rawPrice) : null;
-      if (solPaid && parsed === null && rawPrice !== null && rawPrice !== undefined) malformedPrices++;
+      const pay = mePayment(e);
+      const solPaid = pay.kind === "sol";
+      // A Tensor fill Magic Eden relays carries Tensor's quote, which neither
+      // side paid or received: the trade counts, the figure is not money.
+      const quoted = solPaid && tensorRelayQuote(e) !== null;
+      // A payment record naming SOL at a scale SOL does not have is malformed:
+      // the trade counts on its side, its amount in no total.
+      const parsed = solPaid && !quoted && !pay.malformed ? usablePrice(rawPrice) : null;
+      if (solPaid && !quoted && (pay.malformed || (parsed === null && rawPrice !== null && rawPrice !== undefined))) malformedPrices++;
       // A row whose two copies disagreed about the amount or a side is a trade
       // that happened for an amount we cannot state, exactly like a missing
       // price: the side is counted, the money is not.
@@ -292,7 +325,20 @@ export function summarizeActivity(
         continue;
       }
       const side = e.buyer === wallet ? "buy" : e.seller === wallet ? "sell" : null;
-      if (side && !solPaid) nonSolTrades++;
+      if (side && !solPaid) {
+        nonSolTrades++;
+        // Spending in USDC is spending: it is totalled in its own currency
+        // rather than named only as an example of what was left out.
+        const key = pay.paymentToken ?? "unknown";
+        const row = otherPaid.get(key) ?? { currency: pay.currency, paymentToken: pay.paymentToken, buys: 0, boughtAmount: 0, sells: 0, soldAmount: 0, amountsUnread: 0 };
+        if (side === "buy") row.buys++;
+        else row.sells++;
+        if (settled && pay.amount !== null) {
+          if (side === "buy") row.boughtAmount = round(row.boughtAmount + pay.amount);
+          else row.soldAmount = round(row.soldAmount + pay.amount);
+        } else row.amountsUnread++;
+        otherPaid.set(key, row);
+      } else if (side && quoted) tensorRelayed++;
       else if (side && price === null) unpricedTrades++;
       if (side === "buy") {
         buys.count++;
@@ -404,6 +450,7 @@ export function summarizeActivity(
       e.buyer === wallet &&
       e.seller !== wallet &&
       mePayment(e).kind === "sol" &&
+      tensorRelayQuote(e) === null &&
       usablePrice(e.price) !== null &&
       (e as { unsettled?: boolean }).unsettled !== true,
   );
@@ -434,9 +481,21 @@ export function summarizeActivity(
     );
   }
   if (nonSolTrades) {
+    const amount = (n: number, o: OtherCurrencyTrades) => `${round(n, 6)} ${o.currency ?? `of another token (${o.paymentToken ?? "address not given"})`}`;
+    const named = [...otherPaid.values()]
+      .map((o) =>
+        [o.buys ? `${o.buys} buy${o.buys === 1 ? "" : "s"} for ${amount(o.boughtAmount, o)}` : "", o.sells ? `${o.sells} sell${o.sells === 1 ? "" : "s"} for ${amount(o.soldAmount, o)}` : ""]
+          .filter(Boolean)
+          .join(" and "),
+      )
+      .join("; ");
+    const unread = [...otherPaid.values()].reduce((s, o) => s + o.amountsUnread, 0);
     caveats.push(
-      `${nonSolTrades} of the buys and sells here were paid in a currency other than SOL (USDC, for example). The counts include them; the SOL totals, net flow, flips and realised P&L do not, because Magic Eden's price on those rows is a SOL equivalent at its own rate, not what was paid.`,
+      `${nonSolTrades} of the buys and sells here were paid in a currency other than SOL: ${named}${unread ? ` (${unread} of them with an amount that could not be read, outside those totals)` : ""}. The counts include them and otherCurrencies totals each in its own currency; the SOL totals, net flow, flips and realised P&L do not, because Magic Eden's price on those rows is a SOL equivalent at its own rate, not what was paid.`,
     );
+  }
+  if (tensorRelayed) {
+    caveats.push(`${tensorRelayed} of the buys and sells here are Tensor fills Magic Eden relays. ${TENSOR_RELAY_NOTE}`);
   }
   if (unmeasuredCycles) {
     caveats.push(
@@ -464,8 +523,9 @@ export function summarizeActivity(
     buys: { ...buys, totalSol: round(buys.totalSol) },
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
+    ...(otherPaid.size ? { otherCurrencies: [...otherPaid.values()] } : {}),
     selfFills,
-    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades, nonSolTrades, unusableTimestamps },
+    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades, nonSolTrades, tensorRelayed, unusableTimestamps },
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
@@ -618,6 +678,54 @@ export function summarizeOpenSeaEvents(wallet: string, rawEvents: OsAccountEvent
     malformedItemIdentifiers,
     caveat:
       "OpenSea's account feed on Solana includes plain transfers, which Magic Eden's does not. A transfer-in with no sale can be a gift, an airdrop, a move between the owner's own wallets, or a purchase OpenSea did not see (e.g. a Magic Eden fill) - the chain records the movement, not the reason. OpenSea has also been observed labelling Magic Eden fills as its own sales.",
+  };
+}
+
+/**
+ * OpenSea's sale events for a wallet set against Magic Eden's rows for it.
+ *
+ * OpenSea's account feed lists Magic Eden fills too, and on a Magic Eden fill
+ * paid in USDC it names SOL's address over the USDC amount (2026-11-15). The
+ * wallet's OpenSea block gives counts, not amounts, so no SOL figure is built
+ * from those rows here; what this adds is the overlap, and how many of the
+ * shared fills OpenSea names a different currency for, so the block cannot be
+ * read as extra sales or as SOL spending. Matching is the unique transaction,
+ * item, buyer and seller rule the sales tools use.
+ */
+export function openSeaSalesAgainstMagicEden(
+  osEvents: readonly OsAccountEvent[],
+  meEvents: readonly MeWalletActivity[],
+): { sameFillsAsMagicEden?: number; currencyDisagreesWithMagicEden?: number; sameFillsNote?: string } {
+  const key = (sig: unknown, mint: unknown, buyer: unknown, seller: unknown): string | null =>
+    [sig, mint, buyer, seller].every((v) => typeof v === "string" && v !== "") ? [sig, mint, buyer, seller].join("\u0000") : null;
+  const meByKey = new Map<string, MeWalletActivity[]>();
+  for (const e of meEvents) {
+    if (e.type !== "buyNow" && e.type !== "buy") continue;
+    const k = key(e.signature, e.tokenMint, e.buyer, e.seller);
+    if (k) meByKey.set(k, [...(meByKey.get(k) ?? []), e]);
+  }
+  const osByKey = new Map<string, OsAccountEvent[]>();
+  for (const e of osEvents) {
+    if (e.event_type !== "sale") continue;
+    const k = key(e.transaction, e.nft?.identifier, e.buyer, e.seller);
+    if (k) osByKey.set(k, [...(osByKey.get(k) ?? []), e]);
+  }
+  let same = 0;
+  let disagree = 0;
+  for (const [k, rows] of osByKey) {
+    const twins = meByKey.get(k);
+    if (rows.length !== 1 || twins?.length !== 1) continue;
+    same++;
+    const osCurrency = classifyPaymentToken(rows[0]!.payment?.token_address, rows[0]!.payment?.symbol, "OpenSea").currency;
+    if (osCurrency !== null && osCurrency !== mePayment(twins[0]).currency) disagree++;
+  }
+  if (same === 0) return {};
+  return {
+    sameFillsAsMagicEden: same,
+    ...(disagree ? { currencyDisagreesWithMagicEden: disagree } : {}),
+    sameFillsNote:
+      `${same} of OpenSea's sale events here are the same fills (transaction, item, buyer and seller) as rows in Magic Eden's feed above: one sale each, which both blocks count.` +
+      (disagree ? ` OpenSea names a different currency from Magic Eden's row for ${disagree} of them (it labels Magic Eden's USDC fills SOL); this block gives no amounts, and Magic Eden's rows say what was paid.` : ""),
   };
 }
 

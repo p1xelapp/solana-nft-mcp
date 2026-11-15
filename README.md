@@ -160,7 +160,7 @@ without raising an error.
 | `get_collection_stats` | chain supply, floors per marketplace, and a reconciliation that refuses to rank SOL against USDC |
 | `get_collection_holders` | census of a Core collection from the chain's asset index, each holder with a role (issuer, marketplace escrow, wallet), capped and saying so |
 | `get_floor_prices` | current floor and listed count for up to 10 collections, Magic Eden only |
-| `get_recent_sales` | latest completed fills with buyer, seller, price, mint and signature |
+| `get_recent_sales` | latest completed fills with buyer, seller, price in the currency paid, mint and signature; with `chainScan`, the sales the feeds miss, read from the chain |
 | `get_asset` | three readers for one item: the marketplace, a byte-level decode, and the chain's asset index, with owner agreement reported |
 | `get_asset_provenance` | bounded ownership history of a Core asset, dated, marketplaces named, every unread hole marked in place. `historyComplete` says every transaction was read; `mintObserved` says the mint itself was decoded. They are different claims |
 | `get_wallet_holdings` | holdings from two independent readers, with the gap between them named |

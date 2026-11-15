@@ -20,6 +20,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const encode = (b) => { let n = BigInt("0x" + Buffer.from(b).toString("hex")); let s = ""; while (n) { s = B58[Number(n % 58n)] + s; n /= 58n; } return s; };
+const decode = (s) => { let n = 0n; for (const c of s) n = n * 58n + BigInt(B58.indexOf(c)); return Buffer.from(n.toString(16).padStart(64, "0"), "hex"); };
 export const sig = (label) => encode(createHash("sha512").update(label).digest());
 export const addr = (label) => encode(createHash("sha256").update(label).digest());
 
@@ -67,6 +68,14 @@ globalThis.fetch = async (url, init = {}) => {
     try { body = JSON.parse(String(init.body ?? "{}")); } catch { /* answered as an error below */ }
     if (body.method === "getSignaturesForAddress") return json({ jsonrpc: "2.0", id: body.id, result: [] });
     if (body.method === "getAccountInfo") return json({ jsonrpc: "2.0", id: body.id, result: { context: { slot: 1 }, value: null } });
+    // Every item sold here is an AssetV1 of the Portraits collection, in the
+    // layout a real account reply carries: key 1, owner, update-authority tag
+    // 2 and the collection's address, as base64 data.
+    if (body.method === "getMultipleAccounts") {
+      const asked = Array.isArray(body.params?.[0]) ? body.params[0] : [];
+      const asset = () => ({ data: [Buffer.concat([Buffer.from([1]), decode(BUYER), Buffer.from([2]), decode(PORTRAITS.core)]).toString("base64"), "base64"], executable: false, lamports: 3_000_000, owner: "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d", rentEpoch: 0, space: 66 });
+      return json({ jsonrpc: "2.0", id: body.id, result: { context: { slot: 1 }, value: asked.map(asset) } });
+    }
     return json({ jsonrpc: "2.0", id: body.id ?? 1, error: { code: -32601, message: `stale-facts preload does not serve ${body.method}` } });
   }
   if (u.hostname === "api.opensea.io") {

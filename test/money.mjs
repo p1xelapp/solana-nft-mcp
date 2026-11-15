@@ -86,12 +86,14 @@ const servePage = (slug, page) => {
   route = (u) => (u.pathname === `/api/v2/events/collection/${slug}` ? json(page) : json({ message: "no route" }, 404));
 };
 
-await check("an OpenSea sale paid in a memecoin is marked as another token and keeps its own symbol", async () => {
+await check("an OpenSea sale paid in a memecoin is marked as another token and keeps its own symbol for display", async () => {
   servePage("money-memecoin", osPage);
   const r = await os.recentSales("money-memecoin", 10);
   const dc = byTx(r.sales, "A3SuTWZ4");
   assert.equal(dc.paidInOtherToken, true);
-  assert.equal(dc.currency, "DC");
+  // A token's own symbol is never a currency: it sits in its own field.
+  assert.equal(dc.currency, null);
+  assert.equal(dc.tokenSymbol, "DC");
   assert.equal(dc.paymentToken, DACITY_MINT);
   assert.equal(dc.price, 3115.141221);
   // Control: a native SOL sale on the same page is SOL, proved by its address.

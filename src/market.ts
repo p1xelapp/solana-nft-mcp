@@ -16,7 +16,7 @@
 
 import type { MeCollectionActivity, MeListing, TraitFloor, MeCollectionIndexEntry } from "./sources/magiceden.js";
 import { clean } from "./lib/untrusted.js";
-import { mePayment } from "./lib/reconcile.js";
+import { mePayment, tensorRelayQuote, TENSOR_RELAY_NOTE } from "./lib/reconcile.js";
 import { venueAddress } from "./sources/solana.js";
 
 /** The most traits this will read off one listing. A minter chooses how many there are. */
@@ -543,6 +543,8 @@ export interface SalesSummary {
     selfFills: number;
     /** Fills against a Magic Eden AMM pool (venue "mmm"). */
     poolFills: number;
+    /** Tensor fills Magic Eden relays (venue "tensortrade"). Counted in sales, outside every SOL figure: their figure is a quote. */
+    tensorRelayed: number;
     /** Transactions that carried more than one item sale. */
     multiItemTransactions: number;
     /** Sales far above the other sales in the window, with the numbers. Flagged, never dropped. */
@@ -605,6 +607,7 @@ export function summarizeSales(
   let unpricedSales = 0;
   let selfFills = 0;
   let poolFills = 0;
+  let tensorRelayed = 0;
   /** Sales paid in something other than SOL, keyed by payment token. */
   const otherPaid = new Map<string, OtherCurrencySales>();
   let paidInOtherCurrency = 0;
@@ -629,6 +632,21 @@ export function summarizeSales(
       if (settled && pay.amount !== null) row.amount = round(row.amount + pay.amount);
       else row.amountsUnread++;
       otherPaid.set(key, row);
+      sales.push({ price: null, e, at: bt, self });
+      continue;
+    }
+    // A payment record naming SOL at a scale SOL does not have says nothing
+    // reliable about the amount: the sale counts, the money does not.
+    if (pay.malformed) {
+      malformedPrices++;
+      if (!self) unpricedSales++;
+      sales.push({ price: null, e, at: bt, self });
+      continue;
+    }
+    // A Tensor fill Magic Eden relays is a sale whose figure is Tensor's
+    // quote, not what anyone paid: counted, and kept out of every SOL figure.
+    if (tensorRelayQuote(e) !== null) {
+      tensorRelayed++;
       sales.push({ price: null, e, at: bt, self });
       continue;
     }
@@ -753,6 +771,11 @@ export function summarizeSales(
     const named = [...otherPaid.values()].map((o) => `${o.sales} in ${o.currency ?? `another token (${o.paymentToken ?? "address not given"})`}`).join(", ");
     notes.push(
       `${paidInOtherCurrency} sale${paidInOtherCurrency === 1 ? " was" : "s were"} paid in a currency other than SOL (${named}). They are counted in sales and left out of volume, median, average, highest, lowest and every per-wallet, per-day and per-venue SOL figure: Magic Eden's price on such a row is a SOL equivalent at its own rate, not what was paid. otherCurrencies gives what was paid, each in its own currency.`,
+    );
+  }
+  if (tensorRelayed) {
+    notes.push(
+      `${tensorRelayed} sale${tensorRelayed === 1 ? " is a Tensor fill" : "s are Tensor fills"} Magic Eden relays (venue tensortrade). They are counted in sales, buyers, sellers and the daily series, and left out of volume, median, average, highest, lowest and every per-wallet, per-day and per-venue SOL figure. ${TENSOR_RELAY_NOTE}`,
     );
   }
   if (selfFills) {
@@ -884,6 +907,7 @@ export function summarizeSales(
       paidInOtherCurrency,
       selfFills,
       poolFills,
+      tensorRelayed,
       multiItemTransactions,
       farAboveRecentRange: farList.slice(0, 10),
       note: notes.join(" "),
@@ -1513,8 +1537,10 @@ export function breakdownByName(
     }
     const settled = (e as { unsettled?: boolean }).unsettled !== true;
     // The summary's money rules: a sale paid in USDC carries only a SOL
-    // equivalent, and a self-fill's price is nobody's payment. Both stay sales.
-    const solPaid = mePayment(e).kind === "sol";
+    // equivalent, a relayed Tensor fill carries a quote, and a self-fill's
+    // price is nobody's payment. All of them stay sales.
+    const pay = mePayment(e);
+    const solPaid = pay.kind === "sol" && !pay.malformed && tensorRelayQuote(e) === null;
     const price = settled && solPaid && !isSelfFill(e.buyer, e.seller) ? usablePrice(e.price) : null;
     const row = acc.get(nm) ?? { name: nm, currency: "SOL", sales: 0, pricedSales: 0, volumeSol: 0, highestSol: null, lowestSol: null };
     row.sales++;

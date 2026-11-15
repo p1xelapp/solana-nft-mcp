@@ -114,6 +114,12 @@ export async function custodyOfListings(
       if (sol.isMagicEdenProgram(p.program)) {
         return { state: "not-checked", why: `the item is held by an account of ${sol.knownProgram(p.program) ?? "a Magic Eden program"}, where a live listing can keep it; whether this one is live was not checked` };
       }
+      // Named so identify can say what it is, not so a listing is judged by
+      // it: a Tensor AMM pool keeps the items it offers in its own accounts,
+      // and whether a marketplace relays that pool's offer was not checked.
+      if (p.program === sol.TENSOR_AMM_PROGRAM) {
+        return { state: "not-checked", why: `the item is held by an account of ${sol.knownProgram(p.program)}, where a live pool offer can keep it; whether this listing is that offer was not checked` };
+      }
       const named = sol.knownProgram(p.program);
       if (!named) {
         return { state: "not-checked", why: `the item is held by an account of a program this server does not know (${p.program}), so whether this listing can be bought was not checked` };

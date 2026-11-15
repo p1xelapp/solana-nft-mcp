@@ -272,21 +272,62 @@ export function currencyByMint(address: string): KnownCurrency | null {
   return STABLECOINS.get(address) ?? null;
 }
 
+/**
+ * The decimals each named currency has on chain: SOL 9 (lamports), the three
+ * stablecoins 6 (each mint read on chain on 2026-11-14). A payment that names
+ * one of these tokens at another scale is not that amount: USDC at 9 decimals
+ * turned 800 into 0.8, and wrapped SOL at 6 turned 0.8 into 800.
+ */
+const DECIMALS: Readonly<Record<KnownCurrency, number>> = { SOL: 9, USDC: 6, USDT: 6, PYUSD: 6 };
+
+/** Why an amount in a named currency cannot be read at the scale given, or null when the scale is right. */
+export function decimalsProblem(currency: string | null, decimals: unknown): string | null {
+  if (currency === null || !Object.hasOwn(DECIMALS, currency)) return null;
+  const want = DECIMALS[currency as KnownCurrency];
+  return decimals === want ? null : `decimals ${typeof decimals === "number" ? decimals : "missing"} where ${currency} has ${want}`;
+}
+
+/**
+ * The largest raw amount a token can hold: SPL token and lamport amounts are
+ * unsigned 64-bit integers. A longer quantity is not an amount of anything.
+ */
+const U64_MAX = 18_446_744_073_709_551_615n;
+
+/** Raw units that fit an on-chain amount: digits only, at most a u64. */
+export function rawUnitsFit(raw: string): boolean {
+  return /^\d{1,20}$/.test(raw) && BigInt(raw) <= U64_MAX;
+}
+
 /** Names a token can give itself to pass for a currency it is not. */
 const CLAIMED_NAMES = new Set(["SOL", "WSOL", "USDC", "USDT", "PYUSD"]);
 const TOKEN_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const TICKER = /^[A-Za-z0-9._-]{1,12}$/;
 
+/**
+ * A symbol that reads as one of the named currencies at a glance: "S0L" with
+ * a zero, "USDC.e", "SOLANA". Only used to word the note; a symbol never
+ * decides a currency either way.
+ */
+function looksLikeClaimedName(sym: string): string | null {
+  const upper = sym.toUpperCase();
+  const letters = upper.replace(/0/g, "O").replace(/1/g, "L").replace(/5/g, "S").replace(/[^A-Z]/g, "");
+  for (const name of CLAIMED_NAMES) if (letters === name || letters.startsWith(name) || upper.startsWith(name)) return name;
+  return null;
+}
+
 export interface PaymentCurrency {
   /**
-   * "SOL", a named stablecoin, or, for another token, the symbol the venue
-   * gave it (for display only). Null when the currency is not established, or
-   * when another token's symbol is the name of a currency it is not.
+   * "SOL" or a named stablecoin, proved by the payment token's address. Null
+   * for every other token and whenever the currency is not established: a
+   * token's own symbol is whatever its creator typed ("S0L", "USDC.e"), and in
+   * this field it read as the real thing at a glance.
    */
   currency: string | null;
   kind: "sol" | "stablecoin" | "other-token" | "unknown";
   /** The payment token's address, when the venue gave one that is an address. */
   paymentToken: string | null;
+  /** Another token's own symbol, for display only, when the venue gave one that is a plain ticker. Never a currency. */
+  tokenSymbol?: string;
   /** Why the currency reads the way it does, when a reader needs telling. */
   note?: string;
 }
@@ -325,13 +366,17 @@ export function classifyPaymentToken(address: unknown, symbol: unknown, venue: s
   }
   if (addr !== null) {
     const posing = sym !== null && CLAIMED_NAMES.has(sym.toUpperCase());
+    const lookalike = sym !== null && !posing ? looksLikeClaimedName(sym) : null;
     return {
-      currency: posing ? null : sym,
+      currency: null,
       kind: "other-token",
       paymentToken: addr,
+      ...(sym !== null ? { tokenSymbol: sym } : {}),
       note: posing
         ? `${venue} labels this payment "${sym}", but its token address ${addr} is not ${sym.toUpperCase()}'s: anyone can create a token with that name. It was paid in another token and is not counted as ${sym.toUpperCase()}.`
-        : `Paid in another token (${sym ?? "no symbol given"}, address ${addr}), not SOL or a dollar stablecoin. The amount is in that token's own units, and the sale is left out of every SOL figure.`,
+        : lookalike
+          ? `Paid in another token whose symbol "${sym}" reads like ${lookalike} but is not: its address ${addr} is not ${lookalike}'s. The amount is in that token's own units, and the sale is left out of every SOL figure.`
+          : `Paid in another token (${sym ?? "no symbol given"}, address ${addr}), not SOL or a dollar stablecoin. The amount is in that token's own units, and the sale is left out of every SOL figure.`,
     };
   }
   return {
@@ -351,7 +396,7 @@ export function classifyPaymentToken(address: unknown, symbol: unknown, venue: s
  */
 export function unitsToAmount(raw: unknown, decimals: unknown): number | null {
   const s = typeof raw === "string" ? raw : typeof raw === "number" && Number.isSafeInteger(raw) ? String(raw) : null;
-  if (s === null || !/^\d{1,40}$/.test(s)) return null;
+  if (s === null || !rawUnitsFit(s)) return null;
   if (typeof decimals !== "number" || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) return null;
   const q = BigInt(s);
   const scale = 10n ** BigInt(decimals);
@@ -367,9 +412,33 @@ export interface MePayment extends PaymentCurrency {
   priceSol: number | null;
   /** Magic Eden's `price` on a stablecoin sale: a SOL equivalent at its own rate, not what was paid. */
   priceSolEquivalent: number | null;
+  /** Set when `priceInfo.splPrice` names SOL or a stablecoin at a scale that token does not have, or an amount no token can hold. */
+  malformed?: string;
 }
 
 const positive = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+
+/** Magic Eden's venue label for a fill it relays from Tensor. */
+export const TENSOR_RELAY_SOURCE = "tensortrade";
+
+/**
+ * The figure Magic Eden gives on a fill it relays from Tensor, or null for any
+ * other row.
+ *
+ * A Claynosaurz fill against a Tensor pool (3d4tADbu..., Tensor's AMM
+ * program TAMM6ub33...) read on chain on 2026-11-15: Magic Eden said
+ * 5.760249584, the pool paid 5.126093668 and the seller received 4.756060184.
+ * Neither side paid or received Magic Eden's figure. The feed does not say
+ * which relayed rows are pool fills, so every one is treated as a quote: the
+ * sale is counted, its figure is shown under its own name, and it is left out
+ * of every SOL figure.
+ */
+export function tensorRelayQuote(row: { source?: unknown; price?: unknown } | null | undefined): number | null {
+  return row?.source === TENSOR_RELAY_SOURCE ? positive(row.price) : null;
+}
+
+export const TENSOR_RELAY_NOTE =
+  "A Tensor fill Magic Eden relays (venue tensortrade). Its figure is Tensor's quote as Magic Eden passed it on, not what anyone paid: on a Tensor pool fill read on chain on 2026-11-15, Magic Eden said 5.76 where the pool paid 5.13 and the seller received 4.76, and this feed does not say which relayed rows are pool fills. The sale is counted and its figure is kept out of every SOL figure; verify_claim with claim sale reads what the transaction moved.";
 
 /**
  * Magic Eden's `price` is SOL, except on a sale paid in an SPL token, where it
@@ -388,15 +457,32 @@ export function mePayment(row: { price?: unknown; priceInfo?: unknown } | null |
   }
   const s = typeof spl === "object" ? (spl as { address?: unknown; rawAmount?: unknown; decimals?: unknown }) : {};
   const c = classifyPaymentToken(s.address, undefined, "Magic Eden");
-  const amount = unitsToAmount(s.rawAmount, s.decimals);
-  if (c.kind === "sol") return { ...c, amount, priceSol: amount, priceSolEquivalent: null };
+  // A named currency at a scale it does not have is no amount of it, and an
+  // amount longer than any token can hold is no amount at all.
+  const scale = decimalsProblem(c.currency, s.decimals);
+  const rawGiven = typeof s.rawAmount === "string" ? s.rawAmount : typeof s.rawAmount === "number" ? String(s.rawAmount) : null;
+  const tooLong = rawGiven !== null && /^\d+$/.test(rawGiven) && !rawUnitsFit(rawGiven);
+  const malformed = scale ?? (tooLong ? "an amount longer than any token can hold" : null);
+  const amount = malformed ? null : unitsToAmount(s.rawAmount, s.decimals);
+  const bad = malformed ? { malformed: `splPrice: ${malformed}` } : {};
+  if (c.kind === "sol") {
+    return {
+      ...c,
+      amount,
+      priceSol: amount,
+      priceSolEquivalent: null,
+      ...bad,
+      ...(malformed ? { note: `Magic Eden names SOL as the payment but gives ${malformed}, so the amount cannot be read and the sale is left out of every SOL figure.` } : {}),
+    };
+  }
   if (c.kind === "stablecoin") {
     return {
       ...c,
       amount,
       priceSol: null,
       priceSolEquivalent: positive(row?.price),
-      note: `Paid in ${c.currency}${amount === null ? "; the amount Magic Eden sent could not be read" : ""}. Magic Eden's price on this row (priceSolEquivalent) is a SOL equivalent at its own rate, not what was paid, so the sale is left out of every SOL figure.`,
+      ...bad,
+      note: `Paid in ${c.currency}${malformed ? `; Magic Eden gives ${malformed}, so the amount cannot be read` : amount === null ? "; the amount Magic Eden sent could not be read" : ""}. Magic Eden's price on this row (priceSolEquivalent) is a SOL equivalent at its own rate, not what was paid, so the sale is left out of every SOL figure.`,
     };
   }
   if (c.kind === "other-token") {

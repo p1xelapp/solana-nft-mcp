@@ -68,7 +68,9 @@ globalThis.fetch = async (url, init = {}) => {
       return json({ total: { floor_price: 1, floor_price_symbol: "SOL", volume: 10, sales: 5, num_owners: 3 } });
     }
     if (target.endsWith("/collections/wrong-collection")) return json({ collection: "wrong-collection", name: "Another collection", total_supply: 500, contracts: [{ chain: "solana", address: OTHER }] });
-    if (target.endsWith("/collections/right-collection")) return json({ collection: "right-collection", name: "The ICON series", total_supply: 500, contracts: [{ chain: "solana", address: ICON }] });
+    // The same size as the collection account below (10 minted): a slug
+    // counting more items than the collection ever minted is a group.
+    if (target.endsWith("/collections/right-collection")) return json({ collection: "right-collection", name: "The ICON series", total_supply: 10, contracts: [{ chain: "solana", address: ICON }] });
     return json({ message: "not served by the identity preload" }, 404);
   }
   if (target.includes("magiceden.dev")) {

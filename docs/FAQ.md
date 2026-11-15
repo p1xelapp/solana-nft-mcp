@@ -107,7 +107,8 @@ Neither API is read. Tensor's API page (read 2026-11-14) gives access through a 
 no key to use without asking Tensor first. Tensor's sales of Metaplex Core items are read anyway,
 from the chain: each one is a transfer inside Tensor's marketplace program with the payment
 beside it, and `verify_claim` (claim `sale`) or `get_recent_sales` with `chainScan` decode it.
-Tensor's listings, bids and floor are not read. Rarible relaunched a Solana marketplace in
+Given one card's address instead of a collection's, `chainScan` reads that card's own history;
+given a wallet, it says so and reads nothing. Tensor's listings, bids and floor are not read. Rarible relaunched a Solana marketplace in
 August 2026, but its API needs a key with a 100-requests-per-month free tier and cannot label
 a Magic Eden fill as Magic Eden's, so reading it would repeat the marketplace mix-ups this server
 exists to avoid. Both APIs sit in the source catalog as planned, with the trigger for adding them.
@@ -115,13 +116,20 @@ exists to avoid. Both APIs sit in the source catalog as planned, with the trigge
 **Can it check a sale someone posted?**
 Yes, from the transaction itself. Give `verify_claim` the claim `sale`, the transaction signature
 as the subject, the item's address, and the price and currency if you have them. It reads the
-transaction and says which marketplace program made the sale, who bought and sold, what the
-seller received and what was paid in all, in the currency named by its token's address. The two
-figures differ: Magic Eden and Tensor quote what the seller receives, OpenSea what the buyer
-paid, and a price matching either is confirmed. A listing, a delisting, a plain transfer, a
-delegate's move or a bid is not a sale. A transaction that moved several items has no per-item
-price, and neither does a fill with one wallet as buyer and seller, so a price claimed for either
-is unverifiable, as is a transaction it could not read; none of those is ever contradicted.
+transaction and says which marketplace program made the sale, who bought and sold, and each figure
+it can read: the order price, what the seller received, what the seller kept after the network
+fee, and what was paid in all, in the currency named by its token's address. Marketplaces quote
+different ones (Magic Eden and Tensor what the seller receives, OpenSea what the buyer paid, an
+accepted offer its order price), so a price matching any of them at the precision you wrote it
+(0.27 for 0.267) is confirmed, and the answer says which. A price between the figures that
+matches none is unverifiable; only one outside all of them is contradicted. Only money the
+marketplace's own instruction moved counts, so a side payment in the same transaction never
+becomes the price. A listing, a delisting, a plain transfer, a delegate's move or a bid is not a
+sale. A transaction that moved several items has no per-item price, and neither does a fill with
+one wallet as buyer and seller, so a price claimed for either is unverifiable, as is a
+transaction it could not read, a compressed NFT, an address that is not an item (the answer names
+the item that did move) and a fill through a program layout no real transaction has checked yet;
+none of those is ever contradicted.
 
 **Does it cost anything to run?**
 No. Public endpoints, paced politely, cached in memory. Heavy use of the public Solana
