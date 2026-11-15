@@ -106,7 +106,7 @@ function rpc(b) {
       return ok(p[0] === M.B && !p[1]?.before ? [{ signature: LISTING_SIG, slot: 990, blockTime: 1794256044, err: null }] : []);
     case "getTransaction":
       return ok(p[0] === LISTING_SIG
-        ? { slot: 990, blockTime: 1794256044, meta: { err: null, logMessages: ["Program log: Instruction: TransferV1"], innerInstructions: [] },
+        ? { version: 0, slot: 990, blockTime: 1794256044, meta: { err: null, logMessages: ["Program log: Instruction: TransferV1"], innerInstructions: [] },
             transaction: { message: { accountKeys: [], instructions: [
               { programId: OPENSEA, accounts: [S[2], LISTING_ACCOUNT, M.B], data: "3" },
               { programId: CORE, accounts: [M.B, COL, S[2], S[2], LISTING_ACCOUNT, SYSTEM, CORE], data: encode(Buffer.from([14, 0])) },

@@ -103,7 +103,8 @@ sales the marketplace feeds do not carry:
 - **Version-1 transactions are read.** One sale in the newer format failed a
   card's whole history. Every read now asks for it, and a format the server
   cannot read is named as that, never as a sale, a transfer or a missing
-  item; inside an item's history it is an unread row. A node that refuses a
+  item; inside an item's history it is an unread row, and so is a reply that
+  states no format. A node that refuses a
   format without naming one is passed over for the next endpoint.
 - **Sales are proven from the chain, Tensor's included.** `verify_claim` with
   claim `sale` decodes the transaction and matches a price against the order
@@ -111,10 +112,12 @@ sales the marketplace feeds do not carry:
   and what the buyer paid, at the precision it was written (half a unit of
   its last place), and says which it matched. A price is given only when the
   marketplace's own instructions account for every move of money touching
-  the buyer, the seller or anyone the sale paid: a side payment, a stake
-  withdrawal, a new account or a cancelled bid beside the fill makes the price
-  unverifiable, and what the buyer paid is given only when it is the whole
-  price. A compressed item, an address that is not an item, or an unreadable
+  the buyer, the seller, anyone the sale paid, or a token account one of them
+  owns. Where the price is read from balances, as on a Tensor take_bid,
+  nothing but ComputeBudget may run beside the sale; elsewhere a side
+  payment, a stake withdrawal, a new account or a cancelled bid touching them
+  makes the price unverifiable. What the buyer paid is given only when it is
+  the whole price. A compressed item, an address that is not an item, or an unreadable
   transaction is unverifiable, never contradicted, and so is a fill through a
   layout no real transaction of its kind has been checked against. `get_recent_sales` with `chainScan: true`
   lists the Tensor sales and OpenSea's own that the feeds miss; given a card it

@@ -1727,12 +1727,22 @@ export async function getProvenance(
       // A format the sale decoder refuses is refused here too, as a hole: a
       // node that named version 2 was asked again and its reply was read as
       // a transfer out of a listing while the decoder called the same
-      // transaction unreadable. (Every read states its version; a reply
-      // without one is read as before.)
-      if (tx.version !== undefined && !READABLE_TRANSACTION_VERSIONS.has(tx.version)) {
+      // transaction unreadable. A node asked with a format ceiling always
+      // states the version, so a reply without one is not read as any.
+      if (!READABLE_TRANSACTION_VERSIONS.has(tx.version)) {
         unreadable++;
         const v = typeof tx.version === "number" && Number.isSafeInteger(tx.version) ? String(tx.version) : "(unreadable)";
-        events.push(hole(sig.signature, time, "unreadable", 1, `this transaction is in format version ${v}, which this server does not read (it reads legacy, 0 and 1); whatever it did to the asset is unknown, and anything read in order across it must start over`));
+        events.push(
+          hole(
+            sig.signature,
+            time,
+            "unreadable",
+            1,
+            tx.version === undefined
+              ? "this transaction came back without its format version, so it is not read as any format; whatever it did to the asset is unknown, and anything read in order across it must start over"
+              : `this transaction is in format version ${v}, which this server does not read (it reads legacy, 0 and 1); whatever it did to the asset is unknown, and anything read in order across it must start over`,
+          ),
+        );
         continue;
       }
       if (tx.meta.err) continue; // failed transaction: nothing happened on chain

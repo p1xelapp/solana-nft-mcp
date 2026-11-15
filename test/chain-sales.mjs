@@ -316,6 +316,9 @@ const withSideTransfer = (short, from, to, lamports) => {
 };
 /** A valid address none of the saved sales names. */
 const STRANGER = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
+/** Two more, from sha256 of "chain-sales-stranger-b" and "chain-sales-wrapped-sol-account". */
+const EXTRA_ACCOUNT_B = "5rr13RUQe3NxAAZ4WyfVbr5BsKNvn1P8no8KED3reapz";
+const WRAPPED_SOL_ACCOUNT = "CHsmja3uQ8yzm6eCqx9A2D6HjjvrfJEPqD8LVcDQeQpn";
 
 await check("money moved outside the marketplace's instructions is never part of the price", () => {
   const ops = decode("5wrdbZQq");
@@ -334,16 +337,20 @@ await check("money moved outside the marketplace's instructions is never part of
   // The buyer pays the OpenSea seller 40 SOL more on the side.
   const sidePrice = decodeSale(withSideTransfer("5wrdbZQq", ops.buyer, ops.seller, 40_000_000_000), ITEM["5wrdbZQq"], sig("5wrdbZQq"));
   assert.equal(sidePrice.status, "cannot-tell");
-  // Money between two wallets the venue never named is not a payee of the take_bid.
+  // A take_bid's figures come from balances, which any instruction can move,
+  // so beside one nothing else may run, even money between two wallets the
+  // venue never named.
   const unrelated = decodeSale(withSideTransfer("3NoxXys3", STRANGER, ops.buyer, 3_000_000_000), ITEM["3NoxXys3"], sig("3NoxXys3"));
-  assert.equal(unrelated.status, "sale");
-  assert.equal(unrelated.price, 0.0294);
-  // The seller paying someone beside a take_bid moves the balance its price
-  // is read from, so that price cannot be told either.
+  assert.equal(unrelated.status, "cannot-tell");
+  assert.match(unrelated.reason, /Instruction 3 of this transaction \(the System Program's transfer\) is not part of Tensor's take_bid_core, and this sale's figures come from balance changes/);
   const tip = decodeSale(withSideTransfer("3NoxXys3", bid.seller, STRANGER, 1_000_000), ITEM["3NoxXys3"], sig("3NoxXys3"));
   assert.equal(tip.status, "cannot-tell");
   assert.equal(tip.price, undefined);
-  assert.match(tip.reason, /involves the seller .* not part of Tensor's take_bid_core/);
+  // Beside a price read from the venue's own transfers, money between two
+  // wallets the sale does not involve is no part of it.
+  const apart = decodeSale(withSideTransfer("5wrdbZQq", STRANGER, EXTRA_ACCOUNT_B, 3_000_000_000), ITEM["5wrdbZQq"], sig("5wrdbZQq"));
+  assert.equal(apart.status, "sale", apart.reason);
+  assert.equal(apart.price, 0.3);
   // Control: the untouched transactions keep their figures.
   assert.equal(ops.buyerPaid, 0.3);
   assert.equal(bid.price, 0.0294);
@@ -435,8 +442,64 @@ await check("a take_bid seller's own instructions beside the fill make its price
     assert.equal(d.price, undefined, kind);
     assert.equal(d.sellerReceived, undefined, kind);
     assert.match(d.reason, what, kind);
-    assert.match(d.reason, /involves the seller 5YXxoTJe\w+ and is not part of Tensor's take_bid_core/, kind);
+    assert.match(d.reason, /is not part of Tensor's take_bid_core, and this sale's figures come from balance changes/, kind);
   }
+});
+
+const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const wsolBalance = (accountIndex, owner, amount) => ({ accountIndex, mint: WRAPPED_SOL, owner, programId: TOKEN_PROGRAM, uiTokenAmount: { amount: String(amount), decimals: 9, uiAmount: amount / 1e9, uiAmountString: String(amount / 1e9) } });
+const addAccount = (t, pubkey, pre, post, signer = false) => {
+  t.transaction.message.accountKeys.push({ pubkey, signer, writable: true, source: "transaction" });
+  t.meta.preBalances.push(pre);
+  t.meta.postBalances.push(post);
+  return t.transaction.message.accountKeys.length - 1;
+};
+/**
+ * A real sale with money moved through a wrapped-SOL account the seller
+ * owns, by instructions that never name the seller's wallet: another wallet
+ * pays 40 SOL into it and syncs it ("fund"), or a delegate moves 0.08 wrapped
+ * SOL out of it ("drain"). The balances and token balances move to match,
+ * and lamports still balance to the fee.
+ */
+const throughSellerTokenAccount = (short, kind, newSig) => {
+  const t = tx(short);
+  const seller = decode(short).seller;
+  addAccount(t, STRANGER, 50_000_000_000, kind === "fund" ? 10_000_000_000 : 50_000_000_000, true);
+  if (kind === "fund") {
+    const i = addAccount(t, WRAPPED_SOL_ACCOUNT, 2_039_280, 40_002_039_280);
+    t.meta.preTokenBalances = [...(t.meta.preTokenBalances ?? []), wsolBalance(i, seller, 0)];
+    t.meta.postTokenBalances = [...(t.meta.postTokenBalances ?? []), wsolBalance(i, seller, 40_000_000_000)];
+    t.transaction.message.instructions.push({ program: "system", programId: "11111111111111111111111111111111", parsed: { type: "transfer", info: { source: STRANGER, destination: WRAPPED_SOL_ACCOUNT, lamports: 40_000_000_000 } }, stackHeight: null });
+    t.transaction.message.instructions.push({ program: "spl-token", programId: TOKEN_PROGRAM, parsed: { type: "syncNative", info: { account: WRAPPED_SOL_ACCOUNT } }, stackHeight: null });
+  } else {
+    const i = addAccount(t, WRAPPED_SOL_ACCOUNT, 82_039_280, 2_039_280);
+    const k = addAccount(t, EXTRA_ACCOUNT_B, 2_039_280, 82_039_280);
+    t.meta.preTokenBalances = [...(t.meta.preTokenBalances ?? []), wsolBalance(i, seller, 80_000_000), wsolBalance(k, STRANGER, 0)];
+    t.meta.postTokenBalances = [...(t.meta.postTokenBalances ?? []), wsolBalance(i, seller, 0), wsolBalance(k, STRANGER, 80_000_000)];
+    t.transaction.message.instructions.push({ program: "spl-token", programId: TOKEN_PROGRAM, parsed: { type: "transfer", info: { source: WRAPPED_SOL_ACCOUNT, destination: EXTRA_ACCOUNT_B, authority: STRANGER, amount: "80000000" } }, stackHeight: null });
+  }
+  if (newSig) t.transaction.signatures[0] = newSig;
+  return t;
+};
+
+await check("money moved through a token account the seller owns, without naming the seller, gives no price", () => {
+  for (const kind of ["fund", "drain"]) {
+    const t = throughSellerTokenAccount("2gAgsKK7", kind);
+    assert.equal(t.meta.preBalances.reduce((a, b) => a + b, 0) - t.meta.postBalances.reduce((a, b) => a + b, 0), t.meta.fee, `${kind}: lamports balance to the fee`);
+    // Beside a take_bid, whose figures come from balances: 40.1 and 0.02 before.
+    const bid = decodeSale(t, ITEM["2gAgsKK7"], sig("2gAgsKK7"));
+    assert.equal(bid.status, "cannot-tell", `${kind}: price ${bid.price}`);
+    assert.equal(bid.price, undefined, kind);
+    assert.match(bid.reason, /this sale's figures come from balance changes/, kind);
+    // Beside a price read from the venue's own transfers: the seller's token account is the seller's money.
+    const buy = decodeSale(throughSellerTokenAccount("5wrdbZQq", kind), ITEM["5wrdbZQq"], sig("5wrdbZQq"));
+    assert.equal(buy.status, "cannot-tell", `${kind}: price ${buy.price}`);
+    assert.match(buy.reason, new RegExp(`involves ${WRAPPED_SOL_ACCOUNT}, a token account of the seller B1ZK9Mwu\\w+ and is not part of OpenSea's buy_core`), kind);
+  }
+  // Controls: the real fills keep their figures.
+  assert.equal(decode("2gAgsKK7").price, 0.1);
+  assert.equal(decode("5wrdbZQq").price, 0.3);
 });
 
 await check("the buyer's own figure is given only when it is the whole of what the fill paid", () => {
@@ -957,6 +1020,20 @@ await check("verify_claim on a take_bid with the seller's own instructions besid
   // Control: the real take_bid at its real price.
   const real = await verifyClaim({ claim: "sale", subject: sig("2gAgsKK7"), item: ITEM["2gAgsKK7"], value: 0.1 });
   assert.equal(real.verdict, "confirmed", real.explanation);
+});
+
+await check("verify_claim on a take_bid with money moved through the seller's token account confirms and contradicts no price", async () => {
+  for (const [kind, moved, salt] of [["fund", 40.1, "U"], ["drain", 0.02, "S"]]) {
+    const s = saltedSig(sig("2gAgsKK7"), salt);
+    synthetic.set(s, { tx: throughSellerTokenAccount("2gAgsKK7", kind, s) });
+    for (const value of [moved, 0.1]) {
+      const r = await verifyClaim({ claim: "sale", subject: s, item: ITEM["2gAgsKK7"], value });
+      assert.equal(r.verdict, "unverifiable", `${kind} at ${value}: ${r.explanation}`);
+    }
+  }
+  // Control: the real take_bid at its real price, and a claim of 40.1 on it contradicted.
+  assert.equal((await verifyClaim({ claim: "sale", subject: sig("2gAgsKK7"), item: ITEM["2gAgsKK7"], value: 0.1 })).verdict, "confirmed");
+  assert.equal((await verifyClaim({ claim: "sale", subject: sig("2gAgsKK7"), item: ITEM["2gAgsKK7"], value: 40.1 })).verdict, "contradicted");
 });
 
 await check("verify_claim never confirms a deposit below the fill as what the buyer paid", async () => {

@@ -20,7 +20,7 @@ globalThis.fetch = async (input, init) => {
     result = [{ signature: "3".repeat(88), blockTime: 1700000100, err: null }, { signature: "2".repeat(88), blockTime: 1700000000, err: null }];
   } else if (body.method === "getTransaction") {
     const burned = body.params[0] === "3".repeat(88);
-    result = { blockTime: burned ? 1700000100 : 1700000000, meta: { err: null, logMessages: [], innerInstructions: [] }, transaction: { message: { accountKeys: [], instructions: [{ programId: CORE, accounts: [MINT, CORE, OWNER, OWNER, OWNER], data: burned ? "D" : "M" }] } } };
+    result = { version: 0, blockTime: burned ? 1700000100 : 1700000000, meta: { err: null, logMessages: [], innerInstructions: [] }, transaction: { message: { accountKeys: [], instructions: [{ programId: CORE, accounts: [MINT, CORE, OWNER, OWNER, OWNER], data: burned ? "D" : "M" }] } } };
   } else throw Error(`Unexpected RPC ${body.method}`);
   return json({ jsonrpc: "2.0", id: body.id, result });
 };

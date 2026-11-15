@@ -78,7 +78,7 @@ const LAST = address("r7-last");
 const b58data = (bytes) => base58(bytes);
 const createIx = () => ({ programId: CORE, accounts: [MINT, COL, AUTH, PAYER, FIRST, CORE, SYSTEM, CORE], data: b58data(Buffer.concat([Buffer.from([20, 0]), str("Roles fixture item"), str("https://example.invalid/a"), Buffer.from([0, 0])])) });
 const transferIx = (to) => ({ programId: CORE, accounts: [MINT, COL, PAYER, FIRST, to, SYSTEM, CORE], data: b58data(Buffer.from([14, 0])) });
-const tx = (ixs, inner = []) => ({ blockTime: 1_700_000_000, meta: { err: null, logMessages: ["Program log: Instruction: TransferV1"], innerInstructions: inner }, transaction: { message: { accountKeys: [], instructions: ixs } } });
+const tx = (ixs, inner = []) => ({ version: 0, blockTime: 1_700_000_000, meta: { err: null, logMessages: ["Program log: Instruction: TransferV1"], innerInstructions: inner }, transaction: { message: { accountKeys: [], instructions: ixs } } });
 /** One signature, one transaction, the asset in COL whose authority is `authority` (or the read fails). */
 function rpcFor(host, t, { authority = LAST, failCollection = false } = {}) {
   process.env.SOLANA_RPC_URL = `https://${host}.invalid`;
