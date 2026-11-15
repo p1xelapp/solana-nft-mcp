@@ -42,7 +42,8 @@ const meSales = [
   { signature: sig("fill-1"), type: "buyNow", tokenMint: ITEM_A, buyer: BUYER, seller: SELLER, price: 0.01, blockTime: now - 7200, source: "magiceden_v2" },
   { signature: sig("fill-2"), type: "buyNow", tokenMint: ITEM_B, buyer: BUYER, seller: SELLER, price: 0.02, blockTime: now - 9000, source: "magiceden_v2" },
 ];
-const osEvent = (transaction, mint, quantity, at) => ({ event_type: "sale", event_timestamp: at, transaction, buyer: BUYER, seller: SELLER, payment: { quantity, decimals: 9, symbol: "SOL" }, nft: { identifier: mint, name: "Portrait (1/10)" } });
+// OpenSea's schema requires the payment token's address; native SOL is the System Program's.
+const osEvent = (transaction, mint, quantity, at) => ({ event_type: "sale", event_timestamp: at, transaction, buyer: BUYER, seller: SELLER, payment: { quantity, decimals: 9, symbol: "SOL", token_address: "11111111111111111111111111111111" }, nft: { identifier: mint, name: "Portrait (1/10)" } });
 const osSales = [
   osEvent(sig("fill-1"), ITEM_A, "11200000", now - 7200),
   // Same signature as a Magic Eden fill but a different item: not the same sale.

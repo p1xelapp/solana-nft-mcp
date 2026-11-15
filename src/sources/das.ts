@@ -282,9 +282,12 @@ interface RawAsset {
   interface?: string;
   burnt?: boolean;
   content?: { metadata?: { name?: string; symbol?: string; attributes?: { trait_type?: string; value?: unknown }[] }; links?: { image?: string }; json_uri?: string };
-  grouping?: { group_key?: string; group_value?: string; verified?: boolean }[];
+  // `group_key` can also be "group" (membership in a Core group, not a
+  // collection) and `group_value` can be null; only a "collection" key with
+  // an address is read as a collection below.
+  grouping?: { group_key?: string; group_value?: string | null; verified?: boolean }[];
   ownership?: { owner?: string; frozen?: boolean; delegated?: boolean; delegate?: string | null; ownership_model?: string };
-  royalty?: { percent?: number; basis_points?: number; primary_sale_happened?: boolean; locked?: boolean };
+  royalty?: { percent?: number; basis_points?: number; basis_points_raw?: number | null; inherited?: boolean | null; primary_sale_happened?: boolean; locked?: boolean };
   compression?: { compressed?: boolean; tree?: string; leaf_id?: number };
   plugins?: Record<string, unknown>;
   external_plugins?: unknown[];
@@ -347,6 +350,11 @@ export interface DasAsset {
 const KNOWN_INTERFACES = new Set([
   "MplCoreAsset",
   "MplCoreCollection",
+  // Added to the index's published types in 2026 (digital-asset-standard-api
+  // commits 6dc607e and 977d6bc, read 2026-11-14): a Metaplex Core group, and
+  // a Bubblegum V2 compressed item. Read as "unknown" before.
+  "MplCoreGroup",
+  "MplBubblegumV2",
   "ProgrammableNFT",
   "V1_NFT",
   "V2_NFT",
@@ -399,7 +407,7 @@ const deadlinePassed = (what: string, ms = READ_DEADLINE_MS): Error =>
   );
 
 function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
-  if (compressed) return "compressed";
+  if (compressed || iface === "MplBubblegumV2") return "compressed";
   if (iface === "MplCoreAsset") return "metaplex-core";
   if (iface === "MplCoreCollection") return "metaplex-core-collection";
   if (iface === "ProgrammableNFT") return "programmable-nft";
@@ -508,10 +516,19 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   // including Candy cards whose collections enforce 10%. A zero there reads as
   // "no royalty", so for Core it is not relayed at all.
   const isCore = iface === "MplCoreAsset";
+  // A Bubblegum V2 item can inherit its royalty from its collection: the leaf
+  // then stores 65535, and the index's published types resolve that into
+  // basis_points with `inherited: true` (commit 977d6bc, read 2026-11-14). An
+  // index that has not resolved it would hand over the sentinel, which read as
+  // a 655% royalty. Nothing above 10,000 basis points is a royalty.
+  const bps = typeof a.royalty?.basis_points === "number" && Number.isFinite(a.royalty.basis_points) ? a.royalty.basis_points : null;
+  const inherited = a.royalty?.inherited === true || a.royalty?.basis_points_raw === 65535;
   const pct = isCore
     ? null
-    : typeof a.royalty?.basis_points === "number"
-      ? a.royalty.basis_points / 100
+    : bps !== null
+      ? bps >= 0 && bps <= 10_000
+        ? bps / 100
+        : null
       : typeof a.royalty?.percent === "number"
         ? a.royalty.percent * 100
         : null;
@@ -536,7 +553,11 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     royaltyPct: pct !== null && Number.isFinite(pct) ? Math.round(pct * 100) / 100 : null,
     ...(isCore
       ? { royaltyNote: "Not reported for Metaplex Core: a Core royalty lives in a Royalties plugin on the asset or its collection, which this index does not reflect. get_asset_trust decodes that plugin from the chain." }
-      : {}),
+      : bps !== null && (bps < 0 || bps > 10_000)
+        ? { royaltyNote: inherited ? "This item inherits its royalty from its collection, and the index did not say what that royalty is." : "The index reported a royalty above 100%, which is not a royalty, so none is shown." }
+        : inherited
+          ? { royaltyNote: "This item inherits its royalty from its collection; the figure is the index's reading of the collection's royalty." }
+          : {}),
     burnt: a.burnt === true,
     compressed,
     // Plugin KEYS are index-supplied strings too: a key carrying line breaks
@@ -556,6 +577,49 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     readFrom: `${SOURCE} via ${endpoint}`,
     readAt,
   };
+}
+
+/**
+ * The arweave id inside an image link, whatever gateway or image proxy it
+ * passes through, or null.
+ *
+ * Arweave is content-addressed: a 43-character id names the same bytes on
+ * arweave.net, on any other gateway and inside a marketplace's image proxy.
+ * Candy's parallels differ only in colour, and their files were within 0.03%
+ * of each other in size, so the id is the only cheap way to tell two of them
+ * apart. Read from the text of the link; the link is never opened.
+ */
+export function arweaveId(url: string | null | undefined): string | null {
+  if (typeof url !== "string" || url.length === 0 || url.length > 4096) return null;
+  let text = url;
+  // A proxy carries the original link encoded, once or twice.
+  for (let i = 0; i < 2 && /%[0-9a-f]{2}/i.test(text); i++) {
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      break;
+    }
+  }
+  const ar = /\bar:\/\/([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/.exec(text);
+  if (ar) return ar[1]!;
+  const gateway = /https?:\/\/([a-z0-9.-]+)\/([A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])/gi;
+  for (let m = gateway.exec(text); m; m = gateway.exec(text)) {
+    if (/arweave|irys|permaweb|ar-io/i.test(m[1]!)) return m[2]!;
+  }
+  return null;
+}
+
+/**
+ * True when two image links show the same picture: the same arweave id when
+ * both carry one, otherwise the same link. A link with an id and one without
+ * cannot be shown to agree, so they do not.
+ */
+export function sameImage(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const ia = arweaveId(a);
+  const ib = arweaveId(b);
+  if (ia || ib) return ia !== null && ia === ib;
+  return a.trim() === b.trim();
 }
 
 export interface DasAssetRead {

@@ -26,17 +26,18 @@ import * as sol from "./sources/solana.js";
 import { REGISTRY, searchRegistry } from "./registry.js";
 import { reconcileFloors, oneListingTwoVenues, type FloorQuote } from "./lib/reconcile.js";
 import { GLOSSARY, PRESENTATION_RULES } from "./glossary.js";
-import { identify, wrongShape, base58ByteLength, fungibleToken, tokenWording, isLoader } from "./identify.js";
-import { roleOf, knownIssuer, describeIssuerKey } from "./issuers.js";
+import { identify, wrongShape, base58ByteLength, fungibleToken, tokenWording, isLoader, findOnChainByName } from "./identify.js";
+import { roleOf, knownIssuer, describeIssuerKey, collectionIssuer } from "./issuers.js";
 import { RECIPES, RECIPE_GOALS, SOURCE_TERMS } from "./recipes.js";
 import { verifyClaim } from "./verify.js";
+import { chainSaleRow, feedSignatures, scanCollectionSales } from "./lib/chain-sales.js";
 import { decodeCoreAccountPlugins, decodeOracleValidation, deriveTrust, oracleAccountsToRead, oracleReadingKey, splMintAuthority, type OracleReading } from "./lib/coreplugins.js";
 import { clean, cleanFields, inspectUntrusted, neutraliseStructure, profileLinkUrl, safeHttpsUrl, withoutLinks } from "./lib/untrusted.js";
 import { summarizeHoldings, summarizeActivity, summarizeOpenSeaEvents, floorCeiling, compareReaderCounts, chainCountIsATotal, type FloorQuoteForValue } from "./wallet.js";
 import * as das from "./sources/das.js";
 import { explorerLinks } from "./sources/catalog.js";
 import { sourceStatus } from "./status.js";
-import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter, nameMatchDetail, matchesName, checkTraitFilters } from "./market.js";
+import { summarizeSales, bestDeals, dedupeEvents, breakdownByName, parseSerial, applyNameFilter, nameMatchDetail, matchesName, checkTraitFilters, countSameFills } from "./market.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, nameForSymbol } from "./names.js";
 import { classifyAirdrop, summariseAirdrops } from "./spam.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
@@ -729,34 +730,41 @@ registerTool(
     description:
       "Check whether something a user was TOLD is actually true. Use this whenever a claim about a " +
       "collection or asset carries stakes - a project announcing a supply, a seller saying a card has " +
-      "never been traded, a post claiming a wallet holds something, a quoted floor price. Returns " +
+      "never been traded, a post claiming a wallet holds something, a quoted floor price, a posted sale. Returns " +
       "confirmed, contradicted, or unverifiable, together with the exact numbers observed, where they " +
       "were read, and instructions to reproduce the check independently. For never-traded, transfers " +
-      "alone cannot prove a sale: migrations, gifts and listings return unverifiable. The answer does not " +
+      "alone cannot prove a sale: migrations, gifts and listings return unverifiable. For sale, pass the " +
+      "transaction signature as subject and the item's address as item, optionally the price as value and its " +
+      "currency; the transaction is decoded from the chain (Magic Eden, its pools, Tensor and OpenSea programs, " +
+      "Metaplex Core items only) and the answer gives the venue, buyer, seller, what the seller received and " +
+      "what was paid in total, in the currency named by its mint address. A listing, delisting, plain transfer, " +
+      "delegate move or bid is not a sale. The answer does not " +
       "require trusting this server either. Willingly answers UNVERIFIABLE rather than guessing; a " +
       "tool that always returns true or false will eventually return false with confidence.",
     annotations: READ_ONLY,
     inputSchema: {
       claim: z
-        .enum(["supply", "never-traded", "ownership", "floor"])
+        .enum(["supply", "never-traded", "ownership", "floor", "sale"])
         .describe("What kind of statement is being checked"),
-      // Three of the four claims take an address and one takes a marketplace
-      // symbol, so the shape is checked against the claim rather than left as
-      // any 120 characters: an unconstrained subject spends chain reads on
-      // arbitrary text and is echoed back in the receipt.
+      // Three of the claims take an address, floor takes a marketplace symbol
+      // and sale a transaction signature, so the shape is checked against the
+      // claim rather than left as any 120 characters: an unconstrained subject
+      // spends chain reads on arbitrary text and is echoed back in the receipt.
       subject: z
         .string()
         .trim()
         .min(1)
         .max(120)
-        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[a-z0-9_.-]{1,80}$/i, {
-          error: (i) => (typeof i.input === "string" && wrongShape(i.input) ? addressRefusal(i.input) : "an address for supply, never-traded and ownership, or a marketplace symbol for floor"),
+        .regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$|^[1-9A-HJ-NP-Za-km-z]{86,88}$|^[a-z0-9_.-]{1,80}$/i, {
+          error: (i) => (typeof i.input === "string" && wrongShape(i.input) ? addressRefusal(i.input) : "an address for supply, never-traded and ownership, a marketplace symbol for floor, or a transaction signature for sale"),
           abort: true,
         })
         // An Ethereum address is 42 letters and digits, so it passed the
-        // symbol half of the pattern and went on to spend chain reads.
-        .refine((s) => wrongShape(s) === null, { error: (i) => addressRefusal(i.input) })
-        .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor"),
+        // symbol half of the pattern and went on to spend chain reads. A
+        // transaction signature passes here and is refused below for every
+        // claim but sale.
+        .refine((s) => wrongShape(s) === null || wrongShape(s)?.kind === "transaction-signature", { error: (i) => addressRefusal(i.input) })
+        .describe("Collection address for supply, asset mint for never-traded/ownership, Magic Eden symbol for floor, transaction signature for sale"),
       value: z
         .number()
         .finite()
@@ -765,11 +773,24 @@ registerTool(
         // unbounded number in the published schema invites 1e308.
         .max(1e12)
         .optional()
-        .describe("The claimed number - required for supply (count) and floor (SOL)"),
+        .describe("The claimed number - required for supply (count) and floor (SOL); optional for sale (the price, in currency, SOL when currency is not given)"),
       wallet: addressSchema.optional().describe("The wallet said to own it - required for ownership claims"),
+      item: addressSchema.optional().describe("The item said to be sold - required for sale claims"),
+      currency: z
+        .string()
+        .trim()
+        .max(44)
+        .regex(/^(SOL|USDC|USDT|PYUSD)$|^[1-9A-HJ-NP-Za-km-z]{32,44}$/i, "SOL, USDC, USDT, PYUSD or a token's mint address")
+        .optional()
+        .describe("For sale claims: the currency of value, by name (SOL, USDC, USDT, PYUSD) or by mint address. Matched by mint address, never by a token's symbol"),
     },
   },
-  guard(async (args) => ok(await verifyClaim(args.claim === "floor" ? { ...args, subject: symbolSchema.parse(args.subject) } : args))),
+  guard(async (args) => {
+    // A signature is a subject for sale claims only; every other claim keeps
+    // the refusal that tells the person what to paste instead.
+    if (args.claim !== "sale" && wrongShape(args.subject)?.kind === "transaction-signature") throw new BadInputError(addressRefusal(args.subject));
+    return ok(await verifyClaim(args.claim === "floor" ? { ...args, subject: symbolSchema.parse(args.subject) } : args));
+  }),
 );
 
 /**
@@ -990,6 +1011,14 @@ registerTool(
       });
     }
     const results = searchRegistry(query);
+    // The registry is regenerated by hand, so a drop newer than it is looked
+    // for in the chain's own list under each known issuer key, unless the
+    // registry already holds the name exactly. That list is one shared read
+    // kept for hours; when it cannot be read, the registry answers alone and
+    // the result says so.
+    const wantKey = collectionNameKey(query);
+    const exactInRegistry = results.some((r) => collectionNameKey(r.name) === wantKey || (r.aliases ?? []).some((a) => collectionNameKey(a) === wantKey));
+    const onChain = exactInRegistry ? null : await findOnChainByName(query, { exact: false });
     // Plain names resolve against the whole Magic Eden directory (bundled
     // snapshot, then the live directory once it has warmed), so a person who
     // only knows "collector crypt" gets a symbol without a marketplace hunt.
@@ -1083,7 +1112,7 @@ registerTool(
       }
     }
 
-    const nothing = results.length === 0 && names.matches.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length;
+    const nothing = results.length === 0 && names.matches.length === 0 && !(opensea as { hits?: unknown[] } | undefined)?.hits?.length && !onChain?.matches.length;
     // A broad word like "batman" matches 77 registry entries, and their notes
     // and keywords made that 35 KB on their own. The notes are context for one
     // collection a reader has already chosen, not something to read 77 times.
@@ -1102,6 +1131,20 @@ registerTool(
       query: clean(query),
       results: fittedResults.rows,
       ...(fittedResults.note ? { answerSize: fittedResults.note } : {}),
+      ...(onChain
+        ? {
+            foundOnChain: {
+              matches: onChain.matches,
+              searched: onChain.searched,
+              ...(onChain.failed.length ? { notRead: onChain.failed } : {}),
+              readThis: onChain.matches.length
+                ? "These collections are on the chain under a known issuer's key and are not in the bundled registry, which is older than them. Each carries its issuer verdict: naming a key needs no signature from it, so only a collection with items that the issuer table lists is called the issuer's, and one with no items yet is unverified."
+                : onChain.failed.length
+                  ? "The chain's list of collections under the known issuer keys could not be read just now, so only the bundled registry was searched for them."
+                  : "No collection the chain lists under a known issuer key, and the registry lacks, has this name.",
+            },
+          }
+        : {}),
       ...(venueConfirmed
         ? {
             venueConfirmed: {
@@ -1479,6 +1522,7 @@ registerTool(
         source: "magiceden",
         value: mkt.floorPriceSol,
         currency: "SOL",
+        priceIs: "seller-ask",
         stale: Boolean(mkt.stale),
         ...(meFloorCheck?.floorListing ? { listing: { mint: meFloorCheck.floorListing.mint, maker: meFloorCheck.floorListing.seller }, listingCustody: "backed" as const } : {}),
         ...(meListings ? { alsoListed: meListings } : {}),
@@ -1487,7 +1531,10 @@ registerTool(
     const osBlock = out.opensea as { floor?: number | null; floorCurrency?: string | null; stale?: boolean; onchainCollection?: string | null; onchainCollections?: unknown[] } | undefined;
     let osQuote: FloorQuote | null =
       osBlock && typeof osBlock.floor === "number" && osBlock.floor > 0 && osBlock.floorCurrency
-        ? { source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, stale: Boolean(osBlock.stale) }
+        ? // OpenSea's stats name the floor's currency by symbol alone, and its
+          // floor is what a buyer pays through OpenSea (its schema's words for
+          // a listing price), not the seller's ask. Both are said beside it.
+          { source: "opensea", value: osBlock.floor, currency: osBlock.floorCurrency, currencyBasis: "symbol" as const, priceIs: "buyer-pays-through-venue" as const, stale: Boolean(osBlock.stale) }
         : null;
     // The listing behind OpenSea's floor, checked the same way. Only when it
     // IS the floor (same price): OpenSea's floor spans marketplaces it does not
@@ -1662,44 +1709,129 @@ registerTool(
   }),
 );
 
+/** Feed times for one fill that differ by more than this are worth a look: the two feeds were seen 0 to 1 s apart. */
+const FEED_TIME_GAP_S = 600;
+
 /**
  * A transaction can settle several items, or sell the same item more than
  * once. Match only a unique signature, item, buyer and seller in both feeds.
  * Missing identities and repeated candidates stay unmatched. Both original
- * rows remain visible because each feed can report a different amount.
+ * rows remain visible because each feed reports a different figure, and both
+ * are marked, so neither list can be counted on top of the other.
+ *
+ * The two figures are different things. Read against transactions on
+ * 2026-11-14: Magic Eden's is the price of the order that filled. OpenSea's
+ * was 1.12 times it on 33 of 35 shared Candy fills, and on the listing fill
+ * read on chain that was exactly the buyer's total with the royalty and the
+ * taker fee; on the two accepted offers read on chain it equalled Magic
+ * Eden's. Which applies to a given row is not read here, so the row states
+ * the ratio and not a reason.
  */
-function markSameFills(meSales: { signature: string | null; tokenMint: string | null; priceSol: number | null; buyer: string | null; seller: string | null }[], openseaPart: Record<string, unknown>): Record<string, unknown> {
-  const osSales = Array.isArray(openseaPart.sales) ? (openseaPart.sales as { transaction?: string | null; mint?: string | null; price?: number | null; currency?: string | null; buyer?: string | null; seller?: string | null }[]) : [];
-  const meBySignature = new Map<string, { mint: string | null; priceSol: number | null; buyer: string | null; seller: string | null }[]>();
-  for (const s of meSales) if (s.signature) meBySignature.set(s.signature, [...(meBySignature.get(s.signature) ?? []), { mint: s.tokenMint, priceSol: s.priceSol, buyer: s.buyer, seller: s.seller }]);
+function markSameFills<M extends { signature: string | null; tokenMint: string | null; priceSol: number | null; buyer: string | null; seller: string | null; time?: string | null }>(
+  meSales: M[],
+  openseaPart: Record<string, unknown>,
+): { opensea: Record<string, unknown>; magicedenSales: (M | (M & { sameTransactionAs: "opensea"; priceIs: string }))[] } {
+  const osSales = Array.isArray(openseaPart.sales) ? (openseaPart.sales as { transaction?: string | null; mint?: string | null; price?: number | null; currency?: string | null; buyer?: string | null; seller?: string | null; time?: string | null }[]) : [];
+  const meBySignature = new Map<string, M[]>();
+  for (const s of meSales) if (s.signature) meBySignature.set(s.signature, [...(meBySignature.get(s.signature) ?? []), s]);
+  const linked = new Set<M>();
   let matched = 0;
   const sales = osSales.map((row) => {
     const rows = row.transaction ? meBySignature.get(row.transaction) : undefined;
-    const candidates = row.mint && row.buyer && row.seller ? rows?.filter((m) => m.mint === row.mint && m.buyer === row.buyer && m.seller === row.seller) : undefined;
+    const candidates = row.mint && row.buyer && row.seller ? rows?.filter((m) => m.tokenMint === row.mint && m.buyer === row.buyer && m.seller === row.seller) : undefined;
     const twin = candidates?.length === 1 && osSales.filter((s) => s.transaction === row.transaction && s.mint === row.mint && s.buyer === row.buyer && s.seller === row.seller).length === 1 ? candidates[0] : undefined;
     if (!twin) return row;
     matched++;
-    // The feeds report amounts, not the reason they differ. Fees need a
-    // transaction-level read, and a signature alone can contain several fills.
-    const comparable = row.currency === "SOL" && typeof row.price === "number" && typeof twin.priceSol === "number";
-    const differs = comparable && row.price !== twin.priceSol;
+    linked.add(twin);
+    // Only SOL proved by the payment token's address is comparable with
+    // Magic Eden's SOL price; a ratio across currencies means nothing.
+    const comparable = row.currency === "SOL" && typeof row.price === "number" && row.price > 0 && typeof twin.priceSol === "number" && twin.priceSol > 0;
+    const ratio = comparable ? Math.round(((row.price as number) / (twin.priceSol as number)) * 10_000) / 10_000 : null;
+    const osAt = row.time ? Date.parse(row.time) : NaN;
+    const meAt = twin.time ? Date.parse(twin.time) : NaN;
+    const gap = Number.isFinite(osAt) && Number.isFinite(meAt) ? Math.round(Math.abs(osAt - meAt) / 1000) : null;
     return {
       ...row,
       sameTransactionAs: "magiceden" as const,
+      priceIs: "OpenSea's reported amount for this fill",
+      ...(ratio !== null ? { openseaToMagicEdenRatio: ratio } : {}),
+      ...(gap !== null && gap > FEED_TIME_GAP_S
+        ? { timesDisagree: { magicEden: twin.time, opensea: row.time, seconds: gap, note: `The two feeds date this one fill ${gap} s apart; they normally agree to the second. Read the transaction's block time before relying on either.` } }
+        : {}),
       sameTransactionNote:
-        "Magic Eden's list above has this same transaction. It is one sale, not two: count it once and do not add the two prices. " +
-        (differs
-          ? `OpenSea gives ${row.price} SOL where Magic Eden gives ${twin.priceSol} SOL. The reason for the difference was not checked; these feeds alone do not establish fees or royalties.`
-          : comparable ? "Both feeds give it the same price here." : "The prices could not be compared: a currency differs or a usable amount is missing."),
+        "Magic Eden's list above has this same transaction, item, buyer and seller. It is one sale, not two: count it once and never add the two amounts. " +
+        "Magic Eden's priceSol is the price of the order that filled; this row's price is what OpenSea reports for the same fill. " +
+        (ratio === null
+          ? "The two cannot be compared: a currency differs, the payment token does not prove SOL, or a usable amount is missing."
+          : ratio === 1
+            ? "Both feeds give the same amount here."
+            : ratio > 1
+              ? `OpenSea's amount is ${ratio} times Magic Eden's. On Magic Eden fills read on 2026-11-14, OpenSea's amount was the buyer's total (the order price with the royalty and Magic Eden's taker fee added) when a buyer took a listing, and the order price itself when a seller accepted an offer; this transaction was not read, so which applies here is not established.`
+              : `OpenSea's amount is ${ratio} times Magic Eden's, lower, which neither pattern seen on 2026-11-14 explains; this transaction was not read, and the feeds alone do not establish why.`),
     };
   });
-  if (matched === 0) return openseaPart;
+  if (matched === 0) return { opensea: openseaPart, magicedenSales: meSales };
   return {
-    ...openseaPart,
-    sales,
-    sameTransactions: matched,
-    sameTransactionsNote: `${matched} of OpenSea's rows uniquely match a sale in Magic Eden's list by transaction signature, item, buyer and seller, and are marked sameTransactionAs. Count each matched combination once. Different items or parties remain separate sales; missing identities and repeated candidates cannot be matched here.`,
+    opensea: {
+      ...openseaPart,
+      sales,
+      sameTransactions: matched,
+      sameTransactionsNote: `${matched} of OpenSea's rows uniquely match a sale in Magic Eden's list by transaction signature, item, buyer and seller; both rows carry sameTransactionAs. Each is one sale: count it once, and never add Magic Eden's order price to OpenSea's amount. Different items or parties remain separate sales; missing identities and repeated candidates cannot be matched here.`,
+    },
+    magicedenSales: meSales.map((s) => (linked.has(s) ? { ...s, sameTransactionAs: "opensea" as const, priceIs: "Magic Eden's order price" } : s)),
   };
+}
+
+/**
+ * The opt-in chain scan for get_recent_sales.
+ *
+ * Tensor is not read at all and Magic Eden's feed misses OpenSea's own fills,
+ * so a collection whose sales happen there looked quiet. Every sale of a Core
+ * item touches its collection account, so the newest transactions on that
+ * account are read and decoded, and the sales found are listed as their own
+ * venue rows. A signature already in the marketplace rows of this answer is
+ * not read at all, so one fill is never listed twice, and nothing here is
+ * added into any marketplace's figures. Off by default: on the public RPC a
+ * scan takes up to about 20 seconds.
+ */
+async function withChainScan(enabled: boolean | undefined, collection: string, answer: () => Promise<ToolResult>): Promise<ToolResult> {
+  if (!enabled) return answer();
+  let body: Record<string, unknown>;
+  try {
+    body = (await answer()).structuredContent as Record<string, unknown>;
+  } catch (e) {
+    // The feeds failing (or a collection no feed knows) is not a reason to
+    // skip the chain; an input the resolver refuses still is.
+    if (e instanceof BadInputError || e instanceof AmbiguousError) throw e;
+    // An upstream's error text, so it is cleaned like any other before it is relayed.
+    body = { requested: collection, marketplaceFeeds: `not read: ${clean(e instanceof Error ? e.message : String(e)).slice(0, 300)}` };
+  }
+  const r = resolve(collection);
+  const core = "coreCollection" in r && typeof r.coreCollection === "string" ? r.coreCollection : null;
+  if (!core) {
+    return ok({ ...body, chainScan: { status: "not-run", reason: "No Metaplex Core collection address is known for this collection, so its transactions cannot be listed. Pass the collection's on-chain address as collection to scan it." } });
+  }
+  // The signatures the marketplace rows above carry are never read, so one
+  // fill cannot be listed twice across the two feeds and this block.
+  const known = feedSignatures(body);
+  try {
+    const scan = await scanCollectionSales(core, { known, signal: ambientSignal() });
+    return ok({
+      ...body,
+      chainScan: {
+        status: "read",
+        readFrom: scan.readFrom,
+        collection: core,
+        sales: scan.sales.map(chainSaleRow),
+        coverage: scan.coverage,
+        note: scan.note,
+        readThis:
+          "Sales decoded from the chain, one row per venue sale whose signature is not among the marketplace rows above. Never add them to a marketplace's figures. price is everything paid for the item and sellerReceived the seller's share; Magic Eden and Tensor quote the seller's share, OpenSea the total. The currency is named by the payment token's address, as on the marketplace rows: a row in another token (paidInOtherToken) is never a SOL figure, a selfFill row's amount is nobody's payment, and a sharedTransaction row has no per-item price. verify_claim with claim sale rechecks any one of them.",
+      },
+    });
+  } catch (e) {
+    return ok({ ...body, chainScan: { status: "not-read", reason: `The chain could not be read for this collection just now (${clean(e instanceof Error ? e.message : String(e)).slice(0, 300)}). This is a source failure, not a statement that no other sales happened.` } });
+  }
 }
 
 registerTool(
@@ -1707,9 +1839,11 @@ registerTool(
   {
     title: "Recent sales",
     description:
-      "Most recent completed sales for a collection (price in SOL, buyer, seller, tx signature). " +
+      "Most recent completed sales for a collection (price with the currency actually paid, buyer, seller, tx signature). " +
       "Accepts a registry id or Magic Eden symbol. When OpenSea can be read and a slug is known (or passed as openseaSlug), " +
-      "OpenSea sales are included for a cross-marketplace picture.",
+      "OpenSea sales are included for a cross-marketplace picture. chainScan: true also reads the collection's newest " +
+      "transactions from the chain and lists Tensor, OpenSea and other sales the marketplace rows do not carry, as their own rows " +
+      "(Metaplex Core collections only; slow, up to about 20 s, and bounded: its coverage says how far back it read).",
     annotations: READ_ONLY,
     inputSchema: {
       collection: z.string().trim().min(1).max(80),
@@ -1720,9 +1854,10 @@ registerTool(
         .max(120)
         .regex(/^[a-z0-9-]+$/i, "OpenSea collection slug")
         .optional(),
+      chainScan: z.boolean().optional().describe("Also decode the collection's newest transactions from the chain for sales the marketplace rows miss (Tensor, OpenSea's own). Off by default: slow."),
     },
   },
-  guard(async ({ collection, limit = 10, openseaSlug }) => {
+  guard(async ({ collection, limit = 10, openseaSlug, chainScan }) => withChainScan(chainScan, collection, async () => {
     const r = resolve(collection);
     const curatedSlug = "openseaSlug" in r ? r.openseaSlug : undefined;
     let slug = openseaSlug ?? curatedSlug;
@@ -1810,12 +1945,14 @@ registerTool(
       const unknown = await refuseUnknownSymbol(r.meSymbol);
       if (unknown) return unknown;
       const magiceden = await me.recentSales(r.meSymbol, limit);
-      return ok(openseaPart ? { ...magiceden, symbolKnown: true, opensea: markSameFills(magiceden.sales, openseaPart) } : { ...magiceden, symbolKnown: true, ...openseaNotRead });
+      // One fill in both feeds is marked on both rows, so neither list can be counted on top of the other.
+      const linked = openseaPart ? markSameFills(magiceden.sales, openseaPart) : null;
+      return ok(linked ? { ...magiceden, sales: linked.magicedenSales, symbolKnown: true, opensea: linked.opensea } : { ...magiceden, symbolKnown: true, ...openseaNotRead });
     } catch (e) {
       if (openseaPart) return ok({ requested: collection, sourceErrors: { magiceden: e instanceof Error ? e.message : String(e) }, opensea: openseaPart });
       throw e;
     }
-  }),
+  })),
 );
 
 registerTool(
@@ -2023,6 +2160,43 @@ registerTool(
             ? "Magic Eden's record has no image and no traits. The chain's asset index could not be read, so its metadata is unknown."
             : "Magic Eden's record has no image and no traits, and the chain's asset index returned none either.",
       };
+    }
+    // A Core item's own record wins over a marketplace's copy of it. Magic
+    // Eden has shown Candy cards under another card's name and with a
+    // sibling parallel's art. The name in the account bytes read just now is
+    // the item's own; the image comes from the chain's asset index, read in
+    // this same call, matched by arweave id across gateways. The metadata
+    // link itself is never fetched. What the marketplace said stays beside it.
+    //
+    // An item can carry two names of its own. A DC comic's account, and the
+    // index that copies it, say "Batman: The Long Halloween 51", while its
+    // metadata file, which Magic Eden reads and this server never fetches,
+    // says "Batman: The Long Halloween (51/800)" (2026-11-14). A marketplace
+    // name that keeps every word and number of the account's is that fuller
+    // copy and stays; one that drops any of them ("Auction #1" for "Power",
+    // or the mint's first characters for a player's name) is replaced.
+    if (market && core?.kind === "asset") {
+      const notes: string[] = [];
+      const ownNames = [core.name, indexed?.name].filter((n): n is string => typeof n === "string" && n.length > 0);
+      const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+      const keepsOwn = (venue: string) => ownNames.some((own) => {
+        const have = new Set(words(venue));
+        const need = words(own);
+        return need.length > 0 && need.every((w) => have.has(w));
+      });
+      if (core.name && (market.name === null || !keepsOwn(market.name))) {
+        if (market.name !== null) notes.push(`Magic Eden calls this item "${market.name}"; the name shown is the one in the item's own account on chain, which wins.`);
+        market = { ...market, name: core.name, ...(market.name !== null ? { marketplaceName: market.name } : {}) };
+      }
+      if (indexed?.image && !das.sameImage(market.image, indexed.image)) {
+        notes.push(
+          market.image
+            ? `Magic Eden's image is a different picture from the one the chain's asset index holds for this item (compared by arweave id where the links carry one); the image shown is the index's${indexStale ? ", from its last answer, because the index did not answer just now" : ", read in this same call"}.`
+            : `Magic Eden's record has no image; the image shown is the chain's asset index's${indexStale ? ", from its last answer" : ""}.`,
+        );
+        market = { ...market, image: indexed.image, ...(market.image ? { marketplaceImage: market.image } : {}) };
+      }
+      if (notes.length) market = { ...market, nameAndImageNote: notes.join(" ") };
     }
     const ownerAgreement = [indexAgreement, marketAgreement].filter(Boolean).join(" ") || null;
     return ok({
@@ -2448,7 +2622,10 @@ registerTool(
     const updateAuthority = authorityRead.account?.kind === "collection" ? authorityRead.account.updateAuthority : null;
     const issuerReadStatus: "ok" | "unavailable" | "not-applicable" =
       authorityRead.status === "unavailable" ? "unavailable" : updateAuthority ? "ok" : "not-applicable";
-    const issuerName = updateAuthority ? knownIssuer(updateAuthority)?.issuer ?? null : null;
+    // A name only on the verdict: an empty collection, or one the table does
+    // not list, can name an issuer's key without being the issuer's.
+    const issuerVerdict = authorityRead.account?.kind === "collection" ? collectionIssuer(collection, authorityRead.account.updateAuthority, authorityRead.account.numMinted) : null;
+    const issuerName = issuerVerdict?.issuer ?? null;
 
     // A row either MATCHES the filter, or does not, or cannot be decided:
     // its trait list was cut at the row cap, or the only candidate value was
@@ -2548,6 +2725,9 @@ registerTool(
         `${issuerHeld} of the ${held.length} matched item(s) sit in the collection's update authority (${updateAuthority}${issuerName ? `, ${issuerName}'s key` : ""}), read from the collection account. That is the issuer's key, and the address alone does not say how an item got there: unsold, held back, or returned after a collector opened or redeemed it (Candy gold packs return to the issuer on open; base packs burn). get_asset_provenance shows mint and transfer history; opening or redemption needs separate evidence. ${escrowHeld > 0 ? `Another ${escrowHeld} sit in a marketplace escrow, listed for sale. ` : ""}${otherOwnersHeld} sit with other known owners.`,
       );
     }
+    // A known issuer's key on a collection that is not proven the issuer's is
+    // the first thing to read, before any count.
+    if (issuerVerdict && issuerVerdict.keyKnownAs && issuerVerdict.verdict !== "issued") readThis.unshift(issuerVerdict.note);
     if (issuerReadStatus === "unavailable") {
       readThis.unshift(
         `The collection account could not be read (${authorityRead.reason}), so no holder could be checked against the issuer's key: every ordinary holder's role is "unknown", heldByCollectors counts nobody, and rolesIncomplete is true. The asset rows and the holder counts are still good. Retry for the roles.`,
@@ -2594,7 +2774,12 @@ registerTool(
       issuer: updateAuthority
         ? {
             updateAuthority,
+            /** Set only when the verdict is issued; see verdict and verdictNote. */
             name: issuerName,
+            verdict: issuerVerdict?.verdict ?? null,
+            ...(issuerVerdict?.keyKnownAs && !issuerName ? { keyKnownAs: issuerVerdict.keyKnownAs } : {}),
+            ...(issuerVerdict?.label ? { label: issuerVerdict.label } : {}),
+            verdictNote: issuerVerdict?.note ?? null,
             readFrom: "the collection account on chain (Metaplex Core CollectionV1, decoded locally)",
             /** When that account was read; a cached value carries the time of the read it came from. */
             cachedAt: authorityRead.cachedAt,
@@ -2975,7 +3160,12 @@ const traitSchema = z.object({
  * the collection's on-chain address, is never added to Magic Eden's, and says
  * when it is a lower bound because OpenSea had older rows than were read.
  */
-async function openSeaSalesInWindow(symbol: string, sinceUnix: number, nowUnix: number): Promise<Record<string, unknown>> {
+async function openSeaSalesInWindow(
+  symbol: string,
+  sinceUnix: number,
+  nowUnix: number,
+  meWindow?: { events: { signature?: string; tokenMint?: string; buyer?: string; seller?: string; type?: string }[]; complete: boolean },
+): Promise<Record<string, unknown>> {
   if (!(await os.openSeaAvailable())) return { status: "not-read", note: `OpenSea was not read: ${os.openSeaState().note}` };
   const entry =
     REGISTRY.find((e) => e.meSymbol === symbol && e.coreCollection) ??
@@ -3000,11 +3190,17 @@ async function openSeaSalesInWindow(symbol: string, sinceUnix: number, nowUnix: 
     return { status: "error", slug: found.slug, ...(openseaUrl ? { openseaUrl } : {}), note: `OpenSea's sales for this slug could not be read: ${clean(read.error).slice(0, 200)}. Not read is not zero.` };
   }
   const times = read.sales.map((s) => (s.time ? Date.parse(s.time) / 1000 : NaN));
-  const inWindow = times.filter((t) => Number.isFinite(t) && t >= sinceUnix && t <= nowUnix).length;
+  const windowRows = read.sales.filter((_, i) => Number.isFinite(times[i]) && times[i]! >= sinceUnix && times[i]! <= nowUnix);
+  const inWindow = windowRows.length;
   const oldestRead = times.filter(Number.isFinite).reduce((m, t) => Math.min(m, t), Infinity);
   // Every row read is inside the window and OpenSea had more: older sales in
   // the window may exist past what was read.
   const lowerBound = (read.truncated || read.moreAvailable === true) && oldestRead >= sinceUnix;
+  // OpenSea lists Magic Eden's fills too. Those are already in Magic Eden's
+  // count above, so the overlap is counted, by the same unique signature,
+  // item, buyer and seller rule as get_recent_sales.
+  const alsoInMagicEden = meWindow ? countSameFills(windowRows, meWindow.events) : null;
+  const notSol = windowRows.filter((s) => s.currency !== "SOL").length;
   return {
     status: "read",
     source: "OpenSea collection sale events",
@@ -3012,6 +3208,13 @@ async function openSeaSalesInWindow(symbol: string, sinceUnix: number, nowUnix: 
     ...(openseaUrl ? { openseaUrl } : {}),
     identity: group ? "group" : "verified",
     sales: inWindow,
+    ...(alsoInMagicEden !== null
+      ? {
+          alsoInMagicEdenFeed: alsoInMagicEden,
+          alsoInMagicEdenNote: `${alsoInMagicEden} of these ${inWindow} OpenSea sales are the same fills (transaction, item, buyer and seller) as rows in Magic Eden's feed above, so they are already in Magic Eden's count${meWindow!.complete ? "" : "; Magic Eden's read did not cover the whole window, so more of them may be too"}. Count each of those once.`,
+        }
+      : {}),
+    ...(notSol ? { paidInOtherCurrency: notSol } : {}),
     countIsLowerBound: lowerBound,
     rowsRead: read.sales.length,
     stale: read.stale,
@@ -3038,6 +3241,7 @@ registerTool(
       "the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
       "The result says how far back the feed was read and whether older sales exist beyond the page budget; " +
       "it never fills a gap with an estimate. Magic Eden's API feed only: each row carries the execution marketplace that feed reported, and fills it did not index are not here. " +
+      "A sale paid in USDC or another token is counted, and kept out of every SOL figure. " +
       "When OpenSea can be read and its slug is proved against the collection's on-chain address, OpenSea's own sale count for the same window is attached as a separate figure (openseaSameWindow), never added in.",
     annotations: READ_ONLY,
     inputSchema: {
@@ -3096,7 +3300,7 @@ registerTool(
     const byName = names ? breakdownByName(filtered ?? windowEvents, names.names) : null;
     // OpenSea's figure is collection-wide; under a name filter it would answer
     // a different question, so it is only read without one.
-    const openseaSameWindow = needle ? undefined : await openSeaSalesInWindow(symbol, sinceUnix, nowUnix);
+    const openseaSameWindow = needle ? undefined : await openSeaSalesInWindow(symbol, sinceUnix, nowUnix, { events: windowEvents, complete: !read.truncated && !read.stale });
     return ok({
       symbol,
       collectionName: nameForSymbol(symbol),

@@ -22,10 +22,10 @@
  */
 
 import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs } from "../lib/http.js";
-import { withAmbient } from "../lib/context.js";
+import { runWithSignal, withAmbient } from "../lib/context.js";
 import { clean } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
-import { ChainUnavailableError, NotFoundError, WrongKindError } from "../lib/errors.js";
+import { ChainUnavailableError, NotFoundError, TypedError, WrongKindError } from "../lib/errors.js";
 import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
 import { BoundedMap } from "../lib/bounded.js";
@@ -54,7 +54,9 @@ const MARKETPLACE_PROGRAMS: Record<string, string> = {
   M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden",
   mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden (pools)",
   TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor",
-  TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor cNFT",
+  // TComp is Tensor's marketplace program for compressed AND Core items; the
+  // old "Tensor cNFT" label was wrong on every Core row it marked.
+  TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor",
   [OPENSEA_SOLANA_PROGRAM]: "OpenSea",
 };
 
@@ -152,7 +154,8 @@ interface RpcEndpoint {
  * told apart from "this asset never did anything". Under load the walk fell
  * back to one of those, read 0 transactions, and cached that for two minutes.
  *
- * getTransaction is deliberately not here. The same endpoints answer it with
+ * getTransaction (read only through getParsedTransaction below) is
+ * deliberately not here. The same endpoints answer it with
  * null, which the decoder already reports as an unread transaction, a hole in
  * place, while the rest of the history still answers. Keeping it on the busy
  * endpoint only turned that partial, honest answer into a failed call.
@@ -338,6 +341,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
     }
   }
   const problems: string[] = [];
+  let cursorUnknown = false;
   for (const ep of list) {
     const wasCooling = isCooling(ep);
     const pausedFor = originPauseLeftMs(ep.url);
@@ -419,6 +423,22 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           const code = Number.isSafeInteger(j.error.code) ? String(j.error.code) : "unknown";
           if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
           const msg = own ? `Solana RPC ${code} from your SOLANA_RPC_URL (its message is not relayed, because a provider can echo your key in it)` : `Solana RPC ${code}: ${upstreamMessage(j.error.message)}`;
+          // The node refused to serve a transaction in a format newer than the
+          // request allowed. Only the version number is taken from its text,
+          // and only as digits, so a provider's message still never reaches
+          // an answer; the helper below asks again with that version.
+          if (j.error.code === TX_VERSION_UNSUPPORTED) {
+            const named = /version \((\d{1,3})\)/i.exec(String(j.error.message ?? "")) ?? /"?maxSupportedTransactionVersion"?\s*:\s*(\d{1,3})/.exec(String(j.error.message ?? ""));
+            throw new TransactionVersionError(msg, named ? Number(named[1]) : null);
+          }
+          // A history page asked to continue from a signature this node has
+          // never seen. Since Agave 4.0 that is -32020 rather than an empty
+          // page (read on mainnet-beta 2026-11-14), and it says nothing about
+          // the address: another node behind the same endpoint, or the one
+          // that served the previous page, may know the cursor.
+          if (j.error.code === CURSOR_UNKNOWN && HISTORY_METHODS.has(method) && hasCursor(params)) {
+            throw new CursorUnknownAtEndpoint(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
+          }
           // A free public node answers "internal error" or "busy" when it is
           // overloaded, and that is the endpoint's state, not an answer about
           // the account: typed so the wording says the RPC was busy instead
@@ -456,13 +476,18 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         }
         return j.result as T;
       } catch (e) {
+        // Every endpoint would refuse the same format the same way; the
+        // caller asks again with the version named, so this is not rotated.
+        if (e instanceof TransactionVersionError) throw e;
         if (e instanceof ChainError) throw e.busy ? new ChainUnavailableError(e.message) : new Error(e.message);
         if (e instanceof OversizedBodyError) throw e;
         lastErr = e;
+        if (e instanceof CursorUnknownAtEndpoint) cursorUnknown = true;
         if (e instanceof RateLimitedEndpoint) break;
       }
     }
-    if (!(lastErr instanceof RateLimitedEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    // Not knowing a cursor is not being unhealthy: the endpoint stays in rotation.
+    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     // Our own error classes carry text written here. Anything else is the
     // runtime's or the endpoint's, and for the person's own endpoint that text
     // can quote the URL, key and all, so only its kind is relayed.
@@ -482,6 +507,13 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
       `the Solana endpoint this read was pinned to stopped answering part-way (${problems.join("; ")})`,
     );
   }
+  // Typed, so a history walk keeps the pages it already has and marks the
+  // rest as not listed, instead of failing whole or reading as the end.
+  if (cursorUnknown) {
+    throw new CursorUnknownError(
+      `no endpoint asked knew the signature the previous page of this history ended on, so the history past it was not listed (${problems.join("; ")})`,
+    );
+  }
   throw new ChainUnavailableError(
     `public Solana RPC is not answering right now. Every endpoint ${HISTORY_METHODS.has(method) ? "that keeps transaction history " : ""}was tried and none returned a result ` +
       `(${problems.join("; ")}). That is the free public RPC being busy, not a problem with what you asked. ` +
@@ -491,6 +523,17 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
 
 /** This endpoint is not answering: retry it, then move to the next one. */
 class EndpointError extends Error {}
+
+/** The node's code for "the signature this page should continue from is unknown to me". */
+const CURSOR_UNKNOWN = -32020;
+/** One endpoint did not know a page cursor: retried, then the next endpoint is asked. */
+class CursorUnknownAtEndpoint extends EndpointError {}
+/** No endpoint asked knew the page cursor. The pages already read stand; the rest of the history was not listed. */
+export class CursorUnknownError extends Error {}
+function hasCursor(params: unknown[]): boolean {
+  const c = params[1];
+  return c !== null && typeof c === "object" && ("before" in c || "until" in c);
+}
 
 
 /** The chain answered, and the answer was an error. Every endpoint would say the same. */
@@ -506,6 +549,101 @@ class ChainError extends Error {
 
 /** JSON-RPC codes a public node uses for its own overload: internal error, node behind or busy, rate limited. */
 const BUSY_CODES = new Set([-32603, -32005, -32429]);
+
+/** The node's code for "this transaction is in a format newer than the request allows". */
+const TX_VERSION_UNSUPPORTED = -32015;
+
+/** The node refused a transaction format; `version` is the one it named, when it named one. */
+class TransactionVersionError extends Error {
+  constructor(
+    msg: string,
+    readonly version: number | null,
+  ) {
+    super(msg);
+  }
+}
+
+// ------------------------------------------------------- transactions
+
+/**
+ * The highest transaction format this process asks for.
+ *
+ * A node refuses, with -32015, to serve a transaction in a format newer than
+ * the request allows. Solana began serving version 1 in November 2026, and
+ * every request here asked for version 0: one version-1 sale in an item's
+ * history failed the whole provenance read. The version starts at 1 and goes
+ * up when a node names a newer one, so the next format change costs one extra
+ * request per process rather than a release.
+ */
+let transactionVersion = 1;
+/**
+ * The newest format this server will ask for on a node's say-so. A refusal
+ * naming anything higher is not taken on trust: it is reported as a format
+ * this version cannot read, never asked for.
+ */
+const TRANSACTION_VERSION_CEILING = 8;
+
+/** The transaction format version the next read will ask for. */
+export function transactionVersionRequested(): number {
+  return transactionVersion;
+}
+
+/**
+ * The refusal that remains after the one retry: a format this server cannot
+ * read. Typed, and worded as what it is. It is the server being out of date,
+ * not a hole in the chain, so it is never turned into an unread row that a
+ * reader could carry custody across.
+ */
+function unreadableFormat(signature: string, version: number | null): TypedError {
+  const which = version === null ? "a format the node did not name" : `format version ${version}`;
+  return new TypedError(`Solana served transaction ${signature} in ${which}, which this version of the server cannot read (it asks for up to version ${TRANSACTION_VERSION_CEILING})`, "unsupported", {
+    headline: `Solana served a transaction in ${which}, which this version of the server cannot read. That is this server being out of date, not a gap in the chain or a problem with what you asked.`,
+    next: "Update solana-nft-mcp to a newer version. An explorer such as solscan.io shows the transaction in the meantime.",
+  });
+}
+
+/**
+ * Every transaction read goes through here, so the format version is decided
+ * in one place.
+ *
+ * Asks for the highest version this process knows. A -32015 that names a
+ * newer version, up to the ceiling, is asked again ONCE with that version, and
+ * the version is kept for the rest of the process. A second refusal, a refusal
+ * that names no version, an older one, or one above the ceiling is thrown as
+ * a typed failure: the read never loops, and the refusal never becomes a
+ * skipped or unreadable row.
+ *
+ * `config` carries anything else the read needs (a minimum context slot); the
+ * encoding and the version are always set here.
+ */
+export async function getParsedTransaction<T = unknown>(
+  signature: string,
+  opts: { config?: Record<string, unknown>; trace?: RpcTrace; pin?: EndpointPin; signal?: AbortSignal } = {},
+): Promise<T | null> {
+  const ask = (version: number) =>
+    rpc<T | null>(
+      "getTransaction",
+      [signature, { ...opts.config, encoding: "jsonParsed", maxSupportedTransactionVersion: version }],
+      opts.trace,
+      opts.pin,
+      opts.signal,
+    );
+  const asked = transactionVersion;
+  try {
+    return await ask(asked);
+  } catch (e) {
+    if (!(e instanceof TransactionVersionError)) throw e;
+    const named = e.version;
+    if (named === null || named <= asked || named > TRANSACTION_VERSION_CEILING) throw unreadableFormat(signature, named);
+    transactionVersion = Math.max(transactionVersion, named);
+    try {
+      return await ask(named);
+    } catch (e2) {
+      if (e2 instanceof TransactionVersionError) throw unreadableFormat(signature, e2.version);
+      throw e2;
+    }
+  }
+}
 
 export interface RpcEndpointHealth {
   /** Human-safe label: id plus host, never a URL that could carry a key. */
@@ -1166,14 +1304,40 @@ function discriminator(data: string | undefined): number | null {
   return parseInt(bytes.slice(0, 2), 16);
 }
 
+/**
+ * A transaction as `jsonParsed` serves it, in every format seen so far.
+ *
+ * The decoders read instructions only, and in this encoding each one already
+ * names its accounts as addresses: a version-0 lookup table's addresses are
+ * resolved into them by the node, and version 1 (read 2026-11-14 on a real
+ * OpenSea sale) has no lookup tables and adds a `transactionConfig` block of
+ * fee and compute limits, which says nothing about custody. The version and
+ * the fields that differ are typed so a reader sees what was considered.
+ */
 interface ParsedTx {
   blockTime: number | null;
+  version?: number | "legacy";
   meta: {
     err: unknown;
     logMessages?: string[];
     innerInstructions?: { index?: number; instructions: ParsedInstruction[] }[];
+    loadedAddresses?: { writable?: string[]; readonly?: string[] };
   } | null;
-  transaction: { message: { instructions: ParsedInstruction[]; accountKeys: { pubkey: string }[] } };
+  transaction: {
+    message: {
+      instructions: ParsedInstruction[];
+      accountKeys: { pubkey: string; source?: string }[];
+      addressTableLookups?: unknown[];
+      transactionConfig?: Record<string, unknown>;
+    };
+  };
+}
+
+/** A signature walk cut short by an unknown cursor: carried out of the cache so it is used once and never kept. */
+class PartialWalk extends Error {
+  constructor(readonly walk: { sigs: { signature: string; blockTime: number | null; err: unknown }[]; complete: boolean; cursorGap: boolean }) {
+    super("signature walk cut short by an unknown cursor");
+  }
 }
 
 /**
@@ -1256,27 +1420,49 @@ export async function getProvenance(
       const all: { signature: string; blockTime: number | null; err: unknown }[] = [];
       let before: string | undefined;
       let complete = false;
+      /** Set when a later page could not be listed because no endpoint knew its cursor. */
+      let cursorGap = false;
       for (let page = 0; page < 5; page++) {
-        const batch = await anchored(
-          (config) =>
-            rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
-              "getSignaturesForAddress",
-              [mint, config],
-              trace,
-              pin,
-            ),
-          before ? { limit: 1000, before } : { limit: 1000 },
-        );
+        let batch: { signature: string; blockTime: number | null; err: unknown }[];
+        try {
+          batch = await anchored(
+            (config) =>
+              rpc<{ signature: string; blockTime: number | null; err: unknown }[]>(
+                "getSignaturesForAddress",
+                [mint, config],
+                trace,
+                pin,
+              ),
+            before ? { limit: 1000, before } : { limit: 1000 },
+          );
+        } catch (e) {
+          // The pages read stand; everything older is a gap the result shows.
+          if (e instanceof CursorUnknownError && before) { cursorGap = true; break; }
+          throw e;
+        }
         if (!Array.isArray(batch)) throw new Error("Solana RPC returned an unexpected signature list");
         all.push(...batch);
         if (batch.length < 1000) { complete = true; break; }
         before = batch[batch.length - 1]!.signature;
       }
-      return { sigs: all, complete };
+      return { sigs: all, complete, cursorGap };
     };
     // A verification must walk the chain now; a cached walk from two minutes
-    // ago can miss the transfer that just happened.
-    const walk = opts.fresh ? await walkSignatures() : (await cached(`sigs:${mint}`, 120_000, walkSignatures)).data;
+    // ago can miss the transfer that just happened. A walk cut short by an
+    // unknown cursor is used once and not kept, so the next read tries again.
+    const walk = opts.fresh
+      ? await walkSignatures()
+      : await cached(`sigs:${mint}`, 120_000, async () => {
+          const w = await walkSignatures();
+          if (w.cursorGap) throw new PartialWalk(w);
+          return w;
+        }).then(
+          (h) => h.data,
+          (e: unknown) => {
+            if (e instanceof PartialWalk) return e.walk;
+            throw e;
+          },
+        );
     const sigs = walk.sigs;
 
     const ok = sigs.filter((s) => !s.err);
@@ -1331,10 +1517,7 @@ export async function getProvenance(
       // whichever node served it; only the reads that actually go out are
       // pinned.
       const { data: tx } = await cached(`tx:${sig.signature}`, 3_600_000, () =>
-        anchored(
-          (config) => rpc<ParsedTx | null>("getTransaction", [sig.signature, config], trace, pin),
-          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
-        ),
+        anchored((config) => getParsedTransaction<ParsedTx>(sig.signature, { config, trace, pin }), {}),
       );
       if (!tx?.meta) {
         unreadable++;
@@ -1613,6 +1796,21 @@ export async function getProvenance(
       if (gapAfterSignature) for (let i = events.length - 1; i >= 0; i--) if (events[i]!.signature === gapAfterSignature) { at = i; break; }
       events.splice(at >= 0 ? at + 1 : 0, 0, hole("", null, "depth", skipped, depthLabel));
     }
+    // A signature list that stopped short has an unknown stretch OLDER than
+    // everything above, the mint included. It is a row at the start of the
+    // story, not only a flag, so nothing is read as the beginning that is not.
+    if (!walk.complete) {
+      events.unshift({
+        signature: "",
+        time: null,
+        event: "unread_gap",
+        reason: "unreadable",
+        readFrom: "the Solana chain",
+        label: walk.cursorGap
+          ? `transactions older than everything below were not listed: after ${walk.sigs.length} signature(s), no endpoint knew the signature the next page had to continue from (a node that never saw it answers -32020). How many there are, and what they did, including the mint, is unknown.`
+          : `transactions older than everything below were not listed: the signature list stopped at its page budget after ${walk.sigs.length}. How many more there are, and what they did, including the mint, is unknown.`,
+      });
+    }
 
     // Escrow custody has a direction, and it can only be read in order.
     //
@@ -1815,7 +2013,13 @@ export async function getProvenance(
      * memory does, which can be after the mint.
      */
     mintObserved: events.some((e) => e.event === "minted"),
-    ...(walk.complete ? {} : { historyNote: "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list." }),
+    ...(walk.complete
+      ? {}
+      : {
+          historyNote: walk.cursorGap
+            ? "The signature list stopped part-way because no endpoint knew where the next page began; the earliest events, including the mint, are not in this list. Ask again, ideally with a SOLANA_RPC_URL that keeps full history."
+            : "This asset has more signatures than were walked; the earliest events, including the mint, are not in this list.",
+        }),
     ...(okCount === 0
       ? {
           historyNote:
@@ -1864,20 +2068,16 @@ export async function findRecentCollectionAssets(
       break;
     }
     transactionsRead++;
-    const tx = await rpc<ParsedTx | null>(
-      "getTransaction",
-      [s.signature, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
-      undefined,
-      undefined,
-      signal,
-    );
+    const tx = await getParsedTransaction<ParsedTx>(s.signature, { signal });
     if (!tx?.meta || tx.meta.err) continue;
-    const all = [
-      ...tx.transaction.message.instructions,
-      ...(tx.meta.innerInstructions ?? []).flatMap((i) => i.instructions),
-    ];
+    // Checked shapes, as in the provenance walk: an instruction list the
+    // endpoint did not send is no instructions, not a TypeError that ends the
+    // whole identify call.
+    const outer = Array.isArray(tx.transaction?.message?.instructions) ? tx.transaction.message.instructions : [];
+    const inner = Array.isArray(tx.meta.innerInstructions) ? tx.meta.innerInstructions : [];
+    const all = [...outer, ...inner.flatMap((i) => (Array.isArray(i?.instructions) ? i.instructions : []))];
     for (const ix of all) {
-      if (ix.programId !== CORE_PROGRAM) continue;
+      if (!ix || ix.programId !== CORE_PROGRAM) continue;
       const accts = ix.accounts ?? [];
       if (!accts.includes(collection)) continue;
       // Core instructions list the asset first.
@@ -1887,6 +2087,190 @@ export async function findRecentCollectionAssets(
   }
   return { assets: [...found].slice(0, max), transactionsRead, timedOut: ranOut };
 }
+
+// ------------------------------------------ collections under one key
+
+/** One Core collection the chain lists under an update authority. */
+export interface DiscoveredCollection {
+  address: string;
+  name: string;
+  numMinted: number;
+  currentSize: number;
+}
+
+/** The chain's own list of collections naming one update authority, with what could not be read. */
+export interface CollectionDiscovery {
+  authority: string;
+  /** ok: the list below is the chain's. refused: the answer was implausible and none of it is used. failed: not read. */
+  state: "ok" | "refused" | "failed";
+  collections: DiscoveredCollection[];
+  /** Accounts in the answer that did not decode as a collection under this authority. Above zero, the list is short by that many. */
+  unreadable: number;
+  /** Accounts the endpoint returned, before any were decoded or refused. */
+  accountsReturned: number;
+  readAt: string;
+  endpoint: string | null;
+  note: string;
+}
+
+/**
+ * The most accounts one authority's list may hold before it is refused.
+ *
+ * Naming a key as a collection's update authority needs no signature from
+ * that key and costs a fraction of a cent, so anybody can add collections to
+ * this list. Candy Digital had 401 after five years of drops (2026-11-14). An
+ * answer far past that is somebody flooding the key, and rather than search a
+ * list that size, none of it is used.
+ */
+export const DISCOVERY_MAX_ACCOUNTS = 1_000;
+/**
+ * The bytes asked for per account: the key, the authority, and enough after
+ * them for the name, the uri and the two counters. On 2026-11-14 the longest
+ * of the 401 needed 176 of these; one that does not fit is counted
+ * unreadable, never guessed at.
+ */
+const DISCOVERY_SLICE_LENGTH = 320;
+/** Hours, because a new collection appears a few times a month, and this is the public RPC's heaviest read. */
+const DISCOVERY_TTL_MS = 6 * 60 * 60_000;
+/** A failed list is not asked for again for this long, so an outage costs one request per half hour, not one per question. */
+const DISCOVERY_RETRY_AFTER_MS = 30 * 60_000;
+const discoveryFailures = new Map<string, { at: number; note: string; refused: boolean }>();
+
+/** The getProgramAccounts parameters for one authority's collections. Exported so a test can hold a saved reply to the exact query. */
+export function discoveryParams(authority: string): unknown[] {
+  return [
+    CORE_PROGRAM,
+    {
+      encoding: "base64",
+      dataSlice: { offset: 0, length: DISCOVERY_SLICE_LENGTH },
+      // Key 5 is CollectionV1 ("6" is 5 in base58); bytes 1 to 32 are the update authority.
+      filters: [{ memcmp: { offset: 0, bytes: "6" } }, { memcmp: { offset: 1, bytes: authority } }],
+    },
+  ];
+}
+
+/**
+ * Decode one getProgramAccounts answer for an authority.
+ *
+ * The filter already asked for CollectionV1 accounts under this authority, but
+ * each one is checked again from its own bytes, because an endpoint that
+ * ignored the filter would otherwise hand any account in as this issuer's.
+ */
+export function decodeCollectionsByAuthority(
+  authority: string,
+  result: unknown,
+): { state: "ok" | "refused" | "failed"; collections: DiscoveredCollection[]; unreadable: number; accountsReturned: number; note: string } {
+  if (!Array.isArray(result)) {
+    return { state: "failed", collections: [], unreadable: 0, accountsReturned: 0, note: "the endpoint answered with something that is not a list of accounts" };
+  }
+  if (result.length > DISCOVERY_MAX_ACCOUNTS) {
+    return {
+      state: "refused",
+      collections: [],
+      unreadable: 0,
+      accountsReturned: result.length,
+      note: `${result.length} accounts name ${authority} as their update authority, far more than any issuer this server knows has made. Anybody can create a collection naming a key, so a list that size is somebody flooding the key, and none of it was used.`,
+    };
+  }
+  const seen = new Set<string>();
+  const collections: DiscoveredCollection[] = [];
+  let unreadable = 0;
+  for (const row of result) {
+    const pubkey = row && typeof row === "object" ? (row as { pubkey?: unknown }).pubkey : undefined;
+    const account = row && typeof row === "object" ? (row as { account?: unknown }).account : undefined;
+    const s = sliceOf(account);
+    if (typeof pubkey !== "string" || !isBase58Address(pubkey) || !s || s.owner !== CORE_PROGRAM || s.bytes[0] !== 5 || s.bytes.length < 33 || base58Encode(s.bytes.subarray(1, 33)) !== authority) {
+      unreadable++;
+      continue;
+    }
+    const d = decodeCoreAccount(s.bytes.toString("base64"));
+    if (!d || d.kind !== "collection" || d.updateAuthority !== authority) {
+      unreadable++;
+      continue;
+    }
+    if (seen.has(pubkey)) continue;
+    seen.add(pubkey);
+    collections.push({ address: pubkey, name: d.name, numMinted: d.numMinted, currentSize: d.currentSize });
+  }
+  collections.sort((a, b) => a.address.localeCompare(b.address));
+  return {
+    state: "ok",
+    collections,
+    unreadable,
+    accountsReturned: result.length,
+    note:
+      `The chain lists ${collections.length} Metaplex Core collection(s) naming ${authority} as their update authority` +
+      (unreadable ? `, and ${unreadable} more account(s) in the answer could not be decoded, so the list is short by that many` : "") +
+      ". Naming a key needs no signature from it, so being on this list does not by itself make a collection that key holder's.",
+  };
+}
+
+/**
+ * Every Metaplex Core collection the chain lists under one update authority.
+ *
+ * One getProgramAccounts call, answered by the public RPC in about a quarter
+ * of a second with 263 KB for Candy Digital's 401 collections (2026-11-14).
+ * It is still the heaviest read this server makes on a free endpoint, so it is
+ * shared and kept for six hours, a failure is kept for half an hour, and it is
+ * never made per question. A caller that cannot wait gets "not read" and keeps
+ * its own answer from the bundled registry.
+ */
+export async function collectionsByAuthority(authority: string, opts: { signal?: AbortSignal; fresh?: boolean } = {}): Promise<CollectionDiscovery> {
+  const failed = (note: string, state: "failed" | "refused" = "failed"): CollectionDiscovery => ({ authority, state, collections: [], unreadable: 0, accountsReturned: 0, readAt: new Date().toISOString(), endpoint: null, note });
+  if (!isBase58Address(authority)) return failed("not a Solana address");
+  const good = discoveryGood.get(authority);
+  // The last good list, marked as such, when a refresh is not possible now.
+  const kept = (why: string): CollectionDiscovery | null =>
+    good ? { ...good.value, note: `${good.value.note} This is the list read at ${good.value.readAt}; ${why}.` } : null;
+  if (!opts.fresh && good && Date.now() - good.at < DISCOVERY_TTL_MS) return good.value;
+  const recent = discoveryFailures.get(authority);
+  if (!opts.fresh && recent && Date.now() - recent.at < DISCOVERY_RETRY_AFTER_MS) {
+    const why = `the last attempt to refresh it, ${Math.round((Date.now() - recent.at) / 60_000)} minute(s) ago, ${recent.refused ? "was refused" : "failed"} (${recent.note}), and it is not asked for again within half an hour`;
+    return kept(why) ?? failed(`the chain's list was not read: ${why}`, recent.refused ? "refused" : "failed");
+  }
+  // One read for everyone asking at once. It runs detached from whichever
+  // caller started it, under its own deadline, so one caller leaving does not
+  // throw away a list the next caller is waiting for.
+  let run = discoveryInflight.get(authority);
+  if (!run) {
+    run = runWithSignal(undefined, async (): Promise<CollectionDiscovery> => {
+      try {
+        const trace: RpcTrace = {};
+        const result = await rpc<unknown>("getProgramAccounts", discoveryParams(authority), trace, undefined, AbortSignal.timeout(30_000));
+        const decoded = decodeCollectionsByAuthority(authority, result);
+        if (decoded.state !== "ok") {
+          // A refused or unusable answer is never kept as a list.
+          discoveryFailures.set(authority, { at: Date.now(), note: decoded.note, refused: decoded.state === "refused" });
+          return kept(decoded.note) ?? failed(decoded.note, decoded.state);
+        }
+        const value: CollectionDiscovery = { authority, ...decoded, readAt: new Date().toISOString(), endpoint: trace.endpoint ?? null };
+        discoveryGood.set(authority, { at: Date.now(), value });
+        discoveryFailures.delete(authority);
+        return value;
+      } catch (e) {
+        const note = upstreamMessage(e instanceof Error ? e.message : String(e)).slice(0, 200);
+        discoveryFailures.set(authority, { at: Date.now(), note, refused: false });
+        return kept(`the refresh just now failed (${note})`) ?? failed(`the chain's list could not be read just now (${note})`);
+      } finally {
+        discoveryInflight.delete(authority);
+      }
+    });
+    discoveryInflight.set(authority, run);
+  }
+  const signal = withAmbient(opts.signal);
+  if (!signal) return run;
+  if (signal.aborted) return kept("this call ran out of time before a refresh") ?? failed("not read: this call ran out of time before the chain's list could be read");
+  // The caller's deadline ends the caller's wait, never the shared read.
+  return Promise.race([
+    run,
+    new Promise<CollectionDiscovery>((resolve) =>
+      signal.addEventListener("abort", () => resolve(kept("this call ran out of time before a refresh") ?? failed("not read: this call ran out of time before the chain's list could be read")), { once: true }),
+    ),
+  ]);
+}
+
+const discoveryGood = new Map<string, { at: number; value: CollectionDiscovery }>();
+const discoveryInflight = new Map<string, Promise<CollectionDiscovery>>();
 
 // ------------------------------------------------------------ wallet age
 
@@ -1904,12 +2288,22 @@ export async function walletAge(wallet: string, maxPages = 3) {
   let oldest: number | null = null;
   let newest: number | null = null;
   let complete = false;
+  /** Set when a later page could not be listed because no endpoint knew its cursor. */
+  let cursorGap = false;
   for (let page = 0; page < maxPages; page++) {
-    const sigs = await rpc<{ signature: string; blockTime: number | null }[]>(
-      "getSignaturesForAddress",
-      [wallet, before ? { limit: 1000, before } : { limit: 1000 }],
-      trace,
-    );
+    let sigs: { signature: string; blockTime: number | null }[];
+    try {
+      sigs = await rpc<{ signature: string; blockTime: number | null }[]>(
+        "getSignaturesForAddress",
+        [wallet, before ? { limit: 1000, before } : { limit: 1000 }],
+        trace,
+      );
+    } catch (e) {
+      // The pages already counted stand as a lower bound, and the note says
+      // why the count stopped; it is never read as the wallet's first page.
+      if (e instanceof CursorUnknownError && before) { cursorGap = true; break; }
+      throw e;
+    }
     if (!Array.isArray(sigs) || sigs.length === 0) {
       complete = true;
       break;
@@ -1932,7 +2326,7 @@ export async function walletAge(wallet: string, maxPages = 3) {
   // precisely on the budget is reported as exact instead of being told its
   // "true first transaction is earlier" when it is not.
   let sentinelFailed = false;
-  if (!complete && before) {
+  if (!complete && before && !cursorGap) {
     try {
       const sentinel = await rpc<{ signature: string; blockTime: number | null }[]>(
         "getSignaturesForAddress",
@@ -1961,8 +2355,10 @@ export async function walletAge(wallet: string, maxPages = 3) {
     ...(trace.rotations ? { rpcEndpointNote: `Moved on after: ${trace.rotations.join("; ")}.` } : {}),
     note: complete
       ? "Every signature was counted."
-      : `Stopped after ${count} signatures (${maxPages} pages)${sentinelFailed ? ", and the one extra signature that would have settled whether more exist could not be read" : ""}. ` +
-        `The wallet is AT LEAST this old and this busy; the true first transaction MAY be earlier.`,
+      : cursorGap
+        ? `Stopped after ${count} signatures: no endpoint knew the signature the next page had to continue from. The wallet is AT LEAST this old and this busy; the true first transaction MAY be earlier.`
+        : `Stopped after ${count} signatures (${maxPages} pages)${sentinelFailed ? ", and the one extra signature that would have settled whether more exist could not be read" : ""}. ` +
+          `The wallet is AT LEAST this old and this busy; the true first transaction MAY be earlier.`,
   };
 }
 
@@ -2060,4 +2456,18 @@ export async function accountNature(address: string, opts: { signal?: AbortSigna
       note: "The chain did not answer for this address, so whether it is a wallet or a program account is unknown here.",
     };
   }
+}
+
+// ------------------------------------------- reads for the sale decoder
+
+/**
+ * The newest `limit` signatures on one address, one page and no cursor, as
+ * the node lists them, for the sale scan in lib/chain-sales.ts. It goes
+ * through the same endpoint list, pacing, pauses and error handling as every
+ * read above, and still skips the endpoints that keep no history, because
+ * rpc() applies that rule by method name. The scan reads each transaction
+ * through getParsedTransaction, like every other transaction read.
+ */
+export async function newestSignatures(address: string, limit: number, opts: { trace?: RpcTrace; signal?: AbortSignal } = {}): Promise<unknown> {
+  return rpc<unknown>("getSignaturesForAddress", [address, { limit }], opts.trace, undefined, opts.signal);
 }

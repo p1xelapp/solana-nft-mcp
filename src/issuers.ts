@@ -94,6 +94,130 @@ export function issuerTableDisagreements(
   return problems;
 }
 
+/** The keys the table names as current authorities: the ones whose collections the chain can list. */
+export function currentIssuerKeys(): { address: string; issuer: string }[] {
+  return table.issuers.filter((r) => !r.former && r.collections > 0).map((r) => ({ address: r.address, issuer: r.issuer }));
+}
+
+/**
+ * What a collection's update authority says about who issued it.
+ *
+ * issued: the key is in the table, the collection is one the table lists for
+ *   it, and items have been minted into it.
+ * no-items: the key is in the table and the collection has no items yet.
+ * not-in-registry: the key is in the table and the collection has items, but
+ *   the table does not list it.
+ * unknown-key: the key is not in the table.
+ */
+export type IssuerVerdict = "issued" | "no-items" | "not-in-registry" | "unknown-key";
+
+export interface CollectionIssuer {
+  verdict: IssuerVerdict;
+  /** The issuer's name, set ONLY when the verdict is issued. */
+  issuer: string | null;
+  /** The table's name for the key, whatever the verdict: who the key belongs to, not who made this collection. */
+  keyKnownAs: string | null;
+  updateAuthority: string;
+  numMinted: number | null;
+  /** Present with no-items: the collection exists and nothing has been minted into it. */
+  label?: "no items yet";
+  note: string;
+}
+
+/**
+ * The issuer verdict for one collection, the one place every tool gets it.
+ *
+ * A collection's update authority is a field the creator fills in. Naming a
+ * key needs no signature from that key, and creating a collection costs a
+ * fraction of a cent, so anybody can make one that names Candy Digital's key,
+ * and the table lookup alone called it Candy's. Two facts narrow it:
+ *
+ *  - Minting an item into a collection needs the signature of the authority
+ *    it had at that moment, so an empty collection proves nothing at all.
+ *  - An authority can be handed to a new key without that key signing
+ *    (UpdateCollectionV1 takes the new authority as a plain account, read in
+ *    mpl-core's instruction.rs on 2026-11-14). A collection minted into under
+ *    somebody else's key can be passed to Candy's key afterwards, so items
+ *    alone do not prove it either.
+ *
+ * So a collection is called an issuer's only when it has items AND is one of
+ * the collections the table lists for that key. Anything else names the key
+ * and says why that is not a verdict.
+ */
+export function collectionIssuer(collection: string, updateAuthority: string, numMinted: number | null): CollectionIssuer {
+  const known = knownIssuer(updateAuthority);
+  const minted = typeof numMinted === "number" && Number.isFinite(numMinted) ? numMinted : null;
+  const base = { updateAuthority, numMinted: minted, keyKnownAs: known?.issuer ?? null };
+  if (!known) {
+    return { ...base, verdict: "unknown-key", issuer: null, note: `Its update authority, ${updateAuthority}, is not a key in the bundled issuer table, so no issuer is named.` };
+  }
+  const whose = `${known.issuer}'s ${known.former ? "former " : ""}key`;
+  if (minted === null || minted === 0) {
+    return {
+      ...base,
+      verdict: "no-items",
+      issuer: null,
+      label: "no items yet",
+      note:
+        `It names ${whose} as its update authority but has no items yet. Naming a key needs no signature from it, so an empty collection proves nothing about who made it: unverified. ` +
+        `If ${known.issuer} did create it, it is a drop that has not started.`,
+    };
+  }
+  const listed = Array.isArray(known.collectionAddresses) && known.collectionAddresses.includes(collection);
+  if (!listed) {
+    return {
+      ...base,
+      verdict: "not-in-registry",
+      issuer: null,
+      note:
+        `It names ${whose} as its update authority and has ${minted} item(s), but it is not one of the ${known.collections} collection(s) the bundled table lists for that key (derived ${known.derivedAt.slice(0, 10)}). ` +
+        `Its items were added with the signature of whatever authority it had at the time, and an authority can be handed to any key without that key signing, so this does not prove ${known.issuer} issued it: unverified.`,
+    };
+  }
+  return {
+    ...base,
+    verdict: "issued",
+    issuer: known.issuer,
+    note: `Issued by ${known.issuer}: its update authority is ${whose}, it is one of the collections the bundled table lists for that key (derived ${known.derivedAt.slice(0, 10)}), and ${minted} item(s) have been minted into it.`,
+  };
+}
+
+/**
+ * Where the chain's own list of a key's collections and the bundled registry
+ * disagree.
+ *
+ * `problems` are what a release must not ship with: a collection with items
+ * under the key that the registry lacks (a drop newer than the registry,
+ * added by hand once it is confirmed to be the issuer's), and a registry
+ * collection the chain no longer lists under the key. `noItemsYet` is not a
+ * problem: an empty collection naming the key proves nothing, and is reported
+ * so a drop that has not started is visible.
+ */
+export function discoveryDisagreements(
+  authority: string,
+  discovered: { address: string; name: string; numMinted: number }[],
+  registryAddresses: string[],
+): { problems: string[]; noItemsYet: string[] } {
+  const problems: string[] = [];
+  const noItemsYet: string[] = [];
+  const registry = new Set(registryAddresses);
+  const live = new Set(discovered.map((d) => d.address));
+  for (const d of discovered) {
+    if (d.numMinted === 0) noItemsYet.push(`${d.address} (${d.name})${registry.has(d.address) ? "" : ", not in the registry"}`);
+    else if (!registry.has(d.address)) problems.push(`${d.address} (${d.name}): ${d.numMinted} item(s) under ${authority} but not in the registry; confirm it is the issuer's and add it by hand`);
+  }
+  for (const a of registry) {
+    if (!live.has(a)) problems.push(`${a}: in the registry, but the chain lists no collection under ${authority} at that address now`);
+  }
+  return { problems, noItemsYet };
+}
+
+/** The collections the dated table lists for one key. */
+export function tableCollectionsOf(address: string): string[] {
+  const row = table.issuers.find((i) => i.address === address);
+  return Array.isArray(row?.collectionAddresses) ? [...row.collectionAddresses] : [];
+}
+
 /**
  * One sentence on what a key in the table is, current or former.
  *

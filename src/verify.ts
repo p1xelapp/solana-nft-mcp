@@ -26,7 +26,9 @@ import * as me from "./sources/magiceden.js";
 import * as sol from "./sources/solana.js";
 import { clean } from "./lib/untrusted.js";
 import { checkedFloor } from "./lib/custody.js";
-import { NotFoundError, WrongKindError, BadInputError } from "./lib/errors.js";
+import { NotFoundError, WrongKindError, BadInputError, TypedError } from "./lib/errors.js";
+import { isSignature, readSale, type ChainSale } from "./lib/chain-sales.js";
+import { currencyByMint } from "./lib/reconcile.js";
 
 export type Verdict = "confirmed" | "contradicted" | "unverifiable";
 
@@ -211,7 +213,7 @@ async function untradedFromMarketplace(
       reproduce,
       verdict: "contradicted",
       explanation:
-        `Contradicted: Magic Eden recorded ${read.sales.length} sale(s) of this item, the latest at ${latest.time} for ${latest.priceSol} SOL ` +
+        `Contradicted: Magic Eden recorded ${read.sales.length} sale(s) of this item, the latest at ${latest.time} for ${latest.price} ${latest.currency ?? "in a currency that is not established"} ` +
         `(transaction ${latest.signature}).`,
       evidence: [
         {
@@ -622,7 +624,214 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   };
 }
 
-export type ClaimType = "supply" | "never-traded" | "ownership" | "floor";
+/**
+ * A claimed currency, by code or by mint address. Null when it names nothing
+ * this module can compare, which the caller hears as bad input.
+ */
+function claimedCurrency(raw: string | undefined): { code: string | null; mint: string | null; label: string } | null {
+  if (raw === undefined) return { code: "SOL", mint: null, label: "SOL" };
+  const t = raw.trim();
+  const code = t.toUpperCase();
+  if (["SOL", "USDC", "USDT", "PYUSD"].includes(code)) return { code, mint: null, label: code };
+  if (sol.isBase58Address(t)) {
+    // The one table the marketplace rows and the decoder use too.
+    const named = currencyByMint(t);
+    return { code: named, mint: t, label: named ?? `the token ${t}` };
+  }
+  return null;
+}
+
+/** Relative room for a claimed price that was rounded when it was written down. */
+const PRICE_TOLERANCE = 0.005;
+
+/**
+ * A sale, checked against the transaction it names.
+ *
+ * The feeds quote one fill differently: Magic Eden reported 0.0039 SOL and
+ * OpenSea 0.004368 SOL for the same transaction, because one quotes what the
+ * seller listed at and the other what the buyer paid. Both are true, so the
+ * chain gives both, and a claim is confirmed when it matches either one,
+ * saying which. It is contradicted only when the transaction was read and
+ * shows something else: not a sale of this item, another currency, or a price
+ * that matches neither figure. A transaction that could not be read, that
+ * moved several items, whose buyer and seller are one wallet, or whose figures
+ * carry returned rent too large to rule a claim in or out, is unverifiable
+ * for a price: the same currency, multi-item and self-fill rules the
+ * marketplace sale rows follow.
+ */
+async function verifySale(signature: string, item: string, claimed: number | undefined, currencyArg: string | undefined): Promise<Omit<VerificationResult, "receipt">> {
+  const wanted = claimedCurrency(currencyArg);
+  if (!wanted) throw new BadInputError("currency must be SOL, USDC, USDT, PYUSD or a token's mint address");
+  const base = {
+    claim: `${item} was sold in this transaction${claimed !== undefined ? ` for ${claimed} ${wanted.label}` : ""}`,
+    subject: signature,
+    reproduce:
+      `Call getTransaction on ${signature} with encoding jsonParsed and maxSupportedTransactionVersion 1 against any Solana RPC. ` +
+      `Find the Metaplex Core TransferV1 (program ${sol.CORE_PROGRAM}, first data byte 14) whose first account is ${item}: its fifth account is the new owner. ` +
+      `The marketplace instruction that called it names the venue, and the System Program or token transfers inside that instruction are the payments, each with its recipient. No key is needed.`,
+  };
+  if (claimed !== undefined && !comparable(claimed)) {
+    return { ...base, verdict: "unverifiable", explanation: unusableClaim(claimed), evidence: [], caveats: ["Pass a finite price above zero."] };
+  }
+  let read: Awaited<ReturnType<typeof readSale>>;
+  try {
+    read = await readSale(signature, item);
+  } catch (e) {
+    // A transaction format newer than this server reads is the server being
+    // out of date, not the chain being busy: the shared reader says so, and
+    // a retry would not help.
+    const outdated = e instanceof TypedError && e.kind === "unsupported" ? e.wording : undefined;
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: outdated
+        ? `${outdated.headline} The sale cannot be checked here.`
+        : `The chain could not be read for this transaction just now (${clean(e instanceof Error ? e.message : String(e)).slice(0, 200)}), so the sale cannot be checked.`,
+      evidence: [],
+      caveats: [outdated ? `This is not a statement about the sale. ${outdated.next}` : "This is a source failure, not a statement about the sale. Retry shortly."],
+    };
+  }
+  const evidence: Evidence[] = [];
+  const where = `Solana transaction ${signature}`;
+  const at = read.time ? `, block time ${read.time}` : "";
+  if (read.status === "cannot-tell") {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `${read.reason} The claim is neither confirmed nor contradicted.`,
+      evidence: [{ source: where, method: "Read with getTransaction and decoded for this item's Metaplex Core transfer.", observed: `could not decide${at}` }],
+      caveats: read.notes,
+    };
+  }
+  if (read.status === "not-a-sale") {
+    evidence.push({ source: where, method: "Read with getTransaction and decoded for this item's Metaplex Core transfer and the program that made it.", observed: `not a sale (${read.kind ?? "other"})${read.venue ? `, ${read.venue}${read.instruction ? ` ${read.instruction}` : ""}` : ""}${at}` });
+    return {
+      ...base,
+      verdict: "contradicted",
+      explanation: `Contradicted: the chain shows this transaction is not a sale of ${item}. ${read.reason}`,
+      evidence,
+      caveats: ["A transaction signature names one transaction. If the sale happened, it is in another one; get_asset_provenance lists the item's transactions."],
+    };
+  }
+
+  // A sale. What it was, then the money.
+  const sale: ChainSale = read;
+  const aVenue = `${/^[AEIOU]/.test(sale.venue ?? "") ? "an" : "a"} ${sale.venue}`;
+  const AVenue = aVenue[0]!.toUpperCase() + aVenue.slice(1);
+  evidence.push({
+    source: where,
+    method: `The item's Metaplex Core transfer, made inside ${sale.venue} ${sale.instruction}; buyer and seller from that instruction's accounts (${sale.layout === "published" ? "the venue's published layout" : sale.layout === "observed" ? "a layout read from real transactions" : "a layout inferred from a sibling program"}).`,
+    observed: `${sale.venue} sale${at}, seller ${sale.seller}, buyer ${sale.buyer}${sale.collection ? `, collection ${sale.collection}` : ""}`,
+  });
+  const caveats = [
+    "Marketplaces quote one fill differently. Magic Eden and Tensor quote a listing's price, which is what the seller receives, with royalties and fees added for the buyer; OpenSea and accepted offers quote the buyer's total, from which the seller's share is net. The chain gives both, and a claim matching either is confirmed.",
+    ...sale.notes,
+  ];
+  if (read.endpoint) evidence.push({ source: `Solana RPC endpoint ${read.endpoint}`, method: "The endpoint that served the transaction. A confirmed transaction is the same on every node.", observed: `read at ${read.readAt}` });
+  const cur = sale.currency;
+  if (cur) {
+    const money = [
+      sale.price !== null && sale.price !== undefined ? `everything paid for the item ${sale.price}` : null,
+      sale.sellerReceived !== null && sale.sellerReceived !== undefined ? `seller received ${sale.sellerReceived}` : null,
+      sale.buyerPaid !== null && sale.buyerPaid !== undefined ? `buyer paid ${sale.buyerPaid}` : null,
+    ].filter(Boolean);
+    evidence.push({
+      source: where,
+      method:
+        sale.priceBasis === "venue-transfers"
+          ? "The transfers inside the venue's instruction, each with its recipient: the seller's share, then royalty and fee legs."
+          : sale.priceBasis === "balance-changes"
+            ? "Balance changes, because the venue moved the money without a transfer instruction to read."
+            : sale.priceBasis === "buyer-balance"
+              ? "The buyer's balance change, because the seller's proceeds were not visible."
+              : "No per-item amount could be stated.",
+      observed: `${money.length ? money.join(", ") : "no per-item price"} (${cur.label})`,
+    });
+  }
+  if (sale.selfFill) caveats.unshift("The buyer and the seller are the same wallet. A self-fill happened on chain, but it is not evidence of a market price.");
+
+  // The currency, by mint address. Anything else is never SOL.
+  if (cur && (claimed !== undefined || currencyArg !== undefined)) {
+    const same = wanted.mint ? cur.mint === wanted.mint || (wanted.code === "SOL" && cur.code === "SOL") : wanted.code !== null && cur.code === wanted.code;
+    if (!same) {
+      return {
+        ...base,
+        verdict: "contradicted",
+        explanation: `Contradicted: ${aVenue} sale of this item did happen here, but it was paid in ${cur.label}, not ${wanted.label}.${cur.paidInOtherToken ? " An amount in another token is never a SOL figure." : ""}`,
+        evidence,
+        caveats,
+      };
+    }
+  }
+  if (sale.layout === "inferred") {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `The chain shows ${aVenue} ${sale.instruction} that moved this item, but the buyer and seller slots for that instruction are inferred and no real transaction of its kind has been checked, so no verdict is given on it.`,
+      evidence,
+      caveats,
+    };
+  }
+  if (claimed === undefined) {
+    // A self-fill's reason already says it is one wallet on both sides.
+    return { ...base, verdict: "confirmed", explanation: `Confirmed against the chain: ${sale.reason}`, evidence, caveats };
+  }
+  // The marketplace rows' rule: a self-fill is a sale, and its amount is no
+  // evidence of what anyone paid, so it is in no money figure. A claimed price
+  // is therefore neither confirmed nor contradicted by one.
+  if (sale.selfFill) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `${AVenue} fill of this item did happen in this transaction, but the buyer and the seller are the same wallet (a self-fill): no money changed hands between two parties, so its amount is not a price anyone paid and a ${claimed} ${wanted.label} claim is neither confirmed nor contradicted by it.`,
+      evidence,
+      caveats,
+    };
+  }
+  if (sale.price === null || sale.price === undefined) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `${AVenue} sale of this item did happen in this transaction, but its price cannot be proven: ${sale.noPriceReason ?? "no per-item amount could be stated"}.`,
+      evidence,
+      caveats,
+    };
+  }
+  const slack = sale.priceExact ? 0 : sale.priceSlack ?? 0;
+  if (slack > sale.price * 0.05) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `${AVenue} sale of this item did happen here, but its figures come from balance changes that can include up to ${slack} ${cur?.label ?? ""} of returned rent, too much to rule a ${claimed} claim in or out.`,
+      evidence,
+      caveats,
+    };
+  }
+  const figures = [
+    { what: "everything paid for the item (the buyer's total)", value: sale.price },
+    { what: "what the seller received", value: sale.sellerReceived },
+    { what: "what the buyer paid", value: sale.buyerPaid },
+  ].filter((f): f is { what: string; value: number } => comparable(f.value));
+  const hit = figures.find((f) => near(f.value, claimed, f.value * PRICE_TOLERANCE + slack));
+  if (hit) {
+    return {
+      ...base,
+      verdict: "confirmed",
+      explanation: `Confirmed against the chain: ${aVenue} sale of this item, and ${claimed} ${wanted.label} matches ${hit.what}, ${hit.value} ${cur?.label ?? ""}.`,
+      evidence,
+      caveats,
+    };
+  }
+  return {
+    ...base,
+    verdict: "contradicted",
+    explanation: `Contradicted: ${aVenue} sale of this item did happen here, but the chain shows ${figures.map((f) => `${f.what} ${f.value}`).join(", ")} ${cur?.label ?? ""}, and ${claimed} matches none of them.`,
+    evidence,
+    caveats,
+  };
+}
+
+export type ClaimType = "supply" | "never-traded" | "ownership" | "floor" | "sale";
 
 const MARK: Record<Verdict, string> = { confirmed: "CONFIRMED", contradicted: "CONTRADICTED", unverifiable: "UNVERIFIABLE" };
 const short = (s: string) => (s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : s);
@@ -649,9 +858,11 @@ export async function verifyClaim(args: {
   subject: string;
   value?: number;
   wallet?: string;
+  item?: string;
+  currency?: string;
 }): Promise<VerificationResult> {
-  const { claim, subject, value, wallet } = args;
-  return withReceipt(await route({ claim, subject, value, wallet }));
+  const { claim, subject, value, wallet, item, currency } = args;
+  return withReceipt(await route({ claim, subject, value, wallet, item, currency }));
 }
 
 async function route(args: {
@@ -659,9 +870,15 @@ async function route(args: {
   subject: string;
   value?: number;
   wallet?: string;
+  item?: string;
+  currency?: string;
 }): Promise<Omit<VerificationResult, "receipt">> {
-  const { claim, subject, value, wallet } = args;
+  const { claim, subject, value, wallet, item, currency } = args;
   switch (claim) {
+    case "sale":
+      if (!isSignature(subject)) throw new BadInputError("sale claims take the transaction signature as `subject` (86 to 88 base58 characters)");
+      if (!item) throw new BadInputError("sale claims need `item` - the address of the item said to be sold");
+      return verifySale(subject, item, value, currency);
     case "supply":
       if (value === undefined) throw new BadInputError("supply claims need `value` - the number being claimed");
       return verifySupply(subject, value);

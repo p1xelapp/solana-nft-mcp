@@ -15,6 +15,7 @@ import type { MeWalletActivity, MeWalletToken } from "./sources/magiceden.js";
 import type { OsAccountEvent } from "./sources/opensea.js";
 import { accountEventFingerprint } from "./sources/opensea.js";
 import { clean } from "./lib/untrusted.js";
+import { mePayment } from "./lib/reconcile.js";
 import { knownVenueAccount, venueAddress } from "./sources/solana.js";
 import { isoFromBlockTime, usableBlockTime } from "./lib/time.js";
 
@@ -159,6 +160,8 @@ export interface ActivitySummary {
     unsettled: number;
     /** Buys and sells counted on their side but left out of every SOL total. */
     unpricedTrades: number;
+    /** Of the buys and sells, those paid in USDC or another token: counted on their side, outside every SOL total and flip. */
+    nonSolTrades: number;
     /** Rows whose blockTime was present but not a representable time. Their times are null; the rows still count. */
     unusableTimestamps: number;
   };
@@ -237,6 +240,8 @@ export function summarizeActivity(
   let unpricedTrades = 0;
   /** Trades excluded from money because two copies of the row disagreed about the amount or a side. */
   let unsettledTrades = 0;
+  /** Trades paid in something other than SOL. Their `price` is a SOL equivalent, not what was paid. */
+  let nonSolTrades = 0;
   /**
    * Fills where this wallet is BOTH buyer and seller. No money left or
    * entered the wallet, so they sit outside the buy and sell totals and the
@@ -267,11 +272,16 @@ export function summarizeActivity(
     const mintId = venueAddress(e.tokenMint);
     if (type === "list") lists++;
     if (type === "bid") bids++;
-    if (type === "buyNow") {
+    // "buy" and "buyNow" name the same fill on this API.
+    if (type === "buyNow" || type === "buy") {
       const rawPrice = (e as { price?: unknown }).price;
       const settled = (e as { unsettled?: boolean }).unsettled !== true;
-      const parsed = usablePrice(rawPrice);
-      if (parsed === null && rawPrice !== null && rawPrice !== undefined) malformedPrices++;
+      // An 800 USDC purchase arrives with `price` 6.73, a SOL equivalent at
+      // Magic Eden's rate. It is a trade on its side, but no SOL moved, so it
+      // stays out of every SOL total and cannot be one leg of a SOL flip.
+      const solPaid = mePayment(e).kind === "sol";
+      const parsed = solPaid ? usablePrice(rawPrice) : null;
+      if (solPaid && parsed === null && rawPrice !== null && rawPrice !== undefined) malformedPrices++;
       // A row whose two copies disagreed about the amount or a side is a trade
       // that happened for an amount we cannot state, exactly like a missing
       // price: the side is counted, the money is not.
@@ -282,7 +292,8 @@ export function summarizeActivity(
         continue;
       }
       const side = e.buyer === wallet ? "buy" : e.seller === wallet ? "sell" : null;
-      if (side && price === null) unpricedTrades++;
+      if (side && !solPaid) nonSolTrades++;
+      else if (side && price === null) unpricedTrades++;
       if (side === "buy") {
         buys.count++;
         if (price !== null) buys.totalSol += price;
@@ -388,7 +399,13 @@ export function summarizeActivity(
   // The same predicate the loop uses: a self-fill is not a purchase, and it
   // was being reported as the first one.
   const firstBuy = chrono.find(
-    (e) => e.type === "buyNow" && e.buyer === wallet && e.seller !== wallet && usablePrice(e.price) !== null && (e as { unsettled?: boolean }).unsettled !== true,
+    (e) =>
+      (e.type === "buyNow" || e.type === "buy") &&
+      e.buyer === wallet &&
+      e.seller !== wallet &&
+      mePayment(e).kind === "sol" &&
+      usablePrice(e.price) !== null &&
+      (e as { unsettled?: boolean }).unsettled !== true,
   );
   const firstBuyCol = firstBuy?.collectionSymbol ?? firstBuy?.collection ?? null;
 
@@ -414,6 +431,11 @@ export function summarizeActivity(
   if (unpricedTrades) {
     caveats.push(
       `${unpricedTrades} of the buys and sells here carry no usable price: the counts include them, the SOL totals, net flow and realised P&L do not.`,
+    );
+  }
+  if (nonSolTrades) {
+    caveats.push(
+      `${nonSolTrades} of the buys and sells here were paid in a currency other than SOL (USDC, for example). The counts include them; the SOL totals, net flow, flips and realised P&L do not, because Magic Eden's price on those rows is a SOL equivalent at its own rate, not what was paid.`,
     );
   }
   if (unmeasuredCycles) {
@@ -443,7 +465,7 @@ export function summarizeActivity(
     sells: { ...sells, totalSol: round(sells.totalSol) },
     netFlowSol: round(sells.totalSol - buys.totalSol),
     selfFills,
-    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades, unusableTimestamps },
+    pricing: { malformedPrices, unsettled: unsettledTrades, unpricedTrades, nonSolTrades, unusableTimestamps },
     topCollections: Object.entries(perCollection)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)

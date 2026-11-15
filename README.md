@@ -153,7 +153,7 @@ without raising an error.
 | Tool | Back |
 |---|---|
 | `identify` | what an address or name is, where it trades, which tool to call next |
-| `verify_claim` | confirmed, contradicted or unverifiable, with the numbers seen and how to re-check |
+| `verify_claim` | confirmed, contradicted or unverifiable, with the numbers seen and how to re-check; for a posted sale, the venue, buyer, seller and amounts read from the transaction itself |
 | `get_asset_trust` | Core plugins decoded from bytes: delegates, frozen state, oracle checks that refuse transfers or burns right now, enforced vs advisory royalties, mutable metadata, editions |
 | `get_integration_recipe` | endpoints, pacing, running cost, skeleton and the silent failure modes for a given build |
 | `search_collections` | name lookup across the Magic Eden directory and the OpenSea Solana index, saying which layers were read |
@@ -188,8 +188,13 @@ retain the old owner; `get_asset` checks current Core ownership against account 
 - Buying, selling, listing and signing are absent. No code exists for them.
 - Provenance and trust decoding cover Metaplex Core only. Legacy SPL and compressed NFTs are
   reported as named gaps, never as empty lists. Holdings and activity cover both.
-- Magic Eden and OpenSea only. Tensor has no self-serve keys; Rarible's Solana coverage is
-  unconfirmed. Both are catalogued with the condition that would add them.
+- Marketplace feeds: Magic Eden and OpenSea only. Tensor gives API access on request (its API
+  page, read 2026-11-14), so its API is not called and its listings, bids and floor stay unread.
+  Its sales of Metaplex Core items, and OpenSea's own Solana sales that Magic Eden's feed misses,
+  are decoded from the chain instead: one transaction at a time by `verify_claim` with
+  `claim: "sale"`, and as a bounded scan by `get_recent_sales` with `chainScan: true`, each
+  reported as its own venue row. Rarible's Solana coverage is unconfirmed. Tensor's API and
+  Rarible are catalogued with the condition that would add them.
 - Every money figure names its currency and the API it came from, on the summary and on every
   priced row, and counts keep their coverage flags beside them (`truncated`, `stale`,
   `historyComplete`). A program should refuse to act on a row whose flag says the read was partial.

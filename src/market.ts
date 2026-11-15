@@ -16,6 +16,7 @@
 
 import type { MeCollectionActivity, MeListing, TraitFloor, MeCollectionIndexEntry } from "./sources/magiceden.js";
 import { clean } from "./lib/untrusted.js";
+import { mePayment } from "./lib/reconcile.js";
 import { venueAddress } from "./sources/solana.js";
 
 /** The most traits this will read off one listing. A minter chooses how many there are. */
@@ -74,6 +75,8 @@ export interface IdentifiableEvent {
   buyer?: string;
   seller?: string;
   price?: number;
+  /** Magic Eden's payment detail; `splPrice` names a sale paid in an SPL token. */
+  priceInfo?: unknown;
 }
 
 /**
@@ -150,7 +153,7 @@ export function fallbackIdentity(e: IdentifiableEvent | null | undefined): strin
  * unsettled, because guessing which copy is right is how a wrong number gets
  * presented as a fact.
  */
-const HYDRATED_FIELDS = ["buyer", "seller", "price", "blockTime", "source", "name"] as const;
+const HYDRATED_FIELDS = ["buyer", "seller", "price", "priceInfo", "blockTime", "source", "name"] as const;
 
 /**
  * The fields a money figure is actually built from.
@@ -162,9 +165,17 @@ const HYDRATED_FIELDS = ["buyer", "seller", "price", "blockTime", "source", "nam
  * reads, not what was paid, and suppressing an agreed 2 SOL price because the
  * name was tidied up is the bug this split exists to prevent.
  */
-const MONEY_FIELDS: readonly string[] = ["price", "buyer", "seller"];
+const MONEY_FIELDS: readonly string[] = ["price", "priceInfo", "buyer", "seller"];
 
 const populated = (v: unknown): boolean => v !== null && v !== undefined && v !== "";
+
+/**
+ * The part of a field two copies must agree on. For `priceInfo` that is the
+ * SPL payment alone: whether a sale was paid in USDC is money, while the SOL
+ * figure beside it is served at different scales by different endpoints.
+ */
+const comparable = (field: string, v: unknown): string =>
+  field === "priceInfo" ? JSON.stringify((v as { splPrice?: unknown } | null)?.splPrice ?? null) : String(v);
 
 export interface MergeOutcome<T> {
   merged: T;
@@ -186,7 +197,7 @@ export function mergeEventCopies<T extends IdentifiableEvent>(first: T, later: T
       merged[f] = b;
       continue;
     }
-    if (String(a) !== String(b)) conflicts.push(f);
+    if (comparable(f, a) !== comparable(f, b)) conflicts.push(f);
   }
   return { merged: merged as T, conflicts, moneyConflict: conflicts.some((f) => MONEY_FIELDS.includes(f)) };
 }
@@ -279,6 +290,142 @@ export function dedupeEvents<T extends IdentifiableEvent>(
   };
 }
 
+// ----------------------------------------------------------- sale flags
+
+/** A fill with one wallet on both sides: an item moved, no money changed hands between two parties. */
+export const isSelfFill = (buyer: unknown, seller: unknown): boolean => typeof buyer === "string" && buyer !== "" && buyer === seller;
+
+/** Fewest other priced sales a range check needs before it may call one sale far outside them. */
+const RANGE_MIN_OTHERS = 5;
+/** Far above means this many times the others' median, or this many times their highest. */
+const FAR_OVER_MEDIAN = 15;
+const FAR_OVER_HIGHEST = 5;
+
+export interface FarAboveRange {
+  priceSol: number;
+  medianOfOthersSol: number;
+  highestOfOthersSol: number;
+  othersCompared: number;
+  note: string;
+}
+
+/**
+ * Which SOL prices sit far above the other prices in the same read.
+ *
+ * Only a flag with its numbers: a 40 SOL sale of a card that trades at 0.04
+ * can be a typo, a wash trade or a real collector, and the feed cannot say
+ * which, so nothing is dropped or adjusted. Each price is compared with the
+ * OTHERS, never with a set that includes itself, so one huge sale cannot hide
+ * by raising the median it is measured against. Index-aligned with `prices`;
+ * a null price is never flagged and never compared.
+ */
+export function farAboveRange(prices: readonly (number | null)[]): (FarAboveRange | null)[] {
+  const out: (FarAboveRange | null)[] = prices.map(() => null);
+  const sorted = prices
+    .map((v, i) => ({ v, i }))
+    .filter((p): p is { v: number; i: number } => typeof p.v === "number" && Number.isFinite(p.v) && p.v > 0)
+    .sort((a, b) => a.v - b.v);
+  const others = sorted.length - 1;
+  if (others < RANGE_MIN_OTHERS) return out;
+  for (let k = 0; k < sorted.length; k++) {
+    // The j-th smallest of the others is the sorted list with position k removed.
+    const at = (j: number) => sorted[j < k ? j : j + 1]!.v;
+    const median = others % 2 ? at((others - 1) / 2) : (at(others / 2 - 1) + at(others / 2)) / 2;
+    const highest = at(others - 1);
+    const v = sorted[k]!.v;
+    if (v > FAR_OVER_MEDIAN * median || v > FAR_OVER_HIGHEST * highest) {
+      out[sorted[k]!.i] = {
+        priceSol: round(v),
+        medianOfOthersSol: round(median),
+        highestOfOthersSol: round(highest),
+        othersCompared: others,
+        note: `Far above the other ${others} sales compared (more than ${FAR_OVER_MEDIAN} times their median or ${FAR_OVER_HIGHEST} times their highest). Shown as the feed reported it, not dropped or adjusted; check it against its transaction before repeating it.`,
+      };
+    }
+  }
+  return out;
+}
+
+export interface SaleFlagInput {
+  signature: string | null;
+  mint: string | null;
+  buyer: string | null;
+  seller: string | null;
+  /** The amount in SOL, or null when the sale was not paid in SOL or carried no usable price. */
+  priceSol: number | null;
+}
+
+export interface SaleFlags {
+  selfFill?: true;
+  sharedTransaction?: { items: number; note: string };
+  farAboveRecentRange?: FarAboveRange;
+}
+
+/**
+ * Warnings for a list of sale rows from one feed, built only from what the
+ * rows already carry: no row costs an extra read.
+ *
+ * One wallet on both sides is a self-fill. Several items sold under one
+ * signature mean the buyer's total cannot prove a per-item price. A price far
+ * above the others in the same list is marked with the numbers. A self-fill's
+ * price is never used to judge the others.
+ */
+export function saleRowFlags(rows: readonly SaleFlagInput[]): SaleFlags[] {
+  const items = new Map<string, Set<string>>();
+  rows.forEach((r, i) => {
+    if (!r.signature) return;
+    const set = items.get(r.signature) ?? new Set<string>();
+    set.add(r.mint ?? `unnamed-${i}`);
+    items.set(r.signature, set);
+  });
+  const self = rows.map((r) => isSelfFill(r.buyer, r.seller));
+  const far = farAboveRange(rows.map((r, i) => (self[i] ? null : r.priceSol)));
+  return rows.map((r, i) => {
+    const n = r.signature ? (items.get(r.signature)?.size ?? 1) : 1;
+    return {
+      ...(self[i] ? { selfFill: true as const } : {}),
+      ...(n > 1
+        ? {
+            sharedTransaction: {
+              items: n,
+              note: `This transaction carried ${n} item sales. The price here is the venue's per-item figure; a buyer's total for the transaction cannot prove how it splits between the items.`,
+            },
+          }
+        : {}),
+      ...(far[i] ? { farAboveRecentRange: far[i] } : {}),
+    };
+  });
+}
+
+/**
+ * How many of another feed's sale rows are the same fills as rows in Magic
+ * Eden's feed: the same signature, item, buyer and seller, matched exactly
+ * once. OpenSea lists Magic Eden's fills too (35 of 50 Candy MLB sales read
+ * on 2026-11-14), so its count and Magic Eden's overlap by this many. A row
+ * missing any part of that identity, or matching twice, is not counted.
+ */
+export function countSameFills(
+  rows: readonly { transaction?: string | null; mint?: string | null; buyer?: string | null; seller?: string | null }[],
+  meEvents: readonly { signature?: string; tokenMint?: string; buyer?: string; seller?: string; type?: string }[],
+): number {
+  const key = (sig: unknown, mint: unknown, buyer: unknown, seller: unknown): string | null =>
+    [sig, mint, buyer, seller].every((v) => typeof v === "string" && v !== "") ? [sig, mint, buyer, seller].join("\u0000") : null;
+  const meKeys = new Map<string, number>();
+  for (const e of meEvents) {
+    if (!SALE_TYPES.has(String(e.type))) continue;
+    const k = key(e.signature, e.tokenMint, e.buyer, e.seller);
+    if (k) meKeys.set(k, (meKeys.get(k) ?? 0) + 1);
+  }
+  const rowKeys = new Map<string, number>();
+  for (const r of rows) {
+    const k = key(r.transaction, r.mint, r.buyer, r.seller);
+    if (k) rowKeys.set(k, (rowKeys.get(k) ?? 0) + 1);
+  }
+  let n = 0;
+  for (const [k, count] of rowKeys) if (count === 1 && meKeys.get(k) === 1) n++;
+  return n;
+}
+
 // ----------------------------------------------------------- sales
 
 export interface SaleRef {
@@ -291,6 +438,20 @@ export interface SaleRef {
   seller: string | null;
   venue: string;
   currency: "SOL";
+  /** Set when this price sits far above the other sales in the window. */
+  farAboveRecentRange?: FarAboveRange;
+}
+
+/** Sales paid in something other than SOL, one row per payment token. Never added to a SOL figure. */
+export interface OtherCurrencySales {
+  /** The currency's name when its address proves it (USDC, USDT, PYUSD); null for another token. */
+  currency: string | null;
+  paymentToken: string | null;
+  sales: number;
+  /** Total paid in that token's own units, over the sales whose amount could be read and was settled. */
+  amount: number;
+  /** Sales whose amount could not be read or whose copies disagreed. */
+  amountsUnread: number;
 }
 
 export interface DailyPoint {
@@ -352,6 +513,8 @@ export interface SalesSummary {
   daily: DailyPoint[];
   /** Fills grouped by the execution venue the feed reported for them, not by the site a person was looking at. */
   venues: { venue: string; sales: number; volumeSol: number; currency: "SOL" }[];
+  /** Present when some sales were paid in USDC or another token: counted in `sales`, outside every SOL figure. */
+  otherCurrencies?: OtherCurrencySales[];
   coverage: {
     oldestSeen: string | null;
     newestSeen: string | null;
@@ -374,6 +537,16 @@ export interface SalesSummary {
     identityFallbacks: number;
     /** Rows whose price field was present but not a finite number above zero. */
     malformedPrices: number;
+    /** Sales paid in a currency other than SOL. Counted in sales, outside every SOL figure. */
+    paidInOtherCurrency: number;
+    /** Fills with one wallet as both buyer and seller. Counted in sales, outside every SOL figure and both rankings. */
+    selfFills: number;
+    /** Fills against a Magic Eden AMM pool (venue "mmm"). */
+    poolFills: number;
+    /** Transactions that carried more than one item sale. */
+    multiItemTransactions: number;
+    /** Sales far above the other sales in the window, with the numbers. Flagged, never dropped. */
+    farAboveRecentRange: (FarAboveRange & { signature: string | null; tokenMint: string | null })[];
     note: string;
   };
 }
@@ -430,24 +603,61 @@ export function summarizeSales(
   const identityFallbacks = deduped.identityFallbacks;
 
   let unpricedSales = 0;
-  /** Every completed sale in the window. `price` is null when we could not price it. */
-  const sales: { price: number | null; e: MeCollectionActivity; at: number | null }[] = [];
+  let selfFills = 0;
+  let poolFills = 0;
+  /** Sales paid in something other than SOL, keyed by payment token. */
+  const otherPaid = new Map<string, OtherCurrencySales>();
+  let paidInOtherCurrency = 0;
+  /** Every completed sale in the window. `price` is null when it cannot be a SOL figure. */
+  const sales: { price: number | null; e: MeCollectionActivity; at: number | null; self: boolean }[] = [];
   for (const e of deduped.events) {
     const bt = usableBlockTime(e.blockTime);
+    // An event whose copies disagreed cannot support a money figure.
+    const settled = (e as { unsettled?: boolean }).unsettled !== true;
+    const self = isSelfFill(e.buyer, e.seller);
+    if (self) selfFills++;
+    if (e.source === "mmm") poolFills++;
+    // A sale paid in USDC carries a SOL EQUIVALENT in `price`. It is a sale,
+    // and its amount is real money, but in another unit: it is counted and
+    // totalled in its own currency, and never summed into a SOL figure.
+    const pay = mePayment(e);
+    if (pay.kind !== "sol") {
+      paidInOtherCurrency++;
+      const key = pay.paymentToken ?? "unknown";
+      const row = otherPaid.get(key) ?? { currency: pay.currency, paymentToken: pay.paymentToken, sales: 0, amount: 0, amountsUnread: 0 };
+      row.sales++;
+      if (settled && pay.amount !== null) row.amount = round(row.amount + pay.amount);
+      else row.amountsUnread++;
+      otherPaid.set(key, row);
+      sales.push({ price: null, e, at: bt, self });
+      continue;
+    }
     // A price is only money when it is a finite number above zero. A negative
     // or non-finite one is a malformed row, counted and named, never folded
     // into a total where it would subtract from volume or poison it with NaN.
     const priceGiven = (e as { price?: unknown }).price;
     const price = usablePrice(priceGiven);
     if (price === null && priceGiven !== null && priceGiven !== undefined) malformedPrices++;
-    // An event whose copies disagreed cannot support a money figure.
-    const settled = (e as { unsettled?: boolean }).unsettled !== true;
-    const usable = settled ? price : null;
-    if (usable === null) unpricedSales++;
-    sales.push({ price: usable, e, at: bt });
+    // A self-fill moved an item between one wallet's two hands; its price is
+    // no evidence of what anyone paid, the same rule the wallet view applies.
+    const usable = settled && !self ? price : null;
+    if (usable === null && !self) unpricedSales++;
+    sales.push({ price: usable, e, at: bt, self });
   }
 
-  const priced = sales.filter((s): s is { price: number; e: MeCollectionActivity; at: number | null } => s.price !== null);
+  const priced = sales.filter((s): s is { price: number; e: MeCollectionActivity; at: number | null; self: boolean } => s.price !== null);
+  const far = farAboveRange(priced.map((s) => s.price));
+  const farAt = new Map(priced.map((s, i) => [s, far[i]] as const));
+  // Several item sales under one signature: the per-item figures are the
+  // venue's, never something a buyer's total can prove.
+  const itemsBySignature = new Map<string, Set<string>>();
+  for (const s of sales) {
+    if (typeof s.e.signature !== "string" || !s.e.signature) continue;
+    const set = itemsBySignature.get(s.e.signature) ?? new Set<string>();
+    set.add(typeof s.e.tokenMint === "string" ? s.e.tokenMint : "");
+    itemsBySignature.set(s.e.signature, set);
+  }
+  const multiItemTransactions = [...itemsBySignature.values()].filter((set) => set.size > 1).length;
 
   const ref = (s: { price: number; e: MeCollectionActivity; at: number | null }): SaleRef => ({
     currency: "SOL",
@@ -461,6 +671,7 @@ export function summarizeSales(
     buyer: typeof s.e.buyer === "string" ? s.e.buyer : null,
     seller: typeof s.e.seller === "string" ? s.e.seller : null,
     venue: clean(s.e.source ?? "") || "unknown",
+    ...(farAt.get(s as (typeof priced)[number]) ? { farAboveRecentRange: farAt.get(s as (typeof priced)[number])! } : {}),
   });
 
   const byPrice = [...priced].sort((a, b) => a.price - b.price);
@@ -493,8 +704,10 @@ export function summarizeSales(
     m.set(k, cur);
   };
   for (const s of sales) {
-    if (typeof s.e.buyer === "string" && s.e.buyer) bump(buyers, s.e.buyer, s.price);
-    if (typeof s.e.seller === "string" && s.e.seller) bump(sellers, s.e.seller, s.price);
+    // A wallet filling its own listing is neither a buyer nor a seller in any
+    // sense a ranking means, so it never lifts itself up either list.
+    if (!s.self && typeof s.e.buyer === "string" && s.e.buyer) bump(buyers, s.e.buyer, s.price);
+    if (!s.self && typeof s.e.seller === "string" && s.e.seller) bump(sellers, s.e.seller, s.price);
     const day = s.at !== null ? utcDay(s.at) : null;
     if (day !== null) bump(days, day, s.price);
     bump(venues, clean(s.e.source ?? "") || "unknown", s.price);
@@ -533,7 +746,34 @@ export function summarizeSales(
   }
   if (unpricedSales) {
     notes.push(
-      `${unpricedSales} completed sale${unpricedSales === 1 ? "" : "s"} carried no usable price: counted in sales, buyers, sellers and the daily series, and excluded from volume, median and average rather than counted as zero. Money figures here cover ${sales.length - unpricedSales} of ${sales.length} sales.`,
+      `${unpricedSales} completed sale${unpricedSales === 1 ? "" : "s"} carried no usable price: counted in sales, buyers, sellers and the daily series, and excluded from volume, median and average rather than counted as zero. Money figures here cover ${priced.length} of ${sales.length} sales.`,
+    );
+  }
+  if (paidInOtherCurrency) {
+    const named = [...otherPaid.values()].map((o) => `${o.sales} in ${o.currency ?? `another token (${o.paymentToken ?? "address not given"})`}`).join(", ");
+    notes.push(
+      `${paidInOtherCurrency} sale${paidInOtherCurrency === 1 ? " was" : "s were"} paid in a currency other than SOL (${named}). They are counted in sales and left out of volume, median, average, highest, lowest and every per-wallet, per-day and per-venue SOL figure: Magic Eden's price on such a row is a SOL equivalent at its own rate, not what was paid. otherCurrencies gives what was paid, each in its own currency.`,
+    );
+  }
+  if (selfFills) {
+    notes.push(
+      `${selfFills} fill${selfFills === 1 ? "" : "s"} had the same wallet as buyer and seller. ${selfFills === 1 ? "It is" : "They are"} counted in sales and left out of every SOL figure and both wallet rankings: no money changed hands between two parties. A wallet filling its own listing is worth a look on its own.`,
+    );
+  }
+  if (multiItemTransactions) {
+    notes.push(
+      `${multiItemTransactions} transaction${multiItemTransactions === 1 ? "" : "s"} carried more than one item sale. Each row's price is Magic Eden's per-item figure; a buyer's total for such a transaction cannot prove how it splits between the items.`,
+    );
+  }
+  const farList = priced
+    .map((s, i) => {
+      const f = far[i];
+      return f ? { ...f, signature: typeof s.e.signature === "string" ? s.e.signature : null, tokenMint: typeof s.e.tokenMint === "string" ? s.e.tokenMint : null } : null;
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  if (farList.length) {
+    notes.push(
+      `${farList.length} sale${farList.length === 1 ? " was" : "s were"} far above the other sales in this window (more than ${FAR_OVER_MEDIAN} times their median or ${FAR_OVER_HIGHEST} times their highest). ${farList.length === 1 ? "It is" : "They are"} counted as reported, never dropped or adjusted, and listed in coverage.farAboveRecentRange to check against ${farList.length === 1 ? "its transaction" : "their transactions"}.`,
     );
   }
   if (duplicateEvents) {
@@ -550,7 +790,9 @@ export function summarizeSales(
   // honest statement is what was observed and what was not checked.
   const observedVenues = [...venues.keys()];
   notes.push(
-    `Magic Eden's API feed. ${observedVenues.length ? `Execution marketplaces it reported for these rows: ${observedVenues.join(", ")}.` : "No rows, so no execution venue was observed."} How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established: a marketplace absent from these rows is unobserved here, not absent from the market.`,
+    `Magic Eden's API feed. ${observedVenues.length ? `Execution marketplaces it reported for these rows: ${observedVenues.join(", ")}.` : "No rows, so no execution venue was observed."} How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established: a marketplace absent from these rows is unobserved here, not absent from the market.` +
+      (poolFills ? ` ${poolFills} fill${poolFills === 1 ? " was" : "s were"} against Magic Eden's AMM pools (venue mmm): the pool's owner is named as the buyer or seller, and the price is the pool's.` : "") +
+      " Magic Eden labels an accepted offer the same way as a bought listing, so the two are counted alike and cannot be told apart from the feed.",
   );
 
   return {
@@ -620,6 +862,7 @@ export function summarizeSales(
     venues: [...venues.entries()]
       .sort((a, b) => b[1].sales - a[1].sales)
       .map(([venue, v]) => ({ venue, sales: v.sales, volumeSol: round(v.sol), currency: "SOL" as const })),
+    ...(otherPaid.size ? { otherCurrencies: [...otherPaid.values()] } : {}),
     coverage: {
       oldestSeen: iso(oldestSeen),
       newestSeen: iso(newestSeen),
@@ -638,6 +881,11 @@ export function summarizeSales(
       unsettled: deduped.unsettled,
       identityFallbacks,
       malformedPrices,
+      paidInOtherCurrency,
+      selfFills,
+      poolFills,
+      multiItemTransactions,
+      farAboveRecentRange: farList.slice(0, 10),
       note: notes.join(" "),
     },
   };
@@ -1230,7 +1478,7 @@ export interface NameBreakdownRow {
   name: string;
   currency: "SOL";
   sales: number;
-  /** Of those sales, how many carried a usable, settled price: the only ones volumeSol is built from. */
+  /** Of those sales, how many carried a usable, settled SOL price: the only ones volumeSol is built from. */
   pricedSales: number;
   volumeSol: number;
   highestSol: number | null;
@@ -1256,14 +1504,18 @@ export function breakdownByName(
   const acc = new Map<string, NameBreakdownRow>();
   let unnamed = 0;
   for (const e of dedupeEvents(Array.isArray(events) ? events : []).events) {
-    if (e.type !== "buyNow") continue;
+    // Every label the summary counts as a sale; "buy" names the same fill.
+    if (!SALE_TYPES.has(String(e.type))) continue;
     const nm = e.tokenMint ? baseName(names.get(e.tokenMint)?.name) : null;
     if (!nm) {
       unnamed++;
       continue;
     }
     const settled = (e as { unsettled?: boolean }).unsettled !== true;
-    const price = settled ? usablePrice(e.price) : null;
+    // The summary's money rules: a sale paid in USDC carries only a SOL
+    // equivalent, and a self-fill's price is nobody's payment. Both stay sales.
+    const solPaid = mePayment(e).kind === "sol";
+    const price = settled && solPaid && !isSelfFill(e.buyer, e.seller) ? usablePrice(e.price) : null;
     const row = acc.get(nm) ?? { name: nm, currency: "SOL", sales: 0, pricedSales: 0, volumeSol: 0, highestSol: null, lowestSol: null };
     row.sales++;
     if (price !== null) {

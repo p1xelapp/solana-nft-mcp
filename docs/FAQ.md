@@ -103,10 +103,25 @@ completely - put it in the MCP config's `env` block, since clients launch server
 clean environment. `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
 **What about Tensor and Rarible?**
-Neither is read. Tensor has no self-serve API keys. Rarible relaunched a Solana marketplace in
+Neither API is read. Tensor's API page (read 2026-11-14) gives access through a form, so there is
+no key to use without asking Tensor first. Tensor's sales of Metaplex Core items are read anyway,
+from the chain: each one is a transfer inside Tensor's marketplace program with the payment
+beside it, and `verify_claim` (claim `sale`) or `get_recent_sales` with `chainScan` decode it.
+Tensor's listings, bids and floor are not read. Rarible relaunched a Solana marketplace in
 August 2026, but its API needs a key with a 100-requests-per-month free tier and cannot label
 a Magic Eden fill as Magic Eden's, so reading it would repeat the marketplace mix-ups this server
-exists to avoid. Both sit in the source catalog as planned, with the trigger for adding them.
+exists to avoid. Both APIs sit in the source catalog as planned, with the trigger for adding them.
+
+**Can it check a sale someone posted?**
+Yes, from the transaction itself. Give `verify_claim` the claim `sale`, the transaction signature
+as the subject, the item's address, and the price and currency if you have them. It reads the
+transaction and says which marketplace program made the sale, who bought and sold, what the
+seller received and what was paid in all, in the currency named by its token's address. The two
+figures differ: Magic Eden and Tensor quote what the seller receives, OpenSea what the buyer
+paid, and a price matching either is confirmed. A listing, a delisting, a plain transfer, a
+delegate's move or a bid is not a sale. A transaction that moved several items has no per-item
+price, and neither does a fill with one wallet as buyer and seller, so a price claimed for either
+is unverifiable, as is a transaction it could not read; none of those is ever contradicted.
 
 **Does it cost anything to run?**
 No. Public endpoints, paced politely, cached in memory. Heavy use of the public Solana
@@ -229,9 +244,10 @@ Solana in August 2026 and often prices the same item in USDC, so its floor is no
 comparable to a SOL floor and the server refuses to merge them; you get both, each in
 its own currency. Magic Eden also fills from its own pools beside the ordinary order
 book, and every sale names the program that executed it, so a pool fill is never
-reported as an order-book fill. Tensor is a real marketplace the server cannot read, so a
-market that looks quiet here may be busier there, and the coverage note says so instead
-of implying the market is dead.
+reported as an order-book fill. Tensor's own API is not read, so its listings and bids are
+invisible here and a market that looks quiet in the feeds may be busier there; the coverage
+note says so instead of implying the market is dead. Its sales of Metaplex Core items, like
+OpenSea's own, can be read from the chain with `chainScan` on recent sales.
 
 **Can it build sales bots for Discord and X? Dashboards and scripts?**
 Yes. `get_integration_recipe` carries five recipes with the real endpoints, the

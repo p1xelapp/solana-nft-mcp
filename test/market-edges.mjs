@@ -51,7 +51,8 @@ await check('zero-sale OpenSea dust is still explained', async () => {
   assert.match(r.volumeNote, /rounding dust/);
 });
 await check('OpenSea recent sales follows a short page cursor', async () => {
-  const event = { event_type: 'sale', event_timestamp: sale.blockTime, transaction: sale.signature, nft: { identifier: mint }, buyer, seller, payment: { quantity: '10000000', decimals: 9, symbol: 'SOL' } };
+  // OpenSea's schema requires the payment token's address, and SOL is proved by it.
+  const event = { event_type: 'sale', event_timestamp: sale.blockTime, transaction: sale.signature, nft: { identifier: mint }, buyer, seller, payment: { quantity: '10000000', decimals: 9, symbol: 'SOL', token_address: '11111111111111111111111111111111' } };
   route = url => json(url.searchParams.has('next') ? { asset_events: [{ ...event, transaction: '5'.repeat(87) }] } : { asset_events: [event], next: 'page2' });
   const r = await os.recentSales('audit-short-cursor', 3);
   assert.equal(r.sales.length, 2);
