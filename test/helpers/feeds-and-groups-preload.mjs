@@ -14,6 +14,15 @@
  * the capture (time still runs), so a window of days covers the same rows
  * whenever the test runs. The home folder is redirected and nothing reaches
  * the network: an unexpected request is a 404 or a JSON-RPC error.
+ *
+ * Three switches change one thing each, for a child of its own:
+ *  - FEEDS_TEST_ME=down: Magic Eden's activity feed answers 503;
+ *  - FEEDS_TEST_ME=unmatched: it serves only the captured Collector Crypt
+ *    rows whose transaction OpenSea's captured page does not carry;
+ *  - FEEDS_TEST_ACCOUNTS=down: every getMultipleAccounts read fails.
+ * The slug "leadoff-only" serves the captured candy-mlb page cut to the rows
+ * whose item's captured account names 2022 Leadoff ICONs, under the same
+ * OpenSea record, which names that collection alone.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -63,6 +72,35 @@ for (const name of ["candy-mlb-item-accounts-2026-11-15.json", "gold-item-accoun
   request.forEach((address, i) => accountValues.set(address, { value: reply.result.value[i], context: reply.result.context }));
 }
 
+const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const base58 = (bytes) => {
+  let n = BigInt("0x" + Buffer.from(bytes).toString("hex"));
+  let out = "";
+  while (n > 0n) {
+    out = ALPHABET[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = "1" + out;
+  }
+  return out;
+};
+/** The collection a captured item account names (bytes 34 to 65 when byte 33 says "collection"). */
+const collectionOf = (mint) => {
+  const v = accountValues.get(mint)?.value;
+  if (!v) return null;
+  const b = Buffer.from(v.data[0], "base64");
+  return b[33] === 2 ? base58(b.subarray(34, 66)) : null;
+};
+// One page, so the cut-down list is all there is (no cursor to a next page).
+osEvents["leadoff-only"] = { ...osEvents["candy-mlb"], asset_events: osEvents["candy-mlb"].asset_events.filter((e) => collectionOf(e.nft?.identifier) === LEADOFF), next: null };
+osDetail["leadoff-only"] = osDetail["candy-mlb"];
+if (process.env.FEEDS_TEST_ME === "unmatched") {
+  const onOpenSea = new Set(osEvents["collector-crypt"].asset_events.map((e) => e.transaction));
+  meFeeds.collector_crypt = meFeeds.collector_crypt.filter((a) => !onOpenSea.has(a.signature));
+}
+
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const rpcError = (id, message) => json({ jsonrpc: "2.0", id, error: { code: -32601, message } });
 
@@ -74,6 +112,7 @@ globalThis.fetch = async (url, init = {}) => {
     const symbol = p[3];
     if (p[2] === "collections" && p[4] === "stats" && Object.hasOwn(meStats, symbol)) return json(meStats[symbol]);
     if (p[2] === "collections" && p[4] === "activities" && Object.hasOwn(meFeeds, symbol)) {
+      if (process.env.FEEDS_TEST_ME === "down") return json({ message: "service unavailable" }, 503);
       const offset = Number(u.searchParams.get("offset") ?? 0);
       const limit = Number(u.searchParams.get("limit") ?? 100);
       return json(offset === 0 ? meFeeds[symbol].slice(0, limit) : []);
@@ -101,6 +140,7 @@ globalThis.fetch = async (url, init = {}) => {
     let body = {};
     try { body = JSON.parse(String(init.body ?? "{}")); } catch { /* answered as an error below */ }
     if (body.method === "getMultipleAccounts") {
+      if (process.env.FEEDS_TEST_ACCOUNTS === "down") return rpcError(body.id, "the feeds preload is told to fail every account read");
       const asked = Array.isArray(body.params?.[0]) ? body.params[0] : [];
       if (!asked.every((a) => accountValues.has(a))) return rpcError(body.id, "the feeds preload holds no capture for one of these accounts");
       return json({ jsonrpc: "2.0", id: body.id, result: { context: accountValues.get(asked[0])?.context ?? { slot: 1 }, value: asked.map((a) => accountValues.get(a).value) } });

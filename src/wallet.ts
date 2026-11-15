@@ -282,6 +282,9 @@ export function summarizeActivity(
 
   // Feed is newest-first; walk oldest-first so "bought then sold" reads in time order.
   const chrono = [...events].reverse();
+  // "buy" and "buyNow" name the same fill, so one fill is counted once
+  // whichever label, or both, the feed gave it.
+  const fillsSeen = new Set<string>();
   for (const e of chrono) {
     const type = e.type ? clean(e.type) : "unknown";
     if (e.blockTime !== undefined && e.blockTime !== null && usableBlockTime(e.blockTime) === null) unusableTimestamps++;
@@ -301,6 +304,12 @@ export function summarizeActivity(
     if (type === "bid") bids++;
     // "buy" and "buyNow" name the same fill on this API.
     if (type === "buyNow" || type === "buy") {
+      const sig = (e as { signature?: unknown }).signature;
+      const fill = typeof sig === "string" && sig ? `${sig}:${mintKey ?? ""}` : null;
+      if (fill !== null) {
+        if (fillsSeen.has(fill)) continue;
+        fillsSeen.add(fill);
+      }
       const rawPrice = (e as { price?: unknown }).price;
       const settled = (e as { unsettled?: boolean }).unsettled !== true;
       // An 800 USDC purchase arrives with `price` 6.73, a SOL equivalent at

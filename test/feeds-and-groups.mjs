@@ -252,6 +252,20 @@ await check("a wallet's USDC spending is totalled in USDC, not named as an examp
   assert.equal(a.buys.totalSol, Math.round(solBuys.reduce((s, e) => s + e.price, 0) * 1e9) / 1e9);
 });
 
+await check("one fill the feed labels both buy and buyNow is counted once in a wallet's figures", () => {
+  const events = fixture("me-wallet-usdc-buyer-2026-11-14.json");
+  const base = wallet.summarizeActivity(USDC_BUYER, events, false);
+  const fill = events.find((e) => e.type === "buyNow" && e.buyer === USDC_BUYER && e.seller !== USDC_BUYER && !e.priceInfo?.splPrice && typeof e.signature === "string");
+  assert.ok(fill, "the captured feed has a SOL purchase");
+  // The same row once more under the other label, as the API can name one fill.
+  const twice = wallet.summarizeActivity(USDC_BUYER, [...events, { ...fill, type: "buy" }], false);
+  assert.equal(twice.buys.count, base.buys.count);
+  assert.equal(twice.buys.totalSol, base.buys.totalSol);
+  // Control: a different fill, under its own signature, is counted.
+  const other = wallet.summarizeActivity(USDC_BUYER, [...events, { ...fill, type: "buy", signature: `${fill.signature.slice(0, -2)}zz` }], false);
+  assert.equal(other.buys.count, base.buys.count + 1);
+});
+
 await check("a wallet's OpenSea sales say which are Magic Eden's fills and where OpenSea names another currency", () => {
   // One Collector Crypt buyer's rows from each captured feed: the rows its account feeds would hold for these fills.
   const usdcTwin = meCc.find((a) => a.priceInfo?.splPrice && osCc.asset_events.some((e) => e.transaction === a.signature && e.payment?.symbol === "SOL"));
@@ -299,12 +313,13 @@ await check("the top traders say they cover no stated window", async () => {
 
 // --------------------------------------------- the tools, both feeds at once
 
-async function session() {
+/** A child server on the captured replies; `extra` sets the preload's switches. */
+async function session(extra = {}) {
   const h = fs.mkdtempSync(path.join(tmpdir(), "solana-nft-mcp-feeds-server-"));
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", pathToFileURL(path.join(project, "test/helpers/feeds-and-groups-preload.mjs")).href, path.join(root, "dist/index.js")],
-    env: { ...process.env, HOME: h, USERPROFILE: h, SOLANA_NFT_MCP_TEST_HOME: h, SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", OPENSEA_API_KEY: "fixture-not-a-credential", SOLANA_RPC_URL: "https://feeds-rpc.invalid", DAS_RPC_URL: "https://feeds-rpc.invalid" },
+    env: { ...process.env, HOME: h, USERPROFILE: h, SOLANA_NFT_MCP_TEST_HOME: h, SOLANA_NFT_MCP_NO_AUTO_KEYS: "1", SOLANA_NFT_MCP_NO_UPDATE_CHECK: "1", OPENSEA_API_KEY: "fixture-not-a-credential", SOLANA_RPC_URL: "https://feeds-rpc.invalid", DAS_RPC_URL: "https://feeds-rpc.invalid", ...extra },
     stderr: "ignore",
   });
   const client = new Client({ name: "feeds", version: "1" });
@@ -370,6 +385,13 @@ try {
     assert.equal(meadows.currency, "SOL");
   });
 
+  const only = await s.call("get_recent_sales", { collection: "2022_leadoff_icons", openseaSlug: "leadoff-only", limit: 50 });
+  await check("a slug whose record and every row's item name this collection is verified", () => {
+    assert.equal(only.opensea.identity.verdict, "verified", only.opensea.identity.note);
+    assert.equal(only.opensea.collectionCheck.inThisCollection, only.opensea.collectionCheck.rowsChecked);
+    assert.equal(only.opensea.collectionCheck.notRead, undefined);
+  });
+
   await check("OpenSea sales newer than Magic Eden's newest point to the chain scan", () => {
     const meNewest = Math.max(...fixture("me-leadoff-sales-2026-11-14.json").map((a) => a.blockTime));
     const newer = lo.opensea.sales.filter((x) => !x.sameTransactionAs && Date.parse(x.time) / 1000 > meNewest);
@@ -431,6 +453,55 @@ try {
   });
 } finally {
   await s.close();
+}
+
+// The same Collector Crypt pages with Magic Eden's rows not there to check
+// OpenSea's SOL label by: its feed down, or none of its rows the same fill.
+for (const [mode, why] of [
+  ["down", /Magic Eden's rows, which would show what each of its fills was paid in, could not be read just now/],
+  ["unmatched", /none of the Magic Eden rows read in this answer is the same fill/],
+]) {
+  const t = await session({ FEEDS_TEST_ME: mode });
+  try {
+    const r = await t.call("get_recent_sales", { collection: "collector_crypt", limit: 50 });
+    await check(`OpenSea's SOL label is not taken as SOL when Magic Eden's rows are ${mode === "down" ? "not read" : "no fill of OpenSea's"}`, () => {
+      const labelledSol = osCc.asset_events.filter((e) => e.payment.symbol === "SOL");
+      assert.ok(labelledSol.length > 0, "the captured page labels Magic Eden's USDC fills SOL");
+      for (const e of labelledSol) {
+        const row = byTx(r.opensea.sales, e.transaction);
+        assert.equal(row.currency, null, e.transaction);
+        assert.equal(row.price, null);
+        assert.equal(row.currencyUnconfirmed, true);
+        assert.equal(row.rawQuantity, e.payment.quantity, "OpenSea's raw units stay beside it");
+        assert.match(row.currencyNote, why);
+      }
+      assert.ok(!r.opensea.sales.some((x) => x.currency === "SOL"), "no OpenSea row is left calling itself SOL");
+      assert.equal(r.opensea.currencyCorrections.unconfirmed, labelledSol.length);
+      assert.match(r.opensea.currencyCorrectionsNote, why);
+      assert.match(r.opensea.flagsNote, new RegExp(`^${r.opensea.sales.length} sale\\(s\\) were not paid in SOL`));
+      if (mode === "down") assert.ok(r.sourceErrors?.magiceden, "the failed read is named");
+      // Control: OpenSea's own USDC sales keep their currency and price.
+      const own = r.opensea.sales.filter((x) => x.paymentToken === USDC_MINT);
+      assert.ok(own.length > 0 && own.every((x) => x.currency === "USDC" && x.price > 0));
+    });
+  } finally {
+    await t.close();
+  }
+}
+
+{
+  const t = await session({ FEEDS_TEST_ACCOUNTS: "down" });
+  try {
+    const r = await t.call("get_recent_sales", { collection: "2022_leadoff_icons", openseaSlug: "leadoff-only", limit: 50 });
+    await check("an OpenSea slug is not called verified when the chain did not answer for its rows' items", () => {
+      assert.equal(r.opensea.identity.verdict, "unverified", r.opensea.identity.note);
+      assert.match(r.opensea.identity.note, /the chain did not answer for the items of \d+ of the \d+ sale rows, so whether the slug also carries other collections' items was not read/);
+      assert.ok(r.opensea.collectionCheck.notRead > 0);
+      assert.ok(r.opensea.sales.every((x) => x.inThisCollection === null), "each row says it was not checked");
+    });
+  } finally {
+    await t.close();
+  }
 }
 
 console.log(`feeds-and-groups: ${passed} passed, ${failed} failed`);

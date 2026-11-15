@@ -273,6 +273,7 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
   // anything beyond that shows up as skipped and blocks a "confirmed").
   let prov: Awaited<ReturnType<typeof sol.getProvenance>> | null = null;
   let provError: { sentence: string; code: string | null } | undefined;
+  let provOutdated: { headline: string; next: string } | undefined;
   let provMissing = false;
   let isCollection = false;
   try {
@@ -286,8 +287,20 @@ async function verifyUntraded(mint: string): Promise<Omit<VerificationResult, "r
     // anything else is the chain not being readable. The class says which.
     provMissing = e instanceof NotFoundError || e instanceof WrongKindError;
     provError = plainReason(e);
+    // A transaction format newer than this server reads: a retry gets the
+    // same refusal, so the answer says to update, as the sale check does.
+    provOutdated = e instanceof TypedError && e.kind === "unsupported" ? e.wording : undefined;
     // The provenance reader's own sentence for a collection account.
     isCollection = e instanceof WrongKindError && /Core COLLECTION/.test(e.message);
+  }
+  if (!prov && provOutdated) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `${provOutdated.headline} The history of ${mint} cannot be checked here.`,
+      evidence: [],
+      caveats: [`This is not a statement about the asset. ${provOutdated.next}`],
+    };
   }
   if (!prov && provError && !provMissing) {
     return {
@@ -691,14 +704,18 @@ function claimedCurrency(raw: string | undefined): { code: string | null; mint: 
   return null;
 }
 
-/** Relative room for a claimed price that was rounded when it was written down. */
-const PRICE_TOLERANCE = 0.005;
 /**
  * The most a coarsely written price may sit from a figure, as a share of it.
  * "1" for 0.99456 is the same price rounded; "1" for 0.6 rounds the same way
  * and is a different price.
  */
 const PRICE_ROUNDING_CAP = 0.05;
+/**
+ * A hair over half a unit. A figure exactly halfway (0.265 written as 0.27)
+ * is a rounding of the claim, and floating point puts it a few units in the
+ * last place past the half.
+ */
+const HALF_UNIT = 0.5 * (1 + 1e-9);
 
 /** Decimal places a claimed number was written with: 0.27 has two, 1 has none, 1e-7 has seven. */
 function writtenDecimals(n: number): number {
@@ -707,9 +724,16 @@ function writtenDecimals(n: number): number {
   return Math.max(0, (m[1]?.length ?? 0) - (m[2] ? Number(m[2]) : 0));
 }
 
-/** How far a figure may sit from a claim and still be the figure the person meant, at the precision they wrote it. */
+/**
+ * How far a figure may sit from a claim and still be the figure the person
+ * meant: half a unit of the last place they wrote, so 0.27 is 0.267 rounded
+ * and 0.034193384, written to nine places, is not 0.03432567. A flat share of
+ * the figure on top of that confirmed fully written prices that are a
+ * rounding of no figure at all (383 of 507 confirmations in one sweep of the
+ * real sales, up to 4.8% away).
+ */
 const roomFor = (claimed: number, figure: number, slack: number): number =>
-  Math.min(Math.max(0.5 * 10 ** -writtenDecimals(claimed), figure * PRICE_TOLERANCE), figure * PRICE_ROUNDING_CAP) + slack;
+  Math.min(HALF_UNIT * 10 ** -writtenDecimals(claimed), figure * PRICE_ROUNDING_CAP) + slack;
 
 /**
  * A sale, checked against the transaction it names.
@@ -902,7 +926,7 @@ async function verifySale(signature: string, item: string, claimed: number | und
   // A figure the claim matches as written comes first; rounding at the
   // claim's precision is used only when none does, so "1 SOL" on an order of
   // exactly 1 is named as that, not also as the 0.98 the seller kept.
-  const close = figures.filter((f) => near(f.value, claimed, f.value * PRICE_TOLERANCE + slack));
+  const close = figures.filter((f) => near(f.value, claimed, slack));
   const hits = close.length > 0 ? close : figures.filter((f) => near(f.value, claimed, roomFor(claimed, f.value, slack)));
   if (hits.length > 0) {
     // Figures that are the same amount are named together, so a reader sees
@@ -994,7 +1018,7 @@ async function route(args: {
   const { claim, subject, value, wallet, item, currency } = args;
   switch (claim) {
     case "sale":
-      if (!isSignature(subject)) throw new BadInputError("sale claims take the transaction signature as `subject` (86 to 88 base58 characters)");
+      if (!isSignature(subject)) throw new BadInputError("sale claims take the transaction signature as `subject` (base58 that decodes to 64 bytes, usually 87 or 88 characters)");
       if (!item) throw new BadInputError("sale claims need `item` - the address of the item said to be sold");
       return verifySale(subject, item, value, currency);
     case "supply":

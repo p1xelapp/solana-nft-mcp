@@ -912,8 +912,11 @@ export function plainReason(err: unknown): { sentence: string; code: string | nu
   }
   const rpcCode = /^Solana RPC (-?\d{1,6}):/.exec(msg);
   if (rpcCode) return { sentence: RPC_CODE_SENTENCE[rpcCode[1]!] ?? "the Solana endpoint answered with an error", code: `solana-rpc ${rpcCode[1]}` };
+  // The first endpoint's code in the list, whichever kind it is: looking for
+  // any HTTP status first named a later endpoint's 503 behind an earlier
+  // endpoint's -32603.
   const listCode = (): string | null => {
-    const c = /HTTP \d{3}/.exec(msg)?.[0] ?? /-32\d{3}/.exec(msg)?.[0] ?? null;
+    const c = /HTTP \d{3}|-32\d{3}/.exec(msg)?.[0] ?? null;
     return c ? `solana-rpc ${c}` : null;
   };
   if (/^public Solana RPC is not answering right now/.test(msg)) {

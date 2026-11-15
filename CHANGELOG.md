@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.19.0 - 2026-11-11
+## 1.19.0 - 2026-11-15
 
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
@@ -102,32 +102,43 @@ sales the marketplace feeds do not carry:
 
 - **Version-1 transactions are read.** One sale in the newer format failed a
   card's whole history. Every read now asks for it, and a format the server
-  cannot read is named as that, never as a gap, a sale or a missing item.
+  cannot read is named as that, never as a sale, a transfer or a missing
+  item; inside an item's history it is an unread row. A node that refuses a
+  format without naming one is passed over for the next endpoint.
 - **Sales are proven from the chain, Tensor's included.** `verify_claim` with
   claim `sale` decodes the transaction and matches a price against the order
   price, what the seller received, what the seller kept after the network fee
-  and what the buyer paid, at the precision it was written, and says which it
-  matched. Only money the marketplace's own instruction moved counts, so a side
-  payment in the same transaction no longer becomes the price. A compressed
-  item, an address that is not an item, or an unreadable transaction is
-  unverifiable, never contradicted. `get_recent_sales` with `chainScan: true`
+  and what the buyer paid, at the precision it was written (half a unit of
+  its last place), and says which it matched. A price is given only when the
+  marketplace's own instructions account for every move of money touching
+  the buyer, the seller or anyone the sale paid: a side payment, a stake
+  withdrawal, a new account or a cancelled bid beside the fill makes the price
+  unverifiable, and what the buyer paid is given only when it is the whole
+  price. A compressed item, an address that is not an item, or an unreadable
+  transaction is unverifiable, never contradicted, and so is a fill through a
+  layout no real transaction of its kind has been checked against. `get_recent_sales` with `chainScan: true`
   lists the Tensor sales and OpenSea's own that the feeds miss; given a card it
   reads that card's history, and given a wallet it says so and reads nothing.
   History rows name a proven sale as a sale.
 - **The currency is the token that was paid.** A sale in USDC or any other
   token is counted and kept out of every SOL figure. OpenSea labels some of
   Magic Eden's USDC fills as SOL; where Magic Eden's row of the same fill says
-  otherwise, OpenSea's label is not used. A slug that carries several
+  otherwise, OpenSea's label is not used, and where no Magic Eden row of the
+  same fill was read, a SOL label is not taken as SOL either. A slug that carries several
   collections, such as `candy-mlb`, is called a group, and each sale under it is
   checked against the collection its item names. A Tensor fill that Magic Eden
   relays shows Tensor's quote as a quote, not as a price.
 - **An issuer verdict needs items and the registry.** A collection is called
   an issuer's only when it has items and the issuer table lists it. An empty
-  one, or an item in no collection that names an issuer's key, is unverified.
-- **Collections newer than the registry are found.** `search_collections` and
-  `identify` read the chain's list of collections under each current issuer
-  key. A list that cannot be read whole is a failed read, never "nothing
-  found", and a search answers within 40 seconds, naming what it did not read.
+  one, or an item in no collection that names an issuer's key, is unverified,
+  and a collection under an issuer's key that the registry lacks is identified
+  at low confidence.
+- **Collections missing from the registry are found.** `search_collections`
+  and `identify` read the chain's list of collections under each current
+  issuer key. An account in it that does not decode is set aside and counted;
+  a list missing a registered collection is a failed read, a list kept after
+  a failed refresh is reported as stale, and none of those is "nothing
+  found". A search answers within 40 seconds, naming what it did not read.
   Failures read as sentences, with any code in a field of its own.
 
 Candy facts, reread on November 10:
@@ -186,8 +197,9 @@ Security:
 - **An endpoint URL with a username or password** was silently unusable, and
   its refusal text, URL included, appeared in an answer. It is refused by
   name, and errors from your own endpoint are relayed by kind only.
-- **A client that leaves.** The server now stops within 30 seconds of its
-  input closing instead of finishing a long read for nobody.
+- **A client that leaves.** The server now stops within 45 seconds of its
+  input closing instead of finishing a long read for nobody, which still
+  leaves a 40-second search time to answer a one-shot pipe.
 - **The update notice** accepts a plain version number only.
 
 Packaging:

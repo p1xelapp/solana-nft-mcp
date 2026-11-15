@@ -14,6 +14,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -69,8 +71,8 @@ const firstMoved = (t) => {
 // A build without the decoder fails each check below on its own, instead of
 // stopping the file before the server checks run.
 const missing = () => { throw new Error("this build has no chain sale decoder"); };
-const { decodeSale, currencyOfMint, scanCollectionSales, readTransaction, chainSaleRow, feedSignatures, chainRowsInRange = missing } = await import(pathToFileURL(path.join(dist, "lib", "chain-sales.js")).href).catch(() => ({
-  decodeSale: missing, currencyOfMint: missing, scanCollectionSales: missing, readTransaction: missing, chainSaleRow: missing, feedSignatures: missing, chainRowsInRange: missing,
+const { decodeSale, currencyOfMint, scanCollectionSales, readTransaction, chainSaleRow, feedSignatures, chainRowsInRange = missing, saleLayouts = missing } = await import(pathToFileURL(path.join(dist, "lib", "chain-sales.js")).href).catch(() => ({
+  decodeSale: missing, currencyOfMint: missing, scanCollectionSales: missing, readTransaction: missing, chainSaleRow: missing, feedSignatures: missing, chainRowsInRange: missing, saleLayouts: missing,
 }));
 const { plainReason = missing } = await import(pathToFileURL(path.join(dist, "lib", "http.js")).href).catch(() => ({ plainReason: missing }));
 const { classifyPaymentToken, currencyByMint } = await import(pathToFileURL(path.join(dist, "lib", "reconcile.js")).href).catch(() => ({ classifyPaymentToken: missing, currencyByMint: missing }));
@@ -317,11 +319,12 @@ const STRANGER = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
 
 await check("money moved outside the marketplace's instructions is never part of the price", () => {
   const ops = decode("5wrdbZQq");
-  // The buyer also sends a friend 0.5 SOL in a separate instruction.
+  // The buyer also sends a friend 0.5 SOL in a separate instruction: the
+  // friend may be the seller's, so what the item cost cannot be told.
   const toFriend = decodeSale(withSideTransfer("5wrdbZQq", ops.buyer, STRANGER, 500_000_000), ITEM["5wrdbZQq"], sig("5wrdbZQq"));
-  assert.equal(toFriend.status, "sale");
-  assert.equal(toFriend.buyerPaid, 0.3);
-  assert.equal(toFriend.price, 0.3);
+  assert.equal(toFriend.status, "cannot-tell", JSON.stringify(toFriend.price));
+  assert.equal(toFriend.price, undefined);
+  assert.match(toFriend.reason, /Instruction 2 of this transaction \(the System Program's transfer\) involves the buyer .* not part of OpenSea's buy_core/);
   // A stranger sends the Tensor take_bid seller 40 SOL beside the fill:
   // what the item sold for cannot be told, never 40.03.
   const bid = decode("3NoxXys3");
@@ -335,14 +338,175 @@ await check("money moved outside the marketplace's instructions is never part of
   const unrelated = decodeSale(withSideTransfer("3NoxXys3", STRANGER, ops.buyer, 3_000_000_000), ITEM["3NoxXys3"], sig("3NoxXys3"));
   assert.equal(unrelated.status, "sale");
   assert.equal(unrelated.price, 0.0294);
-  // The seller tipping someone outside the fill does not shrink what the venue paid it.
+  // The seller paying someone beside a take_bid moves the balance its price
+  // is read from, so that price cannot be told either.
   const tip = decodeSale(withSideTransfer("3NoxXys3", bid.seller, STRANGER, 1_000_000), ITEM["3NoxXys3"], sig("3NoxXys3"));
-  assert.equal(tip.sellerReceived, 0.025872);
-  assert.equal(tip.price, 0.0294);
+  assert.equal(tip.status, "cannot-tell");
+  assert.equal(tip.price, undefined);
+  assert.match(tip.reason, /involves the seller .* not part of Tensor's take_bid_core/);
   // Control: the untouched transactions keep their figures.
   assert.equal(ops.buyerPaid, 0.3);
   assert.equal(bid.price, 0.0294);
   assert.equal(bid.sellerReceived, 0.025872);
+});
+
+const B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const toBase58 = (bytes) => {
+  let n = BigInt("0x" + (Buffer.from(bytes).toString("hex") || "0"));
+  let out = "";
+  while (n > 0n) {
+    out = B58_ALPHABET[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = "1" + out;
+  }
+  return out;
+};
+const fromBase58 = (s) => {
+  let n = 0n;
+  for (const c of s) n = n * 58n + BigInt(B58_ALPHABET.indexOf(c));
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  return Buffer.from(hex, "hex");
+};
+const anchorDiscriminator = (name) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
+const TENSOR = "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp";
+const OPENSEA = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V";
+/** An account none of the saved sales names, for the one a case adds. */
+const EXTRA_ACCOUNT = "Stake11111111111111111111111111111111111112";
+/**
+ * The real 0.1 SOL Tensor take_bid (2gAgsKK7) with one more top-level
+ * instruction that the seller, who signs it, can add: a 40 SOL stake
+ * withdrawal to themselves, a new account they fund with 0.08 SOL, or a
+ * cancelled bid of their own that returns 0.5 SOL. The balances move to match.
+ */
+const takeBidWith = (kind, newSig) => {
+  const t = tx("2gAgsKK7");
+  const keys = t.transaction.message.accountKeys;
+  const seller = keys[0].pubkey;
+  keys.push({ pubkey: EXTRA_ACCOUNT, signer: kind === "createAccount", source: "transaction", writable: true });
+  const { preBalances: pre, postBalances: post } = t.meta;
+  let ix;
+  if (kind === "stake-withdraw") {
+    pre.push(40_000_000_000);
+    post.push(0);
+    post[0] += 40_000_000_000;
+    ix = { program: "stake", programId: "Stake11111111111111111111111111111111111111", parsed: { type: "withdraw", info: { destination: seller, lamports: 40_000_000_000, stakeAccount: EXTRA_ACCOUNT, withdrawAuthority: seller } }, stackHeight: null };
+  } else if (kind === "createAccount") {
+    pre.push(0);
+    post.push(80_000_000);
+    post[0] -= 80_000_000;
+    ix = { program: "system", programId: "11111111111111111111111111111111", parsed: { type: "createAccount", info: { source: seller, newAccount: EXTRA_ACCOUNT, lamports: 80_000_000, space: 0, owner: "11111111111111111111111111111111" } }, stackHeight: null };
+  } else {
+    pre.push(500_000_000);
+    post.push(0);
+    post[0] += 500_000_000;
+    ix = { programId: TENSOR, accounts: [seller, EXTRA_ACCOUNT], data: toBase58(anchorDiscriminator("cancel_bid")), stackHeight: null };
+  }
+  t.transaction.message.instructions.push(ix);
+  if (newSig) t.transaction.signatures[0] = newSig;
+  return t;
+};
+/**
+ * The real Magic Eden buy (5c9JdsqK: 2 SOL listed, 2.24 paid) as it reads
+ * when the buyer's escrow already held 2.19 SOL and the deposit beside the
+ * fill was only 0.05.
+ */
+const depositShort = (newSig) => {
+  const t = tx("5c9JdsqK");
+  t.meta.innerInstructions.find((g) => g.index === 2).instructions[0].parsed.info.lamports = 50_000_000;
+  t.meta.preBalances[2] = 2_190_000_000;
+  t.meta.postBalances[0] += 2_190_000_000;
+  if (newSig) t.transaction.signatures[0] = newSig;
+  return t;
+};
+
+await check("a take_bid seller's own instructions beside the fill make its price cannot-tell, never a figure", () => {
+  // Control: the real take_bid reads 0.1, exactly.
+  const real = decode("2gAgsKK7");
+  assert.equal(real.status, "sale");
+  assert.equal(real.price, 0.1);
+  assert.equal(real.priceExact, true);
+  for (const [kind, what] of [["stake-withdraw", /the Stake program's withdraw/], ["createAccount", /the System Program's createAccount/], ["cancel_bid", /Tensor cancel_bid/]]) {
+    const d = decodeSale(takeBidWith(kind), ITEM["2gAgsKK7"], sig("2gAgsKK7"));
+    assert.equal(d.status, "cannot-tell", `${kind}: price ${d.price}`);
+    assert.equal(d.price, undefined, kind);
+    assert.equal(d.sellerReceived, undefined, kind);
+    assert.match(d.reason, what, kind);
+    assert.match(d.reason, /involves the seller 5YXxoTJe\w+ and is not part of Tensor's take_bid_core/, kind);
+  }
+});
+
+await check("the buyer's own figure is given only when it is the whole of what the fill paid", () => {
+  const d = decodeSale(depositShort(), ITEM["5c9JdsqK"], sig("5c9JdsqK"));
+  assert.equal(d.status, "sale");
+  assert.equal(d.price, 2.24);
+  assert.equal(d.sellerReceived, 2);
+  assert.equal(d.buyerPaid, undefined, "a 0.05 deposit is not what the buyer paid for a 2.24 fill");
+  assert.match(d.notes.join(" "), /The buyer sent 0\.05 into the marketplace's instructions, less than this fill paid out \(2\.24\)/);
+  // Control: on every real sale saved, a buyer figure, where one is given, is the whole price.
+  let given = 0;
+  for (const f of fs.readdirSync(fx).filter((n) => n.endsWith(".json"))) {
+    const j = load(f.slice(0, -5));
+    if (j.method !== "getTransaction" || !j.reply?.result) continue;
+    const item = ITEM[f.slice(0, -5)] ?? firstMoved(j.reply.result);
+    if (!item) continue;
+    const s = decodeSale(j.reply.result, item, j.params[0]);
+    if (s.status !== "sale" || s.buyerPaid === undefined) continue;
+    given++;
+    assert.equal(s.buyerPaid, s.price, f);
+  }
+  assert.ok(given > 0, "some real buys carry the buyer's figure");
+  assert.equal(decode("5c9JdsqK").buyerPaid, 2.24);
+});
+
+/** The real OpenSea memecoin buy rewritten as Tensor's own buy_core_spl: the same accounts less OpenSea's extra first one. */
+const asTensorSplBuy = (newSig) => {
+  const t = tx("A3SuTWZ4");
+  const ix = t.transaction.message.instructions.find((i) => i.programId === OPENSEA);
+  ix.programId = TENSOR;
+  ix.accounts = ix.accounts.slice(1);
+  if (newSig) t.transaction.signatures[0] = newSig;
+  return t;
+};
+
+await check("every sale layout a verdict rests on has a real transaction of its kind saved with the tests", () => {
+  // Every venue instruction in every saved transaction that did not fail.
+  const seen = new Set();
+  const programs = new Set(saleLayouts().map((l) => l.program));
+  const walk = (o) => {
+    if (!o || typeof o !== "object") return;
+    if (o.transaction?.message?.instructions && o.meta) {
+      if (o.meta.err) return;
+      for (const i of [...o.transaction.message.instructions, ...(o.meta.innerInstructions ?? []).flatMap((g) => g.instructions)]) {
+        if (typeof i.data === "string" && programs.has(i.programId)) seen.add(`${i.programId}:${fromBase58(i.data).subarray(0, 8).toString("hex")}`);
+      }
+      return;
+    }
+    for (const v of Array.isArray(o) ? o : Object.values(o)) walk(v);
+  };
+  const scan = (dir) => {
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, f.name);
+      if (f.isDirectory()) scan(p);
+      else if (f.name.endsWith(".json")) walk(JSON.parse(fs.readFileSync(p, "utf8")));
+      else if (f.name.endsWith(".json.gz")) walk(JSON.parse(zlib.gunzipSync(fs.readFileSync(p)).toString("utf8")));
+    }
+  };
+  scan(path.join(here, "fixtures"));
+  const verdictLayouts = saleLayouts().filter((l) => l.layout === "published" || l.layout === "observed");
+  assert.ok(verdictLayouts.length > 0);
+  for (const l of verdictLayouts) assert.ok(seen.has(`${l.program}:${l.discriminator}`), `${l.venue} ${l.instruction} is marked ${l.layout} and no saved transaction is one`);
+  // The two read from published code alone give a sale and no verdict.
+  const spl = decodeSale(asTensorSplBuy(), ITEM.A3SuTWZ4, sig("A3SuTWZ4"));
+  assert.equal(spl.status, "sale", spl.reason);
+  assert.equal(spl.venue, "Tensor");
+  assert.equal(spl.layout, "published-unchecked");
+  assert.equal(saleLayouts().find((l) => l.venue === "Magic Eden pools" && l.instruction === "sol_mpl_core_fulfill_sell").layout, "published-unchecked");
+  // Control: OpenSea's real buy_core_spl stands on the transaction it was read from.
+  assert.equal(decode("A3SuTWZ4").layout, "observed");
 });
 
 await check("only the formats legacy, 0 and 1 are decoded; any other version is cannot-tell", () => {
@@ -516,6 +680,8 @@ await check("a failure reason reads as a sentence, and its code sits in its own 
     [new DOMException("The operation was aborted.", "AbortError"), /ran past its time budget/, "timeout"],
     [new Error("public Solana RPC is not answering right now. Every endpoint that keeps transaction history was tried and none returned a result (rpc-mainnet-beta HTTP 429: asked for a 10 s pause; rpc-publicnode HTTP 503). That is the free public RPC being busy."), /none of the Solana endpoints asked answered, and at least one asked for a pause/, "solana-rpc HTTP 429"],
     [new Error("the Solana endpoint this read was pinned to stopped answering part-way (rpc-mainnet-beta HTTP 503)"), /^the Solana endpoint this read was pinned to stopped answering part-way$/, "solana-rpc HTTP 503"],
+    // The first endpoint's code, whichever kind it is, not a later endpoint's HTTP status.
+    [new Error("public Solana RPC is not answering right now. Every endpoint that keeps transaction history was tried and none returned a result (rpc-mainnet-beta Solana RPC -32603: Internal error; rpc-publicnode HTTP 503). That is the free public RPC being busy."), /^none of the Solana endpoints asked answered$/, "solana-rpc -32603"],
     [new Error("no Solana endpoint asked would serve this transaction in a format the request allowed (rpc-mainnet-beta refused transaction format version 1 although the request allowed version 1)"), /^no Solana endpoint asked would serve this transaction in a format the request allowed$/, null],
   ];
   for (const [err, sentence, code] of cases) {
@@ -778,6 +944,82 @@ await check("money outside the marketplace's instructions does not confirm a sal
   assert.equal((await verifyClaim({ claim: "sale", subject: sig("5wrdbZQq"), item: ITEM["5wrdbZQq"], value: 0.3 })).verdict, "confirmed");
 });
 
+await check("verify_claim on a take_bid with the seller's own instructions beside it confirms and contradicts no price", async () => {
+  for (const [kind, inflated, salt] of [["stake-withdraw", 40.1, "W"], ["createAccount", 0.02, "X"], ["cancel_bid", 0.6, "V"]]) {
+    const s = saltedSig(sig("2gAgsKK7"), salt);
+    synthetic.set(s, { tx: takeBidWith(kind, s) });
+    for (const value of [inflated, 0.1]) {
+      const r = await verifyClaim({ claim: "sale", subject: s, item: ITEM["2gAgsKK7"], value });
+      assert.equal(r.verdict, "unverifiable", `${kind} at ${value}: ${r.explanation}`);
+      assert.match(r.explanation, /not part of Tensor's take_bid_core/);
+    }
+  }
+  // Control: the real take_bid at its real price.
+  const real = await verifyClaim({ claim: "sale", subject: sig("2gAgsKK7"), item: ITEM["2gAgsKK7"], value: 0.1 });
+  assert.equal(real.verdict, "confirmed", real.explanation);
+});
+
+await check("verify_claim never confirms a deposit below the fill as what the buyer paid", async () => {
+  const s = saltedSig(sig("5c9JdsqK"), "D");
+  synthetic.set(s, { tx: depositShort(s) });
+  const low = await verifyClaim({ claim: "sale", subject: s, item: ITEM["5c9JdsqK"], value: 0.05 });
+  assert.equal(low.verdict, "contradicted", low.explanation);
+  assert.doesNotMatch(low.explanation, /buyer paid/);
+  assert.equal((await verifyClaim({ claim: "sale", subject: s, item: ITEM["5c9JdsqK"], value: 2 })).verdict, "confirmed");
+  // Control: the real buy at what its buyer paid.
+  const real = await verifyClaim({ claim: "sale", subject: sig("5c9JdsqK"), item: ITEM["5c9JdsqK"], value: 2.24 });
+  assert.equal(real.verdict, "confirmed", real.explanation);
+  assert.match(real.explanation, /what the buyer paid/);
+});
+
+await check("verify_claim gives no verdict through Tensor's buy_core_spl, whose layout no real transaction has checked", async () => {
+  const s = saltedSig(sig("A3SuTWZ4"), "T");
+  synthetic.set(s, { tx: asTensorSplBuy(s) });
+  const r = await verifyClaim({ claim: "sale", subject: s, item: ITEM.A3SuTWZ4, value: 3115.141221, currency: "ABAodYixeMG3pmuyohdgNft51PncJiadDqBBZvxWpump" });
+  assert.equal(r.verdict, "unverifiable", r.explanation);
+  assert.match(r.explanation, /published code and no real transaction of its kind has been checked/);
+  // Control: OpenSea's real one at its real price.
+  const real = await verifyClaim({ claim: "sale", subject: sig("A3SuTWZ4"), item: ITEM.A3SuTWZ4, value: 3115.141221, currency: "ABAodYixeMG3pmuyohdgNft51PncJiadDqBBZvxWpump" });
+  assert.equal(real.verdict, "confirmed", real.explanation);
+});
+
+await check("a fully written sale price that is no rounding of any figure is not confirmed", async () => {
+  const on = (value) => verifyClaim({ claim: "sale", subject: sig("1ox3d2go"), item: ITEM["1ox3d2go"], value });
+  // The pool fill's figures: 0.038612 paid, 0.034399783 to the seller, 0.03432567 kept after the fee.
+  for (const value of [0.034193384, 0.0342, 0.03419]) assert.notEqual((await on(value)).verdict, "confirmed", String(value));
+  // Controls: the figure itself, and the figure at a precision it rounds to.
+  for (const value of [0.03432567, 0.0343, 0.0344, 0.034]) assert.equal((await on(value)).verdict, "confirmed", String(value));
+  assert.equal((await verifyClaim({ claim: "sale", subject: sig("5wrdbZQq"), item: ITEM["5wrdbZQq"], value: 0.27 })).verdict, "confirmed");
+  // Across the real sales: every confirmed claim is one of the chain's figures written to fewer places.
+  const dp = (n) => {
+    const m = /^\d+(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(n));
+    return m ? Math.max(0, (m[1]?.length ?? 0) - (m[2] ? Number(m[2]) : 0)) : 0;
+  };
+  let confirmed = 0;
+  for (const short of ["1ox3d2go", "2gAgsKK7", "2tssstvw", "3mF1UcUZ", "3NoxXys3", "3nTJSyQD", "3Vru15vv", "4EUJrsFB", "4LpSHwhD", "5c9JdsqK", "5oTJN3Po", "5rkXdHRH", "5wrdbZQq", "A3SuTWZ4", "d7VsRSh6", "j3shXmBY", "WoyQpzaJ"]) {
+    const item = ITEM[short] ?? firstMoved(tx(short));
+    const d = decodeSale(tx(short), item, sig(short));
+    const figs = [d.orderPrice, d.sellerReceived, d.sellerAfterFee, d.buyerPaid, d.price].filter((v) => typeof v === "number" && v > 0);
+    const currency = d.currency.code ?? d.currency.mint;
+    const claims = new Set();
+    for (const fig of figs) {
+      for (const m of [0.9, 0.98, 0.994, 0.996, 1, 1.004, 1.006, 1.02, 1.1]) {
+        for (let places = 0; places <= 9; places++) {
+          const v = Number((fig * m).toFixed(places));
+          if (v > 0) claims.add(v);
+        }
+      }
+    }
+    for (const c of claims) {
+      const r = await verifyClaim({ claim: "sale", subject: sig(short), item, value: c, currency });
+      if (r.verdict !== "confirmed") continue;
+      confirmed++;
+      assert.ok(figs.some((x) => x === c || Number(x.toFixed(dp(c))) === c), `${short}: ${c} confirmed against ${figs.join("/")}`);
+    }
+  }
+  assert.ok(confirmed > 0, "control: rounded figures are still confirmed");
+});
+
 await check("a reply without the signature asked for is not kept, and a sale claim on it is unverifiable", async () => {
   const s = saltedSig(sig("4f2Arm2W"), "n");
   const t = tx("4f2Arm2W");
@@ -832,7 +1074,8 @@ await check("the scan reads an item's own history when given an item, and refuse
   assert.match(item.note, /is one Metaplex Core item of the collection/);
   const wallet = await scanCollectionSales(WALLET);
   assert.equal(wallet.addressKind, "wallet");
-  assert.match(wallet.refused, /is a wallet .*nothing was read for it/);
+  // One account was read to tell what the address is; the answer says so.
+  assert.match(wallet.refused, /is a wallet .*its account was read to tell what it is, and nothing more was read for it/);
   const missing = await scanCollectionSales(NO_ACCOUNT);
   assert.equal(missing.addressKind, "no-account");
   // Control: the collection is scanned as one.
