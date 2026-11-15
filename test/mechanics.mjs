@@ -221,6 +221,45 @@ check("mechanicsForTrust survives empty, wrong and hostile input", () => {
   assert.deepStrictEqual(mechanicsForTrust(["Royalties"], "__proto__").entries.filter((e) => e.venue), []);
 });
 
+// The words sales answers print.
+const { RECIPES } = await import("../dist/recipes.js");
+const { GLOSSARY } = await import("../dist/glossary.js");
+
+check("the flags a sales answer prints, as typed, find the entry that explains them", () => {
+  // Field names arrive camel-cased, as the answer printed them.
+  const cases = [
+    ["self-fill", "q-self-fill"],
+    ["selfFill", "q-self-fill"],
+    ["paidInOtherToken", "q-paid-in-another-token"],
+    ["paid in another token", "q-paid-in-another-token"],
+    ["chainScan", "q-chain-scan"],
+    ["why does my collection look quiet", "q-collection-looks-quiet"],
+  ];
+  for (const [query, expected] of cases) {
+    const top = explainMechanics(query).slice(0, 3).map((e) => e.id);
+    assert.strictEqual(top[0], expected, `"${query}" -> ${top.join(", ")}`);
+  }
+  // A quiet collection is very often one that trades on Tensor.
+  const quiet = explainMechanics("why does my collection look quiet").slice(0, 3).map((e) => e.id);
+  assert.ok(quiet.includes("venue-tensor-sales-from-chain"), `quiet -> ${quiet.join(", ")}`);
+  // Control: an older question still finds its own entry first.
+  assert.strictEqual(explainMechanics("wash trading")[0].id, "q-wash-trading");
+});
+
+check("the sales-bot recipe covers the currency paid, one fill on two feeds, Tensor and chainScan", () => {
+  const traps = RECIPES["sales-bot"].pitfalls.map((p) => `${p.trap} ${p.why} ${p.instead}`).join("\n");
+  assert.match(traps, /payment token's address/);
+  assert.match(traps, /paidInOtherToken/);
+  assert.match(traps, /sameTransactionAs/);
+  assert.match(traps, /Tensor/);
+  assert.match(traps, /chainScan: true/);
+  // Control: the oldest pitfall is still the first thing a builder is told about restarts.
+  assert.ok(RECIPES["sales-bot"].pitfalls.some((p) => /Restarts re-post old sales/.test(p.why)));
+  for (const term of ["self-fill", "paid in another token", "one fill, two feeds", "chainScan", "pool fill"]) {
+    assert.ok(GLOSSARY.some((g) => g.term === term), `no glossary term ${term}`);
+  }
+});
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log(`failures: ${failures.join(", ")}`);

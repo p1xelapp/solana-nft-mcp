@@ -17,7 +17,7 @@ import { USER_AGENT } from "../lib/version.js";
 import { appendAll, assertPageSize, finitePositive, isCollectionSymbol, objectRows } from "../lib/shapes.js";
 import { NotFoundError, EscrowError } from "../lib/errors.js";
 import { isoFromBlockTime, usableBlockTime } from "../lib/time.js";
-import { mePayment } from "../lib/reconcile.js";
+import { mePayment, tensorRelayQuote, TENSOR_RELAY_NOTE, TENSOR_RELAY_SOURCE } from "../lib/reconcile.js";
 import { saleRowFlags } from "../market.js";
 import { isBase58Address, venueAddress } from "./solana.js";
 
@@ -298,7 +298,7 @@ interface MeActivity {
  * exactly its quoted 0.038612.
  */
 const ME_PRICE_BASIS =
-  "priceSol is the price of the order that filled: a listing's price when a buyer took it, an offer's price when a seller accepted it, or the pool's price on a pool fill (poolFill). Magic Eden labels an accepted offer buyNow, like a bought listing, so the two cannot be told apart from this feed. It is not the buyer's total: a buyer taking a listing also pays the royalty and Magic Eden's taker fee (1.12 times the price on the Candy fills read on 2026-11-14). A sale paid in USDC or another token has priceSol null and its amount in price and currency.";
+  "priceSol is the price of the order that filled: a listing's price when a buyer took it, an offer's price when a seller accepted it, or the pool's price on a pool fill (poolFill). Magic Eden labels an accepted offer buyNow, like a bought listing, so the two cannot be told apart from this feed. It is not the buyer's total: a buyer taking a listing also pays the royalty and Magic Eden's taker fee (1.12 times the price on the Candy fills read on 2026-11-14). A sale paid in USDC or another token has priceSol null and its amount in price and currency. A Tensor fill Magic Eden relays has priceSol null and Magic Eden's figure in tensorQuoteSol, which is not what anyone paid.";
 
 /**
  * Payment and warning fields for one sale row, shared by the readers here.
@@ -312,7 +312,10 @@ function paymentFields(a: { price?: unknown; priceInfo?: unknown }): {
   extra: Record<string, unknown>;
 } {
   const pay = mePayment(a);
-  if (pay.kind === "sol") return { priceSol: pay.priceSol, price: pay.priceSol, currency: "SOL", extra: {} };
+  // A payment Magic Eden names at a scale its token does not have is a
+  // malformed row: the field says why, and no amount is given.
+  const bad = pay.malformed ? { malformedPayment: pay.malformed, ...(pay.note ? { currencyNote: pay.note } : {}) } : {};
+  if (pay.kind === "sol") return { priceSol: pay.priceSol, price: pay.priceSol, currency: "SOL", extra: bad };
   return {
     priceSol: null,
     price: pay.amount,
@@ -322,8 +325,20 @@ function paymentFields(a: { price?: unknown; priceInfo?: unknown }): {
       ...(pay.priceSolEquivalent !== null ? { priceSolEquivalent: pay.priceSolEquivalent } : {}),
       ...(pay.kind === "other-token" ? { paidInOtherToken: true } : {}),
       ...(pay.note ? { currencyNote: pay.note } : {}),
+      ...bad,
     },
   };
+}
+
+/**
+ * A Tensor fill Magic Eden relays (venue tensortrade) carries Tensor's quote,
+ * which neither side paid or received on the pool fills read on chain. The
+ * row stays a sale and its figure moves to a field that says what it is; null
+ * for any other row. One rule for the collection and the per-item readers.
+ */
+function tensorRelayFields(marketplace: string, pay: { currency: string | null }, a: { source?: unknown; price?: unknown }) {
+  const quote = marketplace === TENSOR_RELAY_SOURCE && pay.currency === "SOL" ? tensorRelayQuote(a) : null;
+  return quote === null ? null : { relayedFrom: "tensor" as const, tensorQuoteSol: quote, priceIs: "Tensor's quote as Magic Eden relayed it, not what anyone paid" };
 }
 
 /**
@@ -417,8 +432,9 @@ export async function recentSales(symbol: string, limit: number) {
       const pay = paymentFields(a);
       const priceSol = pay.priceSol;
       // A malformed SOL price is a rejected field. A sale paid in USDC has no
-      // SOL price by design, which is not a fault in the row.
-      if (pay.currency === "SOL" && priceSol === null && a.price !== undefined && a.price !== null) rejected.prices++;
+      // SOL price by design, which is not a fault in the row; one whose USDC
+      // amount came at the wrong scale is.
+      if ((pay.currency === "SOL" && priceSol === null && a.price !== undefined && a.price !== null) || (pay.currency !== "SOL" && "malformedPayment" in pay.extra)) rejected.prices++;
       let signature: string | null = null;
       if (typeof a.signature === "string" && TX_SIGNATURE.test(a.signature)) signature = a.signature;
       else if (a.signature !== undefined && a.signature !== null) rejected.signatures++;
@@ -432,12 +448,14 @@ export async function recentSales(symbol: string, limit: number) {
       }
       const inFuture = time !== null && Date.parse(time) > futureCutoff;
       if (inFuture) futureTimes++;
+      const relay = tensorRelayFields(marketplace, pay, a);
       return {
         time,
-        priceSol,
-        price: pay.price,
+        priceSol: relay ? null : priceSol,
+        price: relay ? null : pay.price,
         currency: pay.currency,
         ...pay.extra,
+        ...(relay ?? {}),
         tokenMint: address(a.tokenMint),
         buyer: address(a.buyer),
         seller: address(a.seller),
@@ -457,9 +475,11 @@ export async function recentSales(symbol: string, limit: number) {
     shared: flags.filter((f) => f.sharedTransaction).length,
     far: flags.filter((f) => f.farAboveRecentRange).length,
     otherCurrency: sales.filter((s) => s.currency !== "SOL").length,
+    tensor: sales.filter((s) => "relayedFrom" in s).length,
   };
   const flagNotes = [
     flagged.otherCurrency ? `${flagged.otherCurrency} sale(s) were not paid in SOL: priceSol is null on them, and price and currency say what was paid.` : "",
+    flagged.tensor ? `${flagged.tensor} sale(s) are Tensor fills Magic Eden relays (relayedFrom tensor): priceSol is null on them and tensorQuoteSol holds Magic Eden's figure. ${TENSOR_RELAY_NOTE}` : "",
     flagged.selfFill ? `${flagged.selfFill} sale(s) have one wallet as buyer and seller (selfFill): no money changed hands between two parties.` : "",
     flagged.shared ? `${flagged.shared} sale(s) share a transaction with other item sales (sharedTransaction): a per-item price cannot be proven from the buyer's total.` : "",
     flagged.far ? `${flagged.far} sale(s) are far above the other sales listed here (farAboveRecentRange, with the numbers); they are shown as reported, not dropped or adjusted.` : "",
@@ -483,7 +503,7 @@ export async function recentSales(symbol: string, limit: number) {
             ...rejected,
             futureTimes,
             note:
-              "Fields the venue served in a shape they cannot have (a price that is not a finite amount above zero, an address or signature that is not base58, a venue label that is not a plain token) are null in the row and counted here; a time ahead of this clock is kept and marked on the row.",
+              "Fields the venue served in a shape they cannot have (a price that is not a finite amount above zero or a payment at a scale its token does not have, an address or signature that is not base58, a venue label that is not a plain token) are null in the row and counted here; a time ahead of this clock is kept and marked on the row.",
           },
         }
       : {}),
@@ -585,19 +605,24 @@ export async function tokenSales(mint: string, opts: { signal?: AbortSignal; max
       // A USDC sale is a sale: it counts as a fill, priced in USDC, and its
       // SOL-equivalent `price` is never presented as SOL paid.
       const pay = paymentFields(a);
+      const marketplace = typeof a.source === "string" && VENUE_LABEL.test(a.source) ? a.source : "magiceden";
+      // The collection feed's rule: a relayed Tensor fill still counts as a
+      // sale here, with its figure under its own name and no price.
+      const relay = tensorRelayFields(marketplace, pay, a);
       return {
         signature: typeof a.signature === "string" && TX_SIGNATURE.test(a.signature) ? a.signature : null,
         time: isoFromBlockTime(a.blockTime),
-        priceSol: pay.priceSol,
-        price: pay.price,
+        priceSol: relay ? null : pay.priceSol,
+        price: relay ? null : pay.price,
         currency: pay.currency,
         ...pay.extra,
+        ...(relay ?? {}),
         buyer: typeof a.buyer === "string" && isBase58Address(a.buyer) ? a.buyer : null,
         seller: typeof a.seller === "string" && isBase58Address(a.seller) ? a.seller : null,
-        marketplace: typeof a.source === "string" && VENUE_LABEL.test(a.source) ? a.source : "magiceden",
+        marketplace,
       };
     })
-    .filter((s) => s.signature !== null && finitePositive(s.price) !== null && s.time !== null && Date.parse(s.time) <= futureCutoff);
+    .filter((s) => s.signature !== null && (finitePositive(s.price) !== null || ("tensorQuoteSol" in s && finitePositive(s.tensorQuoteSol) !== null)) && s.time !== null && Date.parse(s.time) <= futureCutoff);
   return { mint, sales, eventsRead: batch.length, pagesRead, reachedEnd, readAt: new Date().toISOString(), source: "magiceden" as const };
 }
 
@@ -1156,6 +1181,8 @@ export interface LeaderboardRead {
   traders: { wallet: string; volumeSol: number | null; lastTradeAt: string | null }[];
   stale: boolean;
   cachedAt: string;
+  /** The span the volumes cover: none was asked for, so from is null and to is the read. */
+  window: { from: null; to: string; note: string };
   caveat: string;
 }
 
@@ -1180,6 +1207,14 @@ export async function collectionLeaderboard(symbol: string, limit: number): Prom
       })),
     stale,
     cachedAt,
+    // The window, said rather than implied. The leaderboard is asked for with
+    // no time range, and the answer named none, so "top traders" read as a
+    // statement about this week.
+    window: {
+      from: null,
+      to: cachedAt,
+      note: "No time window: Magic Eden's leaderboard is read with no range, so each volume is that wallet's running total as Magic Eden counts it, from a start Magic Eden does not state, up to this read. lastTradeAt is each wallet's latest trade. For a stated window, get_collection_sales gives topBuyers and topSellers over the last N days.",
+    },
     caveat:
       "Volume as Magic Eden's API counts it. How completely that feed covers fills on other programs (Tensor, OpenSea, peer-to-peer) is not established, so this ranks what Magic Eden indexed, not a collection's whole trading. Magic Eden records a sale paid in USDC or another token with a SOL equivalent at its own rate; whether such sales are in this volume, and at which rate, is not established.",
   };

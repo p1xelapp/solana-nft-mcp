@@ -72,6 +72,18 @@ const STRUCTURE: RegExp[] = [
 ];
 
 /**
+ * A chat role label where a turn would begin: at the start of the text, or
+ * after a line break, a line or paragraph separator, a vertical tab, a form
+ * feed or a next-line character. "\n\nHuman:" is a whole turn boundary in one
+ * transcript format and "User:" in several, and once the breaks collapse to
+ * spaces the label reads inline, so it is defanged while the break is still
+ * there to see. Invisible characters between the break and the word do not
+ * hide it. Run before the invisible characters go, since several of those
+ * breaks are themselves on that list.
+ */
+const ROLE_LABEL = /(^|[\r\n\v\f\u0085\u{2028}\u{2029}])([\s\u{200B}-\u{200F}\u{2060}\u{FEFF}]*)(human|assistant|user|system)(\s*):/giu;
+
+/**
  * A link inside a name, a trait or an error message. None of those needs one,
  * and "claim at https://..." in an item name is the oldest trick there is, so
  * anything with a scheme or a www prefix comes out. Bare domains stay: real
@@ -249,6 +261,20 @@ export function inspectUntrusted(raw: unknown): Untrusted {
     v = v.slice(0, HARD_CAP);
   }
 
+  // Any turn marker, of any model family, means the text was written to pose
+  // as a message boundary, so the label below travels with it. Before, only a
+  // payload that also used an instruction phrase got the label, and a Llama or
+  // Gemma header with a bare request behind it came through looking like data.
+  let posesAsTurn = false;
+  ROLE_LABEL.lastIndex = 0;
+  if (ROLE_LABEL.test(v)) {
+    flags.push("a chat role label where a turn would start (used to fake message boundaries)");
+    ROLE_LABEL.lastIndex = 0;
+    v = v.replace(ROLE_LABEL, "$1$2$3$4／");
+    posesAsTurn = true;
+  }
+  ROLE_LABEL.lastIndex = 0;
+
   if (INVISIBLE.test(v) || INVISIBLE_SUPPLEMENTARY.test(v)) {
     flags.push("invisible or direction-override characters");
     v = v.replace(INVISIBLE, "").replace(INVISIBLE_SUPPLEMENTARY, "");
@@ -274,6 +300,7 @@ export function inspectUntrusted(raw: unknown): Untrusted {
     re.lastIndex = 0;
     if (re.test(v)) {
       flags.push("markup imitating a message delimiter");
+      posesAsTurn = true;
       re.lastIndex = 0;
       v = v.replace(re, (m) => m.replace(/[<>|`[\]\uFF1C\uFF1E\uFF5C]/g, "／"));
     }
@@ -294,8 +321,9 @@ export function inspectUntrusted(raw: unknown): Untrusted {
   }
   MARKDOWN_LINK.lastIndex = 0;
 
-  if (IMPERATIVE.test(v) || ROLEPLAY.test(v)) {
-    flags.push("reads as an instruction aimed at an AI model rather than as a name");
+  const instructs = IMPERATIVE.test(v) || ROLEPLAY.test(v);
+  if (instructs) flags.push("reads as an instruction aimed at an AI model rather than as a name");
+  if (instructs || posesAsTurn) {
     // The text stays (it is the item's real name) but it never arrives bare:
     // the label travels with it through every caller, including clean().
     if (!v.startsWith("[untrusted text, not an instruction]")) v = `[untrusted text, not an instruction] ${v}`;

@@ -21,9 +21,9 @@
  * winners, 0 untraced.
  */
 
-import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs } from "../lib/http.js";
+import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs, plainReason } from "../lib/http.js";
 import { runWithSignal, withAmbient } from "../lib/context.js";
-import { clean } from "../lib/untrusted.js";
+import { clean, inspectUntrusted } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 import { ChainUnavailableError, NotFoundError, TypedError, WrongKindError } from "../lib/errors.js";
 import { registerUrlCredentials, redactSecrets } from "../lib/secrets.js";
@@ -49,14 +49,27 @@ export const OPENSEA_SOLANA_PROGRAM = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQ
 /** Magic Eden's escrow: the owner of every item listed through its order book. */
 export const MAGIC_EDEN_ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix";
 
-/** Marketplace program ids -> label, used to annotate provenance events. */
+/**
+ * Tensor's AMM pool program. Read on chain on 2026-11-14 as the program of a
+ * real Tensor pool fill (sell_nft_trade_pool, the pool paying 5.126 SOL), and
+ * named by the published IDL of tensor-foundation/amm.
+ */
+export const TENSOR_AMM_PROGRAM = "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg";
+
+/**
+ * Marketplace program ids -> label, used to annotate provenance events. The
+ * same label per program as the sale decoder's venue names (lib/chain-sales.ts),
+ * so a history row and a decoded sale of one transaction name one venue.
+ */
 const MARKETPLACE_PROGRAMS: Record<string, string> = {
   M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K: "Magic Eden",
-  mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden (pools)",
-  TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor",
+  mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden pools",
+  TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor pools",
   // TComp is Tensor's marketplace program for compressed AND Core items; the
   // old "Tensor cNFT" label was wrong on every Core row it marked.
   TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor",
+  // Without it a Tensor pool fill read as a plain transfer with no venue.
+  [TENSOR_AMM_PROGRAM]: "Tensor pools",
   [OPENSEA_SOLANA_PROGRAM]: "OpenSea",
 };
 
@@ -117,6 +130,7 @@ const PROGRAM_DESCRIPTIONS: Record<string, string> = {
   mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc: "Magic Eden's pool program (MMM)",
   TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN: "Tensor's pool program (TSwap)",
   TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp: "Tensor's marketplace program (TComp)",
+  [TENSOR_AMM_PROGRAM]: "Tensor's AMM pool program (TAMM), whose pools keep the items they trade in accounts it owns",
 };
 
 /** A marketplace program's description, or null. */
@@ -342,6 +356,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   }
   const problems: string[] = [];
   let cursorUnknown = false;
+  let versionBehind = false;
   for (const ep of list) {
     const wasCooling = isCooling(ep);
     const pausedFor = originPauseLeftMs(ep.url);
@@ -429,7 +444,15 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           // an answer; the helper below asks again with that version.
           if (j.error.code === TX_VERSION_UNSUPPORTED) {
             const named = /version \((\d{1,3})\)/i.exec(String(j.error.message ?? "")) ?? /"?maxSupportedTransactionVersion"?\s*:\s*(\d{1,3})/.exec(String(j.error.message ?? ""));
-            throw new TransactionVersionError(msg, named ? Number(named[1]) : null);
+            const version = named ? Number(named[1]) : null;
+            // A node refusing a format the request already allowed is behind,
+            // or wrong, and says nothing about the transaction: another node
+            // may serve it. Only a NEWER format is every node's answer.
+            const allowed = askedTransactionVersion(method, params);
+            if (version !== null && allowed !== null && version <= allowed) {
+              throw new VersionBehindAtEndpoint(`${own ? `provider error ${code}` : `refused transaction format version ${version}`} although the request allowed version ${allowed}`);
+            }
+            throw new TransactionVersionError(msg, version);
           }
           // A history page asked to continue from a signature this node has
           // never seen. Since Agave 4.0 that is -32020 rather than an empty
@@ -484,10 +507,16 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         lastErr = e;
         if (e instanceof CursorUnknownAtEndpoint) cursorUnknown = true;
         if (e instanceof RateLimitedEndpoint) break;
+        // Asking the same node again gets the same refusal; the next one may serve it.
+        if (e instanceof VersionBehindAtEndpoint) {
+          versionBehind = true;
+          break;
+        }
       }
     }
-    // Not knowing a cursor is not being unhealthy: the endpoint stays in rotation.
-    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    // Not knowing a cursor, or one transaction format, is not being unhealthy:
+    // the endpoint stays in rotation for everything else it serves.
+    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint) && !(lastErr instanceof VersionBehindAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     // Our own error classes carry text written here. Anything else is the
     // runtime's or the endpoint's, and for the person's own endpoint that text
     // can quote the URL, key and all, so only its kind is relayed.
@@ -513,6 +542,14 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
     throw new CursorUnknownError(
       `no endpoint asked knew the signature the previous page of this history ended on, so the history past it was not listed (${problems.join("; ")})`,
     );
+  }
+  // Typed and worded as the endpoints' state. It is not this server being
+  // out of date: the format refused is one the request asked for.
+  if (versionBehind) {
+    throw new TypedError(`no Solana endpoint asked would serve this transaction in a format the request allowed (${problems.join("; ")})`, "chain-unavailable", {
+      headline: "The Solana endpoints asked refused to serve this transaction in a format this server asked for and can read. That is those endpoints running older software, not a gap in the chain or a problem with what you asked.",
+      next: "Ask again in a while. Setting SOLANA_RPC_URL to an up-to-date endpoint avoids it.",
+    });
   }
   throw new ChainUnavailableError(
     `public Solana RPC is not answering right now. Every endpoint ${HISTORY_METHODS.has(method) ? "that keeps transaction history " : ""}was tried and none returned a result ` +
@@ -563,19 +600,34 @@ class TransactionVersionError extends Error {
   }
 }
 
+/** One node refused a format no newer than the request allowed: the next endpoint is asked. */
+class VersionBehindAtEndpoint extends EndpointError {}
+
+/** The format a getTransaction request allowed, or null for any other read. */
+function askedTransactionVersion(method: string, params: unknown[]): number | null {
+  if (method !== "getTransaction") return null;
+  const c = params[1];
+  const v = c !== null && typeof c === "object" ? (c as { maxSupportedTransactionVersion?: unknown }).maxSupportedTransactionVersion : undefined;
+  return typeof v === "number" && Number.isSafeInteger(v) ? v : null;
+}
+
 // ------------------------------------------------------- transactions
 
 /**
- * The highest transaction format this process asks for.
+ * The transaction format every read asks for first.
  *
  * A node refuses, with -32015, to serve a transaction in a format newer than
- * the request allows. Solana began serving version 1 in November 2026, and
- * every request here asked for version 0: one version-1 sale in an item's
- * history failed the whole provenance read. The version starts at 1 and goes
- * up when a node names a newer one, so the next format change costs one extra
- * request per process rather than a release.
+ * the request allows. Solana began serving version 1 at epoch 1035 (September
+ * 2026), and every request here asked for version 0: one version-1 sale in an item's
+ * history failed the whole provenance read. Version 1 is the newest format
+ * the decoders here were written against.
+ *
+ * A node that names a newer one is asked again with it for THAT read only.
+ * Keeping the raised version for the process let one node's refusal decide
+ * the format of every later read, from every endpoint: a single reply naming
+ * 8 made the next hundred requests allow a format nothing here has seen.
  */
-let transactionVersion = 1;
+const TRANSACTION_VERSION = 1;
 /**
  * The newest format this server will ask for on a node's say-so. A refusal
  * naming anything higher is not taken on trust: it is reported as a format
@@ -583,9 +635,9 @@ let transactionVersion = 1;
  */
 const TRANSACTION_VERSION_CEILING = 8;
 
-/** The transaction format version the next read will ask for. */
+/** The transaction format version the next read will ask for. It never changes for the life of the process. */
 export function transactionVersionRequested(): number {
-  return transactionVersion;
+  return TRANSACTION_VERSION;
 }
 
 /**
@@ -606,12 +658,12 @@ function unreadableFormat(signature: string, version: number | null): TypedError
  * Every transaction read goes through here, so the format version is decided
  * in one place.
  *
- * Asks for the highest version this process knows. A -32015 that names a
- * newer version, up to the ceiling, is asked again ONCE with that version, and
- * the version is kept for the rest of the process. A second refusal, a refusal
- * that names no version, an older one, or one above the ceiling is thrown as
- * a typed failure: the read never loops, and the refusal never becomes a
- * skipped or unreadable row.
+ * Asks for version 1. A -32015 that names a newer version, up to the ceiling,
+ * is asked again ONCE with that version, for this read alone. A second
+ * refusal, a refusal that names no version, or one above the ceiling is thrown
+ * as a typed failure: the read never loops, and the refusal never becomes a
+ * skipped or unreadable row. A node refusing a version no newer than the one
+ * asked is behind, and rpc() moves to the next endpoint for that.
  *
  * `config` carries anything else the read needs (a minimum context slot); the
  * encoding and the version are always set here.
@@ -628,14 +680,13 @@ export async function getParsedTransaction<T = unknown>(
       opts.pin,
       opts.signal,
     );
-  const asked = transactionVersion;
+  const asked = TRANSACTION_VERSION;
   try {
     return await ask(asked);
   } catch (e) {
     if (!(e instanceof TransactionVersionError)) throw e;
     const named = e.version;
     if (named === null || named <= asked || named > TRANSACTION_VERSION_CEILING) throw unreadableFormat(signature, named);
-    transactionVersion = Math.max(transactionVersion, named);
     try {
       return await ask(named);
     } catch (e2) {
@@ -835,6 +886,10 @@ export interface CoreAsset {
   owner: string;
   collection: string | null;
   name: string;
+  /** Set when the asset is in no collection and names an address as its own update authority. The minter typed it; nobody signed for it. */
+  updateAuthority?: string;
+  /** What the name carried before it was cleaned, when it looked crafted. */
+  nameFlags?: string[];
 }
 
 export interface CoreCollection {
@@ -844,6 +899,18 @@ export interface CoreCollection {
   uri: string;
   numMinted: number;
   currentSize: number;
+  /** What the name carried before it was cleaned, when it looked crafted. */
+  nameFlags?: string[];
+}
+
+/**
+ * A name read from account bytes, cleaned, with what it carried. Inspecting
+ * the cleaned copy later finds nothing: the delimiters a crafted name used are
+ * already gone, so the warning that should travel with it never fired.
+ */
+function accountName(raw: string): { name: string; nameFlags?: string[] } {
+  const r = inspectUntrusted(raw);
+  return { name: r.value, ...(r.suspicious ? { nameFlags: r.flags } : {}) };
 }
 
 function readString(buf: Buffer, off: number): { value: string; next: number } {
@@ -871,15 +938,17 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
       const tag = buf[off]!;
       off += 1;
       let collection: string | null = null;
+      let updateAuthority: string | undefined;
       if (tag === 1 || tag === 2) {
         const addr = base58Encode(buf.subarray(off, off + 32));
         if (tag === 2) collection = addr; // UpdateAuthority::Collection
+        else updateAuthority = addr; // UpdateAuthority::Address
         off += 32;
       }
       const { value: name } = readString(buf, off);
       // The name is whatever the minter typed. Neutralise it here, at the point
       // it stops being bytes and becomes text a model will read.
-      return { kind: "asset", owner, collection, name: clean(name) };
+      return { kind: "asset", owner, collection, ...accountName(name), ...(updateAuthority ? { updateAuthority } : {}) };
     }
     if (key === 5) {
       const updateAuthority = base58Encode(buf.subarray(1, 33));
@@ -888,7 +957,7 @@ export function decodeCoreAccount(b64: string): CoreAsset | CoreCollection | nul
       const u = readString(buf, n.next);
       const numMinted = buf.readUInt32LE(u.next);
       const currentSize = buf.readUInt32LE(u.next + 4);
-      return { kind: "collection", updateAuthority, name: clean(n.value), uri: u.value, numMinted, currentSize };
+      return { kind: "collection", updateAuthority, ...accountName(n.value), uri: u.value, numMinted, currentSize };
     }
     return null;
   } catch {
@@ -1075,7 +1144,9 @@ async function multipleAccounts<T>(
       const res = await rpc<{ value?: unknown }>("getMultipleAccounts", [chunk, { encoding: "base64", dataSlice: { offset: 0, length: dataLength } }]);
       values = res && typeof res === "object" ? res.value : undefined;
     } catch (e) {
-      const reason = `the chain could not be read just now (${upstreamMessage(e instanceof Error ? e.message : String(e)).slice(0, 160)})`;
+      // In words: callers place it after "could not be read just now", and
+      // the reader's own text ("Solana RPC -32603: ...") read twice over there.
+      const reason = plainReason(e).sentence;
       for (const a of chunk) out.set(a, unread(reason));
       continue;
     }
@@ -1181,6 +1252,58 @@ export async function readOwnerPrograms(addresses: string[], opts: { fresh?: boo
   return out;
 }
 
+/** Which Core collection one item belongs to, from a batched read. */
+export type AssetCollectionRead =
+  /** `collection` is null when the item names no collection (its update authority is an address or none). */
+  | { kind: "core-asset"; collection: string | null }
+  | { kind: "burned" }
+  | { kind: "core-other" }
+  | { kind: "no-account" }
+  | { kind: "not-core"; ownerProgram: string }
+  | { kind: "unread"; reason: string };
+
+/**
+ * The collection each Core item names in its own account, read in batches of
+ * one hundred.
+ *
+ * A marketplace can file several collections under one name: OpenSea's
+ * "candy-mlb" carries every Candy MLB series while its record names one
+ * collection address, and sales of other series were filed under that one as
+ * verified (2026-11-15). AssetV1 keeps its update-authority tag in byte 33
+ * (2 means a collection) and the collection's address in bytes 34 to 65, so
+ * 66 bytes settle which collection a sold item belongs to. A failed read is
+ * `unread`, never a verdict about the item.
+ */
+export async function readAssetCollections(addresses: string[]): Promise<Map<string, AssetCollectionRead>> {
+  const out = new Map<string, AssetCollectionRead>();
+  const todo: string[] = [];
+  for (const a of new Set(addresses)) {
+    if (isBase58Address(a)) todo.push(a);
+    else out.set(a, { kind: "unread", reason: "not a Solana address" });
+  }
+  const read = await multipleAccounts<AssetCollectionRead>(
+    todo,
+    66,
+    (address, value) => {
+      if (value === null) return { kind: "no-account" };
+      const s = sliceOf(value);
+      if (!s) return { kind: "unread", reason: "the endpoint answered with an account this server could not read" };
+      if (s.owner !== CORE_PROGRAM) {
+        noteOwnerProgram(address, s.owner);
+        return { kind: "not-core", ownerProgram: s.owner };
+      }
+      if (s.bytes.length === 1 && s.bytes[0] === 0) return { kind: "burned" };
+      if (s.bytes[0] !== 1 || s.bytes.length < 34) return { kind: "core-other" };
+      const tag = s.bytes[33];
+      if (tag === 2) return s.bytes.length >= 66 ? { kind: "core-asset", collection: base58Encode(s.bytes.subarray(34, 66)) } : { kind: "unread", reason: "the account was shorter than an item that names its collection" };
+      return tag === 0 || tag === 1 ? { kind: "core-asset", collection: null } : { kind: "core-other" };
+    },
+    (reason) => ({ kind: "unread", reason }),
+  );
+  for (const [a, r] of read) out.set(a, r);
+  return out;
+}
+
 /** True for the System Program, which owns every ordinary wallet. */
 export function isWalletProgram(program: string): boolean {
   return program === SYSTEM_PROGRAM;
@@ -1248,6 +1371,50 @@ export interface ProvenanceEvent {
   firstOwner?: string;
   /** On a `transferred` row whose recipient is the collection's update authority AT THE TIME OF THIS READ. The address says who received it, not why. */
   toIssuer?: true;
+  /** On a `transferred` row the sale decoder proved to be a sale: the venue, the money and the parties, from this transaction's own instructions. */
+  sale?: ProvenanceSale;
+}
+
+/**
+ * What the sale decoder made of one marketplace transaction for this asset.
+ *
+ * The decoder (lib/chain-sales.ts) reads transactions through this module,
+ * so a caller passes it in (getProvenance's `saleOf`) rather than this module
+ * importing it. Without it a proven 0.3 SOL OpenSea sale read as a plain
+ * transfer with no label, and a sale into a Magic Eden pool called the pool
+ * owner's wallet an escrow.
+ */
+export interface ProvenanceDecode {
+  status: "sale" | "not-a-sale" | "cannot-tell";
+  kind?: string;
+  venue?: string;
+  instruction?: string;
+  /** Where the decoder's buyer and seller slots come from; only "published" and "observed" carry a verdict. */
+  layout?: string;
+  price?: number | null;
+  /** SOL, USDC, USDT or PYUSD by the payment token's address; null for any other token. */
+  currency?: string | null;
+  paymentToken?: string | null;
+  sellerReceived?: number | null;
+  seller?: string;
+  buyer?: string;
+  selfFill?: boolean;
+  noPriceReason?: string;
+}
+
+/** The decoded sale on a provenance row, in the field names the sale rows use. */
+export type ProvenanceSale = Omit<ProvenanceDecode, "status" | "kind">;
+
+/** A decoded sale in plain words for a provenance row. */
+function decodedSaleLabel(d: ProvenanceDecode): string {
+  const where = `on ${d.venue} (${d.instruction}), decoded from this transaction's instructions and payments`;
+  if (d.selfFill) return `fill ${where}, with one wallet as buyer and seller: a self-fill, which moves the item between no two parties and proves no price`;
+  const money =
+    d.price !== null && d.price !== undefined
+      ? `${d.price} ${d.currency ?? "units of another token (never a SOL figure)"} paid in all${d.sellerReceived !== null && d.sellerReceived !== undefined ? `, ${d.sellerReceived} of it to the seller ${d.seller}` : ` to the seller ${d.seller}`}`
+      : `sold by ${d.seller} with no per-item price: ${d.noPriceReason ?? "the amount could not be stated"}`;
+  const unchecked = d.layout === "published" || d.layout === "observed" ? "" : "; the venue's account layout for this instruction has not been checked against a real transaction of its kind, so the buyer and seller are probable, not proven";
+  return `sale ${where}: ${money}, bought by ${d.buyer}${unchecked}`;
 }
 
 /** Outcome of the collection-authority read a provenance walk makes for its `toIssuer` labels. */
@@ -1351,7 +1518,7 @@ class PartialWalk extends Error {
 export async function getProvenance(
   mint: string,
   depth = 15,
-  opts: { fresh?: boolean; budgetMs?: number } = {},
+  opts: { fresh?: boolean; budgetMs?: number; saleOf?: (tx: unknown, mint: string, signature: string) => ProvenanceDecode | null } = {},
 ) {
   // A wall-clock ceiling for the decode loop.
   //
@@ -1484,6 +1651,8 @@ export async function getProvenance(
     const events: ProvenanceEvent[] = [];
     /** Transfers whose recipient is an account Magic Eden's own programs brought into the transaction. */
     const recipientIsMeAccount = new Set<ProvenanceEvent>();
+    /** The sale decoder's answer for the transaction a transfer row belongs to, on its last transfer of the asset. */
+    const decodedRows = new Map<ProvenanceEvent, ProvenanceDecode>();
     // A signature the RPC could not return, or one carrying neither logs nor a
     // readable instruction list, is a hole in the evidence and is counted as
     // such - never silently skipped. It is also placed as a row IN the story,
@@ -1693,6 +1862,19 @@ export async function getProvenance(
         );
       }
       const transfersHere = rows.filter((r) => r.event === "transferred");
+      // A marketplace transaction is decoded for what it did to this asset.
+      // The decoder answers for the asset's last move in it, which is the row
+      // it is attached to; a listing move before a fill in the same
+      // transaction keeps the reading below.
+      if (opts.saleOf && marketplace && transfersHere.length > 0) {
+        let d: ProvenanceDecode | null = null;
+        try {
+          d = opts.saleOf(tx, mint, sig.signature);
+        } catch {
+          d = null;
+        }
+        if (d) decodedRows.set(transfersHere[transfersHere.length - 1]!, d);
+      }
       // "Final custody" is a claim about everything AFTER the row, so a hole
       // anywhere in this transaction, or an order the endpoint could not
       // establish, withdraws it.
@@ -1857,19 +2039,66 @@ export async function getProvenance(
     // (a mint straight into a pool, then a fill to the buyer in the same
     // transaction) made the buyer's wallet an escrow.
     let custody: "wallet" | "escrow" | "unknown" = "unknown";
+    // Why custody is unknown, so the label says the true reason: the history
+    // before it was not read, or the item last went into another venue's
+    // listing account.
+    let unknownBecause: "unread" | "elsewhere" = "unread";
     for (const e of events) {
       if (e.event === "transferred" && issuerKey && e.newOwner === issuerKey) {
         e.toIssuer = true;
         e.label = "transfer to the address that is the collection's update authority at the time of this read (chain read). The address says who received it, not why: a return, a buyback, a refund and a pack opening all look the same here, and whether anything was paid is not in this row";
       }
-      if (e.event === "unread_gap") { custody = "unknown"; continue; }
+      if (e.event === "unread_gap") { custody = "unknown"; unknownBecause = "unread"; continue; }
       if (e.event === "minted") {
-        if (e.marketplace) custody = "unknown";
+        if (e.marketplace) { custody = "unknown"; unknownBecause = "unread"; }
         else if (e.firstOwner && knownVenueAccount(e.firstOwner)) custody = "escrow";
         else custody = "wallet";
         continue;
       }
       if (e.event !== "transferred") continue;
+      // What the sale decoder read in this row's own transaction settles it,
+      // whatever came before: a decoded listing puts the item in the venue's
+      // account and a decoded sale or delisting takes it out. One unread
+      // transaction at the start of a history used to leave every later
+      // Magic Eden row "cannot be told", and a readable mint left a sale into
+      // a pool labelled as the pool owner's wallet being an escrow.
+      const d = decodedRows.get(e);
+      const meVenue = d?.venue === "Magic Eden" || d?.venue === "Magic Eden pools";
+      if (d?.status === "sale") {
+        const outOfEscrow = custody === "escrow" && meVenue;
+        e.sale = { venue: d.venue, instruction: d.instruction, layout: d.layout, price: d.price ?? null, currency: d.currency ?? null, paymentToken: d.paymentToken ?? null, sellerReceived: d.sellerReceived ?? null, seller: d.seller, buyer: d.buyer, ...(d.selfFill ? { selfFill: true } : {}), ...(d.noPriceReason ? { noPriceReason: d.noPriceReason } : {}) };
+        e.label = decodedSaleLabel(d) + (outOfEscrow ? "; the item came out of the Magic Eden escrow it was listed in" : "");
+        if (outOfEscrow) { e.magicEdenEscrow = true; e.escrowDirection = "out_of"; }
+        // The decoder checked that the item went to the buyer, or to a pool
+        // account the layout names for a pool that keeps what it buys.
+        if (e.newOwner && e.newOwner === d.buyer) custody = "wallet";
+        else if (meVenue) custody = "escrow";
+        else { custody = "unknown"; unknownBecause = "elsewhere"; }
+        continue;
+      }
+      const into = d?.status === "not-a-sale" && (d.kind === "listing" || (d.kind === "escrow-move" && /deposit/.test(d.instruction ?? "")));
+      const outOf = d?.status === "not-a-sale" && (d.kind === "delisting" || (d.kind === "escrow-move" && /withdraw/.test(d.instruction ?? "")));
+      if (d && into) {
+        e.label = `listed on ${d.venue} (${d.instruction}), decoded from this transaction: the item moved into the venue's own account, which holds it until it is sold or taken back. No sale happened in it`;
+        if (meVenue) { e.magicEdenEscrow = true; e.escrowDirection = "into"; custody = "escrow"; }
+        else { custody = "unknown"; unknownBecause = "elsewhere"; }
+        continue;
+      }
+      if (d && outOf) {
+        e.label = `taken back out of ${d.venue} (${d.instruction}), decoded from this transaction: the item left the venue's own account without being sold`;
+        if (meVenue) { e.magicEdenEscrow = true; e.escrowDirection = "out_of"; }
+        custody = "wallet";
+        continue;
+      }
+      // Magic Eden's escrow is one fixed account, so a move to it is a move
+      // into it whatever was known before.
+      if (e.newOwner === MAGIC_EDEN_ESCROW) {
+        e.magicEdenEscrow = true;
+        e.escrowDirection = "into";
+        e.label = "transfer to a Magic Eden escrow (chain read)";
+        custody = "escrow";
+        continue;
+      }
       if (custody === "escrow") {
         // Whatever the recipient, the item was in escrow and now it is not:
         // a withdrawal back to the seller or a fill to the buyer.
@@ -1893,10 +2122,13 @@ export async function getProvenance(
         custody = "escrow";
       } else {
         e.escrowDirection = "unknown";
-        e.label = "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
+        e.label =
+          unknownBecause === "elsewhere"
+            ? "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the item was last moved into another venue's account"
+            : "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
       }
     }
-    return { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead };
+    return { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -1917,7 +2149,7 @@ export async function getProvenance(
     const retry = await walkOnce().catch(() => null);
     if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
   }
-  const { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead } = value;
+  const { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows } = value;
 
   // OpenSea opens one account per listing, so unlike Magic Eden's escrow the
   // recipient cannot be recognised by address. Its owning program says it.
@@ -1936,6 +2168,11 @@ export async function getProvenance(
     for (const e of events) {
       if (e.event === "unread_gap") { inListing = false; continue; }
       if (e.event !== "transferred") continue;
+      // A listing the decoder read in the transaction itself is a listing
+      // even after its account has closed, which is what a filled or
+      // cancelled listing's account does.
+      const d = decodedRows.get(e);
+      const decodedListing = d?.status === "not-a-sale" && d.kind === "listing" && d.venue === "OpenSea";
       if (inListing) {
         // Neutral on purpose: a fill, a cancellation and an issuer's
         // permanent delegate moving the item all take it out the same way.
@@ -1948,6 +2185,12 @@ export async function getProvenance(
       if (isListing(e.newOwner)) {
         e.openSeaListing = "into";
         e.label = "transfer into an OpenSea listing account (chain read): the item was listed for sale through OpenSea's protocol, and that account holds it until the listing is filled or cancelled";
+        inListing = true;
+      } else if (decodedListing) {
+        e.openSeaListing = "into";
+        e.label =
+          `transfer into an OpenSea listing account, decoded from this transaction (OpenSea ${d.instruction}): the item was listed for sale through OpenSea's protocol` +
+          (e.newOwner && programs.get(e.newOwner)?.kind === "no-account" ? ". That account has since closed, which is what happens when the listing is filled or cancelled" : "");
         inListing = true;
       } else if (e.marketplace === "OpenSea" && e.newOwner && programs.get(e.newOwner)?.kind === "no-account") {
         e.label = "transfer in a transaction that ran OpenSea's protocol program (chain read); the receiving account no longer exists, which is how a closed listing account looks, but that alone does not prove it was one";
@@ -2093,18 +2336,25 @@ export async function findRecentCollectionAssets(
 /** One Core collection the chain lists under an update authority. */
 export interface DiscoveredCollection {
   address: string;
+  /** Cleaned for display. */
   name: string;
   numMinted: number;
   currentSize: number;
+  /** What the name carried before it was cleaned, when it looked crafted. Anybody naming the key chose it. */
+  nameFlags?: string[];
 }
 
 /** The chain's own list of collections naming one update authority, with what could not be read. */
 export interface CollectionDiscovery {
   authority: string;
-  /** ok: the list below is the chain's. refused: the answer was implausible and none of it is used. failed: not read. */
+  /**
+   * ok: the list below is the chain's. refused: the answer was implausible and
+   * none of it is used, so only the bundled registry answers. failed: not read,
+   * or read in a form that cannot be the whole list.
+   */
   state: "ok" | "refused" | "failed";
   collections: DiscoveredCollection[];
-  /** Accounts in the answer that did not decode as a collection under this authority. Above zero, the list is short by that many. */
+  /** Accounts in the answer that did not decode as a collection under this authority. Above zero, nothing in the answer is used. */
   unreadable: number;
   /** Accounts the endpoint returned, before any were decoded or refused. */
   accountsReturned: number;
@@ -2119,8 +2369,9 @@ export interface CollectionDiscovery {
  * Naming a key as a collection's update authority needs no signature from
  * that key and costs a fraction of a cent, so anybody can add collections to
  * this list. Candy Digital had 401 after five years of drops (2026-11-14). An
- * answer far past that is somebody flooding the key, and rather than search a
- * list that size, none of it is used.
+ * answer past it is somebody flooding the key: the empty collections the
+ * issuer table does not list are set aside, and when more than this many are
+ * still left, none of it is used.
  */
 export const DISCOVERY_MAX_ACCOUNTS = 1_000;
 /**
@@ -2155,23 +2406,28 @@ export function discoveryParams(authority: string): unknown[] {
  * The filter already asked for CollectionV1 accounts under this authority, but
  * each one is checked again from its own bytes, because an endpoint that
  * ignored the filter would otherwise hand any account in as this issuer's.
+ *
+ * Only a whole list is a list. An answer with any account that does not
+ * decode, or one that leaves out a collection the issuer table lists under
+ * this key (`expected`), is a failed read: 400 undecodable accounts used to
+ * become "the chain lists 0 collections", kept for six hours, and every name
+ * search in that time said it had searched the chain and found nothing.
+ *
+ * More accounts than the cap is somebody flooding the key, since naming a key
+ * costs a fraction of a cent and needs no signature from it. An empty
+ * collection costs nothing more, so the empty ones the table does not list
+ * are set aside and the rest is used when it fits under the cap; a flood of
+ * collections with items is refused, and only the bundled registry answers.
  */
 export function decodeCollectionsByAuthority(
   authority: string,
   result: unknown,
+  expected: readonly string[] = [],
 ): { state: "ok" | "refused" | "failed"; collections: DiscoveredCollection[]; unreadable: number; accountsReturned: number; note: string } {
   if (!Array.isArray(result)) {
     return { state: "failed", collections: [], unreadable: 0, accountsReturned: 0, note: "the endpoint answered with something that is not a list of accounts" };
   }
-  if (result.length > DISCOVERY_MAX_ACCOUNTS) {
-    return {
-      state: "refused",
-      collections: [],
-      unreadable: 0,
-      accountsReturned: result.length,
-      note: `${result.length} accounts name ${authority} as their update authority, far more than any issuer this server knows has made. Anybody can create a collection naming a key, so a list that size is somebody flooding the key, and none of it was used.`,
-    };
-  }
+  const accountsReturned = result.length;
   const seen = new Set<string>();
   const collections: DiscoveredCollection[] = [];
   let unreadable = 0;
@@ -2190,18 +2446,41 @@ export function decodeCollectionsByAuthority(
     }
     if (seen.has(pubkey)) continue;
     seen.add(pubkey);
-    collections.push({ address: pubkey, name: d.name, numMinted: d.numMinted, currentSize: d.currentSize });
+    collections.push({ address: pubkey, name: d.name, numMinted: d.numMinted, currentSize: d.currentSize, ...(d.nameFlags ? { nameFlags: d.nameFlags } : {}) });
   }
   collections.sort((a, b) => a.address.localeCompare(b.address));
+  const notUsed = (note: string, state: "failed" | "refused" = "failed") => ({ state, collections: [], unreadable, accountsReturned, note });
+  if (unreadable > 0) {
+    return notUsed(`${unreadable} of the ${accountsReturned} account(s) in the endpoint's answer did not decode as a collection under ${authority}, so the answer is not a list this server can read whole, and none of it was used`);
+  }
+  const listed = new Set(collections.map((c) => c.address));
+  const missing = expected.filter((a) => !listed.has(a));
+  if (missing.length > 0) {
+    return notUsed(
+      `the endpoint's answer leaves out ${missing.length} of the ${expected.length} collection(s) the bundled issuer table lists under ${authority} (for example ${missing[0]}), so it is not the chain's whole list, and none of it was used`,
+    );
+  }
+  const note = (n: number, extra = "") =>
+    `The chain lists ${n} Metaplex Core collection(s) naming ${authority} as their update authority${extra}. Naming a key needs no signature from it, so being on this list does not by itself make a collection that key holder's.`;
+  if (accountsReturned <= DISCOVERY_MAX_ACCOUNTS) return { state: "ok", collections, unreadable, accountsReturned, note: note(collections.length) };
+  const known = new Set(expected);
+  const kept = collections.filter((c) => c.numMinted > 0 || known.has(c.address));
+  const setAside = collections.length - kept.length;
+  if (kept.length > DISCOVERY_MAX_ACCOUNTS) {
+    return notUsed(
+      `${accountsReturned} accounts name ${authority} as their update authority, ${kept.length} of them with items, far more than any issuer this server knows has made. Anybody can create a collection naming a key, so a list that size is somebody flooding the key: none of it was used, and only the bundled registry is searched`,
+      "refused",
+    );
+  }
   return {
     state: "ok",
-    collections,
+    collections: kept,
     unreadable,
-    accountsReturned: result.length,
-    note:
-      `The chain lists ${collections.length} Metaplex Core collection(s) naming ${authority} as their update authority` +
-      (unreadable ? `, and ${unreadable} more account(s) in the answer could not be decoded, so the list is short by that many` : "") +
-      ". Naming a key needs no signature from it, so being on this list does not by itself make a collection that key holder's.",
+    accountsReturned,
+    note: note(
+      kept.length,
+      `, after ${setAside} empty collection(s) the issuer table does not list were set aside: the key carries ${accountsReturned} accounts, far more than any issuer this server knows has made, and an empty collection naming a key costs nothing to create, so a drop under it that has not started cannot be found by name until the flood clears`,
+    ),
   };
 }
 
@@ -2214,8 +2493,11 @@ export function decodeCollectionsByAuthority(
  * shared and kept for six hours, a failure is kept for half an hour, and it is
  * never made per question. A caller that cannot wait gets "not read" and keeps
  * its own answer from the bundled registry.
+ *
+ * `expected` is what the bundled issuer table lists under this key. An answer
+ * missing any of them is not kept, since it cannot be the whole list.
  */
-export async function collectionsByAuthority(authority: string, opts: { signal?: AbortSignal; fresh?: boolean } = {}): Promise<CollectionDiscovery> {
+export async function collectionsByAuthority(authority: string, opts: { signal?: AbortSignal; fresh?: boolean; expected?: readonly string[] } = {}): Promise<CollectionDiscovery> {
   const failed = (note: string, state: "failed" | "refused" = "failed"): CollectionDiscovery => ({ authority, state, collections: [], unreadable: 0, accountsReturned: 0, readAt: new Date().toISOString(), endpoint: null, note });
   if (!isBase58Address(authority)) return failed("not a Solana address");
   const good = discoveryGood.get(authority);
@@ -2237,11 +2519,12 @@ export async function collectionsByAuthority(authority: string, opts: { signal?:
       try {
         const trace: RpcTrace = {};
         const result = await rpc<unknown>("getProgramAccounts", discoveryParams(authority), trace, undefined, AbortSignal.timeout(30_000));
-        const decoded = decodeCollectionsByAuthority(authority, result);
+        const decoded = decodeCollectionsByAuthority(authority, result, opts.expected);
         if (decoded.state !== "ok") {
-          // A refused or unusable answer is never kept as a list.
+          // A refused, partial or unusable answer is never kept as a list.
           discoveryFailures.set(authority, { at: Date.now(), note: decoded.note, refused: decoded.state === "refused" });
-          return kept(decoded.note) ?? failed(decoded.note, decoded.state);
+          // The counts travel with the failure, so the weekly check can tell a slice too short from an outage.
+          return kept(decoded.note) ?? { ...failed(decoded.note, decoded.state), unreadable: decoded.unreadable, accountsReturned: decoded.accountsReturned };
         }
         const value: CollectionDiscovery = { authority, ...decoded, readAt: new Date().toISOString(), endpoint: trace.endpoint ?? null };
         discoveryGood.set(authority, { at: Date.now(), value });

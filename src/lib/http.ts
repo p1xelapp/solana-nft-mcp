@@ -867,3 +867,60 @@ export class HttpError extends Error {
     this.name = "HttpError";
   }
 }
+
+/** Plain words for what a Solana JSON-RPC error code means, for the ones a reader meets. */
+const RPC_CODE_SENTENCE: Record<string, string> = {
+  "-32603": "the Solana endpoint reported an internal error, which on a public endpoint usually means it is overloaded",
+  "-32005": "the Solana endpoint said it was behind or busy",
+  "-32429": "the Solana endpoint asked for a pause after too many requests",
+  "-32015": "the Solana endpoint would not serve that transaction in the format asked for",
+  "-32020": "the Solana endpoint did not know where the next page of history began",
+};
+
+/**
+ * This server's own failure sentences that end in a list of what each
+ * endpoint said. The sentence stands; the list is plumbing.
+ */
+const OWN_FAILURE_WITH_LIST =
+  /^(no Solana endpoint asked would serve this transaction in a format the request allowed|no endpoint asked knew the signature the previous page of this history ended on, so the history past it was not listed|the Solana endpoint this read was pinned to stopped answering part-way) \(/;
+
+/**
+ * The reason behind a failure as a sentence, with any code kept apart.
+ *
+ * Error text from the readers is written for whoever runs the server, and it
+ * reached people as it was: "Solana RPC -32603 from your SOLANA_RPC_URL (its
+ * message is not relayed...)", "HTTP 429: asked for a 10 s pause", or the
+ * runtime's "The operation was aborted". The sentence says what happened; the
+ * code goes in its own field for whoever needs it. Only this server's own
+ * phrasings are translated: anything else is somebody else's text, and stays
+ * as the cleaned detail it already was. Shared by the error layer, the sale
+ * checks and the sales answers, so one failure reads the same everywhere.
+ */
+export function plainReason(err: unknown): { sentence: string; code: string | null } {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (err instanceof AbortedError || (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) || /^(?:The|This) operation was aborted/.test(msg)) {
+    return { sentence: "the read ran past its time budget and was stopped", code: "timeout" };
+  }
+  if (err instanceof HttpError) {
+    const who = /^(Magic Eden|OpenSea)/.exec(msg)?.[1] ?? "the source";
+    const sentence = err.status === 429 ? `${who} asked for a pause after too many requests` : err.status >= 500 ? `${who}'s service did not answer` : `${who} refused the request`;
+    return { sentence, code: `HTTP ${err.status}` };
+  }
+  const own = /^Solana RPC (-?\d{1,6}) from your SOLANA_RPC_URL/.exec(msg);
+  if (own) {
+    return { sentence: "your own Solana endpoint (SOLANA_RPC_URL) answered with an error; its text is not shown, because a provider can echo your key in it", code: `solana-rpc ${own[1]}` };
+  }
+  const rpcCode = /^Solana RPC (-?\d{1,6}):/.exec(msg);
+  if (rpcCode) return { sentence: RPC_CODE_SENTENCE[rpcCode[1]!] ?? "the Solana endpoint answered with an error", code: `solana-rpc ${rpcCode[1]}` };
+  const listCode = (): string | null => {
+    const c = /HTTP \d{3}/.exec(msg)?.[0] ?? /-32\d{3}/.exec(msg)?.[0] ?? null;
+    return c ? `solana-rpc ${c}` : null;
+  };
+  if (/^public Solana RPC is not answering right now/.test(msg)) {
+    const paused = /HTTP 429|asked for a (?:\d+ s )?pause|rate limit/.test(msg);
+    return { sentence: `none of the Solana endpoints asked answered${paused ? ", and at least one asked for a pause after too many requests" : ""}`, code: listCode() };
+  }
+  const listed = OWN_FAILURE_WITH_LIST.exec(msg);
+  if (listed) return { sentence: listed[1]!, code: listCode() };
+  return { sentence: inspectUntrusted(redactSecrets(msg).replace(/\s+/g, " ").trim().slice(0, 300)).value, code: null };
+}

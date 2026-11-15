@@ -27,7 +27,7 @@ import { appendAll, assertPageSize, objectRows } from "../lib/shapes.js";
 import { NotFoundError } from "../lib/errors.js";
 import { registerSecret, MIN_NAMED_SECRET_LENGTH } from "../lib/secrets.js";
 import { isoFromBlockTime } from "../lib/time.js";
-import { classifyPaymentToken } from "../lib/reconcile.js";
+import { classifyPaymentToken, decimalsProblem, rawUnitsFit } from "../lib/reconcile.js";
 import { saleRowFlags } from "../market.js";
 import { isBase58Address, venueAddress } from "./solana.js";
 
@@ -666,6 +666,9 @@ function paymentAmount(p: OsEvent["payment"]): { price: number | null; rawQuanti
   if (rawQuantity === null || rawQuantity.startsWith("-")) {
     return { price: null, rawQuantity, decimals, problem: given === null ? "quantity is missing" : rawQuantity === null ? "quantity is not a bounded integer string and was not relayed" : "quantity is negative" };
   }
+  // Token amounts on Solana are unsigned 64-bit integers. A 40-digit quantity
+  // became 1e31 SOL with no flag; it is shown raw and priced as nothing.
+  if (!rawUnitsFit(rawQuantity)) return { price: null, rawQuantity, decimals, problem: "quantity is larger than any token amount can be" };
   if (decimals === null || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
     return { price: null, rawQuantity, decimals, problem: "decimals is not a whole number between 0 and 36" };
   }
@@ -753,6 +756,11 @@ export async function recentSales(slug: string, limit: number) {
     if (!absent(tokenAddress) && !(typeof tokenAddress === "string" && isBase58Address(tokenAddress))) malformed.push("payment token (not a Solana address)");
     const paid = e.payment === undefined || e.payment === null ? null : classifyPaymentToken(tokenAddress, symbol, "OpenSea");
     const currency = paid?.currency ?? null;
+    // An address proves the currency, not the scale. Wrapped SOL at 0
+    // decimals became 300,000,000 SOL; a named currency at a scale it does not
+    // have is no amount of it, and the row says so instead of pricing it.
+    const scale = pay.price !== null ? decimalsProblem(currency, pay.decimals) : null;
+    if (scale) malformed.push(`payment (${scale})`);
     const address = (v: unknown, field: string): string | null => {
       if (absent(v)) return null;
       if (typeof v === "string" && isBase58Address(v)) return v;
@@ -777,11 +785,12 @@ export async function recentSales(slug: string, limit: number) {
     return {
       eventType: "sale" as const,
       time,
-      price: pay.price,
+      price: scale ? null : pay.price,
       rawQuantity: pay.rawQuantity,
       decimals: pay.decimals,
       currency,
       paymentToken: paid?.paymentToken ?? null,
+      ...(paid?.tokenSymbol ? { tokenSymbol: paid.tokenSymbol } : {}),
       ...(paid?.kind === "other-token" ? { paidInOtherToken: true as const } : {}),
       ...(paid?.note ? { currencyNote: paid.note } : {}),
       mint,
@@ -797,25 +806,15 @@ export async function recentSales(slug: string, limit: number) {
         : {}),
     };
   });
-  // The range check only ever compares SOL with SOL; a sale in another
-  // currency is neither judged nor used to judge.
-  const flags = saleRowFlags(baseSales.map((s) => ({ signature: s.transaction, mint: s.mint, buyer: s.buyer, seller: s.seller, priceSol: s.currency === "SOL" ? s.price : null })));
-  const sales = baseSales.map((s, i) => ({ ...s, ...flags[i] }));
-  const notSol = sales.filter((s) => s.currency !== "SOL").length;
-  const flagNotes = [
-    notSol ? `${notSol} sale(s) were not paid in SOL as proved by the payment token's address (paidInOtherToken, or a currency that is not established): their price is in that token's units and belongs in no SOL figure.` : "",
-    flags.some((f) => f.selfFill) ? "selfFill marks a sale with one wallet as buyer and seller: no money changed hands between two parties." : "",
-    flags.some((f) => f.sharedTransaction) ? "sharedTransaction marks a sale that shares its transaction with other item sales: a per-item price cannot be proven from the buyer's total." : "",
-    flags.some((f) => f.farAboveRecentRange) ? "farAboveRecentRange marks a SOL price far above the other SOL sales listed here, with the numbers; it is shown as reported, not dropped or adjusted." : "",
-  ].filter(Boolean);
+  const { sales, flagsNote } = openSeaSaleFlags(baseSales);
   return {
     slug,
     sales,
     // What OpenSea's figure is, from its own schema and from transactions read
     // on 2026-11-14: on its own program the buyer paid exactly this amount.
     priceBasis:
-      "price is the amount OpenSea reports for the sale, in the currency of its payment token's address. On OpenSea's own Solana program that was exactly what the buyer paid. OpenSea also lists sales that settled on other marketplaces; for a Magic Eden fill its amount can differ from Magic Eden's order price, so a sale both lists carry is one sale and its two amounts are never added.",
-    ...(flagNotes.length ? { flagsNote: flagNotes.join(" ") } : {}),
+      "price is the amount OpenSea reports for the sale, in the currency of its payment token's address. On OpenSea's own Solana program that was exactly what the buyer paid. OpenSea also lists sales that settled on other marketplaces; for a Magic Eden fill its amount can differ from Magic Eden's order price, so a sale both lists carry is one sale and its two amounts are never added. On Magic Eden fills paid in USDC, OpenSea has named SOL's address with SOL's 9 decimals over the USDC amount (2026-11-15); such a row is corrected where Magic Eden's row of the same fill is in the answer.",
+    ...(flagsNote ? { flagsNote } : {}),
     activitiesScanned: data.activitiesScanned,
     pagesRead: data.pagesRead,
     truncated: data.truncated,
@@ -830,6 +829,36 @@ export async function recentSales(slug: string, limit: number) {
     cachedAt,
     source: "opensea",
   };
+}
+
+/**
+ * Warning flags and the sentence that explains them, for a list of OpenSea
+ * sale rows. Run again whenever a row's currency is corrected after the read
+ * (a Magic Eden twin showing the fill was paid in a token): the range check
+ * only ever compares SOL with SOL, so a row that stops being SOL must stop
+ * judging the others, and the count of rows not in SOL must include it.
+ */
+export function openSeaSaleFlags<T extends { transaction: string | null; mint: string | null; buyer: string | null; seller: string | null; currency: string | null; price: number | null }>(
+  rows: readonly T[],
+): { sales: (Omit<T, "selfFill" | "sharedTransaction" | "farAboveRecentRange"> & ReturnType<typeof saleRowFlags>[number])[]; flagsNote: string | undefined } {
+  // Flags from an earlier pass are dropped, so a corrected row cannot keep one.
+  const base = rows.map((r) => {
+    const rest: Record<string, unknown> = { ...r };
+    delete rest.selfFill;
+    delete rest.sharedTransaction;
+    delete rest.farAboveRecentRange;
+    return rest as Omit<T, "selfFill" | "sharedTransaction" | "farAboveRecentRange">;
+  });
+  const flags = saleRowFlags(rows.map((s) => ({ signature: s.transaction, mint: s.mint, buyer: s.buyer, seller: s.seller, priceSol: s.currency === "SOL" ? s.price : null })));
+  const sales = base.map((s, i) => ({ ...s, ...flags[i] }));
+  const notSol = rows.filter((s) => s.currency !== "SOL").length;
+  const flagNotes = [
+    notSol ? `${notSol} sale(s) were not paid in SOL as proved by the payment token's address (paidInOtherToken, or a currency that is not established): their price is in that token's units and belongs in no SOL figure.` : "",
+    flags.some((f) => f.selfFill) ? "selfFill marks a sale with one wallet as buyer and seller: no money changed hands between two parties." : "",
+    flags.some((f) => f.sharedTransaction) ? "sharedTransaction marks a sale that shares its transaction with other item sales: a per-item price cannot be proven from the buyer's total." : "",
+    flags.some((f) => f.farAboveRecentRange) ? "farAboveRecentRange marks a SOL price far above the other SOL sales listed here, with the numbers; it is shown as reported, not dropped or adjusted." : "",
+  ].filter(Boolean);
+  return { sales, flagsNote: flagNotes.length ? flagNotes.join(" ") : undefined };
 }
 
 /**

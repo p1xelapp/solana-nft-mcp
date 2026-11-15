@@ -255,8 +255,10 @@ try {
   for (const key of issuers.currentIssuerKeys()) {
     const list = await sol.collectionsByAuthority(key.address, { fresh: true });
     if (list.state !== "ok") {
-      // Refused (a flood of collections naming the key) is a finding, not an outage.
+      // Refused (a flood of collections naming the key) is a finding, not an
+      // outage, and so is an account under the key that does not decode.
       if (list.state === "refused") fail("issuer key list", `${key.issuer} ${key.address}`, list.note);
+      else if (list.unreadable > 0) fail("issuer key list", `${key.issuer} ${key.address}`, `${list.unreadable} account(s) under the key could not be decoded, so the list was not used; widen the slice in discoveryParams if they are collections with long names`);
       else {
         degraded.push(`issuer key list not compared: ${list.note}`);
         console.log(`⚠️  issuer key list [public Solana RPC] not compared for ${key.address}: ${list.note} (${elapsed()})`);

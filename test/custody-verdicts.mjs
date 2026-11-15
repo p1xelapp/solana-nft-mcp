@@ -12,7 +12,10 @@ delete process.env.SOLANA_RPC_URL;
 delete process.env.SOLANA_NFT_MCP_OFFLINE;
 
 const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const encode = (b) => { let n = BigInt("0x" + Buffer.from(b).toString("hex")); let s = ""; while (n) { s = chars[Number(n % 58n)] + s; n /= 58n; } return s; };
+// A leading zero byte is a leading "1", as the server writes it: without it, one
+// key in 256 named an owner the server spelled differently, and the case
+// read as a move to a wallet with no account.
+const encode = (b) => { let n = BigInt("0x" + Buffer.from(b).toString("hex")); let s = ""; while (n) { s = chars[Number(n % 58n)] + s; n /= 58n; } for (const x of b) { if (x !== 0) break; s = "1" + s; } return s; };
 const decode = (s) => { let n = 0n; for (const c of s) n = n * 58n + BigInt(chars.indexOf(c)); return Buffer.from(n.toString(16).padStart(64, "0"), "hex"); };
 const key = (label) => encode(createHash("sha256").update(`verdict-${label}`).digest());
 
@@ -21,6 +24,7 @@ const SYSTEM = "11111111111111111111111111111111";
 const OPENSEA = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V";
 const ME_POOLS = "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc";
 const TENSOR = "TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN";
+const TENSOR_AMM = "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg";
 const ESCROW = "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix";
 const UNKNOWN_PROGRAM = key("some-program");
 
@@ -28,6 +32,7 @@ const UNKNOWN_PROGRAM = key("some-program");
 const itemOwner = new Map();
 const ownerProgram = new Map();
 let failProgramRead = false;
+let failItemRead = false;
 let programReads = 0;
 
 const realFetch = globalThis.fetch;
@@ -37,6 +42,8 @@ globalThis.fetch = async (input, init) => {
   if (body.method !== "getMultipleAccounts") return reply(null);
   const [addresses, opts] = body.params;
   const wantsBytes = (opts?.dataSlice?.length ?? 0) > 0;
+  // The public node's overload answer, as it gave it on 2026-11-15 (UTC).
+  if (wantsBytes && failItemRead) return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: -32603, message: "Internal JSON-RPC error." } }), { headers: { "content-type": "application/json" } });
   if (!wantsBytes) {
     programReads++;
     // An answer that does not line up with the question: read as unread at
@@ -91,6 +98,19 @@ try {
   assert.doesNotMatch(unread.why, /cannot be bought/);
   ok("when the owner's kind cannot be read the listing is unread, never 'cannot be bought'");
 
+  // The item read itself failing: unread, in words, with no reader's code in the sentence.
+  failItemRead = true;
+  let itemUnread;
+  try {
+    itemUnread = await verdict({ owner: "seller" });
+  } finally {
+    failItemRead = false;
+  }
+  assert.equal(itemUnread.state, "unread", `a failed item read gave ${itemUnread.state}`);
+  assert.match(itemUnread.why, /could not be read for this item just now \(the Solana endpoint reported an internal error/);
+  assert.doesNotMatch(itemUnread.why, /-32603|Solana RPC|could not be read just now \(the chain could not be read/);
+  ok("a failed item read is unread, and its reason reads as a sentence");
+
   const onOpenSea = await verdict({ owner: "listing-account", program: OPENSEA, venue: "opensea" });
   assert.equal(onOpenSea.state, "backed");
   const onMagicEden = await verdict({ owner: "listing-account", program: OPENSEA, venue: "magiceden" });
@@ -110,6 +130,13 @@ try {
   assert.equal(elsewhere.state, "not-backed");
   assert.equal(elsewhere.reason, "other-program");
   ok("an item in a Magic Eden pool or an unknown program's account gets no verdict; one in another marketplace's account is not backed");
+
+  // Tensor's AMM keeps the items its pools offer in its own accounts. Naming
+  // the program for identify must not turn such an item into a verdict.
+  const tensorPool = await verdict({ owner: "tensor-pool", program: TENSOR_AMM });
+  assert.equal(tensorPool.state, "not-checked", `a Tensor pool-held item gave ${tensorPool.state}: ${tensorPool.why}`);
+  assert.match(tensorPool.why, /Tensor's AMM pool program/);
+  ok("an item in a Tensor AMM pool's account gets no verdict, and the program is named");
 
   // The second read is one request for the whole page, not one per listing.
   programReads = 0;

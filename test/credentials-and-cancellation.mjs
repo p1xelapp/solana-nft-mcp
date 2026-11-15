@@ -768,7 +768,10 @@ const serverEnvBase = () => {
     ["overflow", { quantity: "1e309", decimals: 9, symbol: "SOL" }, 1_700_000_000],
     ["bad-time", { quantity: "100", decimals: 2, symbol: "SOL" }, 1e20],
     ["exact", { quantity: "1500000000", decimals: 9, symbol: "SOL" }, 1_700_000_000],
-    ["huge-but-valid", { quantity: "123456789012345678901234567890", decimals: 9, symbol: "SOL" }, 1_700_000_000],
+    // Token amounts are unsigned 64-bit integers: the largest one is valid,
+    // and a 30-digit quantity is more than any token can hold.
+    ["huge-but-valid", { quantity: "18446744073709551615", decimals: 9, symbol: "SOL" }, 1_700_000_000],
+    ["beyond-u64", { quantity: "123456789012345678901234567890", decimals: 9, symbol: "SOL" }, 1_700_000_000],
   ];
   const out = {};
   for (const [id, payment, event_timestamp] of cases) {
@@ -788,7 +791,10 @@ const serverEnvBase = () => {
   assert.match(out["bad-time"].malformedFields[0], /event_timestamp/);
   assert.strictEqual(out.exact.price, 1.5);
   assert.strictEqual(out.exact.malformedFields, undefined);
-  assert.strictEqual(out["huge-but-valid"].price, 123456789012345678901.23456789, "a 30-digit raw amount is scaled exactly on the whole part");
+  assert.strictEqual(out["huge-but-valid"].price, 18446744073 + 0.709551615, "the largest raw amount is scaled exactly on the whole part");
+  assert.strictEqual(out["beyond-u64"].price, null);
+  assert.match(out["beyond-u64"].malformedFields[0], /larger than any token amount/);
+  assert.strictEqual(out["beyond-u64"].rawQuantity, "123456789012345678901234567890", "the raw value travels with the refusal");
   delete process.env.OPENSEA_API_KEY;
   globalThis.fetch = denied;
   ok("DATA-6 OpenSea amounts are validated as integer raw units with a whole-number scale; malformed rows say so");

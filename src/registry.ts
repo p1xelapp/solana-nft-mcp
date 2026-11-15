@@ -20,6 +20,13 @@ export interface RegistryEntry {
   coreCollection?: string;
   /** OpenSea collection slug - used only when OPENSEA_API_KEY is set (optional cross-marketplace view). */
   openseaSlug?: string;
+  /**
+   * True when OpenSea files several on-chain collections under `openseaSlug`
+   * while its own record of the slug names only one of them, so the address
+   * check alone calls the slug that one collection's. Sales and floors read
+   * under such a slug are the group's.
+   */
+  openseaGroup?: boolean;
   keywords: string[];
   /**
    * The family a collection belongs to, when it is one of many that ship
@@ -279,6 +286,11 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Candy Digital - 2026 MLB Gold Series ICONs",
     platform: "Candy Digital (official MLB license)",
     coreCollection: "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K",
+    // Magic Eden's symbol still names the auction. Read 2026-11-15: its stats
+    // answer (216 listed), and the items of its 20 newest sales all name this
+    // collection in their own accounts. Without it the symbol resolved to no
+    // collection, so asking by symbol and by address gave different answers.
+    meSymbol: "gold_series_auction_1_candy_digital",
     group: "MLB",
     aliases: ["MLB Gold Series Auction #1", "Candy Digital - MLB Gold Series Auction #1"],
     keywords: ["candy", "candy digital", "gold", "gold series", "mlb", "auction", "ohtani", "soto"],
@@ -311,6 +323,11 @@ export const REGISTRY: RegistryEntry[] = [
     name: "Candy Digital - MLB (all series, OpenSea view)",
     platform: "Candy Digital (official MLB license)",
     openseaSlug: "candy-mlb",
+    // OpenSea's record of the slug names only 2022 Leadoff ICONs, so the
+    // address check alone proved it to be that collection's. Its 50 newest
+    // sales on 2026-11-15 were items of three collections (45 Leadoff, 3 Gold
+    // Series, 2 Candy Ambassadors, each read from the item's own account).
+    openseaGroup: true,
     keywords: ["candy", "candy digital", "mlb", "opensea", "baseball", "cross-marketplace"],
     notes:
       "Needs OPENSEA_API_KEY. Covers every Candy MLB series at once - use the per-series Core entries for a single series.",
@@ -389,6 +406,11 @@ function loadCandyCollections(): RegistryEntry[] {
 }
 
 REGISTRY.push(...loadCandyCollections());
+
+/** True when the registry records that OpenSea files several collections under this slug. */
+export function isOpenSeaGroupSlug(slug: string): boolean {
+  return REGISTRY.some((e) => e.openseaGroup === true && e.openseaSlug === slug);
+}
 
 /** Simple scored search over names/keywords/ids. */
 export function searchRegistry(query: string): RegistryEntry[] {

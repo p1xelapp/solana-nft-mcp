@@ -168,6 +168,35 @@ export const GLOSSARY: GlossaryEntry[] = [
     pitfall: "They diverge over time. Quoting mint count as 'supply' overstates scarcity for any set that has burned items.",
   },
   {
+    term: "self-fill",
+    meaning: "A sale with the same wallet as buyer and seller, flagged selfFill.",
+    pitfall:
+      "No money passed between two parties, so it is not a price anyone paid and not demand. Sales answers keep it out of every SOL figure; never quote it as a last sale.",
+  },
+  {
+    term: "paid in another token",
+    meaning:
+      "A sale not paid in SOL. A dollar stablecoin sale carries its own currency (USDC, USDT, PYUSD); any other token is flagged paidInOtherToken. The currency comes from the payment token's address, never its symbol.",
+    pitfall: "The amount is in that token's units. Adding it to SOL sales, or trusting a token named SOL, turns 800 USDC into 800 SOL.",
+  },
+  {
+    term: "one fill, two feeds",
+    meaning: "One sale that both Magic Eden's and OpenSea's feeds carry, marked sameTransactionAs on both rows.",
+    pitfall:
+      "It is one sale, not two. The figures differ because Magic Eden's row is the order price and OpenSea's what the buyer paid; count it once and never add the two.",
+  },
+  {
+    term: "chainScan",
+    meaning:
+      "get_recent_sales with chainScan: true, a bounded read of a Metaplex Core collection's newest transactions that decodes sales the marketplace feeds do not carry, Tensor's among them.",
+    pitfall: "Bounded in reads and time. An empty scan, or one that stopped early, is not proof that nothing sold; its coverage says how far back it read.",
+  },
+  {
+    term: "pool fill",
+    meaning: "A sale against a Magic Eden AMM pool (program mmm), flagged poolFill: the pool, not a listing, set the price.",
+    pitfall: "Still a sale, and counted as one. Its price says what that pool would pay or take at that moment, not what a listing fetched.",
+  },
+  {
     term: "holders vs owners",
     meaning: "The number of distinct wallets holding at least one item.",
     pitfall:

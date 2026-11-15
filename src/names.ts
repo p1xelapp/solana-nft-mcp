@@ -395,6 +395,27 @@ export const collectionNameKey = (s: string): string =>
     .replace(/\s*candy digital\s*$/, "")
     .trim();
 
+/**
+ * The numbers in a query that none of the names found carries, as the query
+ * wrote them ("#22", "2026").
+ *
+ * A name search scores words, and "2026 Absolute Batman #22" shares every
+ * word but the numbers with Absolute Batman #1 to #13, so all thirteen came
+ * back, #1 first, with nothing to say that no #22 had been found. A number is
+ * matched whole, so #1 does not answer for #12. An empty list means every
+ * number asked for appears in at least one name.
+ */
+export function numbersNotFound(query: string, names: readonly string[]): string[] {
+  const whole = (n: string) => n.replace(/^0+(?=\d)/, "");
+  const carried = new Set(names.flatMap((n) => [...n.matchAll(/\d{1,9}/g)].map((m) => whole(m[0]))));
+  const out: string[] = [];
+  for (const m of query.matchAll(/(#\s*)?(\d{1,9})(?!\d)/g)) {
+    const shown = `${m[1] ? "#" : ""}${whole(m[2]!)}`;
+    if (!carried.has(whole(m[2]!)) && !out.includes(shown)) out.push(shown);
+  }
+  return out;
+}
+
 const nameKey = collectionNameKey;
 const withoutIssuer = collectionNameKey;
 
