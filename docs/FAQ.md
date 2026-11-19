@@ -181,7 +181,11 @@ neither a sale nor a theft. Indexes can still show the old owner after a move.
 
 **Can I trade my Candy card right now?**
 Ask `get_asset_trust` about the card for its current rules. Candy announced
-marketplace connections on November 6, 2026. A November 8 read of all 401 registered
+marketplace connections on November 6, 2026. Its November 17
+[launch announcement](https://blog.candy.io/the-new-candy-io-launches-tomorrow/)
+scheduled the new site for November 18. Candy's [terms](https://candy.io/terms)
+describe a primary storefront and name OpenSea, Magic Eden and Tensor as
+third-party markets. A November 19 read of all 401 registered
 collections found burn-only oracle checks: holder burns were refused, while
 transfers no longer consulted the oracle. This replaced the transfer-and-burn
 checks observed on October 26. Other plugins and marketplace requirements can

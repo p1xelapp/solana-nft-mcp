@@ -179,7 +179,9 @@ purpose: everything they would carry is reachable by a tool the assistant calls 
 
 ## Trust and limits
 
-Candy's trading status can change. On 2026-11-08 all 401 registered collections
+Candy announced its new site and wallet for November 18. Its
+[storefront terms](https://candy.io/terms), read November 19, place secondary
+sales on third-party marketplaces. On 2026-11-19 all 401 registered collections
 carried burn-only oracle checks; the oracle still refused holder burns, while
 transfers no longer consulted it. Use `get_asset_trust` on the card for the live
 answer. A wallet migration is a transfer, not proof of a sale. Wallet indexes can

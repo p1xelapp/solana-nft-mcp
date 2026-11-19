@@ -314,13 +314,11 @@ export const REGISTRY: RegistryEntry[] = [
     keywords: ["clay", "claynosaurz", "dino", "solana collectibles"],
   },
   {
-    // OpenSea files every Candy MLB card under ONE collection spanning all
-    // series, so it is deliberately NOT attached to the per-series Core
-    // entries above: pairing it with one series would compare a single
-    // series' on-chain supply against every series' floor and read as if
-    // they described the same population.
+    // This OpenSea slug spans several Core collections. Pairing it with one
+    // series would compare that series' supply with a broader market.
     id: "candy-mlb-opensea",
-    name: "Candy Digital - MLB (all series, OpenSea view)",
+    name: "Candy Digital - MLB (cross-series OpenSea view)",
+    aliases: ["Candy Digital - MLB (all series, OpenSea view)"],
     platform: "Candy Digital (official MLB license)",
     openseaSlug: "candy-mlb",
     // OpenSea's record of the slug names only 2022 Leadoff ICONs, so the

@@ -2376,6 +2376,9 @@ registerTool(
     const dasRead = dasRes.status === "fulfilled" ? dasRes.value : null;
     const indexed = dasRead?.asset ?? null;
     const indexStale = dasRead?.stale === true;
+    if (coreRead?.group || (!core && !coreRead?.burned && indexed?.standard === "metaplex-core-group")) {
+      throw new WrongKindError(`${mint} is a Core group according to ${coreRead?.group ? "the on-chain account" : "the asset index at " + indexed!.readAt}. Use the mint of an individual group member with get_asset.`);
+    }
     const sourceErrors: Record<string, string> = {};
     if (meRes.status === "rejected") sourceErrors.magiceden = meRes.reason instanceof Error ? meRes.reason.message : String(meRes.reason);
     if (coreRes.status === "rejected") sourceErrors["solana-rpc"] = coreRes.reason instanceof Error ? coreRes.reason.message : String(coreRes.reason);
@@ -2406,12 +2409,6 @@ registerTool(
           next: "Pass an item's mint address; identify says what any other address is.",
         });
       }
-      if (nature?.ownerProgram && nature.ownerProgram !== sol.CORE_PROGRAM) {
-        throw new WrongKindError(`${mint} is an account owned by ${nature.ownerName ?? nature.ownerProgram}, not a Metaplex Core asset, and neither Magic Eden nor the chain's asset index has it as a token. identify says more about what it is.`, {
-          headline: `${mint} is an account owned by ${nature.ownerName ?? `the program ${nature.ownerProgram}`}, not an item: neither Magic Eden nor the chain's asset index has it as one.`,
-          next: "identify says what the address is.",
-        });
-      }
       // "No account" and "not a Core account" are the chain ANSWERING, not a
       // failure to read it, and Magic Eden's empty answer is an answer too.
       // Counting them as source errors turned a mistyped address into "try
@@ -2430,6 +2427,12 @@ registerTool(
         const per = Math.max(30, Math.floor((190 - prefix.length) / failed.length) - 15);
         const name = (r: PromiseRejectedResult) => (r === meRes ? "magiceden" : r === dasRes ? "asset-index" : "solana-rpc");
         throw new Error(`${prefix}${failed.map((r) => `${name(r)}: ${(r.reason instanceof Error ? r.reason.message : String(r.reason)).replace(/\s+/g, " ").slice(0, per)}`).join("; ")}`);
+      }
+      if (nature?.ownerProgram && nature.ownerProgram !== sol.CORE_PROGRAM) {
+        throw new WrongKindError(`No indexed collectible record for ${mint}.`, {
+          headline: `This account belongs to ${nature.ownerName ?? nature.ownerProgram}. Magic Eden and the asset index returned no item record for this address.`,
+          next: "Use identify to check the account type.",
+        });
       }
       throw new NotFoundError(`no data found for ${mint} on Magic Eden, in the chain's asset index, or as a Metaplex Core account.`, {
         headline: `Nothing is known at ${mint}: Magic Eden does not carry it, the chain's asset index has no record of it, and there is no item account at that address. The sources answered; nothing is wrong with the service.`,
@@ -2494,6 +2497,9 @@ registerTool(
       };
       market = { ...market, owner: null, listed: false, priceSol: null, staleMarketRow };
       marketAgreement = "Magic Eden's record is left over from before the item was burned; see market.staleMarketRow.";
+    } else if (market && !core && indexed?.zeroSupply) {
+      market = null;
+      marketAgreement = `The asset index recorded zero supply at ${indexed.readAt}. The marketplace row cannot establish a current holder or an available listing.`;
     } else if (market && chainOwner) {
       const where =
         heldIn === "opensea-listing-account"
@@ -2644,6 +2650,7 @@ registerTool(
       chainIndex: indexed
         ? {
             standard: indexed.standard,
+            ...(indexed.zeroSupply ? { zeroSupply: true, supplyNote: `The asset index reported zero supply at ${indexed.readAt}.` } : {}),
             interface: indexed.interface,
             name: indexed.name,
             image: indexed.image,
@@ -2791,9 +2798,9 @@ registerTool(
     // and counted rather than listed as a holding.
     const shownIndex = (index?.items ?? []).slice(0, limit);
     const rowMints = [...new Set([...(marketplace?.tokens ?? []).map((t) => t.mint), ...shownIndex.map((a) => a.id)].filter((m): m is string => typeof m === "string"))];
-    const owners = rowMints.length ? await sol.readAssetOwners(rowMints) : new Map<string, sol.AssetOwnerRead>();
+    const owners = rowMints.length ? await sol.readAssetOwners(rowMints, { fresh: true }) : new Map<string, sol.AssetOwnerRead>();
     const foreignOwners = [...new Set([...owners.values()].flatMap((o) => (o.kind === "core-asset" && o.owner !== wallet && o.owner !== sol.MAGIC_EDEN_ESCROW ? [o.owner] : [])))];
-    const ownerPrograms = foreignOwners.length ? await sol.readOwnerPrograms(foreignOwners.slice(0, 100)) : new Map<string, sol.OwnerProgramRead>();
+    const ownerPrograms = foreignOwners.length ? await sol.readOwnerPrograms(foreignOwners.slice(0, 100), { fresh: true }) : new Map<string, sol.OwnerProgramRead>();
     type HeldState = "held" | "in-marketplace-custody" | "not-held" | "not-checked" | "unread";
     const heldOf = (mint: string | null): { state: HeldState; note: string } => {
       const o = mint ? owners.get(mint) : undefined;
@@ -2803,7 +2810,7 @@ registerTool(
       if (o.owner === wallet) return { state: "held", note: "the chain names this wallet as the owner now" };
       if (o.owner === sol.MAGIC_EDEN_ESCROW) return { state: "in-marketplace-custody", note: "in Magic Eden's escrow, which is where a Magic Eden listing keeps it; whose listing it is cannot be read from the chain" };
       const p = ownerPrograms.get(o.owner);
-      if ((p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM) || sol.isOpenSeaListingAccount(o.owner)) {
+      if (p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM) {
         return { state: "in-marketplace-custody", note: `in an OpenSea listing account (${o.owner}); whose listing it is cannot be read from the chain` };
       }
       // "No longer held" is only said about an owner whose kind was read. An
@@ -2831,10 +2838,12 @@ registerTool(
       notChecked: tally["not-checked"],
       unread: tally.unread,
       sentence:
-        `${tally.held} of the ${rowMints.length} distinct item(s) shown are held by this wallet now, read from each Core account just now` +
+        (tally.unread || tally["not-checked"] || !rowMints.length
+          ? `Current ownership was confirmed for ${tally.held} item(s) held directly by this wallet`
+          : `${tally.held} of the ${rowMints.length} distinct item(s) shown are held by this wallet now, read from each Core account just now`) +
         (tally["in-marketplace-custody"] ? `; ${tally["in-marketplace-custody"]} sit in a marketplace's escrow or listing account, where the chain cannot say whose listing it is` : "") +
         (tally["not-held"] ? `; ${tally["not-held"]} that the indexes still show here are no longer held (moved to another owner or burned) and are listed separately under noLongerHeld` : "") +
-        (tally["not-checked"] ? `; ${tally["not-checked"]} are not Metaplex Core and were not checked` : "") +
+        (tally["not-checked"] ? `; current holdings could not be established for ${tally["not-checked"]}` : "") +
         (tally.unread ? `; ${tally.unread} could not be read from the chain just now` : "") +
         "." +
         ((index?.items.length ?? 0) > shownIndex.length ? ` The asset index lists ${index!.items.length} item(s); only the ${shownIndex.length} shown were checked.` : ""),

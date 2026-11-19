@@ -25,6 +25,7 @@ import * as me from "./sources/magiceden.js";
 import * as os from "./sources/opensea.js";
 import * as sol from "./sources/solana.js";
 import * as das from "./sources/das.js";
+import { splMintAuthority } from "./lib/coreplugins.js";
 import { REGISTRY, searchRegistry, type RegistryEntry } from "./registry.js";
 import { collectionIssuer, currentIssuerKeys, describeIssuerKey, knownIssuer, tableCollectionsOf, type CollectionIssuer } from "./issuers.js";
 import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
@@ -127,6 +128,7 @@ export interface Identification {
   /** What the thing turned out to be, or null when nothing recognised it. */
   kind:
     | "core-asset"
+    | "core-group"
     | "core-collection"
     | "indexed-asset"
     | "fungible-token"
@@ -354,8 +356,6 @@ const LOADERS = new Set([
 ]);
 export const isLoader = (owner: string | null | undefined): boolean => typeof owner === "string" && LOADERS.has(owner);
 
-const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
-
 /**
  * Whether a mint is a fungible token rather than a collectible.
  *
@@ -376,10 +376,9 @@ export async function fungibleToken(
   if (indexed?.standard === "fungible") return { name: indexed.name, decimals: null };
   try {
     const raw = await sol.getAccountRaw(mint, opts.signal);
-    if (!raw || !TOKEN_PROGRAMS.has(raw.owner)) return null;
+    if (!raw || splMintAuthority(raw.data, raw.owner) === undefined) return null;
     const bytes = Buffer.from(raw.data, "base64");
     // An SPL mint is 82 bytes before any extension; decimals sit at byte 44.
-    if (bytes.length < 82) return null;
     const decimals = bytes[44]!;
     return decimals > 0 ? { name: indexed?.name ?? null, decimals } : null;
   } catch {
@@ -664,6 +663,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
 
   // ---- 2. on-chain, when the string could be an address ----------------
   let coreKind: "asset" | "collection" | null = null;
+  let burnedCore = false;
   // What the chain said when the address is not a Core account, by the class
   // the reader threw: no account at all, or an account another program owns.
   let coreAbsence: "no-account" | "other-owner" | null = null;
@@ -676,12 +676,15 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   const addressToProbe = looksLikeAddress(q) ? q : (entry?.coreCollection ?? chainFound?.address);
   /** The collection account as read, for its issuer verdict. */
   let coreCollectionAccount: sol.CoreCollection | null = null;
+  let coreGroup: sol.CoreAccountRead["group"];
   /** The asset account as read, for the key it names when it is in no collection. */
   let coreAssetAccount: sol.CoreAsset | null = null;
 
   if (addressToProbe) {
     try {
-      const acct = await sol.getCoreAccount(addressToProbe, { signal });
+      const read = await sol.getCoreAccountWithMeta(addressToProbe, { signal, fresh: true });
+      const acct = read.account;
+      burnedCore = read.burned === true;
       if (acct) {
         coreKind = acct.kind;
         if (acct.kind === "collection") coreCollectionAccount = acct;
@@ -702,6 +705,11 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
           result: "found",
           detail: `Core ${acct.kind}: "${coreName}"`,
         });
+      } else if (read.group) {
+        coreGroup = read.group;
+        checked.push({ source: "solana-rpc", looked_for: "a Metaplex Core account at this address", result: "found", detail: "The Core account is a GroupV1 record." });
+      } else if (burnedCore) {
+        checked.push({ source: "solana-rpc", looked_for: "a Core account at this address", result: "found", detail: "The Core program owns a one-byte burn stub here." });
       } else {
         checked.push({
           source: "solana-rpc",
@@ -758,7 +766,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
           looked_for: "a record of this mint in the chain's asset index, across every standard",
           result: indexed ? "found" : "not_found",
           detail: indexed
-            ? `${indexed.standard} (${indexed.interface})${indexed.owner ? `, owner ${indexed.owner}` : ""}${indexedStale ? " - served from cache after a failed refresh, so treat the owner as last-known, not current" : ""}`
+            ? `${indexed.standard} (${indexed.interface})${indexed.owner ? `, ${burnedCore || indexed.burnt ? "last indexed holder" : "indexed owner"} ${indexed.owner}` : ""}${indexedStale ? " - cached after a failed refresh" : ""}`
             : "the index has no record of this address; it is not an asset it has picked up",
         });
       } else {
@@ -777,10 +785,8 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
         result: "error",
         detail: detail(msg),
       });
-      if (dasAvailable === null) {
-        dasAvailable = false;
-        note = msg;
-      }
+      dasAvailable = false;
+      note = msg;
     }
     if (dasAvailable === false) {
       notChecked.push(
@@ -1077,6 +1083,25 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
         checked.push({ source: "solana-rpc", looked_for: "recently active assets in the collection", result: "error", detail: detail(e) });
       }
     }
+  } else if (burnedCore || indexed?.burnt) {
+    kind = burnedCore ? "core-asset" : "indexed-asset";
+    identifiers.mint = addressToProbe ?? q;
+    if (indexed?.collection) identifiers.collection = indexed.collection;
+    summary = burnedCore
+      ? `The Core account at ${identifiers.mint} is a burn stub. The item was burned and has no current owner.`
+      : `The asset index recorded ${q} as burned at its read on ${indexed!.readAt}.`;
+    if (indexed?.owner) summary += ` Its last indexed holder was ${indexed.owner}.`;
+    confidence = burnedCore ? "high" : indexedStale ? "low" : "medium";
+    next.push("get_asset");
+    if (burnedCore) next.push("get_asset_provenance");
+  } else if (coreGroup || indexed?.standard === "metaplex-core-group") {
+    kind = "core-group";
+    identifiers.coreGroup = q;
+    summary = coreGroup
+      ? `"${coreGroup.name}" is a Metaplex Core group. Its on-chain update authority is ${coreGroup.updateAuthority}.`
+      : `The asset index recorded ${q} as a Metaplex Core group at ${indexed!.readAt}.`;
+    summary += " A group links items, collections and other groups. Use an individual item's address to look up its holder.";
+    confidence = coreGroup ? "high" : indexedStale ? "low" : "medium";
   } else if (token) {
     kind = "fungible-token";
     identifiers.mint = q;
@@ -1095,6 +1120,12 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
       "Its own account was not read just now, so its size and who issued it are not given here; the key the index lists for it is its update authority, not a holder, and naming a key proves nothing about who made it. Ask again for those.";
     confidence = indexedStale ? "low" : "medium";
     next.push("get_collection_stats");
+  } else if (indexed?.zeroSupply) {
+    kind = "indexed-asset";
+    identifiers.mint = q;
+    summary = `The asset index recorded zero supply for this ${indexed.standard} mint at ${indexed.readAt}. Its owner field cannot establish a current holder.`;
+    confidence = indexedStale ? "low" : "medium";
+    next.push("get_asset");
   } else if (indexed) {
     kind = "indexed-asset";
     identifiers.mint = q;
@@ -1225,8 +1256,8 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     identifiers,
     ...(issuer ? { issuer } : {}),
     ...(chainFound ? { foundOn: chainFound.foundOn } : {}),
-    standard: coreKind ? "Metaplex Core" : (indexed?.standard ?? undefined),
-    chain: coreKind || indexed || tradesOn.length > 0 ? "Solana" : undefined,
+    standard: coreGroup ? "metaplex-core-group" : coreKind ? "Metaplex Core" : (indexed?.standard ?? undefined),
+    chain: coreKind || coreGroup || indexed || tradesOn.length > 0 ? "Solana" : undefined,
     tradesOn,
     checked,
     notChecked,

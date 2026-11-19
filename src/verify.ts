@@ -516,10 +516,11 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
   // the seller is not written anywhere this server can read. Saying
   // CONTRADICTED to the person who listed it is a confident wrong answer; the
   // honest one is that the chain cannot settle it from here.
+  const nature = acct.owner === sol.MAGIC_EDEN_ESCROW ? null : await sol.accountNature(acct.owner, { fresh: true });
   const venue =
     acct.owner === sol.MAGIC_EDEN_ESCROW
       ? "Magic Eden's escrow account, where a Magic Eden listing keeps the item"
-      : (await sol.accountNature(acct.owner).catch(() => null))?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM
+      : nature?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM
         ? `an OpenSea listing account (${acct.owner}), owned by OpenSea's Solana protocol program, where an OpenSea listing keeps the item`
         : null;
   if (venue) {
@@ -534,6 +535,15 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
         "get_asset_provenance on this item shows the wallet that moved it into the listing account; that wallet is the seller unless it has been sold since.",
         caveats[1]!,
       ],
+    };
+  }
+  if (nature?.looksLikeAWallet !== true) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `The Core account names ${acct.owner} as owner. ${nature?.ownerProgram ? `That account belongs to program ${nature.ownerProgram}.` : "Its owning program could not be established."} Whether it holds the item on behalf of ${wallet} is unknown.`,
+      evidence,
+      caveats,
     };
   }
 

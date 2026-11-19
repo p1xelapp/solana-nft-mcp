@@ -555,7 +555,8 @@ export async function token(mint: string): Promise<(MeToken & { stale: boolean; 
       if (!t || typeof t !== "object" || typeof t.mintAddress !== "string") {
         throw new Error("Magic Eden returned an unexpected token shape (outage or API change)");
       }
-      return t;
+        if (t.mintAddress !== mint) throw new Error("Magic Eden returned a token record for a different mint.");
+        return t;
     } catch (e) {
       // Only a documented not-found is "ME does not know it". Timeouts, rate
       // limits and outages must surface, or an outage reads as "no such token".
