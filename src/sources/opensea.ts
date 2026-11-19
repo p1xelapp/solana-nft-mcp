@@ -883,8 +883,11 @@ async function walkCursor<R>(
   for (let p = 0; p < pages; p++) {
     const res = await read(next);
     onRows(res.rows);
-    const cursor = typeof res.next === "string" && res.next.length > 0 && res.next.length <= 2048 ? res.next : undefined;
-    if (!cursor) return { truncated: false, pagesRead: p + 1 };
+    const cursor = res.next;
+    if (cursor === null || cursor === undefined || cursor === "") return { truncated: false, pagesRead: p + 1 };
+    if (typeof cursor !== "string" || cursor.length > 2048 || !cursor.trim()) {
+      return { truncated: true, pagesRead: p + 1, walkNote: "OpenSea returned an unreadable page cursor. Only the pages already read are included." };
+    }
     // Every requested row is in hand, so nothing the caller asked for is
     // missing; older history exists and is named, but this is not a gap.
     if (enough?.()) return { truncated: false, moreAvailable: true, pagesRead: p + 1, walkNote: "The requested sales were found; OpenSea returned a cursor for older history that was not read." };

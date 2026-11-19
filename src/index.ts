@@ -737,7 +737,7 @@ registerTool(
       "that launched today and are in no registry, because it probes live sources rather than matching " +
       "a hardcoded list. Returns the evidence: every source checked INCLUDING the ones that found " +
       "nothing, what was not checked and why, and a confidence rating. Never report 'this does not " +
-      "exist' from an empty result - report what was searched.",
+      "exist' from an empty result - report what was searched. For scripts, lookup contains a read for an exact input identifier or null. Treat names and summaries as display text.",
     annotations: READ_ONLY,
     inputSchema: {
       query: z
@@ -747,8 +747,34 @@ registerTool(
         .max(200)
         .describe("An address, marketplace symbol/slug, or collection name"),
     },
+    outputSchema: z.looseObject({
+      query: z.string(),
+      kind: z.string(),
+      confidence: z.enum(["high", "medium", "low"]),
+      identifiers: z.record(z.string(), z.string()),
+      lookup: z.discriminatedUnion("name", [
+        z.object({ name: z.literal("get_asset"), arguments: z.object({ mint: addressSchema }) }),
+        z.object({ name: z.literal("get_collection_stats"), arguments: z.object({ collection: z.string().regex(/^[A-Za-z0-9_.-]{1,80}$/) }) }),
+      ]).nullable(),
+    }),
   },
-  guard(async ({ query }) => ok(await identify(query))),
+  guard(async ({ query }) => {
+    const result = await identify(query);
+    const { kind, identifiers } = result;
+    let lookup = null;
+    // Use only the identifier supplied by the caller. A name match can
+    // suggest another collection, but a script needs its caller to choose.
+    if (!containsSecret(query) && !result.spellingWarning && !result.authenticityWarning && !result.lookalikes?.length) {
+      if ((kind === "core-asset" || kind === "indexed-asset") && query === identifiers.mint && addressSchema.safeParse(query).success) {
+        lookup = { name: "get_asset", arguments: { mint: query } };
+      } else if ((kind === "core-collection" || kind === "indexed-asset") && query === identifiers.coreCollection && addressSchema.safeParse(query).success) {
+        lookup = { name: "get_collection_stats", arguments: { collection: query } };
+      } else if ((kind === "marketplace-collection" || kind === "registry-entry") && query === identifiers.meSymbol && symbolSchema.safeParse(query).success) {
+        lookup = { name: "get_collection_stats", arguments: { collection: query } };
+      }
+    }
+    return ok({ ...result, lookup });
+  }),
 );
 
 registerTool(
@@ -1091,7 +1117,7 @@ registerTool(
     // kept for hours; when it cannot be read, the registry answers alone and
     // the result says so.
     const wantKey = collectionNameKey(query);
-    const exactInRegistry = results.some((r) => collectionNameKey(r.name) === wantKey || (r.aliases ?? []).some((a) => collectionNameKey(a) === wantKey));
+    const exactInRegistry = wantKey.length > 0 && results.some((r) => collectionNameKey(r.name) === wantKey || (r.aliases ?? []).some((a) => collectionNameKey(a) === wantKey));
     // Plain names resolve against the whole Magic Eden directory (bundled
     // snapshot, then the live directory once it has warmed), so a person who
     // only knows "collector crypt" gets a symbol without a marketplace hunt.
@@ -1135,30 +1161,38 @@ registerTool(
     // key nothing was asked, and saying otherwise turns a missing credential
     // into a claim about the collection.
     const searchOpenSea = async (): Promise<{ opensea?: unknown; openseaNote?: string; openseaSearched: boolean; openseaPartial: boolean }> => {
+      const norm = (x: string) => x.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const words = norm(query).split(" ").filter(Boolean);
+      if (!words.length) return { openseaNote: "OpenSea's Solana index was not searched. Enter a collection name containing a letter or digit.", openseaSearched: false, openseaPartial: false };
       // One of the calls that genuinely needs OpenSea, so it is allowed to ask
       // OpenSea for a free key if none is configured yet. A session that never
       // asks an OpenSea question never spends one.
       if (!(await os.openSeaAvailable())) return { openseaNote: `OpenSea's Solana index was not searched: ${os.openSeaState().note}`, openseaSearched: false, openseaPartial: false };
-      const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      const q = norm(query);
-      const words = q.split(" ").filter(Boolean);
       try {
         const { collections, stale, truncated, walkNote } = await os.solanaCollections();
         const hits = collections
           .filter((c) => {
             const hay = norm(`${c.name ?? ""} ${c.collection}`);
-            return words.length > 0 && words.every((w) => hay.includes(w));
+            return words.every((w) => hay.includes(w));
           })
           .slice(0, 10)
           .map((c) => {
             // OpenSea text is third-party text: clean names, keep only a
             // structurally valid address, and only an opensea.io URL.
-            const addr = c.contracts?.find((k) => k.chain === "solana")?.address;
+            const contracts = Array.isArray(c.contracts) ? c.contracts : [];
+            const solana = contracts.filter((k) => k?.chain === "solana");
+            const addresses = new Set(solana.map((k) => {
+              const address = sol.venueAddress(k.address);
+              return address && base58ByteLength(address) === 32 ? address : null;
+            }));
+            const complete = Array.isArray(c.contracts) && contracts.every((k) => typeof k?.chain === "string" && k.chain.length > 0) && !addresses.has(null);
             const url = c.opensea_url;
             return {
               openseaSlug: clean(c.collection),
               name: c.name ? clean(c.name) : null,
-              onchainCollection: addr && sol.isBase58Address(addr) ? addr : null,
+              onchainCollection: complete && addresses.size === 1 ? [...addresses][0] : null,
+              onchainCollectionCount: complete ? addresses.size : null,
+              ...(complete && addresses.size > 1 ? { collectionNote: "This slug covers several Solana collections. Use the address of the collection you mean." } : {}),
               url: safeHttpsUrl(url, { host: "opensea.io" }),
             };
           });
@@ -1182,7 +1216,7 @@ registerTool(
                 }
               : {}),
             stale,
-            next: hits.length ? "get_collection_stats with the openseaSlug adds OpenSea's total supply, creator royalty and floor." : undefined,
+            next: hits.length ? "For get_collection_stats, pass the collection address you want as collection and the marketplace slug as openseaSlug. A shared slug covers more than one collection." : undefined,
           },
         };
       } catch (e) {
@@ -1273,7 +1307,9 @@ registerTool(
                     ? "The chain's current list of collections under the known issuer keys could not be read, so the last list read was searched (stale says when and why). A collection created since then is not in it, so finding nothing here is not a search that found nothing."
                     : onChain.setAside
                       ? `No collection the chain lists under a known issuer key, and the registry lacks, has this name among those that could be read; ${onChain.setAside} account(s) under the key could not be read as collections, so this is not the whole list.`
-                      : "No collection the chain lists under a known issuer key, and the registry lacks, has this name.",
+                      : onChain.searched.length
+                        ? "No collection the chain lists under a known issuer key, and the registry lacks, has this name."
+                        : "The issuer collections on chain were not searched. Try the collection address, or a name with a digit or two consecutive letters from A to Z.",
             },
           }
         : {}),

@@ -70,6 +70,11 @@ page that does should be treated as hostile.
 for `localhost`, so a test validator still works. The error for a bad value
 names the variable, never the URL.
 
+The operator chooses those endpoints in the launch environment. HTTPS can
+reach private networks too. A mint, profile or tool argument cannot set an
+endpoint. Image and profile URLs are returned as data. A client that opens
+one makes its own DNS lookup and needs its own network access rules.
+
 Nothing is collected. There is no telemetry, no analytics and no log of your
 questions. What leaves the machine is the public address, symbol or name you
 asked about, sent to the source that can answer it: Solana RPC, the asset
@@ -116,7 +121,7 @@ issue if the finding is not sensitive. Realistic classes worth reporting:
 - a response path that reads a body without the bounded reader
 - cancelled work that keeps spending an upstream's budget
 - cache poisoning between tool calls
-- dependency issues (`npm audit` runs in CI on every push)
+- dependency issues reported by `npm audit`
 
 No bug bounty - this is an open-source, zero-revenue project - but confirmed
 reports get fixed and credited in the changelog.
@@ -125,8 +130,8 @@ reports get fixed and credited in the changelog.
 
 Two runtime dependencies (`@modelcontextprotocol/sdk`, `zod`), lockfile
 committed, install scripts disabled via `.npmrc`. CI runs a full-history secrets
-scan (gitleaks) on every push to every branch, and `npm audit` plus the offline
-suite on `main` and pull requests. The gitleaks allowlist admits a finding only
+scan (gitleaks) on every push to every branch. It runs `npm audit` and the offline
+suite on `main`, pull requests, tags and manual runs. The gitleaks allowlist admits a finding only
 when two conditions hold together: the file is under `test/fixtures` AND the
 matched value is shaped like a base58 chain address. It is not a path
 exception. This was checked with planted controls: a base58 address in a

@@ -255,7 +255,7 @@ the check without trusting this server.
 **Is it safe to let an agent read NFT names?**
 Minting is permissionless, so a name can be a fake message boundary followed by
 instructions to your AI. Every name from chain or marketplace is neutralised before a
-model sees it: invisible and bidi characters stripped, newlines collapsed, delimiter
+model sees it: hidden controls and direction overrides stripped, joined emoji preserved, newlines collapsed, delimiter
 markup defanged, imperative phrasing flagged. This is tested offline in CI.
 
 **What is different between the Solana marketplaces?**

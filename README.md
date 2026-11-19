@@ -77,9 +77,9 @@ onto Settings -> Extensions.
 Cursor, Windsurf, Gemini CLI, Zed, Cline and VS Code take the same `command` / `args` pair in
 their own config; the server is plain stdio with no client-specific code, but those have not
 been tested here. ChatGPT on the web and Grok cannot run a local process.
-The server speaks MCP protocol revision 2025-11-25 through the official TypeScript SDK v1. A
-client that offers the newer 2026-07-28 revision gets 2025-11-25 back, which current clients
-accept; one that refuses anything older cannot use this server yet.
+The server speaks MCP protocol revision 2025-11-25. The TypeScript SDK 2.4.0 client
+connects in legacy or automatic negotiation mode. A client pinned to 2026-07-28
+requires a server that supports that revision.
 
 **Did it work?** Your app lists the tools near the message box (Claude Code: `/mcp`). You should
 see 21, starting with `identify`. If none: the path must be absolute and end in `dist/index.js`,
@@ -99,7 +99,7 @@ environment):
 - `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1` - skip the one startup request to npm for a newer version.
 
 In the Claude Desktop extension the same options are in the extension's settings, so there is
-no config file to edit. What the server sends, to whom, and the one file it writes are listed
+no config file to edit. What the server sends, to whom, and how it stores its key are listed
 in [PRIVACY.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/PRIVACY.md).
 
 ## Ask it anything
@@ -136,9 +136,9 @@ No account, no sign-in, no telemetry, no log of your questions, and no signing c
 the repository; every tool declares `readOnlyHint`. What leaves the machine: the public address,
 symbol or name you asked about, sent to the source that can answer it; one startup request to
 npm for the latest version number; one request to OpenSea for a free key, the first time a
-question needs it. One file may be written, the key file above. Nothing else
-touches disk. To remove everything: uninstall or delete the clone, then delete
-`~/.solana-nft-mcp/`.
+question needs it. When saving a key, the server writes a temporary file and
+renames it to `opensea-key.json`. An interrupted save can leave that temporary
+file behind. To remove the stored credentials, delete `~/.solana-nft-mcp/`.
 
 Key files use mode 600 on macOS and Linux. Windows uses the home folder's access
 permissions; mode 600 does not set a Windows ACL. Keep that folder private to your
@@ -200,10 +200,15 @@ retain the old owner; `get_asset` checks current Core ownership against account 
 - Every money figure names its currency and the API it came from, on the summary and on every
   priced row, and counts keep their coverage flags beside them (`truncated`, `stale`,
   `historyComplete`). A program should refuse to act on a row whose flag says the read was partial.
+- For scripted calls, `identify` returns `lookup` with a tool name and arguments when
+  the caller supplied the exact identifier. Check for `null` before using it.
+  Names, summaries and candidate lists are display text.
 - Two error surfaces. Input that fails a tool's schema is refused before the handler runs:
   `isError: true`, no `structuredContent`. Every failure inside a handler carries
-  `structuredContent.error`, a stable category (`not-found`, `wrong-kind`, `escrow`,
-  `source-unsupported`, `bad-input`, `upstream-unavailable`, `upstream-rate-limit`, `error`).
+  `structuredContent.error`. For example, `offline` means the server did not contact
+  the source, `ambiguous` means the caller must choose a match, and
+  `upstream-rate-limit` means the source asked callers to wait. Scripts should
+  handle unknown categories and show the explanation that accompanies the error.
 - No valuations and no currency conversion. Solana only.
 
 Full detail: [docs/TRUST-AND-LIMITS.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/TRUST-AND-LIMITS.md).

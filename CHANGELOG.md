@@ -47,6 +47,19 @@ November 19 corrections:
 - Pasting only invisible characters into `identify` now asks for an address
   or name before searching the collection directory.
 
+Changes on November 19:
+
+- `identify` provides a typed `lookup` for scripts. It can repeat an exact
+  address or symbol supplied by the caller. A name match needs a choice from
+  the caller before it can lead to another read.
+- Collection search says when it skipped the issuer list or when offline mode
+  kept it from loading the live directory. OpenSea reports partial coverage
+  when it returns a page with an unreadable cursor.
+- Privacy switches accept a numeric `1` with surrounding spaces.
+- Collection search keeps a shared OpenSea slug separate from any one Solana
+  address. Display names keep standard joined emoji, including those used in
+  the Fairy and ZomByte collections.
+
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
 chain), Candy moved holders' items into new MoonPay-powered wallets in late
