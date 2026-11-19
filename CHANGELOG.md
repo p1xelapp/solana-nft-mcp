@@ -33,6 +33,20 @@ Tensor Core pool receipts count payments into the pool's shared escrow and
 exclude returned account rent from the buyer total and seller proceeds.
 When no account exists at an item's owner address, its listing stays unchecked.
 
+November 19 corrections:
+
+- Ownership claims leave the seller unknown when an item's holder could be a
+  custody account. Supply claims accept zero and distinguish an unavailable
+  node from a collection that uses a different standard.
+- Sale receipts include the requested currency even without a price. A wallet
+  supplied with a sale claim gets a correction before the transaction is read.
+- A checked floor describes the listing's custody. Transfer permissions and
+  whether the order can fill need separate checks.
+- The holder census keeps its counts and trims the two detail lists to fit
+  clients. Claim receipts declare their fields in the tool schema.
+- Pasting only invisible characters into `identify` now asks for an address
+  or name before searching the collection directory.
+
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
 chain), Candy moved holders' items into new MoonPay-powered wallets in late

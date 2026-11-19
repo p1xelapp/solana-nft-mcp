@@ -1277,7 +1277,7 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Why does my collection look quiet?",
     plain:
-      "Sales answers read Magic Eden's feed, and OpenSea's when a key is available. Magic Eden relays some Tensor fills. Other Tensor fills and OpenSea's own sales can be missing from that feed. For a Metaplex Core collection, get_recent_sales with chainScan: true reads its newest transactions from the chain. A misspelled symbol is refused, not shown as quiet.",
+      "Magic Eden reports some Tensor fills. OpenSea also has its own feed when a key is available. A quiet feed can still miss sales on Tensor or OpenSea. For a Core item or collection, use get_recent_sales with chainScan set to true to check its newest transactions. For a specific sale, use verify_claim with the transaction signature and item address.",
     pitfall:
       "Calling a collection dead, or a card unsold, from one feed's silence. Say which feeds were read and how far back each one reached.",
     documented: "Tensor's API page says access to its API is requested through a form, so its feed is not read here.",

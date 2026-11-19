@@ -58,5 +58,5 @@ export const PROMPT_TEXTS = {
 export const PROMPT_LIST = [
   ["getting_started", "Start here: what can I ask?", "New to solana-nft-mcp? What it answers, and five questions to try."],
   ["collection_report", "Collection market report", "Supply, floor, what sold, and one item's story, for a collection you name."],
-  ["wallet_report", "Wallet report", "What a wallet collects, how it trades, and what it is worth at floor as a ceiling."],
+  ["wallet_report", "Wallet report", "Indexed holdings, trading history and reported asking prices for collections in a wallet."],
 ] as const satisfies readonly (readonly [keyof typeof PROMPT_TEXTS, string, string])[];

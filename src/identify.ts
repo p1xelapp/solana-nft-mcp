@@ -31,7 +31,7 @@ import { collectionIssuer, currentIssuerKeys, describeIssuerKey, knownIssuer, ta
 import { resolveName, symbolForCollectionName, collectionNameKey, findLookalikes, LOOKALIKE_WARNING, type Lookalike } from "./names.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError } from "./lib/http.js";
-import { NotFoundError, WrongKindError, type Wording } from "./lib/errors.js";
+import { BadInputError, NotFoundError, WrongKindError, type Wording } from "./lib/errors.js";
 import { clean, inspectUntrusted } from "./lib/untrusted.js";
 import { checkSymbolMatchesCollection } from "./symbol-check.js";
 import { hasHomoglyphs } from "./spam.js";
@@ -475,6 +475,12 @@ function settledByShape(query: string, kind: Identification["kind"], w: Wording,
 
 export async function identify(query: string): Promise<Identification> {
   const raw = query.trim();
+  if (!clean(raw).trim()) {
+    throw new BadInputError("the identifier has no visible text", {
+      headline: "There is nothing to identify after removing invisible characters.",
+      next: "Paste the item or collection address, its marketplace link, or its name.",
+    });
+  }
   // A link is read for the identifier in its path and then identified like
   // anything else; it is never opened.
   const link = readLink(raw);
@@ -891,14 +897,15 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   // was simply twice the wait whenever both were slow.
   // A single strong directory hit is the symbol to probe; several are a
   // question for the caller, never a pick.
-  const meSymbol = entry?.meSymbol ?? symbolFromDirectory ?? (nameCandidates.length === 1 ? nameCandidates[0] : undefined) ?? (looksLikeSlug(q) ? q : undefined);
-  const osSlug = entry?.openseaSlug ?? (looksLikeSlug(q) ? q : undefined);
+  const pastedSlug = looksLikeSlug(q) && coreKind !== "asset" && (!indexed || indexed.standard === "metaplex-core-collection") ? q : undefined;
+  const meSymbol = entry?.meSymbol ?? symbolFromDirectory ?? (nameCandidates.length === 1 ? nameCandidates[0] : undefined) ?? pastedSlug;
+  const osSlug = entry?.openseaSlug ?? pastedSlug;
   const mePromise: Promise<Awaited<ReturnType<typeof me.collectionStats>> | { err: unknown }> = meSymbol
     ? me.collectionStats(meSymbol, { signal }).catch((err: unknown) => ({ err }))
     : Promise.resolve({ err: null });
   // identify() is a call that needs OpenSea, so this is where a free key is
   // issued if none exists yet - asked once and reused by both branches below.
-  const osEnabled = await os.openSeaAvailable();
+  const osEnabled = osSlug ? await os.openSeaAvailable() : null;
   const osPromise: Promise<Awaited<ReturnType<typeof os.collectionStats>> | { err: unknown }> =
     osEnabled && osSlug
       ? os.collectionStats(osSlug, { signal }).catch((err: unknown) => ({ err }))
@@ -944,7 +951,9 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   }
 
   // ---- OpenSea (optional, key-gated) -----------------------------------
-  if (!osEnabled) {
+  if (osEnabled === null) {
+    checked.push({ source: "opensea", looked_for: "a collection slug", result: "skipped", detail: "No collection slug was supplied or resolved." });
+  } else if (!osEnabled) {
     checked.push({
       source: "opensea",
       looked_for: "a collection slug",

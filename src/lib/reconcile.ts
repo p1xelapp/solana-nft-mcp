@@ -159,7 +159,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   }
   if (deadQuotes.length > 0) {
     caveats.push(
-      `${deadQuotes.map((q) => `${q.source} (${q.value} ${q.currency})`).join(", ")}: the chain shows the listing behind this floor is no longer held by its seller or the marketplace, so nobody can buy at that price; it is shown and excluded from the comparison.`,
+      `${deadQuotes.map((q) => `${q.source} (${q.value} ${q.currency})`).join(", ")}: the item in the checked listing is no longer held by its seller or the marketplace. That listing is excluded from the comparison.`,
     );
   }
   const lead = mirror ? `${mirror.sentence} ` : "";
@@ -167,7 +167,7 @@ export function reconcileFloors(allQuotes: FloorQuote[], extraCaveats: string[] 
   if (quotes.length === 0) {
     return {
       comparable: false,
-      verdict: `${lead}No marketplace returned a floor price for this collection${deadQuotes.length ? " that the chain shows can be bought" : ""}.`,
+      verdict: `${lead}${allQuotes.length ? "No current floor remains to compare after excluding the quotes shown below." : "No marketplace returned a floor price for this collection."}`,
       floors: allQuotes,
       caveats,
     };

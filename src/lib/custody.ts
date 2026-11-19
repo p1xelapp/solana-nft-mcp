@@ -275,9 +275,9 @@ export async function checkedFloor(symbol: string, venueFloorSol: number | null,
     listingsRead,
     staleExamples,
     sentence:
-      `None of the ${rows.length} cheapest Magic Eden listing(s) read can be bought: in every one the chain shows the seller no longer holds the item. ` +
-      `No floor is given${venueFloorSol !== null ? `; Magic Eden still reports ${venueFloorSol} SOL, which is one of those stale listings` : ""}. ` +
-      `Only the cheapest ${CHECKED_FLOOR_PAGE} are read, so a collection with more listings than that can still have one that can be bought further up.`,
+      `None of the ${rows.length} cheapest Magic Eden listing(s) read matched the seller or the venue escrow. ` +
+      `No custody-checked floor is available.${venueFloorSol !== null ? ` Magic Eden reports ${venueFloorSol} SOL separately.` : ""} ` +
+      `The check reads up to ${CHECKED_FLOOR_PAGE} listings. There may be other asks further up the book.`,
   };
 }
 

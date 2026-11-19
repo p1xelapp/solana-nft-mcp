@@ -103,6 +103,10 @@ completely - put it in the MCP config's `env` block, since clients launch server
 clean environment. `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
 **What about Tensor and Rarible?**
+
+For one Core item, use its mint with `get_recent_sales` and set `chainScan` to
+`true`. For a sale someone has already identified, give `verify_claim` the
+transaction signature, item address and claimed currency.
 Neither API is read. Tensor's API page (read 2026-11-14) gives access through a form, so there is
 no key to use without asking Tensor first. Tensor's sales of Metaplex Core items are read anyway,
 from the chain: each one is a transfer inside Tensor's marketplace program with the payment

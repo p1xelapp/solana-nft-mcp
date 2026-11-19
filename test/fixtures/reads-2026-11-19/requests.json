@@ -1,0 +1,292 @@
+[
+  {
+    "at": "2026-11-19T20:52:36.484Z",
+    "label": "batman-account",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "EmFy7YohG4GZxgE5DEDgHuuvibqXK2jRLcXcJa3RvDRX",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "http": 200,
+    "bytes": 915
+  },
+  {
+    "at": "2026-11-19T20:52:36.635Z",
+    "label": "sale-5wrdbZQq",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getTransaction",
+    "params": [
+      "5wrdbZQqjeqDGM1UuPe9eXJYPc1ZyM5d4ho55pqaVoq7qHmUou2j1wnyryA8qZcX8wn5ueV3TJNUbRn5PKVT63nZ",
+      {
+        "encoding": "jsonParsed",
+        "maxSupportedTransactionVersion": 1
+      }
+    ],
+    "http": 200,
+    "bytes": 6957
+  },
+  {
+    "at": "2026-11-19T20:52:45.727Z",
+    "label": "gold_series_auction_1_candy_digital-stats",
+    "url": "https://api-mainnet.magiceden.dev/v2/collections/gold_series_auction_1_candy_digital/stats",
+    "http": 200,
+    "bytes": 89
+  },
+  {
+    "at": "2026-11-19T20:57:29.483Z",
+    "label": "empty-collection",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "58BZER6WANRWCvJCFXLSgWBz29dcPnR8RvSmN7LT2Mut",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "http": 200,
+    "bytes": 931
+  },
+  {
+    "at": "2026-11-19T20:57:29.631Z",
+    "label": "batman-item",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "http": 200,
+    "bytes": 603
+  },
+  {
+    "at": "2026-11-19T20:57:30.582Z",
+    "label": "batman-owner",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "AgJbH68itZ7VzsCxhMvW3d3ebddXi3sjTMjrgPEV6n1B",
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 0
+        }
+      }
+    ],
+    "http": 200,
+    "bytes": 243
+  },
+  {
+    "at": "2026-11-19T20:57:31.631Z",
+    "label": "gold-listings",
+    "url": "https://api-mainnet.magiceden.dev/v2/collections/gold_series_auction_1_candy_digital/listings?offset=0&limit=100",
+    "http": 200,
+    "bytes": 470363
+  },
+  {
+    "at": "2026-11-19T20:57:32.773Z",
+    "label": "gold-custody",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getMultipleAccounts",
+    "params": [
+      [
+        "AB88HGB3BNxiCx38jHjmFmY3GXZrBHoTa1pWHy6yhfKJ",
+        "4U3QKvJv21vzUzb44UTmkaCVTJaKKSv6ZJvWp6qY5pmB",
+        "2wsmYa2WMG6ZmSPdVJ5i6eG2zcPhCHqNkettSDtgsa23",
+        "CcTDTfbP8jh1rMu4G5bz8F6A9QBfp1fwD3dBT9jqCsox",
+        "3bkzwH6J2vJPSF7BYfRPXnreEkdDLrEZ8hgiMk5vzSpb",
+        "DD47ALUghFXVzRpToz9cFDUFJ6XHW2omAkJzfYzNKtai",
+        "3o16qEfgiVCzYZfCw5QuswmoxaS74zCPU7DicccLUFYy",
+        "9KJMRA6UYGRHhivwdFBrp5ts5up5nd82TF5GiH7TttTi",
+        "A7LqnDXQPee1F8MSVxViPRr89NtTWeCoqyiRhY7FMe9M",
+        "CeZgoxCGXsBRdhH6mntU21mC9Af6UFmRUAEAAxwQfUMw",
+        "GevMLqwJzA47FM6Pf2nadWrpqgfjc5UtM2My9pNb4R2N",
+        "HAyxx8HwpoxWG23QEJdfAbGnczwUhY7PX3CgSkZjfEtu",
+        "13RTP1DXazQ2ULdcnRvN4gkY5Ar5jqyrKtNV6RDnyCKy",
+        "5us25dRgr1Mds25LLet3TEW2jwb9MzmhZKRA6kCp1n3D",
+        "6HppijYiz98p6bsfgqZjAHoibsTqGvCbAToTsKjikH3N",
+        "Aksofhm8rhhECz1CxWwBQUEzg4d7GyWuo4N9ivutWVZR",
+        "DcrTdvv6QhPTDYA4btLtbHLP4UiJqfn4dKPr4yfkpnT2",
+        "GRnft2aS7CbxUksHCCcVPZd2zzEgwxSVrrEiE8yLtPHh",
+        "FfUx1kE3oFDvXWj4d3UDNTcPBwLKYJtRXqYc4rYufUg3",
+        "5QMseQ17AMMZnM8nWFfWCvQGAK56CAsVYXn4rzx8ciKn",
+        "AZZJva8MNUcJr7DhWXUzgb8nf1KEUtcgSuBBfJ9gy6Ly",
+        "CzvkuGqJdvdUyZKVynUEGobzGyqMMEtm84L8c5JnmnuM",
+        "FqGrQMHBvAn5cQSoJNvKSHCXSwrF33izHkKzhjGkGdpn",
+        "7cDfqWBLrZLb1ULupw9n7dAZsEhUeqzBzFEGJKDLHCPh",
+        "4RgQgfuMoMg2nr93GNwweZxAakB645NgZUVGhBsLGUjs",
+        "H8xHb8fYk84FbN9tXYNMqcNtGG3JnzDta5beRZiEbKrb",
+        "AxRNU6HLJFQrJod4qABWW9VnEq2QnSFx1RYdBVq8n8HL",
+        "4HVnFb7oWrGoCgcpAJBHiiRE2ykX1ajbovaYEfNkTnya",
+        "4xxJpDySgYFy7HZ9R4hwSkL2cAYaaqX64VamN8AS4kh8",
+        "6PjEKoNf5z96xna7BCbGFdSeC1TVpNjeXXGSx3SW7Jqu",
+        "DijTfwBwvdYXg3vNTjz2juoSyCqfLYJGUcSrgEfn64ty",
+        "DpxDnRhZU1k1AwGjKLxgaizqVbdTFsGA6xE3yxrg3zrV",
+        "FHW8PfveUA5ixuTpTq8V73E4D7eNiZdGPGbWvTjxbvRi",
+        "HEb76UdEEYPikfGXjks4NKw2D8fkpF8uqz5Ud7aPkQLz",
+        "ErL6chokfueU3HWSfPoJNx3sZYrF4cjjQpAGb1roDR4d",
+        "8cJiymEJpbLsVfHEYryhdSm9FgVPei6Y6hAMKmsqYSxm",
+        "DZeFAYfZTTovvovjFPF81T27MbzrnuZkZdRqhCvyrgU6",
+        "6X3xHHhwQCi3EjpuDKtyKKLqKLw7ex3GtxUApU3fSyge",
+        "FRXoVXQ4ncoJU3kQGqUuJfNh7SQ6yynQNfKPogMvbdW2",
+        "DKV186ZfFqx5nJ64EVs9A54xKtPkPLtxFfpKdBqc8XZF",
+        "6UQp53ZWhGxy7Dg6SEgKm7rvczjDW7Tjg5BdWapkGvwb",
+        "31GhYzoSnsLNo2JhQfJJxQwoYQcw3R2HwBsmbsyxaESE",
+        "NMNGp3o5Gk7uRPu2efVqRKqQbPMnCfsM479vTTMTWis",
+        "6PUENvWAUsEnbx5hbJSmdsqTj8J26dxcFz8Twg9TbMim",
+        "12m43DojF58GZGcQhdoxEoJGtS9YoajLHUn5kuhyf4HE",
+        "GwAgj1Kgz1m2uXgcAAGo8gFXTFmuRc9ksihyTCiwteot",
+        "8agx6AFJxdtJ1mteTtFj8obVtepoTcACv45a2MuqkVYD",
+        "GNpPZmVnpovSNKZaG6gax2hHux9cWH7Y4wuAfzZL65w3",
+        "H4aJaRHmpiq2NdkopitkWEww3ZueWyMz5x4qrEy1Mj9x",
+        "FLnxPbpDUtxvm7X9FXPjFXSmhavUCFwUr1d3cVymb8Nv",
+        "CAwo6wdRKM8aeHJDMgJmpPv5Cox6RnT1pZGr73Vb9rd5",
+        "4AZXE5BeE9uXJvqi8rgDULgLHdtZVyUeTajMKfJhdcqH",
+        "8Z4vc8SuDAFSXCe4MHubRkZq1FzRNSfQJbZtrrLQ1EjA",
+        "5Gj5Hxs5cvaAjV1jp72Ya2ktFybFA2EpHGSq7CjEJt6Z",
+        "C4Hoiv9243yAKY2XAgJKFv29x2Kv75sZwi3BzngFdXcz",
+        "CZrcXkf56iRVvsftWfetcmHciRZNoq2yeseAmteKo1yd",
+        "EKRonksr2qiNV4tq4CqGmfPSkLMBCfLdq2tbMznpwQr",
+        "HDEqbh6jqMPasgC37iYPdmVuXcYfdXW8qZE2hQ7CvgyN",
+        "FKZ1rw3hLxewV1o4Qjb3Mo9Ne5fuAFEAid4jhUwLaREZ",
+        "C8mmxSgj2Sm61triNscBCwsVS1SFA8stZzazxqUGP6g7",
+        "As8mjwWvPwS7EZ9WxsNyVahu4Zdasb5Mi4sMopKC7aoe",
+        "3jKRHsXFMN8mb9mfcVbzGfXByP9QnieW64KEVBXrHa3r",
+        "HT9yhK1h1gz3LNjmXmhEhi379QJqKjVs1qjvm7Qp1EGk",
+        "5YuRwp47CFJprZujCb37U5JJc64bdzdNSvX1WbAcbC5o",
+        "8xRUsxf6GB3Ze4cZAbEmafSYzb3kHkQwzTsinBjKWCr8",
+        "5mY4FWEctHv59oSojrtmfXHS92DGJeieSXW9uRfav2Bm",
+        "3enCi35rnRuDxrWdk886tyrVrJmpPLKo7ASVB9Zth9q5",
+        "5jiZESuWwJYnDoeXzs1Eg2wtHgfpkWZefojsPo6kLH9C",
+        "7smBXEebr49d1b43FUXSvJpkJ1gfXuVp9iod2WWAPi2h",
+        "4CEvWkyKt2FbqDzUjQy2t1Thimqk9hHvvgcy6J1RsSE8",
+        "4zuHbbcWYYp5bnC9xtHmhPLWCKdhHtMpk6X7dRS1xdyA",
+        "6uLULjFQhAiiCmmqQSc4WE4UZvxhsrDcbDc513BHYwmy",
+        "Cbn1muP1q75sToGfndZoNMCx4z6qfXdvLFVveSWB2oAS",
+        "EceshBnSMFgMGhG3hYwR91mAKMKAM1utoDB5qdpVwupt",
+        "GMdFwBVdnwNwUR4UetmK4bE5bhXHEVu4nzpJB43KTpyk",
+        "HdGcQAgDeWWNYLJwHp9J5Tuhrmneiq7LsPiivaXXp412",
+        "HuifRezm8R5QndbtuyikrjgLQJoDi62GhcEs1ZmtqtVg",
+        "2Ay1t3XoiMokPaBeiWHcy5NKZwdpYRLvE3rkuyfcMNu9",
+        "E8y4PY4u5YCiqxFwdMbWcA4yMgHeofHwAekGurSDxiLz",
+        "fa9TFUUH3ayXBXRG54BfGxooPoAbxWWuB3p8EMn2wbT",
+        "Fiwi76fJ7JKbwb4dzg7vBtFfBSP3qRefAKeGqkNNZTgS",
+        "HhhjXDnJQGndFZT9FB7y4Nih9ZzSsGTmLaEEbmnjL3cw",
+        "59zGex9Hs1qZsbBAS1SDaLEvzA5AQNbiqsqmBEAN4JnT",
+        "6YPuXBc1QUnriGqPFJRezpDWzyRUVXcSwYuYMsuKaMrq",
+        "2u7QX6EFzxB9GCW7nkqsi6qQk56zjYnGWANSU6tFxEvG",
+        "3FQcoWjTLHApzRVLVW5QkdrXNZ8sb9xHphVbtgVmgvFF",
+        "3qMtKPrUrceQGdsniSqBjVqZfRuz45aPKTtz7E6wR6yp",
+        "4ze9xQU74dZZsiTUCtFRo8ApzREEWuSFx3SjUBh4uc2t",
+        "57KrNaKE1wptrr2FuAxPvmZuMBcwgm65XUsBfLPKkaY9",
+        "6HbqYReSkNJTMWg43FeVweR1wnp6bxEirVhdPcjQWzz9",
+        "9BhbZ6kw8H7gDqJgsphnFHiRqBN8iuJJo4HNFLEZnXLQ",
+        "AhrwBFNw7mzyazYKmQ1xvRm15FaRrgnRZ5msK8PoEuwP",
+        "GuJbYnw2AyzgiPLcF65im9EADPaCNFZN5v2CiP8GWy8v",
+        "39Jnm2eBaoFGBbHgLhUH1dYHgo42U8MfzLwDtXdBbzko",
+        "31XWtHtduAVmKA4Uf6MhXnFi6CrzT18gmaFXd2k9xRsy",
+        "GkrWx9Wy74o4UEKTWZHatBBgqqZRBLD1aXMsKTbsBvqH",
+        "HsZsF8cBLs63THqkmtGg8sE284LRa1guTQqDqadqZich",
+        "99dDKk8eeKTJ44CaovGytiHqEkgCDKocCwnZbT7DERTg",
+        "5Syn4b1G5RZQbHxzJunGpF8pnZpd5HrGUZ3bvkpvmobp",
+        "DSQ6NNKxVVJmJvKTZGSvqVngJxkTTbNdinBu5jV5TsxB"
+      ],
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 33
+        }
+      }
+    ],
+    "http": 200,
+    "bytes": 20596
+  },
+  {
+    "at": "2026-11-19T20:57:32.823Z",
+    "label": "gold-owner-programs",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getMultipleAccounts",
+    "params": [
+      [
+        "3gHk1gPUDyoGPCzyo2d8AUW6apPYYNc2cZoTqdZtiGy6",
+        "ArP9yefGqNMxwVFRGHMVP3YK4iy9zAtq2zbQQb8Vc5vW",
+        "6ikdmqV3cMLD21RDczEFE1zhVkJmVwfz7Rhavoz6RaKJ",
+        "AKBzuaswh7UecnswqLMk3YhyrbK3cyfKM53Tgd6sPihm",
+        "1BWutmTvYPwDtmw9abTkS4Ssr8no61spGAvW1X6NDix",
+        "GyRK2wt4rNAbjWXnyUWW7H7rdDBYknMqHMSKoLBNNmjq",
+        "8qj6Ai4xcm56JKmrgGkkiVyQeXCNZBww5sCBjvUawsM1",
+        "3ncrEv5x2yG7KrjfU5m8n4brs8HR6sM4hbzBbh7oh8ca",
+        "AgJbH68itZ7VzsCxhMvW3d3ebddXi3sjTMjrgPEV6n1B",
+        "CLDWe9mmUkJFCXcvJ9uNQJg9W3kTsQfwY3iw1eZVH7Aq",
+        "9SAB1vEN3Se7ZRa2tWJTMaL4YfRZuozrDRQ8wLFRpYUL",
+        "3QGqCiKbWAgWnUbDxuCGeqnEdfFRKGie9FzsJLx2DwV1",
+        "GwZgR49pXYAfUSBTXbuUgmrLRjVuCtDKssta2JUUPLda",
+        "5SwtorZaZeuL2YgzsUcpZfjAnukcn97DJ5aZKAWju431",
+        "99KsnC5u7Na1mQRuziV2z7qcPQhrbSxn4Xuig9o8EJKA",
+        "5CZ3tVpDowjesVNYgzwtCWVUyoBgaHKfh4scS6hr7nGq",
+        "7mQgkLGXJGeBqvy8xgknQeNSMSMHqdKBMyokQfnJzpJe"
+      ],
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 0
+        }
+      }
+    ],
+    "http": 200,
+    "bytes": 2528
+  },
+  {
+    "at": "2026-11-19T20:57:33.862Z",
+    "label": "batman-index",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAssetsByGroup",
+    "params": {
+      "groupKey": "collection",
+      "groupValue": "EmFy7YohG4GZxgE5DEDgHuuvibqXK2jRLcXcJa3RvDRX",
+      "page": 1,
+      "limit": 100
+    },
+    "http": 200,
+    "bytes": 239476
+  },
+  {
+    "at": "2026-11-19T21:16:48.412Z",
+    "label": "claynosaurz-buys",
+    "url": "https://api-mainnet.magiceden.dev/v2/collections/claynosaurz/activities?offset=0&limit=100&type=buyNow",
+    "http": 200,
+    "bytes": 66395
+  },
+  {
+    "at": "2026-11-19T21:16:49.599Z",
+    "label": "compressed-account",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "GDEC7TRDAdU1BUhSSAK2WLc5DqLSCCcq6W2b7rVpfHcS",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "http": 200,
+    "bytes": 99
+  },
+  {
+    "at": "2026-11-19T21:16:50.048Z",
+    "label": "compressed-index",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "GDEC7TRDAdU1BUhSSAK2WLc5DqLSCCcq6W2b7rVpfHcS"
+    },
+    "http": 200,
+    "bytes": 2303
+  }
+]
