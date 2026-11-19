@@ -146,6 +146,8 @@ interface IxDef {
   seller?: number;
   /** Other slots whose receipts are the seller's own (a pool's escrow when it keeps its proceeds). */
   sellerAlso?: number[];
+  /** A balance increase can be returned rent even when the sale paid another account. */
+  requireSellerTransfer?: true;
   /** Slots, besides the buyer, that may receive the item (a pool that keeps what it buys). */
   itemToAlso?: number[];
   /** The slot the venue returns closed accounts' rent to, where its layout names one. */
@@ -249,7 +251,9 @@ venue("TSWAPaqyCSx2KABk68Shruf4rp7CxcNi8hAsbdwmHbN", { name: "Tensor pools", ix:
 venue(sol.TENSOR_AMM_PROGRAM, {
   name: "Tensor pools",
   ix: {
-    buy_nft_core: { kind: "sale", seller: 0, buyer: 1, sellerAlso: [4], layout: "published-unchecked" },
+    // Tensor's BuyNftCore pays the pool (4) or its optional shared escrow (7).
+    // The owner's wallet can receive only the rent from closing the item record.
+    buy_nft_core: { kind: "sale", seller: 0, buyer: 1, sellerAlso: [4, 7], requireSellerTransfer: true, layout: "published" },
     sell_nft_trade_pool_core: { kind: "sale", seller: 1, buyer: 0, itemToAlso: [4], layout: "published-unchecked" },
     sell_nft_token_pool_core: { kind: "sale", seller: 1, buyer: 0, itemToAlso: [4], layout: "published-unchecked" },
     deposit_nft_core: { kind: "escrow-move" },
@@ -443,7 +447,8 @@ function parse(raw: unknown): Parsed | string {
   }
   const sigs = rec(tx.transaction)?.signatures;
   const signature = Array.isArray(sigs) && typeof sigs[0] === "string" ? sigs[0] : null;
-  const failed = meta.err !== null && meta.err !== undefined;
+  if (meta.err === undefined) return "the transaction's execution status is missing";
+  const failed = meta.err !== null;
   const keyList = Array.isArray(message.accountKeys) ? message.accountKeys : null;
   if (!keyList) return "the transaction's account list is missing";
   const keys: string[] = [];
@@ -474,13 +479,14 @@ function parse(raw: unknown): Parsed | string {
     pre.push(a);
     post.push(b);
   }
-  const fee = lamports(meta.fee) ?? 0n;
+  const fee = lamports(meta.fee);
+  if (fee === null) return "the transaction's network fee could not be read";
 
   const tokenAccounts = new Map<string, { mint: string; owner: string | null; decimals: number }>();
   const tokenPre = new Map<string, bigint>();
   const tokenPost = new Map<string, bigint>();
   for (const [list, into] of [[meta.preTokenBalances, tokenPre], [meta.postTokenBalances, tokenPost]] as const) {
-    if (list === undefined || list === null) continue;
+    if (failed && (list === undefined || list === null)) continue;
     if (!Array.isArray(list)) return "the transaction's token balances are not a list";
     for (const b of list) {
       const r = rec(b);
@@ -513,11 +519,12 @@ function parse(raw: unknown): Parsed | string {
   if (!outer) return "the transaction's instruction list is missing";
   const groups = new Map<number, unknown[]>();
   const innerRaw = meta.innerInstructions;
+  if (!failed && innerRaw == null) return "the node supplied no inner instruction record for this transaction";
   if (innerRaw !== undefined && innerRaw !== null) {
     if (!Array.isArray(innerRaw)) return "the transaction's inner instructions are not a list";
     for (const g of innerRaw) {
       const r = rec(g);
-      if (!r || typeof r.index !== "number" || !Array.isArray(r.instructions)) return "an inner instruction group could not be read";
+      if (!r || typeof r.index !== "number" || !Number.isInteger(r.index) || !Array.isArray(r.instructions)) return "an inner instruction group could not be read";
       if (r.index < 0 || r.index >= outer.length || groups.has(r.index)) return "an inner instruction group names no instruction of this transaction, so the order of events is unknown";
       groups.set(r.index, r.instructions);
     }
@@ -994,7 +1001,7 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
   const sale = { ...named, seller, buyer, layout: def.layout, ...(self ? { selfFill: true as const } : {}) };
 
   // ------------------------------------------------------------ the money
-  const sellerSide = new Set([seller, ...(def.sellerAlso ?? []).map((s) => present(vn.accounts[s])).filter((a): a is string => a !== null)]);
+  const sellerSide = new Set([seller, ...(def.sellerAlso ?? []).map((s) => present(vn.accounts[s])).filter((a): a is string => a !== null && a !== vn.programId)]);
   const notPaidTo = new Set([buyer, newOwner]);
   const subtree = nodes.map((_, i) => i).filter((i) => within(nodes, i, v));
   // The marketplace's own instructions: every one its program ran in this
@@ -1045,6 +1052,9 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
   interface Money { cur: string; wrapped: boolean; sellerRaw: bigint | null; grossRaw: bigint | null; others: [string, bigint][]; basis: NonNullable<ChainSale["priceBasis"]>; slack: bigint }
   let money: Money | null = null;
   const legCurrencies = [...net.entries()].filter(([, m]) => [...sellerSide].some((s) => (m.get(s) ?? 0n) > 0n)).map(([c]) => c);
+  if (def.requireSellerTransfer && legCurrencies.length === 0) {
+    return { ...sale, status: "cannot-tell", notes, reason: "No payment reached the pool owner, pool or shared escrow in the sale instruction. The owner's balance change can include returned rent." };
+  }
   if (legCurrencies.length > 1) {
     return { ...sale, status: "cannot-tell", notes, reason: `The seller was paid in ${legCurrencies.length} currencies in this fill, so its price cannot be stated in one.` };
   }
@@ -1059,6 +1069,10 @@ export function decodeSale(raw: unknown, item: string, expectSignature?: string)
       return { ...sale, status: "cannot-tell", notes, reason: `The account the ${venueInfo.venue.name} layout names as seller (${seller}) received less than another account paid in this fill, so the layout and the payment disagree about who sold.` };
     }
     money = { cur, wrapped: wrappedSeen, sellerRaw, grossRaw: sellerRaw + others.reduce((a, [, val]) => a + val, 0n), others, basis: "venue-transfers", slack: 0n };
+    if (def.requireSellerTransfer) {
+      const proceeds = [...sellerSide].filter(a => (m.get(a) ?? 0n) > 0n);
+      notes.push(`Seller proceeds were paid to ${proceeds.join(", ")} inside this pool fill. They include payments to the pool or shared escrow and exclude returned account rent.`);
+    }
   } else {
     // No transfer instruction reached the seller: the venue moved lamports
     // directly (Tensor's take_bid does). The seller's balance change is the

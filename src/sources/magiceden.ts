@@ -1,14 +1,9 @@
 /**
  * Magic Eden public v2 API - keyless, read-only marketplace data.
  *
- * Limits: the public API answers with `x-ratelimit-limit: 180` and an
- * `x-ratelimit-reset` time under a minute ahead (read 2026-11-10), so the
- * allowance looks like 180 requests a minute per caller. Magic Eden's own
- * documentation and terms sit behind a bot check and were not read, so that
- * figure is what the header says, not a published promise. We pace every call
- * through one gate well under it, cache aggressively, and identify ourselves
- * with a real User-Agent. Being a polite client is a feature: it is what keeps
- * a zero-key server viable.
+ * The Solana API documents 120 requests per minute and two per second.
+ * On 2026-11-19 its rate-limit header reported 180. Pace below the published
+ * allowance and honor the pause on a 429.
  */
 
 import { cached, fetchJson, HttpError, OversizedBodyError, rateLimiter, StopError } from "../lib/http.js";
@@ -107,6 +102,16 @@ export interface MeStats {
   avgPrice24hr?: number;
 }
 
+function readStats(symbol: string, opts: { fresh?: boolean; signal?: AbortSignal }) {
+  return cached(`me:stats:${symbol}`, 60_000, async (producer) => {
+    const data = await me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`, producer);
+    if (typeof data?.symbol !== "string" || data.symbol.toLowerCase() !== symbol.toLowerCase()) {
+      throw new Error("Magic Eden's stats did not identify the requested symbol. Its figures could not be checked.");
+    }
+    return data;
+  }, opts);
+}
+
 /**
  * What a caller is told when Magic Eden does not list the symbol at all.
  *
@@ -160,7 +165,9 @@ export async function symbolKnowledge(symbol: string, opts: { signal?: AbortSign
       const enc = encodeURIComponent(symbol);
       let stats: MeStats | null = null;
       try {
-        stats = await me<MeStats>(`/collections/${enc}/stats`, producer);
+        const read = await readStats(symbol, { signal: producer });
+        if (read.stale) throw new Error("Magic Eden's stats could not be refreshed to check this symbol.");
+        stats = read.data;
       } catch (e) {
         if (!(e instanceof HttpError && e.status === 404)) throw e;
       }
@@ -205,13 +212,9 @@ export async function collectionStats(symbol: string, opts: { fresh?: boolean; s
   // read is shared by every caller asking for the same symbol, and a status
   // probe's 12 s deadline must not cancel a floor request that joined it. The
   // caller's own signal ends only the caller's WAIT.
-  const read = (producer: AbortSignal) => me<MeStats>(`/collections/${encodeURIComponent(symbol)}/stats`, producer);
   // `fresh` = the venue's answer now (coalesced and committed, never a stale
   // fallback), for verifications.
-  const { data, stale, cachedAt } = await cached(`me:stats:${symbol}`, 60_000, read, { fresh: opts.fresh, signal: opts.signal });
-  if (!data || data.symbol === undefined) {
-    throw new NotFoundError(`Magic Eden has no collection with symbol "${symbol}"`);
-  }
+  const { data, stale, cachedAt } = await readStats(symbol, opts);
   // HTTP 200 != exists: ME echoes unknown symbols back as {symbol, listedCount: 0}.
   // A real-but-quiet collection still carries a volume figure; a phantom
   // carries nothing. One helper owns the phantom check, so the five market

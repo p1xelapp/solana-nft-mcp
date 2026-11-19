@@ -188,7 +188,7 @@ const oracleBytes = (results) => Buffer.concat([Buffer.alloc(36), Buffer.from(re
 
 // ------------------------------------------------------------- Magic Eden
 {
-  route = (u) => (u.includes("/collections/quiet_one/stats") ? json({ symbol: "quiet_one", floorPrice: 1_000_000_000, listedCount: 0, volume7d: 0 }) : json({ symbol: "x", floorPrice: 2_000_000_000, listedCount: 3, volume7d: 0 }));
+  route = (u) => (u.includes("/collections/quiet_one/stats") ? json({ symbol: "quiet_one", floorPrice: 1_000_000_000, listedCount: 0, volume7d: 0 }) : json({ symbol: "busy_one", floorPrice: 2_000_000_000, listedCount: 3, volume7d: 0 }));
   const quiet = await me.collectionStats("quiet_one");
   assert.strictEqual(quiet.floorPriceSol, null, "no listings, no current floor");
   assert.strictEqual(quiet.listedCount, 0);

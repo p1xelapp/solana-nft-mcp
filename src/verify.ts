@@ -652,9 +652,7 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       explanation:
         check.status === "none-backed"
           ? `Magic Eden reports a floor of ${observed} SOL, but none of the ${check.listingsChecked} cheapest listing(s) read can be bought: in every one the chain shows the seller no longer holds the item. No ask that can be paid was found among them to check the claim against.`
-          : check.status === "not-core"
-            ? `Magic Eden reports a floor of ${observed} SOL. This collection is not Metaplex Core, so whether the seller behind that listing still holds the item is not checked here, and a receipt is only given on a checked listing. get_floor_prices shows Magic Eden's figure with that label.`
-            : `Magic Eden reports a floor of ${observed} SOL, but the listing behind it could not be checked against the chain, and its floor can be a listing whose item has moved. ${check.sentence} This neither confirms nor contradicts a price someone can pay.`,
+          : `Magic Eden reports a floor of ${observed} SOL. ${check.sentence} There is no checked ask to compare with the claim.`,
       evidence,
       caveats: [...caveats, ...(check.staleExamples.length ? [`Stale listings seen: ${check.staleExamples.map((s) => `${s.priceSol} SOL (${s.why})`).join("; ")}.`] : [])],
     };
@@ -666,31 +664,30 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   evidence.push({
     source: `Magic Eden collection listings for ${symbol}, each checked against its Solana account`,
     method: "The cheapest 100 listings, cheapest first; a listing counts only when the item's Core account names the seller or Magic Eden's escrow as its owner.",
-    observed: `cheapest ask that can be bought ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`,
+    observed: `cheapest ask backed by item custody ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`,
   });
   if (check.staleBelowFloor > 0) caveats.push(`${check.staleBelowFloor} cheaper listing(s) on Magic Eden were left out: the chain shows the seller no longer holds the item, so nobody can buy at those prices.`);
 
-  // 2% tolerance: a floor moves while the claim is being made, and calling that
-  // a lie would make the tool useless.
-  if (near(floor, claimed, claimed * 0.02)) {
+  caveats.push("Custody was checked. Order execution, transfer restrictions and buyer fees were not checked.");
+  if (near(floor, claimed, roomFor(claimed, floor, 0))) {
     return {
       ...base,
       reproduce,
       verdict: "confirmed",
-      explanation: `Confirmed within 2%: the cheapest live ask that can be bought is ${floor} SOL against a claimed ${claimed} SOL.`,
+      explanation: `The cheapest custody-backed ask read was ${floor} SOL. It matches the claimed ${claimed} SOL at the quoted precision.`,
       evidence,
       caveats,
     };
   }
 
   const dir = floor > claimed ? "higher" : "lower";
-  const staleMatch = check.staleBelowFloor > 0 && near(observed, claimed, claimed * 0.02);
+  const staleMatch = check.listingsRead.some(row => row.custody === "not-backed" && row.priceSol === observed && observed === claimed);
   return {
     ...base,
     reproduce,
     verdict: "contradicted",
     explanation:
-      `Contradicted: the cheapest live ask that can be bought is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.` +
+      `The cheapest custody-backed ask read was ${floor} SOL, ${dir} than the claimed ${claimed} SOL at the quoted precision.` +
       (staleMatch ? ` The claimed figure matches Magic Eden's reported floor of ${observed} SOL, which is a listing whose seller no longer holds the item.` : ""),
     evidence,
     caveats,

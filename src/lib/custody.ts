@@ -29,7 +29,7 @@ export type Custody =
       ownerProgram?: string;
       why: string;
     }
-  | { state: "not-checked"; why: string }
+  | { state: "not-checked"; nonCore?: true; why: string }
   | { state: "unread"; why: string };
 
 export interface ListingRef {
@@ -76,7 +76,7 @@ export async function custodyOfListings(
     if (!m) return { state: "not-checked", why: "the listing carries no usable item address, so it was not checked against the chain" };
     const o = owners.get(m);
     if (!o || o.kind === "unread") return { state: "unread", why: `the chain could not be read for this item just now (${o?.kind === "unread" ? o.reason : "no answer"}), so whether the seller still holds it is unknown` };
-    if (o.kind === "not-core") return { state: "not-checked", why: "not a Metaplex Core item, so whether the seller still holds it was not checked here" };
+    if (o.kind === "not-core") return { state: "not-checked", nonCore: true, why: "not a Metaplex Core item, so whether the seller still holds it was not checked here" };
     if (o.kind === "no-account") return { state: "not-checked", why: "there is no account at this address (a compressed item has none, and neither does a closed one), so custody was not checked" };
     if (o.kind === "core-other") return { state: "not-checked", why: "the address is a Metaplex Core account that is not an item, so there is no owner to check" };
     if (o.kind === "burned") return { state: "not-backed", reason: "burned", chainOwner: null, why: "the item was burned and no longer exists, so this listing cannot be bought" };
@@ -94,7 +94,10 @@ export async function custodyOfListings(
         why: `the item's owner on chain is ${short(owner)}, not the seller, and what kind of account that is could not be read just now, so whether this listing can be bought is unknown`,
       };
     }
-    const inOpenSea = p.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM;
+    if (p.kind === "no-account") {
+      return { state: "not-checked", why: `there is no account at the item's owner address ${short(owner)}, so its role in this listing is unknown` };
+    }
+    const inOpenSea = p.program === sol.OPENSEA_SOLANA_PROGRAM;
     if (inOpenSea && venue === "opensea") {
       return { state: "backed", heldBy: "opensea-listing-account", chainOwner: owner, why: "the item sits in an OpenSea listing account, where a live OpenSea listing keeps it" };
     }
@@ -158,7 +161,7 @@ export interface CheckedFloor {
    * item, so nothing could be checked. not-requested: the caller asked for too
    * much at once and this one was left out.
    */
-  status: "backed" | "none-backed" | "unread" | "not-core" | "not-requested";
+  status: "backed" | "none-backed" | "unread" | "not-core" | "not-checked" | "not-requested";
   /** The floor to publish: the backed ask, Magic Eden's own figure when nothing could be checked, or null when every listing read is stale. */
   floorSol: number | null;
   /** Magic Eden's own reported floor, unchanged. */
@@ -253,7 +256,7 @@ export async function checkedFloor(symbol: string, venueFloorSol: number | null,
     }
     return {
       ...common,
-      status: "not-core",
+      status: c.nonCore ? "not-core" : "not-checked",
       floorSol: stale > 0 ? price : venueFloorSol,
       checked: false,
       sentence:

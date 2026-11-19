@@ -1920,11 +1920,11 @@ function groupIdentityNote(slug: string, check: Record<string, unknown> | null, 
  * established: the row keeps OpenSea's raw units and leaves every SOL figure,
  * and `why` says in one sentence what was not read.
  */
-function openSeaSolUnchecked(openseaPart: Record<string, unknown>, why: string): Record<string, unknown> {
+function openSeaSolUnchecked(openseaPart: Record<string, unknown>, why: string, disagrees = 0): Record<string, unknown> {
   const rows = Array.isArray(openseaPart.sales) ? (openseaPart.sales as Record<string, unknown>[]) : [];
   let unconfirmed = 0;
   const sales = rows.map((s) => {
-    if (s.currency !== "SOL") return s;
+    if (s.currency !== "SOL" || s.sameTransactionAs) return s;
     unconfirmed++;
     return {
       ...s,
@@ -1935,14 +1935,14 @@ function openSeaSolUnchecked(openseaPart: Record<string, unknown>, why: string):
       currencyNote: `OpenSea labels this sale SOL, and ${why}, so the label cannot be checked; OpenSea labels Magic Eden's USDC fills SOL too. The currency is unknown here and the amount is in no SOL figure. rawQuantity and decimals are OpenSea's.`,
     };
   });
-  if (unconfirmed === 0) return openseaPart;
+  if (unconfirmed === 0 && disagrees === 0) return openseaPart;
   const flagged = os.openSeaSaleFlags(sales as unknown as Parameters<typeof os.openSeaSaleFlags>[0]);
   return {
     ...openseaPart,
     sales: flagged.sales,
     ...(flagged.flagsNote ? { flagsNote: flagged.flagsNote } : {}),
-    currencyCorrections: { disagreesWithMagicEden: 0, unconfirmed },
-    currencyCorrectionsNote: `${unconfirmed} of OpenSea's rows are labelled SOL and ${why}, so none of them is counted as a SOL sale (currencyUnconfirmed), because OpenSea labels Magic Eden's USDC fills SOL too.`,
+    currencyCorrections: { disagreesWithMagicEden: disagrees, unconfirmed },
+    currencyCorrectionsNote: disagrees ? `The feeds disagree on the currency of ${disagrees} shared fill(s). Another ${unconfirmed} SOL label(s) could not be checked. Those amounts are excluded from SOL figures.` : `${unconfirmed} of OpenSea's rows are labelled SOL and ${why}, so none of them is counted as a SOL sale (currencyUnconfirmed), because OpenSea labels Magic Eden's USDC fills SOL too.`,
   };
 }
 
@@ -2033,42 +2033,11 @@ function markSameFills<M extends { signature: string | null; tokenMint: string |
     const why = meSales.length === 0 ? "Magic Eden's feed returned no sale to check it against" : "none of the Magic Eden rows read in this answer is the same fill";
     return { opensea: openSeaSolUnchecked(openseaPart, why), magicedenSales: meSales };
   }
-  // Once this read has shown OpenSea naming SOL for fills paid in a token,
-  // its SOL label on a row with no Magic Eden twin to check it against rests
-  // on the same word that was just shown wrong. Such a row's currency is not
-  // established; its raw units stay beside it.
-  let unconfirmed = 0;
-  const corrected = mislabelled === 0
-    ? sales
-    : sales.map((s) => {
-        if (s.sameTransactionAs || s.currency !== "SOL") return s;
-        unconfirmed++;
-        return {
-          ...s,
-          currency: null,
-          price: null,
-          paymentToken: null,
-          currencyUnconfirmed: true,
-          currencyNote: `OpenSea labels this sale SOL, and no Magic Eden row of the same fill was in this answer to check it against. In this same read OpenSea labelled ${mislabelled} fill(s) SOL that Magic Eden shows were paid in another currency, so this label is not established either: the currency is unknown here and the amount is in no SOL figure. rawQuantity and decimals are OpenSea's.`,
-        };
-      });
-  const flagged = mislabelled ? os.openSeaSaleFlags(corrected as unknown as OsRow[]) : null;
   return {
     opensea: {
-      ...openseaPart,
-      sales: flagged ? flagged.sales : corrected,
-      ...(flagged ? { flagsNote: flagged.flagsNote } : {}),
+      ...openSeaSolUnchecked({ ...openseaPart, sales }, "no matching Magic Eden row was read for this fill", mislabelled),
       sameTransactions: matched,
       sameTransactionsNote: `${matched} of OpenSea's rows uniquely match a sale in Magic Eden's list by transaction signature, item, buyer and seller; both rows carry sameTransactionAs. Each is one sale: count it once, and never add Magic Eden's order price to OpenSea's amount. Different items or parties remain separate sales; missing identities and repeated candidates cannot be matched here.`,
-      ...(mislabelled
-        ? {
-            currencyCorrections: { disagreesWithMagicEden: mislabelled, unconfirmed },
-            currencyCorrectionsNote:
-              `${mislabelled} of OpenSea's rows name a different currency from Magic Eden's row of the same fill (currencyDisagreesWithMagicEden): OpenSea labels Magic Eden's USDC fills SOL, with SOL's address and decimals over the USDC amount. Those rows have no established currency and are in no SOL figure` +
-              (unconfirmed ? `, and neither are the ${unconfirmed} OpenSea SOL row(s) that had no Magic Eden twin to check (currencyUnconfirmed)` : "") +
-              ". Magic Eden's rows of the same fills carry what was paid.",
-          }
-        : {}),
     },
     magicedenSales: meSales.map((s) => (linked.has(s) ? { ...s, sameTransactionAs: "opensea" as const, priceIs: "Magic Eden's order price" } : s)),
   };
@@ -3618,6 +3587,7 @@ async function openSeaSalesInWindow(
     return { status: "error", slug: found.slug, ...(openseaUrl ? { openseaUrl } : {}), note: `OpenSea's sales for this slug could not be read: ${read.error.sentence}. Not read is not zero.`, ...(read.error.code ? { code: read.error.code } : {}) };
   }
   const times = read.sales.map((s) => (s.time ? Date.parse(s.time) / 1000 : NaN));
+  const missingTime = times.filter(t => !Number.isFinite(t)).length;
   const slugRows = read.sales.filter((_, i) => Number.isFinite(times[i]) && times[i]! >= sinceUnix && times[i]! <= nowUnix);
   const oldestRead = times.filter(Number.isFinite).reduce((m, t) => Math.min(m, t), Infinity);
   // Every row read is inside the window and OpenSea had more: older sales in
@@ -3633,43 +3603,27 @@ async function openSeaSalesInWindow(
   const knownGroup = isOpenSeaGroupSlug(found.slug);
   const group = (found.solanaContracts ?? 1) > 1 || knownGroup || otherRows > 0;
   const inWindow = windowRows.length;
-  const lowerBound = moreBeyond || notChecked > 0;
+  const lowerBound = moreBeyond || notChecked > 0 || missingTime > 0;
   // OpenSea lists Magic Eden's fills too. Those are already in Magic Eden's
   // count above, so the overlap is counted, by the same unique signature,
   // item, buyer and seller rule as get_recent_sales.
   const alsoInMagicEden = meWindow ? countSameFills(windowRows, meWindow.events) : null;
-  // The same currency guard as get_recent_sales: OpenSea names SOL on Magic
-  // Eden fills paid in USDC, and Magic Eden's own row of the fill says what
-  // was paid. Such a row is not a SOL sale, and once one is seen, a SOL label
-  // with no twin to check is not established either.
-  const twinOf = (s: (typeof windowRows)[number]) => {
-    const hits = (meWindow?.events ?? []).filter((e) => e.signature === s.transaction && e.tokenMint === s.mint && e.buyer === s.buyer && e.seller === s.seller && (e.type === "buyNow" || e.type === "buy"));
-    return hits.length === 1 ? hits[0] : undefined;
-  };
   let mislabelled = 0;
   let unconfirmed = 0;
-  // One count per row: a row OpenSea already names as another currency is
-  // not counted again when Magic Eden's row disagrees with it too.
-  const notSolRows = new Set(windowRows.filter((s) => s.currency !== "SOL"));
+  let paidInOtherCurrency = 0;
   for (const s of windowRows) {
-    const twin = twinOf(s);
-    if (twin && s.currency !== null && s.currency !== (mePayment(twin).currency ?? null)) {
-      mislabelled++;
-      notSolRows.add(s);
-    }
+    const uniquelyNamed = s.transaction && s.mint && s.buyer && s.seller && windowRows.filter(row =>
+      row.transaction === s.transaction && row.mint === s.mint && row.buyer === s.buyer && row.seller === s.seller).length === 1;
+    const candidates = uniquelyNamed ? (meWindow?.events ?? []).filter(e =>
+      e.signature === s.transaction && e.tokenMint === s.mint && e.buyer === s.buyer && e.seller === s.seller && (e.type === "buyNow" || e.type === "buy")) : [];
+    const payment = candidates.length === 1 ? mePayment(candidates[0]) : null;
+    if (payment && s.currency !== null && s.currency !== payment.currency) mislabelled++;
+    if (payment) {
+      if (payment.kind === "stablecoin" || payment.kind === "other-token") paidInOtherCurrency++;
+      else if (payment.kind === "unknown") unconfirmed++;
+    } else if (s.paidInOtherToken || (s.currency !== null && s.currency !== "SOL")) paidInOtherCurrency++;
+    else unconfirmed++;
   }
-  // With no Magic Eden row the same fill as any of these, nothing here can
-  // tell a SOL sale from a mislabelled USDC fill either, as in get_recent_sales.
-  const anyTwin = windowRows.some((s) => twinOf(s) !== undefined);
-  if (mislabelled > 0 || !anyTwin) {
-    for (const s of windowRows) {
-      if (s.currency === "SOL" && !twinOf(s)) {
-        unconfirmed++;
-        notSolRows.add(s);
-      }
-    }
-  }
-  const notSol = notSolRows.size;
   return {
     status: "read",
     source: "OpenSea collection sale events",
@@ -3684,24 +3638,18 @@ async function openSeaSalesInWindow(
           alsoInMagicEdenNote: `${alsoInMagicEden} of these ${inWindow} OpenSea sales are the same fills (transaction, item, buyer and seller) as rows in Magic Eden's feed above, so they are already in Magic Eden's count${meWindow!.complete ? "" : "; Magic Eden's read did not cover the whole window, so more of them may be too"}. Count each of those once.`,
         }
       : {}),
-    ...(notSol ? { paidInOtherCurrency: notSol } : {}),
-    ...(mislabelled
-      ? {
-          currencyCorrections: { disagreesWithMagicEden: mislabelled, unconfirmed },
-          currencyCorrectionsNote: `${mislabelled} of these OpenSea sales name a different currency from Magic Eden's row of the same fill (OpenSea labels Magic Eden's USDC fills SOL)${unconfirmed ? `, and ${unconfirmed} more are labelled SOL with no Magic Eden row to check them against` : ""}; all of them are counted in paidInOtherCurrency, not as SOL sales.`,
-        }
-      : unconfirmed
-        ? {
-            currencyCorrections: { disagreesWithMagicEden: 0, unconfirmed },
-            currencyCorrectionsNote: `${unconfirmed} of these OpenSea sales are labelled SOL and none of Magic Eden's rows in the window is the same fill as any of them, so the label cannot be checked (OpenSea labels Magic Eden's USDC fills SOL); they are counted in paidInOtherCurrency, not as SOL sales.`,
-          }
-        : {}),
+    ...(paidInOtherCurrency ? { paidInOtherCurrency } : {}),
+    ...(mislabelled || unconfirmed ? {
+      currencyCorrections: { disagreesWithMagicEden: mislabelled, unconfirmed },
+      currencyCorrectionsNote: `The feeds disagree on ${mislabelled} payment label(s). The currency of ${unconfirmed} sale(s) could not be established. Only identified non-SOL payments count toward paidInOtherCurrency.`,
+    } : {}),
     countIsLowerBound: lowerBound,
+    ...(missingTime ? { missingTime } : {}),
     rowsRead: read.sales.length,
     stale: read.stale,
     cachedAt: read.cachedAt,
     note:
-      `OpenSea's own count of this collection's sales in the same window${lowerBound ? ` (at least this many: ${[moreBeyond ? "OpenSea had older rows than were read" : "", notChecked ? `${notChecked} row(s) could not be checked against this collection` : ""].filter(Boolean).join(", and ")})` : ""}. ` +
+      `OpenSea's own count of this collection's sales in the same window${lowerBound ? ` (at least this many: ${[moreBeyond ? "OpenSea had older rows than were read" : "", notChecked ? `${notChecked} row(s) could not be checked against this collection` : "", missingTime ? `${missingTime} row(s) had no readable time` : ""].filter(Boolean).join(", and ")})` : ""}. ` +
       `It is a separate figure, not added to Magic Eden's above: a fill both feeds index would be counted twice. ` +
       (group
         ? `OpenSea files more than this collection under the slug "${found.slug}"${otherRows ? `: ${otherRows} of the ${slugRows.length} sales under it in the window were items of other collections, read from each item's own account, and are not counted` : ""}${(found.solanaContracts ?? 1) > 1 ? `; its record names ${found.solanaContracts} Solana contracts` : ""}. Only rows whose item names this collection are counted.`
@@ -4012,7 +3960,7 @@ registerTool(
         listingValidityChecked: chosen.length > 0 && chosen.every(({ c }) => c.state === "backed"),
         listingValidityNote:
           `Asks from Magic Eden's index, checked against the chain in serial order: ${serialsChecked} listing(s) checked, ${staleSerials.length} left out because the seller no longer holds the item. ` +
-          "Each row's chainCheck says whether its item is still with the seller or Magic Eden's escrow (backed), could not be read (unread), or is not a Core item (not-checked).",
+          "Each row's chainCheck gives its custody result and the reason for any unchecked listing.",
         ...(staleSerials.length
           ? {
               staleListings: {
@@ -4259,7 +4207,7 @@ registerTool(
       listingValidityChecked: checkedRows.length > 0 && tallyOf("unread") === 0 && tallyOf("not-checked") === 0,
       listingValidityNote:
         `Asks from Magic Eden's index, each checked against the chain: ${tallyOf("backed")} backed (the seller or Magic Eden's escrow still holds the item), ${staleRows.length} stale and left out, ` +
-        `${tallyOf("unread")} could not be read just now and ${tallyOf("not-checked")} are not Core items; those last two stay in the deals with chainCheck saying so.`,
+        `${tallyOf("unread")} could not be read just now and ${tallyOf("not-checked")} have unchecked custody. Their chainCheck gives the reason.`,
       ...(staleRows.length
         ? {
             staleListings: {
@@ -4450,15 +4398,18 @@ registerTool(
       } catch (e) {
         failed = e instanceof Error ? e.message : String(e);
       }
-      // The book is read cheapest-first, so the first ask IS this collection's
-      // floor. Asking the stats endpoint for it as well would double the
-      // requests for a number already in hand.
-      const floor = listings.length > 0 && typeof listings[0]?.price === "number" ? listings[0].price : null;
+      const custody = await custodyOfListings(listings.map(l => ({ mint: l.tokenMint, seller: l.seller })));
+      const available = listings.map((l, i) => ({ l, custody: custody[i]! })).filter(row => row.custody.state !== "not-backed");
+      const cheapest = available[0];
+      const floor = !stale && cheapest?.custody.state === "backed" && available.every(({ l }) => usableAsk(l.price) !== null)
+        ? usableAsk(cheapest.l.price) : null;
       scanned.push({
         collection: c.name ?? c.requested,
         symbol: c.meSymbol,
         listingsRead: listings.length,
         sawWholeBook,
+        staleListingsExcluded: listings.length - available.length,
+        uncheckedListings: available.filter(row => row.custody.state !== "backed").length,
         floorSol: floor,
         stale,
         ...(c.symbolNote ? { symbolNote: c.symbolNote } : {}),
@@ -4470,14 +4421,15 @@ registerTool(
           ? { note: c.symbolNote ? "No listings came back. The symbol was matched by name, so this could also be the wrong symbol." : "No listings on Magic Eden right now." }
           : {}),
       });
-      const withSerials = listings
-        .map((l) => ({ l, s: parseSerial(l.token?.name ?? null) }))
-        .filter((x): x is { l: me.MeListing; s: { serial: number; of: number | null } } => x.s !== null)
-        .sort((a, b) => a.s.serial - b.s.serial || (a.l.price ?? Infinity) - (b.l.price ?? Infinity));
+      const withSerials = available
+        .flatMap(({ l, custody }) => {
+          const s = parseSerial(l.token?.name ?? null);
+          const price = usableAsk(l.price);
+          return s && (maxPriceSol === undefined || (price !== null && price <= maxPriceSol)) ? [{ l, s, price, custody }] : [];
+        })
+        .sort((a, b) => a.s.serial - b.s.serial || (a.price ?? Infinity) - (b.price ?? Infinity));
       const keep = lowestOnly ? withSerials.slice(0, 1) : withSerials.filter((x) => wanted.has(x.s.serial));
-      for (const { l, s } of keep) {
-        const price = typeof l.price === "number" && Number.isFinite(l.price) ? l.price : null;
-        if (maxPriceSol !== undefined && (price === null || price > maxPriceSol)) continue;
+      for (const { l, s, price, custody } of keep) {
         matches.push({
           collection: c.name ?? c.requested,
           symbol: c.meSymbol,
@@ -4490,7 +4442,8 @@ registerTool(
           // Only arithmetic on two numbers from the SAME read, so it cannot
           // describe a moment that never existed.
           pctOverFloor: price !== null && floor !== null && floor > 0 ? Math.round(((price - floor) / floor) * 1000) / 10 : null,
-          atFloor: price !== null && floor !== null && price <= floor,
+          atFloor: price !== null && floor !== null ? price === floor : null,
+          chainCheck: { state: custody.state, why: custody.why },
           stale,
         });
       }
@@ -4517,9 +4470,8 @@ registerTool(
           ? `startAt ${startAt} is past the end: this set has ${chosen.length} collections, numbered 0 to ${chosen.length - 1}, so nothing was read. Start at 0, or at any number below ${chosen.length}.`
           : remaining > 0
           ? `This call read ${slice.length} of ${chosen.length} collections. Call again with startAt ${nextStartAt} for the next batch; a "no match" only covers what has been read so far.`
-          : `Every collection in this set has now been read.`,
-        "Prices are asks on Magic Eden, not what anyone paid, and each floor is the cheapest ask in that collection's own book at the moment it was read.",
-        "Those floors are Magic Eden's own reported figures and are not checked against the chain here. Where listings outlived a move of the items (Candy collections after October 2026) a floor can be a listing nobody can buy; get_floor_prices checks one collection's floor against the chain.",
+          : `This was the last batch. See scanned and noMarketSymbol for the coverage of each collection.`,
+        "Prices are Magic Eden asks. Listings whose items moved are excluded. Each match reports its custody check. A floor is shown only when the cheapest remaining item was held by its seller or Magic Eden escrow at the time of the read.",
         "Symbols carrying a symbolNote were matched by name and are NOT checked against the chain here, because that would double the reads for a scan this size. " +
           "get_collection_stats on any single row does check it, and says so.",
         ...(noSymbol.length

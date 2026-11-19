@@ -23,6 +23,16 @@ November 19 corrections before release:
 - The Candy pack entry dates the September treasury transfers. On November 19
   at 15:36 MST (22:36 UTC), neither issuer key held a Gold Series Aces pack.
 
+Updated November 19 before release. Group serial searches check item custody
+before ranking listings. Floor receipts compare the ask at the precision
+quoted. Sale receipts require the transaction status and instruction record.
+An OpenSea sale with an unchecked SOL label stays out of SOL figures even when
+another fill on the page matches Magic Eden. A sale without a timestamp leaves
+the window count open. Magic Eden's symbol check and price share one stats read.
+Tensor Core pool receipts count payments into the pool's shared escrow and
+exclude returned account rent from the buyer total and seller proceeds.
+When no account exists at an item's owner address, its listing stays unchecked.
+
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
 chain), Candy moved holders' items into new MoonPay-powered wallets in late

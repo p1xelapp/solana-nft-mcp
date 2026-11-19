@@ -89,7 +89,7 @@ try {
   assert.equal(moved.state, "not-backed");
   assert.equal(moved.reason, "moved");
   const noSol = await verdict({ owner: "wallet-without-an-account" });
-  assert.equal(noSol.state, "not-backed", "a new wallet that holds no SOL has no account, and is still a wallet");
+  assert.equal(noSol.state, "not-checked", "an address with no account does not identify the owner's role");
   assert.equal((await verdict({ owner: "burned" })).reason, "burned");
   ok("held by the seller, in escrow, moved to a wallet and burned each get their verdict");
 

@@ -755,21 +755,17 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-magiceden-help-centre",
     category: "venue",
-    title: "Magic Eden's published royalty policy could not be checked",
+    title: "Buyers can choose an optional royalty on Magic Eden",
     venue: "magiceden",
     plain:
-      "Magic Eden is widely reported to let buyers choose none, half or all of a collection's optional royalty. That is not stated here as fact because the page saying so could not be opened. The program-level facts in the neighbouring entries were read from Magic Eden's own source code and do stand.",
+      "On eligible Solana purchases, Magic Eden lets the buyer pay all, half or none of the creator's optional royalty.",
     pitfall:
-      "Repeating a percentage policy from memory. Marketplace policies change quietly and this one is unread.",
-    documented: "Not established this session.",
-    observed:
-      "help.magiceden.io and docs.magiceden.io both answered HTTP 403 to a plain fetch and to a real headless browser; only a search-engine snippet was available.",
-    verified: false,
-    unverifiedReason:
-      "Both Magic Eden documentation hosts are behind a bot wall that refused every request made this session, so no primary text was read.",
+      "Check the collection's royalty rules before applying this buyer choice to a sale.",
+    documented: "Magic Eden describes this choice for the buy flow on collections with optional royalties.",
+    verified: true,
     source: "https://help.magiceden.io/en/articles/6645652-understanding-optional-royalties-on-solana",
-    sourceRead: READ,
-    keywords: ["magic eden", "optional royalties", "help centre", "policy", "blocked", "unverified"],
+    sourceRead: "2026-11-19",
+    keywords: ["magic eden", "optional royalties", "help centre", "policy"],
   },
   {
     id: "venue-magiceden-order-book",
@@ -1281,7 +1277,7 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Why does my collection look quiet?",
     plain:
-      "Sales answers read Magic Eden's feed, and OpenSea's when a key is available. Magic Eden's carries neither Tensor's fills nor OpenSea's own, and a feed can miss a fill, so a collection trading mostly on Tensor or OpenSea looks quiet there. For a Metaplex Core collection, get_recent_sales with chainScan: true reads its newest transactions from the chain. A misspelled symbol is refused, not shown as quiet.",
+      "Sales answers read Magic Eden's feed, and OpenSea's when a key is available. Magic Eden relays some Tensor fills. Other Tensor fills and OpenSea's own sales can be missing from that feed. For a Metaplex Core collection, get_recent_sales with chainScan: true reads its newest transactions from the chain. A misspelled symbol is refused, not shown as quiet.",
     pitfall:
       "Calling a collection dead, or a card unsold, from one feed's silence. Say which feeds were read and how far back each one reached.",
     documented: "Tensor's API page says access to its API is requested through a form, so its feed is not read here.",

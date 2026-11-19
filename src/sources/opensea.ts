@@ -853,7 +853,7 @@ export function openSeaSaleFlags<T extends { transaction: string | null; mint: s
   const sales = base.map((s, i) => ({ ...s, ...flags[i] }));
   const notSol = rows.filter((s) => s.currency !== "SOL").length;
   const flagNotes = [
-    notSol ? `${notSol} sale(s) were not paid in SOL as proved by the payment token's address (paidInOtherToken, or a currency that is not established): their price is in that token's units and belongs in no SOL figure.` : "",
+    notSol ? `${notSol} sale(s) have another payment token or an unverified currency and are excluded from SOL figures.` : "",
     flags.some((f) => f.selfFill) ? "selfFill marks a sale with one wallet as buyer and seller: no money changed hands between two parties." : "",
     flags.some((f) => f.sharedTransaction) ? "sharedTransaction marks a sale that shares its transaction with other item sales: a per-item price cannot be proven from the buyer's total." : "",
     flags.some((f) => f.farAboveRecentRange) ? "farAboveRecentRange marks a SOL price far above the other SOL sales listed here, with the numbers; it is shown as reported, not dropped or adjusted." : "",

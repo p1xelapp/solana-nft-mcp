@@ -54,6 +54,10 @@ const osEvents = {
   "collector-crypt": load("os-collector-crypt-sales-2026-11-15.json"),
   "candy-mlb": load("os-candy-mlb-sales-50-2026-11-15.json"),
 };
+if (process.env.FEEDS_TEST_MISSING_TIME === "1") {
+  const sale = osEvents["candy-mlb"].asset_events.find(e => e.transaction.startsWith("4f2Arm2W"));
+  delete sale.event_timestamp;
+}
 const osDetail = { "candy-mlb": load("os-candy-mlb-detail-2026-11-14.json") };
 const osStats = { "candy-mlb": load("os-candy-mlb-stats-2026-11-15.json") };
 export const LEADOFF = "46kCejJ7euGEmLAFqvV1j5yUzEumtwEvS9d65f6PbZ7g";
