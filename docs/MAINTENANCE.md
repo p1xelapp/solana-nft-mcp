@@ -74,3 +74,23 @@ Three signals, none of which need you to remember to look:
   fails on an embedded C2PA, XMP or editor block, so export clean or strip it on the way in.
 - `npm run test:compat` includes one group (x7, answer sizes) that reads real collections, so it
   needs the network; the other groups are offline. `npm test` does not run it.
+
+## MCP protocol migration
+
+The 1.19.0 stdio entry uses SDK v1. In a built checkout, run
+`node test/stdio-clients.mjs` for the June and November 2025 handshakes.
+Each client lists descriptors before making calls. This matters because the
+SDK caches output validators during discovery and checks structured errors too.
+
+For the July 2026 port, use the SDK v2 `serveStdio` entry and create a server
+per connection. Keep the capped stdin transport, redaction and bounded errors.
+Pass `ctx.mcpReq.signal` into the request context so cancelling a read stops
+the fetch. Exercise discovery with a v2-only client and repeat in automatic
+and legacy modes. Check source failures and malformed inputs after discovery,
+prompt attachment, cancellation during a shared fetch and stdin close. Measure
+the size of tool descriptors and replies. Run the full suite for each era and
+test the packed program on Node 22 and 24 before changing the dependency.
+SDK maintainers promised at
+least six months of v1 fixes after July 27, 2026. January 27, 2027 is the
+earliest date implied by that promise. [SDK roadmap](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/ROADMAP.md)
+and [migration guide](https://ts.sdk.modelcontextprotocol.io/v2/migration/support-2026-07-28)

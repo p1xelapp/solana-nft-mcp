@@ -38,7 +38,7 @@ counts cannot drift from the code: `npm test` fails if they do.
 Node 22 or newer. Two ways to run it.
 
 **From npm, no clone.** Wherever a client asks for a command, give it `npx` with the arguments
-`-y solana-nft-mcp`. The first start downloads the package; later starts reuse it.
+`-y solana-nft-mcp`. This starts the published version. To run this checkout, use the source setup below.
 
 ```bash
 claude mcp add solana-nft -- npx -y solana-nft-mcp
@@ -51,35 +51,94 @@ git clone https://github.com/p1xelapp/solana-nft-mcp.git
 cd solana-nft-mcp && npm install && npm run build
 ```
 
-**Claude Code**
+Use an absolute path to the built file in each example. On Windows, a path
+such as `C:/projects/solana-nft-mcp/dist/index.js` works in JSON. If the app
+cannot find Node, use the full path to the Node executable for `command`.
 
-```bash
-claude mcp add solana-nft -- node /absolute/path/to/solana-nft-mcp/dist/index.js
-```
-
-**Claude Desktop.** Settings -> Developer -> Edit Config, add the block below, then quit the
-app fully and reopen it. Or install the `.mcpb` bundle from the latest release by dragging it
-onto Settings -> Extensions.
+**Claude Desktop.** Add this entry in Settings > Developer > Edit Config and
+restart Desktop. You can also install the release's `.mcpb` from extension settings.
 
 ```json
-{
-  "mcpServers": {
-    "solana-nft": {
-      "command": "node",
-      "args": ["/absolute/path/to/solana-nft-mcp/dist/index.js"]
-    }
-  }
-}
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
 ```
 
-**Other clients.** Tested: Claude Desktop, Claude Code, Codex CLI 0.153.4
-(`codex exec -c 'mcp_servers.solana-nft.command="node"' -c 'mcp_servers.solana-nft.args=["/absolute/path/to/dist/index.js"]'`).
-Cursor, Windsurf, Gemini CLI, Zed, Cline and VS Code take the same `command` / `args` pair in
-their own config; the server is plain stdio with no client-specific code, but those have not
-been tested here. ChatGPT on the web and Grok cannot run a local process.
-The server speaks MCP protocol revision 2025-11-25. The TypeScript SDK 2.4.0 client
-connects in legacy or automatic negotiation mode. A client pinned to 2026-07-28
-requires a server that supports that revision.
+**Claude Code**
+
+```sh
+claude mcp add --transport stdio solana-nft -- node "/absolute/path/to/dist/index.js"
+```
+
+**Cursor.** Add to `.cursor/mcp.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**VS Code with Copilot.** In the Copilot harness, add to the workspace root's `.mcp.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"type":"stdio","command":"node","args":["/absolute/path/to/dist/index.js"],"tools":["*"]}}}
+```
+
+**Windsurf (now Devin Desktop).** For Devin Local, add to `.devin/mcp_config.local.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Gemini CLI.** Add to `~/.gemini/settings.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Codex CLI.** Add to `~/.codex/config.toml`.
+
+```toml
+[mcp_servers.solana-nft]
+command = "node"
+args = ["/absolute/path/to/dist/index.js"]
+```
+
+**Zed.** Add to Zed's settings JSON.
+
+```json
+{"context_servers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"],"env":{}}}}
+```
+
+**Cline.** Open MCP Servers, choose Configure, and add this entry in the MCP settings file.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Goose.** Add under `extensions` in `config.yaml`.
+
+```yaml
+extensions:
+  solana-nft:
+    name: solana-nft
+    enabled: true
+    type: stdio
+    cmd: node
+    args: ["/absolute/path/to/dist/index.js"]
+```
+
+**ChatGPT developer mode.** ChatGPT accepts an HTTPS MCP URL or a Secure MCP Tunnel.
+For this stdio package, the tunnel client runs Node on your computer. Use an
+existing tunnel ID, workspace access and a Platform runtime credential supplied
+to the tunnel client. Choose Tunnel when adding the server in ChatGPT. [Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+
+```sh
+tunnel-client init --sample sample_mcp_stdio_local --profile solana-nft --tunnel-id YOUR_TUNNEL_ID --mcp-command "node /absolute/path/to/dist/index.js"
+tunnel-client run --profile solana-nft
+```
+
+**Claude Messages API.** Its MCP connector calls tools on a publicly reachable Streamable HTTP or SSE server. Local SDK clients can call this package over stdio. The API's programmatic tool calling feature excludes connector-provided tools. [Connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) and [programmatic calling](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling)
+
+The stdio server negotiates 2025-11-25 and 2025-06-18. Clients configured to require
+2026-07-28 need the newer protocol. For scripts, read `isError` before consuming
+`structuredContent`. Successful replies also contain the same data as JSON text.
 
 **Did it work?** Your app lists the tools near the message box (Claude Code: `/mcp`). You should
 see 21, starting with `identify`. If none: the path must be absolute and end in `dist/index.js`,

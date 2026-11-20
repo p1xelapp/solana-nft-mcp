@@ -2,7 +2,16 @@
 
 ## 1.19.0 - 2026-11-15
 
-November 19 corrections before release:
+### 2026-11-19
+
+Local clients can request either the June or November 2025 protocol. Scripted
+callers receive a structured repair message when an identification request
+is empty after text cleanup. Replies declare their top-level fields.
+If the asset index cannot refresh an old missing record, that record can no
+longer rule out an item. A cached compressed item also leaves a current
+classification open until the index answers.
+
+Chain and index reads
 
 - Identification keeps a burned item's last holder in its history and reports
   failed item lookups even when the index answers its health check. A token
@@ -23,7 +32,7 @@ November 19 corrections before release:
 - The Candy pack entry dates the September treasury transfers. On November 19
   at 15:36 MST (22:36 UTC), neither issuer key held a Gold Series Aces pack.
 
-Updated November 19 before release. Group serial searches check item custody
+Group serial searches check item custody
 before ranking listings. Floor receipts compare the ask at the precision
 quoted. Sale receipts require the transaction status and instruction record.
 An OpenSea sale with an unchecked SOL label stays out of SOL figures even when
@@ -33,7 +42,7 @@ Tensor Core pool receipts count payments into the pool's shared escrow and
 exclude returned account rent from the buyer total and seller proceeds.
 When no account exists at an item's owner address, its listing stays unchecked.
 
-November 19 corrections:
+Claims and coverage
 
 - Ownership claims leave the seller unknown when an item's holder could be a
   custody account. Supply claims accept zero and distinguish an unavailable
@@ -47,7 +56,7 @@ November 19 corrections:
 - Pasting only invisible characters into `identify` now asks for an address
   or name before searching the collection directory.
 
-Changes on November 19:
+Client settings and search
 
 - `identify` provides a typed `lookup` for scripts. It can repeat an exact
   address or symbol supplied by the caller. A name match needs a choice from

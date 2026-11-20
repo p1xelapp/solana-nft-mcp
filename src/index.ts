@@ -177,11 +177,11 @@ type ToolResult = {
 // disclosure gap rather than a wrong hint, and disclosure is the fix: splitting
 // key setup into its own tool would turn the one selling point - it works with
 // no setup - into a setup.
-const READ_ONLY = { readOnlyHint: true, openWorldHint: true } as const;
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: true } as const;
 // The two tools that answer from text bundled with this package and make no
 // request at all. Marking them open-world told a client they reach outside
 // sources, which is the wrong reason to ask a person before calling them.
-const READ_ONLY_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
+const READ_ONLY_LOCAL = { ...READ_ONLY, openWorldHint: false } as const;
 
 /**
  * Every tool result carries the same payload twice, on purpose.
@@ -726,6 +726,19 @@ function resolve(idOrSymbolOrAddress: string): {
 
 // ------------------------------------------------------------------ tools
 
+// The SDK client also validates structured errors. Keep the repair message available
+// after tools/list, including on older clients that validate every structured reply.
+function resultSchema(shape: z.ZodRawShape, ...success: string[][]) {
+  const errorFields = ["error", "message", "next", "detail"];
+  const valid = success.length ? success : [Object.keys(shape)];
+  return z.looseObject(shape).partial().meta({
+    oneOf: [
+      { anyOf: valid.map(required => ({ required })), not: { required: errorFields } },
+      { required: errorFields, properties: Object.fromEntries(errorFields.map(key => [key, { type: "string" }])) },
+    ],
+  });
+}
+
 registerTool(
   "identify",
   {
@@ -747,7 +760,7 @@ registerTool(
         .max(200)
         .describe("An address, marketplace symbol/slug, or collection name"),
     },
-    outputSchema: z.looseObject({
+    outputSchema: resultSchema({
       query: z.string(),
       kind: z.string(),
       confidence: z.enum(["high", "medium", "low"]),
@@ -802,19 +815,12 @@ registerTool(
       ],
     }),
     description:
-      "Check whether something a user was TOLD is actually true. Use this whenever a claim about a " +
-      "collection or asset carries stakes - a project announcing a supply, a seller saying a card has " +
-      "never been traded, a post claiming a wallet holds something, a quoted floor price, a posted sale. Returns " +
-      "confirmed, contradicted, or unverifiable, together with the exact numbers observed, where they " +
-      "were read, and instructions to reproduce the check independently. For never-traded, transfers " +
-      "alone cannot prove a sale: migrations, gifts and listings return unverifiable. For sale ('prove this sale'), pass the " +
-      "transaction signature as subject and the item's address as item, optionally the price as value and its " +
-      "currency; the transaction is decoded from the chain (Magic Eden, its pools, Tensor and OpenSea programs, " +
-      "Metaplex Core items only) and the answer gives the venue, buyer, seller, what the seller received and " +
-      "what was paid in total, in the currency named by its mint address. A listing, delisting, plain transfer, " +
-      "delegate move or bid is not a sale. The answer does not " +
-      "require trusting this server either. Willingly answers UNVERIFIABLE rather than guessing; a " +
-      "tool that always returns true or false will eventually return false with confidence.",
+      "Check an ownership, supply, floor, sale or never-traded claim. Returns confirmed, contradicted or " +
+      "unverifiable with evidence and a way to repeat the check. For a sale, pass its transaction signature as " +
+      "subject and its Core item address as item. You may also supply a price or currency. The receipt " +
+      "distinguishes the execution venue, buyer total, seller proceeds and payment mint when the transaction " +
+      "establishes them. A transfer or listing alone cannot prove a sale. A floor receipt checks listing custody " +
+      "and leaves execution risk open.",
     annotations: READ_ONLY,
     inputSchema: {
       claim: z
@@ -921,7 +927,14 @@ async function readOracles(accounts: { account: string; resultsOffset: number }[
 async function noAccountError(mint: string, msg: string): Promise<TypedError> {
   let a: das.DasAsset | null;
   try {
-    a = (await das.getAsset(mint)).asset;
+    const read = await das.getAsset(mint);
+    if (read.stale) {
+      return new TypedError(msg, "chain-unavailable", {
+        headline: `The node returned no account at this address. The last asset index record is from ${read.cachedAt}. Its refresh failed.`,
+        next: "Retry get_asset with the same mint to check its current index record.",
+      });
+    }
+    a = read.asset;
   } catch {
     return new TypedError(msg, "chain-unavailable", {
       headline: "The node returned no account at this address. The asset index could not be read, so a compressed item is still possible.",
@@ -946,6 +959,11 @@ async function noAccountError(mint: string, msg: string): Promise<TypedError> {
 registerTool(
   "get_asset_trust",
   {
+    outputSchema: resultSchema({
+      mint: z.string(), readAt: z.string(), source: z.string(),
+      frozen: z.boolean().nullable(), ownerIsNotSoleController: z.boolean().nullable(),
+      incomplete: z.boolean(), burned: z.boolean(),
+    }, ["mint", "readAt", "source"]),
     title: "What owning this actually means",
     description:
       "Decode the Metaplex Core plugins on an asset and translate them into custody facts: can the " +
@@ -1049,6 +1067,7 @@ registerTool(
 registerTool(
   "get_integration_recipe",
   {
+    outputSchema: resultSchema({ goal: z.string(), buildingWhat: z.string() }),
     title: "Get a build recipe",
     description:
       "Use when the user wants to BUILD something with collectible data - a sales bot, a floor " +
@@ -1086,6 +1105,7 @@ registerTool(
 registerTool(
   "search_collections",
   {
+    outputSchema: resultSchema({ query: z.string(), results: z.array(z.looseObject({})), summary: z.string() }),
     title: "Search collections",
     description:
       "Find digital-collectible collections by name (e.g. 'candy gold series', 'batman', 'mad lads'). " +
@@ -1366,6 +1386,7 @@ registerTool(
 registerTool(
   "get_collection_stats",
   {
+    outputSchema: resultSchema({ requested: z.string() }),
     title: "Collection stats",
     description:
       "Market + supply stats for a collection. Accepts a registry id, a Magic Eden symbol, or a Metaplex " +
@@ -1865,6 +1886,7 @@ registerTool(
 registerTool(
   "get_floor_prices",
   {
+    outputSchema: resultSchema({ floors: z.array(z.looseObject({})), source: z.string(), summary: z.string() }),
     title: "Floor prices (Magic Eden only)",
     description:
       "Current floor price in SOL for up to 10 collections, read from MAGIC EDEN ONLY - it takes Magic Eden " +
@@ -2224,6 +2246,7 @@ async function withChainScan(enabled: boolean | undefined, collection: string, a
 registerTool(
   "get_recent_sales",
   {
+    outputSchema: resultSchema({ symbolKnown: z.boolean(), requested: z.string(), sales: z.array(z.looseObject({})) }, ["symbolKnown"], ["requested"]),
     title: "Recent sales",
     description:
       "Most recent completed sales for a collection (price with the currency actually paid, buyer, seller, tx signature). " +
@@ -2400,6 +2423,7 @@ registerTool(
 registerTool(
   "get_asset",
   {
+    outputSchema: resultSchema({ mint: z.string(), summary: z.string() }),
     title: "Asset lookup",
     description:
       "Everything known about one asset by mint address: marketplace metadata (name, image, collection, " +
@@ -2752,21 +2776,14 @@ registerTool(
 registerTool(
   "get_asset_provenance",
   {
+    outputSchema: resultSchema({ historyComplete: z.boolean(), events: z.array(z.looseObject({})) }),
     title: "Asset provenance (Core)",
     description:
-      "BOUNDED on-chain ownership history of a Metaplex Core asset: mint -> transfers (with marketplace " +
-      "labels) -> current owner. Decoded from TransferV1 instruction accounts - data most NFT APIs return " +
-      "EMPTY for on Core assets. Ideal for Candy Digital cards and any Core collectible. " +
-      "Answers 'what did my card last sell for' and 'did it sell on Tensor': a transfer through a marketplace's program names it, and " +
-      "verify_claim with claim sale and that row's signature proves the sale and its price. " +
-      "This decodes at most `depth` transactions, so on a heavily traded asset the earliest ownership can " +
-      "be outside the result: ALWAYS read `historyComplete` before describing the trail as the whole story, " +
-      "and `skippedTransactions` for how much was left out. Raise `depth` to cover more. " +
-      "A bounded walk keeps the newest transactions and the mint and drops the middle, which is where a " +
-      "recently minted asset's sale usually sits: any hole appears in `events` as an `unread_gap` row IN ITS " +
-      "PLACE in the order, so never read across one as though the trail were continuous. Lowering `depth` to " +
-      "save time is how a 'who bought it' question gets the wrong answer. " +
-      "Ownership events only: traits live in get_asset (marketplace attributes) and get_asset_trust (the on-chain Attributes plugin), so an empty trait picture here means nothing.",
+      "Read a Metaplex Core item's on-chain ownership history, including decoded sales and transfers. Use depth " +
+      "to set the transaction budget. Read historyComplete and skippedTransactions before claiming a complete " +
+      "history. An unread_gap marks the place where events are missing. A marketplace transfer alone cannot " +
+      "establish a paid sale. Use verify_claim with the signature and item for a sale receipt. Read get_asset " +
+      "for indexed traits or get_asset_trust for the on-chain Attributes plugin.",
     annotations: READ_ONLY,
     inputSchema: {
       mint: addressSchema.describe("Core asset mint address"),
@@ -2793,6 +2810,7 @@ registerTool(
 registerTool(
   "get_wallet_holdings",
   {
+    outputSchema: resultSchema({ wallet: z.string(), ownershipVerifiedOnchain: z.boolean() }),
     title: "Wallet holdings",
     description:
       "Collectibles held by a wallet, from two independent readers: Magic Eden's index (names, collections, " +
@@ -3013,21 +3031,14 @@ registerTool(
 registerTool(
   "get_collection_holders",
   {
+    outputSchema: resultSchema({ collection: z.string(), matched: z.number(), assets: z.array(z.looseObject({})), ownershipVerifiedOnchain: z.boolean() }),
     title: "Who holds every item in a collection",
     description:
-      "CENSUS of a Core collection: every asset grouped under it, with its indexed owner, straight from the " +
-      "chain's asset index. This is the only tool that sees items NOBODY HAS LISTED - every other " +
-      "collection-wide tool reads a marketplace's listing book, so an unsold item is invisible to them. " +
-      "Answers 'who won the 36 packs from that drop', 'is one wallet holding half the supply', 'how many " +
-      "are still with the issuer', 'which wallets hold this set'. Filter to part of a collection with " +
-      "`trait`/`value` (e.g. Item Type = Pack) or `namePrefix` (e.g. 'Gold Series - Aces'). Returns the " +
-      "rows plus a holder count per address, largest first. " +
-      "Every holder row carries a ROLE: issuer (the collection's update authority, read from the chain: the issuer's " +
-      "key, which says nothing about how an item got there), venue-escrow (listed on Magic Eden), opensea-listing (an " +
-      "account OpenSea's program keeps a listed item in), wallet, or unknown (the collection " +
-      "account could not be read, so nobody could be checked against the issuer's key). " +
-      "An item currently listed for sale shows the MARKETPLACE'S ESCROW as its owner, not the seller: " +
-      "call get_asset_provenance on that mint to see who handed it over.",
+      "List the indexed owners of items grouped under a Core collection, including unlisted items. Filter by " +
+      "trait and value or by namePrefix. Read matched and the omitted counts before using a displayed page as a " +
+      "total. Owners come from the asset index. Roles distinguish the issuer, venue custody, wallets and unread " +
+      "ownership information. A listing account may hold an item for its seller. Use get_asset_provenance on the " +
+      "mint to trace who handed it over.",
     annotations: READ_ONLY,
     inputSchema: {
       collection: addressSchema.describe("Core collection ADDRESS. Use identify or search_collections to turn a name into one."),
@@ -3328,6 +3339,7 @@ const PROFILE_BUDGET_MS = { holdings: 25_000, pricing: 36_000, age: 42_000 } as 
 registerTool(
   "get_wallet_profile",
   {
+    outputSchema: resultSchema({ wallet: z.string(), ownershipVerifiedOnchain: z.boolean(), summary: z.string() }),
     title: "Wallet profile",
     description:
       "What a wallet holds and what that means: items grouped by collection with counts and share of " +
@@ -3510,6 +3522,7 @@ registerTool(
 registerTool(
   "get_wallet_activity",
   {
+    outputSchema: resultSchema({ wallet: z.string(), summary: z.string() }),
     title: "Wallet activity & behaviour",
     description:
       "How a wallet trades: buys and sells with SOL totals, net flow, listings and bids, which marketplace " +
@@ -3749,19 +3762,15 @@ async function openSeaSalesInWindow(
 registerTool(
   "get_collection_sales",
   {
+    outputSchema: resultSchema({ symbolKnown: z.boolean(), symbol: z.string() }),
     title: "Sales over a period",
     description:
-      "Sales for a collection over the last N days, as Magic Eden recorded them, with every sale named by the chain's " +
-      "asset index so it can be filtered and grouped by player, character or issue: how many sold, total volume, " +
-      "highest and lowest sale, median and average, unique buyers and sellers, the biggest buyers, a per-day " +
-      "series for charts, a per-name breakdown, and the split between the order book and Magic Eden's AMM pools. " +
-      "Answers 'how many sales this week', 'how many Ohtani cards sold', 'which player sold the most', 'what was " +
-      "the top sale', 'is volume up', 'chart the last month', 'who is buying'. " +
-      "The result says how far back the feed was read and whether older sales exist beyond the page budget; " +
-      "it never fills a gap with an estimate. Magic Eden's API feed only: each row carries the execution marketplace that feed reported, and fills it did not index are not here. " +
-      "A sale paid in USDC or another token is counted, and kept out of every SOL figure. " +
-      "When OpenSea can be read and its slug is proved against the collection's on-chain address, OpenSea's own sale count for the same window is attached as a separate figure (openseaSameWindow), never added in. " +
-      "For Tensor sales and OpenSea's own sales of a Metaplex Core collection, use get_recent_sales with chainScan: true, which reads them from the chain.",
+      "Check how many sales a collection recorded over a window in days. Magic Eden's feed supplies the execution venue, currency " +
+      "and parties it recorded. Filter or group by indexed item names, inspect daily counts, buyer activity and " +
+      "SOL price statistics. Non-SOL sales count toward activity and stay out of SOL amounts. Read the coverage " +
+      "fields before quoting a window total. If the OpenSea slug matches the on-chain collection, " +
+      "openseaSameWindow reports its own count separately. For Core sales visible on chain, including Tensor and " +
+      "OpenSea, use get_recent_sales with chainScan enabled.",
     annotations: READ_ONLY,
     inputSchema: {
       symbol: symbolSchema.describe("Magic Eden collection symbol (search_collections resolves a name to one)"),
@@ -3906,6 +3915,7 @@ registerTool(
 registerTool(
   "find_listings",
   {
+    outputSchema: resultSchema({ symbolKnown: z.boolean(), listingValidityChecked: z.boolean() }, ["symbolKnown"], ["listingValidityChecked"]),
     title: "Find listings and deals",
     description:
       "What is for sale in a collection right now, cheapest first, with optional trait filters, a name filter, " +
@@ -4378,6 +4388,7 @@ registerTool(
 registerTool(
   "find_in_group",
   {
+    outputSchema: resultSchema({ group: z.string().nullable(), summary: z.string(), scannedThisCall: z.number() }),
     title: "Hunt across a family of collections",
     description:
       "Search MANY collections at once for a specific edition number. DC comics on Candy are 272 separate " +
@@ -4581,6 +4592,7 @@ registerTool(
 registerTool(
   "get_top_traders",
   {
+    outputSchema: resultSchema({ symbolKnown: z.boolean() }),
     title: "Top traders of a collection",
     description:
       "The wallets with the most trading volume in a collection as Magic Eden counts it (its own fills, all " +
@@ -4608,6 +4620,7 @@ registerTool(
 registerTool(
   "get_trending",
   {
+    outputSchema: resultSchema({ collections: z.array(z.looseObject({})), count: z.number(), timeRange: z.string() }),
     title: "What is hot on Magic Eden",
     description:
       "Magic Eden's own trending collections for a time range. Answers 'what is hot', 'top collections today', " +
@@ -4667,6 +4680,7 @@ registerTool(
 registerTool(
   "explain_mechanics",
   {
+    outputSchema: resultSchema({ entries: z.array(z.looseObject({})), count: z.number() }),
     title: "How NFTs are handled: escrow, freezing, delegates, royalties",
     description:
       "Plain-words explanation of how a standard or a marketplace actually handles an asset: why an NFT moved to an " +
@@ -4724,6 +4738,7 @@ registerTool(
 registerTool(
   "get_source_status",
   {
+    outputSchema: resultSchema({ checkedAt: z.string(), sources: z.array(z.looseObject({})) }),
     title: "Which sources are answering",
     description:
       "Live health of every data source this server reads, with tier, what each answers, what it cannot see, " +

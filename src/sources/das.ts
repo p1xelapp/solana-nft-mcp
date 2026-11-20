@@ -674,6 +674,9 @@ export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}):
       throw e;
     }
   }, { signal: opts.signal });
+  if (stale && data === null) {
+    throw new Error(`The asset index could not refresh its missing record for ${id} from ${cachedAt}.`);
+  }
   return { asset: data ? normalise(data.raw, data.endpoint, cachedAt) : null, stale, cachedAt };
 }
 
