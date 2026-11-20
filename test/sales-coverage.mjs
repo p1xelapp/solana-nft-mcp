@@ -19,8 +19,8 @@ await check('five-page cap is disclosed instead of calling a market quiet',()=>f
   const r=await call(s,'get_recent_sales',{collection:'mad_lads'});assert(!r.error);assert.equal(r.data.coverage.budgetReached,true);assert.equal(r.data.activitiesScanned,500);assert(!/quiet.*market/.test(r.data.note));
 }));
 for(const profile of ['unlocked','oracle-missing','oracle-unread']) await check(`${profile} oracle is read over stdio`,()=>fixture(profile,async s=>{
-  const r=await call(s,'get_asset_trust',{mint:MINT});assert(!r.error);assert(!r.data.blockedByOracle.includes('transfer'));assert(r.data.oracleChecks.length>0);
-  if(profile==='oracle-unread') {assert.equal(r.data.incomplete,true);assert.equal(r.data.oracleChecks[0].reading.state,'unread');}
+  const r=await call(s,'get_asset_trust',{mint:MINT});assert(!r.error);assert(!(r.data.blockedByOracle??[]).includes('transfer'));assert(r.data.oracleChecks.length>0);
+  if(profile==='oracle-unread') {assert.equal(r.data.incomplete,true);assert.equal(r.data.blockedByOracle,null,'an unread oracle is neither refusing nor clear');assert.equal(r.data.oracleChecks[0].reading.state,'unread');}
   else {assert.deepEqual(r.data.blockedByOracle,['burn']);assert.equal(r.data.oracleChecks[0].reading.state,profile==='oracle-missing'?'missing':'answered');}
   if(profile==='unlocked') assert(Number.isInteger(r.data.oracleChecks[0].reading.slot));
 }));

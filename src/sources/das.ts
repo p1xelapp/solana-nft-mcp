@@ -18,8 +18,8 @@
 
 import { createHash } from "node:crypto";
 
-import { AbortedError, assertOnline, cached, combineSignals, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs } from "../lib/http.js";
-import { withAmbient } from "../lib/context.js";
+import { AbortedError, assertOnline, cached, combineSignals, originGate, readBoundedJson, OversizedBodyError, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs, sourceName } from "../lib/http.js";
+import { noteSourceUse, withAmbient } from "../lib/context.js";
 import { clean, safeHttpsUrl } from "../lib/untrusted.js";
 import { USER_AGENT } from "../lib/version.js";
 import { objectRows } from "../lib/shapes.js";
@@ -94,6 +94,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
     // share the host, and a 429 with a Retry-After was addressed to both.
     const pausedFor = originPauseLeftMs(ep.url);
     if (pausedFor > 0) {
+      noteSourceUse(sourceName(ep.url), { skippedForPause: 1 });
       last = `${ep.id} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`;
       continue;
     }
@@ -123,6 +124,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
         continue;
       }
       if (r.status === 429 || r.status >= 500) {
+        noteSourceUse(sourceName(ep.url), r.status === 429 ? { rateLimited: 1 } : { failed: 1 });
         const asked = r.status === 429 ? retryAfterMs(r.headers.get("retry-after")) : 0;
         await r.body?.cancel().catch(() => undefined);
         last = asked > 0 ? `${ep.id} answered HTTP 429 and asked for a ${Math.round(pauseOrigin(ep.url, asked) / 1000)} s pause` : `${ep.id} answered HTTP ${r.status}`;
@@ -133,6 +135,7 @@ async function call<T>(method: string, params: Record<string, unknown>, signal?:
       j = await readBoundedJson<{ result?: T; error?: RpcError }>(r, ep.id);
     } catch (e) {
       if (e instanceof OversizedBodyError) throw e;
+      noteSourceUse(sourceName(ep.url), { failed: 1 });
       // `JSON.parse` puts a slice of the offending body into its own message,
       // so this text is partly written by the endpoint. It travels into the
       // capability note and from there into a successful status answer.
@@ -733,7 +736,7 @@ export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal
         // Every ROW is validated, not just the container: one `null` item, or a
         // row whose `grouping` is an object instead of an array, used to crash
         // normalise() mid-answer and return nothing at all.
-        const rows = objectRows<RawAsset>(SOURCE, "getAssetsByOwner items", result.items);
+        const rows = objectRows<RawAsset>(SOURCE, "getAssetsByOwner items", result?.items);
         if (rows.length > limit) {
           throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
         }
@@ -790,6 +793,8 @@ export interface DasGroupPage {
   /** True when the index served a short page, its own signal that the group ends here. */
   indexExhausted: boolean;
   rowsRejected: number;
+  /** Rows that were Metaplex Core groups, which list things and are not items. Left out of the count. */
+  groupRows: number;
   /** Rows seen again on a later page (same id). Counted once in `items`. */
   duplicateRows: number;
   /** Duplicates whose owner or membership disagreed between copies. Neither copy is trusted; the row is dropped. */
@@ -843,6 +848,7 @@ export async function getAssetsByGroup(
   let truncated = false;
   let indexExhausted = false;
   let rowsRejected = 0;
+  let groupRows = 0;
   let duplicateRows = 0;
   let conflictingRows = 0;
   let foreignGroupRows = 0;
@@ -866,7 +872,7 @@ export async function getAssetsByGroup(
             { groupKey: "collection", groupValue: collection, page, limit, displayOptions: { showFungible: false } },
             combineSignals(CENSUS_DEADLINE_MS, producer),
           );
-          const rows = objectRows<RawAsset>(SOURCE, "getAssetsByGroup items", result.items);
+          const rows = objectRows<RawAsset>(SOURCE, "getAssetsByGroup items", result?.items);
           if (rows.length > limit) {
             throw new Error(`${SOURCE} returned ${rows.length} items for a page of ${limit} - the endpoint is not honouring its own page size, so the page was refused rather than processed`);
           }
@@ -889,7 +895,10 @@ export async function getAssetsByGroup(
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
     for (const raw of data.items) {
       const a = normalise(raw, data.endpoint, hit.cachedAt);
-      if (a.standard === "metaplex-core-group") { rowsRejected++; continue; }
+      // A Core group listed under the collection is an account that lists
+      // things, not an item anyone holds: left out of the count and named, not
+      // counted as an unreadable row (which made a complete census a floor).
+      if (a.standard === "metaplex-core-group") { groupRows++; continue; }
       // Membership is evidence, not the fact of being on the page. A row that
       // names another collection, or whose grouping the index itself marks
       // unverified, was being counted as a holder of THIS collection.
@@ -949,6 +958,7 @@ export async function getAssetsByGroup(
     truncated,
     indexExhausted,
     rowsRejected,
+    groupRows,
     duplicateRows,
     conflictingRows,
     foreignGroupRows,

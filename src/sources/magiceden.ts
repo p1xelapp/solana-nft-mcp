@@ -655,11 +655,15 @@ export async function walletTokens(wallet: string, limit: number) {
   }
   const { data, stale, cachedAt } = hit;
   if (!Array.isArray(data)) throw new Error("Magic Eden returned an unexpected wallet shape");
+  // A null or non-object row is not a holding. It used to end the answer with
+  // the runtime's "Cannot read properties of null"; it is dropped and counted.
+  const rows = data.filter((t): t is MeToken => t !== null && typeof t === "object");
   return {
     wallet,
-    count: data.length,
+    count: rows.length,
+    ...(rows.length < data.length ? { rowsUnreadable: data.length - rows.length } : {}),
     capped: data.length >= Math.min(limit, 100),
-    tokens: data.map((t) => ({
+    tokens: rows.map((t) => ({
       mint: venueAddress(t.mintAddress),
       name: t.name ? clean(t.name) : null,
       collection: t.collection ? clean(t.collection) : null,

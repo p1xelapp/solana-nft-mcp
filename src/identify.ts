@@ -1014,7 +1014,7 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
   }
   notChecked.push(
     "Non-Solana chains. This server is Solana-only by design; an Ethereum or Base collection will not be found here even if it exists.",
-    "Devnet and testnet. Every read here is Solana mainnet-beta; an address that exists on another cluster is a different account with no mainnet price, and nothing is invented for it.",
+    "Devnet and testnet. Every read here is Solana mainnet (formerly called mainnet-beta); an address that exists on another cluster is a different account with no mainnet price, and nothing is invented for it.",
   );
   if (timedOut()) {
     notChecked.push(
@@ -1139,16 +1139,22 @@ async function runIdentify(q: string, signal: AbortSignal, timedOut: () => boole
     kind = "indexed-asset";
     identifiers.mint = q;
     if (indexed.collection) identifiers.collection = indexed.collection;
+    // A Core item reaches this branch only when its own account was not read:
+    // the byte-level read applies to it and failed, which is not the same as
+    // not applying, and the index's owner is then unconfirmed.
+    const coreUnread = typeof indexed.standard === "string" && indexed.standard.startsWith("metaplex-core");
     const owner = indexedStale
       ? `The index last recorded ${indexed.owner ?? "no owner"} as the holder, but that read came from cache after a failed refresh - it is last-known, not current.`
       : indexed.owner
-        ? `The index names ${indexed.owner} as the current holder; the byte-level read that would settle it does not apply to this standard.`
+        ? coreUnread
+          ? `The index names ${indexed.owner} as the holder. The item's own Core account, which would confirm it, could not be read just now, so that is the index's record, not a confirmed current holder.`
+          : `The index names ${indexed.owner} as the current holder; the byte-level read that would settle it does not apply to this standard.`
         : "The index reported no owner for it.";
     summary =
       `${indexed.name ? `"${indexed.name}"` : q} is a single ${indexed.standard} asset on Solana, read from the chain's asset index rather than from a Core account. ` +
       owner +
       (indexed.collection ? ` It is grouped under collection ${indexed.collection}${indexed.collectionVerified === true ? " (verified)" : indexed.collectionVerified === false ? " (unverified grouping)" : " (the index did not say whether the grouping is verified)"}.` : "");
-    confidence = indexedStale ? "low" : "medium";
+    confidence = indexedStale || coreUnread ? "low" : "medium";
     next.push("get_asset", "explain_mechanics");
   } else if (nameCandidates.length > 1) {
     // Several collections answer to this name. Picking the top-scoring one

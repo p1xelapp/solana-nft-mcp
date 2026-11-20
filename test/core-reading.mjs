@@ -33,7 +33,8 @@ await check("an unread inherited oracle remains incomplete for events the asset 
   const collection = { ...base, kind: "collection", externalPlugins: 1, external: [oracle(["burn"])] };
   const trust = deriveTrust(asset, collection, new Map([[oracleReadingKey(address, 5), reading("pass", "pass")]]));
   assert.equal(trust.incomplete, true);
-  assert.deepEqual(trust.blockedByOracle, []);
+  // Unread, so neither refusing nor clear.
+  assert.equal(trust.blockedByOracle, null);
 });
 
 const realFetch = globalThis.fetch;

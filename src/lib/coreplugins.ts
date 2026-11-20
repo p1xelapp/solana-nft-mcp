@@ -190,10 +190,12 @@ export interface CoreTrust {
   /**
    * Actions an oracle check refused at read time (transfer, burn, update).
    * An ordinary transfer, sale or burn fails on chain while it is listed here.
-   * Empty with `incomplete: false` means every attached oracle was read and
-   * none refused; with `incomplete: true` an unread adapter may still refuse.
+   * Empty means every oracle that could apply was read and none refused. Null
+   * means an oracle or the collection that may carry one was not read, so an
+   * unread check may still refuse: an empty list there read as "nothing is
+   * blocked" for a Candy item whose burn its oracle refused.
    */
-  blockedByOracle: string[];
+  blockedByOracle: string[] | null;
   /** One row per oracle check, with what its account answered when read. */
   oracleChecks: { account: string; inheritedFromCollection: boolean; events: string[]; reading: OracleReading }[];
   /** True when a party other than the owner can move, freeze or burn it without the owner's signature. */
@@ -667,7 +669,7 @@ export function deriveTrust(
   if (me?.data) { const ms = me.data.maxSupply; out.assurances.push(`Master edition records an intended maximum supply of ${typeof ms === "number" ? String(ms) : "unspecified"}. This is informational and does not enforce a minting cap.`); }
   if (has("BubblegumV2")) out.assurances.push("Collection admits compressed (Bubblegum v2) NFTs; some members need a DAS indexer to read.");
 
-  if (out.blockedByOracle.length) {
+  if (out.blockedByOracle?.length) {
     const viaCollection = blockedVia.has(true) ? " It is set on the collection, so it applies to every asset in it." : "";
     const accounts = [...new Set(out.oracleChecks.map((c) => c.account))].join(", ");
     // Say what each refusal stops, and only that: a refused burn says nothing
@@ -709,6 +711,8 @@ export function deriveTrust(
   const registryIncomplete = Boolean(asset.decodeNote || collection?.decodeNote || (asset.collection && !collection));
   if (!out.frozen && (registryIncomplete || plugins.some((p) => p.unsupported || (p.unreadable && (p.type === "FreezeDelegate" || p.type === "PermanentFreezeDelegate"))))) out.frozen = null;
   if (!out.ownerIsNotSoleController && (registryIncomplete || plugins.some((p) => p.unsupported))) out.ownerIsNotSoleController = null;
+  // Nothing refused only counts when every check that could refuse was read.
+  if (out.blockedByOracle?.length === 0 && (unreadExternal > 0 || registryIncomplete)) out.blockedByOracle = null;
   return out;
 }
 

@@ -114,7 +114,7 @@ const oracleBytes = (results) => Buffer.concat([Buffer.alloc(36), Buffer.from(re
   assert.deepStrictEqual(both.blockedByOracle, []);
 
   const unread = deriveTrust(a, col);
-  assert.deepStrictEqual(unread.blockedByOracle, [], "an unread oracle is not reported as refusing");
+  assert.strictEqual(unread.blockedByOracle, null, "an unread oracle is reported neither as refusing nor as clear");
   assert.strictEqual(unread.incomplete, true, "an unread oracle keeps the picture incomplete");
 
   const missing = deriveTrust(a, col, new Map([[KEY, { account: ORACLE, state: "missing" }]]));

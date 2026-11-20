@@ -11,6 +11,11 @@ not covered by that annotation and are listed instead. Against the chain and
 the marketplaces, the failure to plan for is a wrong or stale number, and the
 server is built to label those rather than hide them.
 
+It talks to its client over stdio only and opens no network listener, so no
+web page or other program on the machine can reach it through a local port.
+That rules out the DNS-rebinding attacks reported against local MCP servers
+that serve HTTP on localhost.
+
 That is the boundary against the chain and the marketplaces. Two things this server
 does on the machine it runs on are worth knowing about, because "read-only"
 does not describe them:

@@ -1,0 +1,6 @@
+# Reviews here are asked for by hand. Without this file every pull request
+# got a "review skipped" comment and an email about it.
+reviews:
+  review_status: false
+  auto_review:
+    enabled: false

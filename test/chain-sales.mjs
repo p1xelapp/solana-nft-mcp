@@ -223,6 +223,36 @@ await check("Tensor buy_core and take_bid_core decode, including a take_bid with
   assert.equal(decode("4LpSHwhD").sellerReceived, 0.44);
 });
 
+await check("OpenSea accepted offers decode from the four real ones read on 19 Nov, formats 0 and 1", () => {
+  // Read from each transaction: the owner signs the Core transfer, the bid's
+  // maker receives the item, and both match what Magic Eden's feed, OpenSea's
+  // events and two independent sales trackers named as seller and buyer.
+  const cases = [
+    ["pJ9N9DBw", "F8DXmSC8YnmHhSug43jDgZTrZf1fcFrPG8Jag1VEpNyv", "GSDYkE48fpE4NsmAe33SAHG7NkT1UEVef9sEPYgmiCdw", "F8XUzWRDk1CgSK71gzHUwAhAmnuHAswFMjMuucg4wDXJ", 9, 8.01],
+    ["2EtaxMjQ", "9fZQYTMtMtnGxuiWACC38FNLMLfr8j46TF6pYfh3XHXH", "Cj3JFK2BEYgKBVe1nMWRJSJQedwSnfXrbLAq85GxJBGR", "4HxGJqg6C7f2kDLE28Uo7SSMoCvCZ3vNHwXCir6z3W12", 0.207239569, 0.184443219],
+    ["5ZPV4WNS", "C2izKusB8itoCwDEgfeQVATLDhbi69RkKXyw1AjyQ1L7", "Cj3JFK2BEYgKBVe1nMWRJSJQedwSnfXrbLAq85GxJBGR", "4HxGJqg6C7f2kDLE28Uo7SSMoCvCZ3vNHwXCir6z3W12", 0.345065562, 0.307108352],
+    ["2dwU7fQp", "4WLDYKK1Mnzvg2xdbYimZr7LtnBzutpfdRESySzNc3gF", "GKnNhZy9omvMmjBNfwktA37kyQ6TE9zdrhxDbxv7yd4K", "Fb9vvwNdMcVsvpgsgVFuDvgGvbsoairdTFDajw6wF4pK", 0.006, 0.00534],
+  ];
+  assert.deepEqual([tx("pJ9N9DBw").version, tx("2EtaxMjQ").version], [0, 1]);
+  for (const [short, item, seller, buyer, paid, received] of cases) {
+    const d = decode(short, item);
+    assert.equal(d.status, "sale", `${short}: ${d.reason}`);
+    assert.equal(d.venue, "OpenSea", short);
+    assert.equal(d.instruction, "take_bid_core", short);
+    assert.equal(d.layout, "observed", short);
+    assert.equal(d.seller, seller, short);
+    assert.equal(d.buyer, buyer, short);
+    assert.equal(d.currency.code, "SOL", short);
+    assert.equal(d.price, paid, short);
+    assert.equal(d.sellerReceived, received, short);
+    assert.doesNotMatch(d.notes.join(" "), /inferred/, short);
+  }
+  // The closed bid's rent went back to its maker, not into anyone's price.
+  assert.match(decode("pJ9N9DBw", cases[0][1]).notes.join(" "), /rent this transaction returned went to F8XUzWRDk1CgSK71gzHUwAhAmnuHAswFMjMuucg4wDXJ/);
+  // Control: the same transaction is not a sale of an item it never moved.
+  assert.equal(decode("pJ9N9DBw", ITEM["5wrdbZQq"]).status, "not-a-sale");
+});
+
 await check("an accepted offer (listed and sold in one transaction) is a sale, not two moves nobody can read", () => {
   const d = decode("3mF1UcUZ");
   assert.equal(d.status, "sale");
@@ -689,27 +719,22 @@ await check("chain rows use the marketplace rows' currency fields: paymentToken,
   assert.equal(sol.paidInOtherToken, undefined);
 });
 
-/** The real Tensor take_bid rewritten as OpenSea's take_bid_core, whose slots are Tensor's plus one and inferred: no real one has been seen. */
-const asOpenSeaTakeBid = (newSig) => {
-  const t = tx("3NoxXys3");
-  const ix = t.transaction.message.instructions.find((i) => i.programId === "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp");
-  ix.programId = "7Aru291A64wrTkUDaRv6HqxVBre6ivXWL94cUoCtQF9V";
-  ix.accounts = ["11111111111111111111111111111111", ...ix.accounts];
-  if (newSig) t.transaction.signatures[0] = newSig;
-  return t;
-};
-
 await check("a chain row through a layout no real transaction has checked says it is a probable sale", () => {
-  const d = decodeSale(asOpenSeaTakeBid(), ITEM["3NoxXys3"], sig("3NoxXys3"));
+  // Tensor's own buy_core_spl: its slots come from published code and no real
+  // one has been read. (OpenSea's take_bid_core was the example until four
+  // real ones were read on 19 Nov 2026.)
+  const d = decodeSale(asTensorSplBuy(), ITEM.A3SuTWZ4, sig("A3SuTWZ4"));
   assert.equal(d.status, "sale", d.reason);
-  assert.equal(d.layout, "inferred");
+  assert.equal(d.layout, "published-unchecked");
   const row = chainSaleRow(d);
   assert.equal(row.layoutUnchecked, true);
   assert.match(row.layoutNote, /probable sale, not a proven one/);
-  // Control: the real Tensor take_bid, a published layout, carries no such flag.
+  // Controls: the real Tensor take_bid, a published layout, and a real
+  // OpenSea accepted offer carry no such flag.
   const real = chainSaleRow(decode("3NoxXys3"));
   assert.equal(real.layoutUnchecked, undefined);
   assert.equal(real.layoutNote, undefined);
+  assert.equal(chainSaleRow(decode("pJ9N9DBw", "F8DXmSC8YnmHhSug43jDgZTrZf1fcFrPG8Jag1VEpNyv")).layoutUnchecked, undefined);
 });
 
 await check("a chain row far above the SOL sales already in the answer carries the feed rows' flag", () => {
@@ -915,16 +940,15 @@ await check("verify_claim sale on a self-fill: neither a sale nor a price is con
 });
 
 await check("verify_claim sale gives no verdict through an unchecked layout, not even on the currency", async () => {
-  const fake = saltedSig(sig("3NoxXys3"), "Q");
-  synthetic.set(fake, { tx: asOpenSeaTakeBid(fake) });
-  const r = await verifyClaim({ claim: "sale", subject: fake, item: ITEM["3NoxXys3"], value: 0.0294, currency: "USDC" });
+  const fake = saltedSig(sig("A3SuTWZ4"), "Q");
+  synthetic.set(fake, { tx: asTensorSplBuy(fake) });
+  const r = await verifyClaim({ claim: "sale", subject: fake, item: ITEM.A3SuTWZ4, value: 3115.141221, currency: "USDC" });
   assert.equal(r.verdict, "unverifiable", r.explanation);
-  assert.match(r.explanation, /inferred/);
-  assert.match(r.evidence[0].method, /inferred from a sibling program/);
-  // Control: the real take_bid, a published layout, is contradicted on the same currency.
-  const real = await verifyClaim({ claim: "sale", subject: sig("3NoxXys3"), item: ITEM["3NoxXys3"], value: 0.0294, currency: "USDC" });
+  assert.match(r.explanation, /no real transaction of its kind has been checked/);
+  // Control: OpenSea's real one, an observed layout, is contradicted on the same currency.
+  const real = await verifyClaim({ claim: "sale", subject: sig("A3SuTWZ4"), item: ITEM.A3SuTWZ4, value: 3115.141221, currency: "USDC" });
   assert.equal(real.verdict, "contradicted", real.explanation);
-  assert.match(real.explanation, /paid in SOL, not USDC/);
+  assert.match(real.explanation, /not USDC/);
 });
 
 await check("the decoder reads through the shared transaction helper: a newer format is asked for once, past the ceiling is unread", async () => {
@@ -1113,6 +1137,31 @@ await check("a reply without the signature asked for is not kept, and a sale cla
   const kept = callsBy.getTransaction.get(sig("4f2Arm2W")) ?? 0;
   await readTransaction(sig("4f2Arm2W"));
   assert.equal(callsBy.getTransaction.get(sig("4f2Arm2W")) ?? 0, kept);
+});
+
+await check("a sale whose inner instruction list came back empty is an incomplete record, never not a sale, and is not kept", async () => {
+  // Derived from four captured sales: only meta.innerInstructions set to [].
+  for (const short of ["5wrdbZQq", "A3SuTWZ4", "2tssstvw", "pJ9N9DBw"]) {
+    const t = tx(short);
+    t.meta.innerInstructions = [];
+    const item = short === "pJ9N9DBw" ? "F8DXmSC8YnmHhSug43jDgZTrZf1fcFrPG8Jag1VEpNyv" : ITEM[short];
+    const d = decodeSale(t, item, sig(short));
+    assert.equal(d.status, "cannot-tell", `${short}: ${d.status} ${d.reason}`);
+    assert.match(d.reason, /record of it is incomplete/, short);
+  }
+  const s = saltedSig(sig("5wrdbZQq"), "e");
+  const t = tx("5wrdbZQq");
+  t.meta.innerInstructions = [];
+  t.transaction.signatures[0] = s;
+  synthetic.set(s, { tx: t });
+  const r = await verifyClaim({ claim: "sale", subject: s, item: ITEM["5wrdbZQq"], value: 0.3 });
+  assert.equal(r.verdict, "unverifiable", r.explanation);
+  // Not kept: the next read asks the node again.
+  const before = callsBy.getTransaction.get(s) ?? 0;
+  await verifyClaim({ claim: "sale", subject: s, item: ITEM["5wrdbZQq"], value: 0.3 });
+  assert.ok((callsBy.getTransaction.get(s) ?? 0) > before, "an incomplete reply must not be served from the cache");
+  // Control: the captured reply is the sale it is.
+  assert.equal(decode("5wrdbZQq").status, "sale");
 });
 
 await check("the scan counts a reply with no status or no message as unreadable, never as not a sale", async () => {
@@ -1319,6 +1368,22 @@ try {
     assert.match(no.explanation, /0\.3/);
     // No price claimed: whether it was a sale at all.
     assert.equal((await s.call("verify_claim", { claim: "sale", subject: sig("5wrdbZQq"), item: ITEM["5wrdbZQq"] })).verdict, "confirmed");
+  });
+
+  await check("verify_claim sale: an OpenSea accepted offer of 9 SOL is confirmed, and 7 SOL is contradicted", async () => {
+    const item = "F8DXmSC8YnmHhSug43jDgZTrZf1fcFrPG8Jag1VEpNyv";
+    const yes = await s.call("verify_claim", { claim: "sale", subject: sig("pJ9N9DBw"), item, value: 9, currency: "SOL" });
+    assert.equal(yes.verdict, "confirmed", yes.explanation);
+    assert.match(yes.explanation, /OpenSea/);
+    assert.equal((await s.call("verify_claim", { claim: "sale", subject: sig("pJ9N9DBw"), item, value: 8.01 })).verdict, "confirmed");
+    const no = await s.call("verify_claim", { claim: "sale", subject: sig("pJ9N9DBw"), item, value: 7 });
+    assert.equal(no.verdict, "contradicted", no.explanation);
+    // Whether it was a sale at all, with no price claimed.
+    assert.equal((await s.call("verify_claim", { claim: "sale", subject: sig("pJ9N9DBw"), item })).verdict, "confirmed");
+    // The bid was 0.20724 SOL; the payments it split into add up to 431
+    // lamports less. The figure as marketplaces print it rounds to that.
+    const bid = await s.call("verify_claim", { claim: "sale", subject: sig("2EtaxMjQ"), item: "9fZQYTMtMtnGxuiWACC38FNLMLfr8j46TF6pYfh3XHXH", value: 0.20724, currency: "SOL" });
+    assert.equal(bid.verdict, "confirmed", bid.explanation);
   });
 
   await check("verify_claim sale: a memecoin sale claimed in SOL is contradicted, in its own mint confirmed", async () => {
