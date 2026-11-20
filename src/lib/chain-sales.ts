@@ -271,7 +271,11 @@ venue(sol.OPENSEA_SOLANA_PROGRAM, {
   ix: {
     buy_core: { kind: "sale", buyer: 5, seller: 7, layout: "observed" },
     buy_core_spl: { kind: "sale", buyer: 3, seller: 8, layout: "observed" },
-    take_bid_core: { kind: "sale", seller: 2, buyer: 4, rentTo: 17, layout: "inferred" },
+    // Four real accepted offers on Candy items (2026-11-19, 0.006 to 9 SOL,
+    // formats 0 and 1): the item's owner signs the Core transfer from slot 2,
+    // the bid's maker in slot 4 receives the item, the bid account in slot 3
+    // pays, and the closed bid's rent returns to slot 24, the maker again.
+    take_bid_core: { kind: "sale", seller: 2, buyer: 4, rentTo: 24, layout: "observed" },
     ...TENSOR_NON_SALE,
   },
 });
@@ -543,6 +547,20 @@ function parse(raw: unknown): Parsed | string {
       if (!node) return "an inner instruction in the transaction has no program";
       nodes.push(node);
       stack.push(nodes.length - 1);
+    }
+  }
+  // A marketplace sale that succeeded called Metaplex Core to move the item,
+  // so a sale instruction with nothing recorded under it is the node's record
+  // being incomplete (an empty list where its calls belong), not a sale that
+  // moved nothing. Read as it was, a real 0.3 SOL sale was contradicted, and
+  // the reply was kept for an hour.
+  if (!failed) {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]!;
+      const def = VENUES[n.programId]?.table[anchorHex(n) ?? ""];
+      if (def?.kind === "sale" && !nodes.some((c) => c.parent === i)) {
+        return "a marketplace sale instruction in this successful transaction has no recorded inner instructions, so the node's record of it is incomplete";
+      }
     }
   }
   const slot = typeof tx.slot === "number" && Number.isSafeInteger(tx.slot) ? tx.slot : null;
@@ -1494,12 +1512,16 @@ export async function scanCollectionSales(
     }
     read++;
     let tx: unknown;
+    const readSignal = bounded(until - Date.now());
     try {
-      tx = await readTransaction(s.signature, { signal: bounded(until - Date.now()), trace });
+      tx = await readTransaction(s.signature, { signal: readSignal, trace });
     } catch (e) {
       // The budget or the caller ending a read is not the transaction being
-      // unreadable: it is counted with the ones the scan never reached.
-      if (opts.signal?.aborted || Date.now() >= until) {
+      // unreadable: it is counted with the ones the scan never reached. The
+      // read's own signal decides it: its timer can fire a millisecond before
+      // the wall clock reaches the deadline, and on a slow machine that read
+      // was reported as unreadable.
+      if (opts.signal?.aborted || readSignal.aborted || Date.now() >= until) {
         read--;
         stopped = opts.signal?.aborted ? "cancelled" : "deadline";
         notRead = sigs.slice(k).filter((x) => !x.failed && !opts.known?.has(x.signature)).length;

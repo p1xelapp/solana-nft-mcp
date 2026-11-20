@@ -74,13 +74,26 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
       });
     }
   } catch (e) {
-    return store({
+    // A source that did not answer is not kept: stored, one outage made the
+    // check "unknown" for six hours after the source came back.
+    return {
       verdict: "unknown",
       detail: `The marketplace did not answer for "${symbol}", so the symbol could not be checked against this collection: ${upstreamText(e)}`,
-    });
+    };
   }
   try {
     const read = await das.getAsset(mint);
+    // An index record served from cache after a failed refresh still names a
+    // collection, but it is a copy, so the verdict says so and is not kept.
+    const fromCopy = read.stale === true;
+    if (fromCopy) {
+      const belongsTo = read.asset?.collection ?? null;
+      return {
+        verdict: "unknown",
+        detail: `The asset index did not answer just now and only its earlier record of ${mint} was available${belongsTo ? ` (naming ${belongsTo})` : ""}, so the symbol was not checked against this collection.`,
+        sampledMint: mint,
+      };
+    }
     const belongsTo = read.asset?.collection ?? null;
     if (!belongsTo) {
       return store({
@@ -106,10 +119,10 @@ export async function checkSymbolMatchesCollection(symbol: string, coreCollectio
       sampledCollection: belongsTo,
     });
   } catch (e) {
-    return store({
+    return {
       verdict: "unknown",
       detail: `The asset index did not answer for ${mint ?? "the sampled item"}, so the symbol could not be checked: ${upstreamText(e)}`,
       sampledMint: mint,
-    });
+    };
   }
 }

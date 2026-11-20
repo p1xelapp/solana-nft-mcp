@@ -48,6 +48,16 @@ reads (supply, ownership, history, custody rules) do not depend on any marketpla
 check, so a marketplace going quiet shows up as a failed check, not as a wrong answer. See
 docs/SOURCES.md for the full list and how a source gets added or retired.
 
+**Why did an answer take 30 seconds?**
+Because the sources are free and public, and they set the pace. The free Solana RPC,
+Magic Eden and OpenSea each limit how fast one reader may ask, and this server spaces its
+requests to stay inside those limits (OpenSea is read one request every 2 seconds) so that
+free access keeps working for everyone. An answer that took 8 seconds or more says where
+the time went in a `timing` block: each source, how many requests it took, how long they
+waited for a turn, and whether a source asked for a pause. Many reads are kept for a few
+minutes, so the same question asked again is usually much faster. Setting `SOLANA_RPC_URL`
+to an RPC of your own removes most of the chain wait.
+
 **How far back does it look?**
 As far as the source keeps. Ownership history for Metaplex Core assets is walked from
 the chain itself, back to the mint, decoding up to 50 transactions a call; a longer history

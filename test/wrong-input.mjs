@@ -266,6 +266,13 @@ await check("a public node's internal error is worded as the RPC being busy", as
   assert.equal(r.data.error, "upstream-unavailable");
   assert.match(r.data.message, /public Solana endpoint did not answer/);
 });
+await check("a node's internal error is asked again, and the read that follows answers", async () => {
+  // A real sale came back unverifiable on 19 Nov 2026 because one overloaded
+  // moment ended the read; the same request answered 167 ms later.
+  const r = await call("get_asset", { mint: F.BUSY_ONCE });
+  assert.notEqual(r.isError, true, JSON.stringify(r.data).slice(0, 300));
+  assert.match(JSON.stringify(r.data), /Absolute Batman #1 \(12\/250\)/);
+});
 await check("a timeout uses the timeout wording and names this tool's own arguments", async () => {
   const r = await call("find_listings", { symbol: "slowfixture" });
   assert.equal(r.isError, true);

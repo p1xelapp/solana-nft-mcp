@@ -9,7 +9,7 @@
  */
 
 import { inspectUntrusted } from "./untrusted.js";
-import { runWithSignal, withAmbient } from "./context.js";
+import { noteQueued, noteSourceUse, runWithSignal, withAmbient } from "./context.js";
 import { redactSecrets } from "./secrets.js";
 import { BadInputError } from "./errors.js";
 
@@ -374,11 +374,13 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
     pump();
   }
 
+  const source = sourceName(label);
   const gate = function gate(signal?: AbortSignal, opts?: GateOptions) {
     // Refuse BEFORE joining the queue. Joining and then throwing would still
     // have spent a turn, and the queue would keep growing.
     if (signal?.aborted) return Promise.reject(new AbortedError(`the caller's deadline had already passed before it queued for a turn against ${label}'s rate limit`));
     if (queue.length >= MAX_GATE_QUEUE) return Promise.reject(new BusyError(label));
+    const dequeued = opts?.background ? () => undefined : noteQueued(source);
     const turn = new Promise<void>((resolve) => {
       queue.push({
         release: resolve,
@@ -394,7 +396,17 @@ export function rateLimiter(minIntervalMs: number, label = "this source"): Gate 
     // Deliberately does not say WHOSE deadline. The signal handed in here can
     // be the caller's, or this attempt's own timeout, and naming the wrong one
     // sends a reader looking in the wrong place.
-    return raceSignal(turn, signal, `a deadline passed while waiting for a turn against ${label}'s rate limit`);
+    // Background work is not the person's wait, so it is not on their bill.
+    return raceSignal(turn, signal, `a deadline passed while waiting for a turn against ${label}'s rate limit`).then(
+      () => {
+        dequeued();
+        if (!opts?.background) noteSourceUse(source, { requests: 1, spacingMs: interval });
+      },
+      (e: unknown) => {
+        dequeued();
+        throw e;
+      },
+    );
   } as Gate;
   gate.raiseTo = (ms: number) => {
     if (Number.isFinite(ms) && ms > interval) interval = ms;
@@ -446,6 +458,36 @@ export function originPauseLeftMs(url: string): number {
   const left = (originPauses.get(origin) ?? 0) - Date.now();
   if (left <= 0) originPauses.delete(origin);
   return Math.max(0, left);
+}
+
+/**
+ * A source as a person would name it, for the line that says where a slow
+ * answer's time went. A configured endpoint is named by its variable, never by
+ * its URL: the URL usually carries the provider key.
+ */
+export function sourceName(urlOrLabel: string): string {
+  let host: string;
+  try {
+    host = new URL(urlOrLabel).hostname.toLowerCase();
+  } catch {
+    return urlOrLabel;
+  }
+  const sameOrigin = (configured: string | undefined) => {
+    try {
+      return configured ? new URL(configured).origin === new URL(urlOrLabel).origin : false;
+    } catch {
+      return false;
+    }
+  };
+  if (sameOrigin(process.env.SOLANA_RPC_URL)) return "your Solana endpoint (SOLANA_RPC_URL)";
+  if (sameOrigin(process.env.DAS_RPC_URL)) return "your asset index endpoint (DAS_RPC_URL)";
+  // api.mainnet.solana.com is the Foundation's newer name for the same public
+  // endpoint (the "mainnet-beta" label was retired on 16 Nov 2026).
+  if (host === "api.mainnet-beta.solana.com" || host === "api.mainnet.solana.com" || host === "solana-rpc.publicnode.com" || host === "solana.leorpc.com") return "the free public Solana RPC";
+  if (host === "api-mainnet.magiceden.dev" || host === "api-mainnet.magiceden.io") return "Magic Eden";
+  if (host === "api.opensea.io") return "OpenSea";
+  if (host === "registry.npmjs.org") return "npm";
+  return "item metadata hosts (Arweave, IPFS and similar)";
 }
 
 export function originGate(url: string, minIntervalMs: number): Gate {
@@ -608,6 +650,10 @@ export async function fetchRetry(
       // from an API host is a change at the venue or something in between,
       // and either way it is an upstream failure with a name, not a hop.
       const res = await fetch(url, { ...opts, redirect: "manual", signal: combineSignals(remaining, signal) });
+      // A gated request was counted when it got its turn.
+      if (!gate && !background) noteSourceUse(sourceName(url), { requests: 1 });
+      if (res.status === 429 && !background) noteSourceUse(sourceName(url), { rateLimited: 1 });
+      if (res.status >= 500 && !background) noteSourceUse(sourceName(url), { failed: 1 });
       if (res.status >= 300 && res.status < 400) {
         await res.body?.cancel().catch(() => undefined);
         const location = res.headers.get("location");
@@ -647,6 +693,9 @@ export async function fetchRetry(
       // An abort is the caller's decision, not a flaky source: retrying it
       // spends the source's budget on work nobody is waiting for.
       if (signal?.aborted) throw new AbortedError("the caller's deadline passed while this request was in flight");
+      // No reply in time or a dropped connection: a request that cost time and
+      // answered nothing. (429 and 5xx were counted where they arrived.)
+      if (!(e instanceof RetryableError) && !background) noteSourceUse(sourceName(url), { failed: 1 });
       lastErr = e;
       if (i < retries) {
         const slow = e instanceof RetryableError && e.slow;
@@ -925,5 +974,11 @@ export function plainReason(err: unknown): { sentence: string; code: string | nu
   }
   const listed = OWN_FAILURE_WITH_LIST.exec(msg);
   if (listed) return { sentence: listed[1]!, code: listCode() };
+  // The runtime's own words for a reply this server could not use: "Cannot
+  // read properties of null (reading 'items')" and "Unexpected token '<'"
+  // reached people as the reason. What they mean is said instead.
+  if (err instanceof TypeError || err instanceof SyntaxError) {
+    return { sentence: "a source sent back data in a shape this server could not read (an empty, cut-off or non-JSON reply)", code: err instanceof SyntaxError ? "unreadable-reply" : "unexpected-shape" };
+  }
   return { sentence: inspectUntrusted(redactSecrets(msg).replace(/\s+/g, " ").trim().slice(0, 300)).value, code: null };
 }

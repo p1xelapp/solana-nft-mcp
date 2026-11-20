@@ -48,7 +48,7 @@ import { checkForUpdate, updateNotice } from "./lib/update.js";
 import { fitRows, omit } from "./lib/fit.js";
 import { findSymbolByName } from "./direct-symbol.js";
 import { HttpError, BusyError, AbortedError, OversizedBodyError, plainReason } from "./lib/http.js";
-import { runWithSignal, ambientSignal } from "./lib/context.js";
+import { runWithSignal, ambientSignal, runMeasured, queuedMs, type SourceUse } from "./lib/context.js";
 import { checkedFloor, checkTraitFloorsAgainstRows, custodyOfListings, floorNotRequested, withinBudget, usableAsk, type CheckedFloor, type Custody } from "./lib/custody.js";
 import { containsSecret, redactSecrets, redactDeep } from "./lib/secrets.js";
 
@@ -126,9 +126,28 @@ function boundErrorText(transport: StdioServerTransport): void {
     return r.length > MAX_ERROR_TEXT ? `${r.slice(0, MAX_ERROR_TEXT - suffix.length)}${suffix}` : r;
   };
   transport.send = (message: JSONRPCMessage) => {
-    const m = message as { result?: { isError?: boolean; content?: { type: string; text?: string }[] }; error?: { code: number; message: string; data?: unknown } };
+    const m = message as { result?: { isError?: boolean; content?: { type: string; text?: string }[]; tools?: unknown[] }; error?: { code: number; message: string; data?: unknown } };
     let out: unknown = message;
-    if (m.result?.isError === true && Array.isArray(m.result.content)) {
+    if (Array.isArray(m.result?.tools)) {
+      // The library labels every schema draft-07. The protocol reads a schema
+      // with no label as 2020-12 and tells a client to refuse a dialect it
+      // does not support, and a strict 2020-12 client refused all 42 schemas.
+      // Unlabelled, every schema here compiles the same under both dialects.
+      const unlabel = (s: unknown) => {
+        if (s === null || typeof s !== "object" || !("$schema" in s)) return s;
+        const rest: Record<string, unknown> = { ...(s as Record<string, unknown>) };
+        delete rest.$schema;
+        return rest;
+      };
+      const tools: unknown[] = m.result.tools;
+      out = {
+        ...message,
+        result: {
+          ...m.result,
+          tools: tools.map((t) => (t !== null && typeof t === "object" ? { ...t, inputSchema: unlabel((t as { inputSchema?: unknown }).inputSchema), ...("outputSchema" in t ? { outputSchema: unlabel((t as { outputSchema?: unknown }).outputSchema) } : {}) } : t)),
+        },
+      };
+    } else if (m.result?.isError === true && Array.isArray(m.result.content)) {
       out = { ...message, result: { ...m.result, content: m.result.content.map((c) => (c.type === "text" && typeof c.text === "string" ? { ...c, text: bound(c.text) } : c)) } };
     } else if (m.error && typeof m.error.message === "string") {
       out = { ...message, error: { code: m.error.code, message: bound(m.error.message) } };
@@ -333,6 +352,17 @@ function explain(err: unknown, tool = ""): { headline: string; next: string; kin
       case "not-found":
         return { kind: "not-found", headline: "That identifier does not match anything the sources can see.", next: "Double-check the address or symbol, or run identify on it to see what it is." };
       case "wrong-kind":
+        // A Core group is a Core account, so "not a Metaplex Core item" said
+        // the wrong thing about it.
+        // Anchored to this server's own sentence: an on-chain name inside a
+        // message must not choose the wording.
+        if (/^[1-9A-HJ-NP-Za-km-z]{32,44} is a Metaplex Core group\b/.test(msg)) {
+          return {
+            kind: "wrong-kind",
+            headline: "That address is a Metaplex Core group: an account that lists collections or items under it, not an item someone holds.",
+            next: "identify or get_asset show the group's name and authority. Pass one item's address to the item tools.",
+          };
+        }
         // A collection passed to an item tool is the common case, and the
         // advice has to send the caller somewhere that actually takes one.
         return /COLLECTION|collection\)/.test(msg)
@@ -376,6 +406,16 @@ function explain(err: unknown, tool = ""): { headline: string; next: string; kin
         : "Nothing about the request was wrong: that one record is larger than this server will read. An explorer such as solscan.io shows it.",
     };
   }
+  // A reply this server could not use surfaces as the runtime's own TypeError
+  // or SyntaxError ("Cannot read properties of null", "Unexpected token '<'").
+  // That is a source answering badly, and it is said so.
+  if (err instanceof TypeError || err instanceof SyntaxError) {
+    return {
+      kind: "upstream-unavailable",
+      headline: "A source sent back data this server could not read (an empty, cut-off or non-JSON reply), so the answer stopped there rather than guess.",
+      next: "Try again in a minute. If it keeps happening, that source has changed its format; get_source_status shows which sources are answering.",
+    };
+  }
   // No type: a generic answer. Nothing here tries to divine a meaning from an
   // error string, because the string can be somebody else's.
   return { kind: "error", headline: "That request could not be completed.", next: "Try again, or try a narrower request." };
@@ -393,6 +433,108 @@ const logCall = (tool: string, args: unknown, ms: number, outcome: { ok: true } 
 };
 let currentTool = "unknown";
 
+/**
+ * Where a slow answer's time went.
+ *
+ * Public sources are slow on purpose: this server spaces its requests so a
+ * keyless reader stays welcome, and the free Solana RPC and the marketplaces
+ * add pauses of their own. Measured on 19 Nov 2026, the same collection stats
+ * call took 0.2 s with OpenSea off, 10 s with it on and 55 s while four other
+ * readers shared the endpoints, and the slow answers said nothing about why.
+ * A person reads that silence as this server being slow or wrong. From this
+ * many seconds on, the answer carries the numbers.
+ */
+const SLOW_ANSWER_MS = 8_000;
+/** How often a client that asked for progress hears how the read is going. */
+const PROGRESS_EVERY_MS = 5_000;
+
+const TIMING_SCHEMA = z
+  .looseObject({
+    tookMs: z.number(),
+    sources: z.array(z.looseObject({})),
+    note: z.string(),
+  })
+  .optional()
+  .describe("Present when an answer took a while or a source asked this server to slow down: where the time went, by source.");
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const secs = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`);
+
+/** One clause per source, busiest first. */
+function sourceClauses(uses: Map<string, SourceUse>): string[] {
+  return [...uses.entries()]
+    .filter(([, u]) => u.requests > 0 || u.rateLimited > 0 || u.skippedForPause > 0)
+    .sort((a, b) => queuedMs(b[1]) - queuedMs(a[1]) || b[1].requests - a[1].requests)
+    .map(([name, u]) => {
+      const parts = [plural(u.requests, "request")];
+      if (u.spacingMs >= 1_000) parts.push(`spaced ${secs(u.spacingMs)} apart to stay inside its rate limit`);
+      if (queuedMs(u) >= 1_000) parts.push(`${secs(queuedMs(u))} spent waiting for turns`);
+      if (u.rateLimited) parts.push(`${plural(u.rateLimited, "answer")} asking this server to slow down (HTTP 429)`);
+      if (u.failed) parts.push(`${plural(u.failed, "request")} that got no usable answer (no reply in time, a dropped connection or a server error)`);
+      if (u.skippedForPause) parts.push(`${plural(u.skippedForPause, "read")} skipped because it had asked for a pause`);
+      return `${name}: ${parts.join(", ")}`;
+    });
+}
+
+/** The timing block for a finished call, or null when it was quick and nobody asked it to slow down. */
+function timingOf(uses: Map<string, SourceUse>, tookMs: number): { tookMs: number; sources: Record<string, unknown>[]; note: string } | null {
+  const all = [...uses.entries()];
+  const pushedBack = all.some(([, u]) => u.rateLimited > 0 || u.skippedForPause > 0);
+  if (tookMs < SLOW_ANSWER_MS && !pushedBack) return null;
+  const clauses = sourceClauses(uses);
+  const sources = all
+    .filter(([, u]) => u.requests > 0 || u.rateLimited > 0 || u.skippedForPause > 0)
+    .map(([source, u]) => ({ source, requests: u.requests, waitingForTurnsMs: Math.round(queuedMs(u)), spacingMs: u.spacingMs, rateLimited: u.rateLimited, failed: u.failed, skippedForPause: u.skippedForPause }));
+  const why = clauses.length
+    ? ` Where it went: ${clauses.join("; ")}.`
+    : " Most of it was spent waiting for answers already being read for an earlier question.";
+  // Said as what happened: a source that was down is not "pace", and a limit
+  // on the person's own endpoint is their provider's plan, not free public use.
+  const failing = all.some(([, u]) => u.failed > 0 && u.failed * 2 >= u.requests);
+  const ownLimited = all.some(([name, u]) => name.startsWith("your ") && (u.rateLimited > 0 || u.skippedForPause > 0));
+  const publicLimited = all.some(([name, u]) => !name.startsWith("your ") && (u.rateLimited > 0 || u.skippedForPause > 0));
+  const reasons: string[] = [];
+  if (failing) reasons.push("Much of the wait was a source not answering, which is that source's outage, not a fault in the question or in this server.");
+  if (publicLimited) reasons.push("A public source asking for a pause is its limit for free public use, not a fault in the question or in this server.");
+  if (ownLimited) reasons.push("Your own endpoint asked for a pause, which is the limit of your provider's plan.");
+  if (reasons.length === 0) reasons.push("Those are the public sources' own pace and the spacing this server keeps so free access keeps working, not a fault in the question.");
+  const note = `This answer took ${secs(tookMs)}.${why} ${reasons.join(" ")} Many reads are kept for a few minutes, so asking again soon is usually faster.`;
+  return { tookMs, sources, note };
+}
+
+/** A progress line for a call still running. */
+function progressLine(uses: Map<string, SourceUse>, elapsedMs: number): string {
+  const clauses = sourceClauses(uses);
+  return clauses.length
+    ? `Still reading after ${secs(elapsedMs)}. So far: ${clauses.join("; ")}.`
+    : `Still reading after ${secs(elapsedMs)}, waiting for the first answers.`;
+}
+
+/** The result with its timing block added to both copies. */
+function withTiming(result: ToolResult, timing: NonNullable<ReturnType<typeof timingOf>>): ToolResult {
+  if (!result.structuredContent) return result;
+  const structuredContent = { ...result.structuredContent, timing };
+  const first = result.content[0];
+  let text = first?.text ?? "";
+  if (result.isError) {
+    text = `${text}\n${timing.note}`;
+  } else {
+    // The text copy is the same JSON for older clients; it gets the same block.
+    // Text that is not a JSON object is left as it is.
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const data = { ...(parsed as Record<string, unknown>), timing };
+        const compact = JSON.stringify(data);
+        text = Buffer.byteLength(compact) > 12_000 ? compact : JSON.stringify(data, null, 2);
+      }
+    } catch {
+      /* not JSON: only the structured copy carries the block */
+    }
+  }
+  return { ...result, content: [{ type: "text", text }, ...result.content.slice(1)], structuredContent };
+}
+
 const guard =
   <A extends unknown[]>(fn: (...args: A) => Promise<ToolResult>) =>
   async (...args: A): Promise<ToolResult> => {
@@ -402,13 +544,33 @@ const guard =
     // client cancels. It used to stop here: the handler had it, nothing the
     // handler awaited did, and a cancelled sales read went on paging. It is
     // now the ambient deadline for everything this call awaits.
-    const extra = args.find((a) => a !== null && typeof a === "object" && (a as { signal?: unknown }).signal instanceof AbortSignal) as { signal?: AbortSignal } | undefined;
-    return runWithSignal(extra?.signal, async () => {
+    const extra = args.find((a) => a !== null && typeof a === "object" && (a as { signal?: unknown }).signal instanceof AbortSignal) as
+      | { signal?: AbortSignal; _meta?: { progressToken?: string | number }; sendNotification?: (n: unknown) => Promise<void> }
+      | undefined;
+    const uses = new Map<string, SourceUse>();
+    // A client that asked for progress hears how a long read is going, every
+    // few seconds, in the same words the final timing note uses. Some clients
+    // also keep waiting while progress arrives rather than timing out.
+    const token = extra?._meta?.progressToken;
+    let ticks = 0;
+    const ticker =
+      token !== undefined && typeof extra?.sendNotification === "function"
+        ? setInterval(() => {
+            ticks++;
+            extra.sendNotification!({ method: "notifications/progress", params: { progressToken: token, progress: ticks, message: progressLine(uses, performance.now() - started) } }).catch(() => undefined);
+          }, PROGRESS_EVERY_MS)
+        : null;
+    ticker?.unref?.();
+    const timed = (r: ToolResult): ToolResult => {
+      const timing = timingOf(uses, Math.round(performance.now() - started));
+      return timing ? withTiming(r, timing) : r;
+    };
+    return runMeasured(extra?.signal, uses, async () => {
       try {
         const result = await fn(...args);
         const errKind = result.structuredContent?.error;
         logCall(tool, args[0], Math.round(performance.now() - started), result.isError ? { ok: false, kind: typeof errKind === "string" ? errKind : "error" } : { ok: true });
-        return scrubbed(result);
+        return scrubbed(timed(result));
       } catch (err) {
         const e0 = explain(err, tool);
         logCall(tool, args[0], Math.round(performance.now() - started), { ok: false, kind: e0.kind });
@@ -423,12 +585,16 @@ const guard =
         // The prose carries the reason in words; the raw detail and any code
         // stay in their own fields for whoever debugs it.
         const reason = plainReason(err);
-        return scrubbed({
-          content: [{ type: "text", text: `${e.headline} ${e.next}
+        return scrubbed(
+          timed({
+            content: [{ type: "text", text: `${e.headline} ${e.next}
 (detail: ${reason.sentence})` }],
-          structuredContent: { error: e.kind, message: e.headline, next: e.next, detail, ...(reason.code ? { code: reason.code } : {}) },
-          isError: true,
-        });
+            structuredContent: { error: e.kind, message: e.headline, next: e.next, detail, ...(reason.code ? { code: reason.code } : {}) },
+            isError: true,
+          }),
+        );
+      } finally {
+        if (ticker) clearInterval(ticker);
       }
     });
   };
@@ -468,6 +634,8 @@ const FLOOR_CUSTODY_SYMBOLS = 5;
 const FLOOR_BUDGET_MS = 40_000;
 /** Wall clock for one search_collections answer, inside a client's usual 60 s timeout. */
 const SEARCH_BUDGET_MS = 40_000;
+/** Wall clock OpenSea gets inside one get_collection_stats answer; the chain and Magic Eden parts do not wait past it. */
+const STATS_OPENSEA_BUDGET_MS = 30_000;
 /** Rows a wallet no longer holds are counted in full and shown up to this many, to keep the answer whole. */
 const NO_LONGER_HELD_SHOWN = 25;
 /** Distinct holders of a census whose account kind is read to spot OpenSea listing accounts. */
@@ -731,7 +899,7 @@ function resolve(idOrSymbolOrAddress: string): {
 function resultSchema(shape: z.ZodRawShape, ...success: string[][]) {
   const errorFields = ["error", "message", "next", "detail"];
   const valid = success.length ? success : [Object.keys(shape)];
-  return z.looseObject(shape).partial().meta({
+  return z.looseObject({ ...shape, timing: TIMING_SCHEMA }).partial().meta({
     oneOf: [
       { anyOf: valid.map(required => ({ required })), not: { required: errorFields } },
       { required: errorFields, properties: Object.fromEntries(errorFields.map(key => [key, { type: "string" }])) },
@@ -808,6 +976,7 @@ registerTool(
       message: z.string(),
       next: z.string(),
       detail: z.string(),
+      timing: TIMING_SCHEMA,
     }).partial().meta({
       oneOf: [
         { required: ["explanation", "verdict", "subject", "claim", "receipt", "reproduce", "evidence", "caveats"] },
@@ -1009,6 +1178,13 @@ registerTool(
     // Everything below comes from the ONE fresh snapshot in `raw`: name, owner,
     // collection and plugins cannot disagree with each other.
     const acct = sol.decodeCoreAccount(raw);
+    // Key 6 is a Core group (GroupV1): a Core account, so "non-Core" was wrong.
+    if (!acct && Buffer.from(raw, "base64")[0] === 6) {
+      throw new WrongKindError(`${mint} is a Metaplex Core group, not an asset`, {
+        headline: `${mint} is a Metaplex Core group: an account that lists collections, groups or items under it, not an item someone holds.`,
+        next: "get_asset or identify show the group's name and authority. get_asset_trust takes a single item's address.",
+      });
+    }
     if (!acct || acct.kind !== "asset") throw new WrongKindError(`${mint} is not a Core asset (it is a ${acct?.kind ?? "non-Core account"})`);
     const assetPlugins = decodeCoreAccountPlugins(raw);
     // Collection plugins apply to every member. Read them, or say we could not.
@@ -1299,7 +1475,23 @@ registerTool(
       // direction-override character pasted into a search came back intact in
       // the result, and a result is exactly where such a character does its
       // work: it reverses how the text after it renders.
-      summary: `The registry search returned ${results.length} match(es). Check the issue name and collection address against the directory and chain results below.`,
+      // Counted across every place searched. "The registry search returned 0
+      // matches" led answers whose only hits were in Magic Eden's directory or
+      // on chain, and read as "not found".
+      summary: (() => {
+        const found = [
+          results.length ? `${results.length} in the curated registry` : null,
+          names.matches.length ? `${names.matches.length} in Magic Eden's directory` : null,
+          onChain?.matches.length ? `${onChain.matches.length} among the collections the chain lists under known issuer keys` : null,
+          openseaHits.length ? `${openseaHits.length} in OpenSea's Solana index` : null,
+        ].filter(Boolean);
+        const late = notReadInTime.length ? ` ${notReadInTime.join(" and ")} could not be read in time.` : "";
+        if (nothing) return `No collection matched this search in the places listed below.${late} That is what was searched, not proof that no such collection exists.`;
+        return (
+          `Found ${found.join("; ")}.${late} ` +
+          (results.length ? "Registry entries carry the identifiers the other tools take." : "None is in the curated registry, so check the name and address of the one you mean before using its figures; look-alike collections share names.")
+        );
+      })(),
       query: clean(query),
       ...(missingNumbers.length
         ? {
@@ -1420,10 +1612,12 @@ registerTool(
     // share a name: "2023 Tickets" matched a venue symbol whose items belong to
     // a different collection entirely, and the answer printed 2 minted next to
     // 10 listed as though that were one market.
-    let symbolCheck: Awaited<ReturnType<typeof checkSymbolMatchesCollection>> | null = null;
-    if (r.symbolNote && r.meSymbol && r.coreCollection) {
-      symbolCheck = await checkSymbolMatchesCollection(r.meSymbol, r.coreCollection);
-    }
+    // The symbol check and the collection account are independent reads, so
+    // they are asked for together.
+    const [symbolCheck, collectionRead] = await Promise.all([
+      r.symbolNote && r.meSymbol && r.coreCollection ? checkSymbolMatchesCollection(r.meSymbol, r.coreCollection) : Promise.resolve(null),
+      r.coreCollection ? sol.getCoreAccountWithMeta(r.coreCollection) : Promise.resolve(null),
+    ]);
     if (r.symbolNote && r.meSymbol) {
       out.symbolResolvedFromDirectory = {
         meSymbol: r.meSymbol,
@@ -1431,8 +1625,8 @@ registerTool(
         ...(symbolCheck ? { checkedAgainstChain: symbolCheck.verdict, checkDetail: symbolCheck.detail } : {}),
       };
     }
-    if (r.coreCollection) {
-      const coreRead = await sol.getCoreAccountWithMeta(r.coreCollection);
+    if (r.coreCollection && collectionRead) {
+      const coreRead = collectionRead;
       const acct = coreRead.account;
       if (acct?.kind === "collection") {
         out.onchain = {
@@ -1466,7 +1660,8 @@ registerTool(
         "(most older Solana NFTs use a different standard). No supply figure here comes from the chain; any count below is a marketplace's own.";
     }
     const sourceErrors: Record<string, string> = {};
-    let meFloorCheck: CheckedFloor | null = null;
+    // Set inside the Magic Eden part below, which runs beside OpenSea's.
+    let meFloorCheck = null as CheckedFloor | null;
     /** True only when Magic Eden established an ABSENCE; a failure to read is not one. */
     let meAbsent = false;
     let meFailure: unknown;
@@ -1474,9 +1669,16 @@ registerTool(
     // collection's market, so its numbers never appear as one. They are still
     // returned, under a name that says what they are, because the person may
     // well have meant the other collection and now has its address.
+    //
+    // Magic Eden and OpenSea are read side by side. Read one after the other,
+    // the two added up: 10 s on a quiet evening and past a client's 55 s
+    // deadline while other readers shared the endpoints. Each part writes its
+    // own fields, which join the answer in a fixed order once both are done.
+    const meOut: Record<string, unknown> = {};
+    const marketDone = (async () => {
     if (symbolCheck?.verdict === "different" && r.meSymbol) {
       const wrong = await me.collectionStats(r.meSymbol).catch(() => null);
-      out.marketRejected = {
+      meOut.marketRejected = {
         meSymbol: r.meSymbol,
         why: symbolCheck.detail,
         belongsToCollection: symbolCheck.sampledCollection ?? null,
@@ -1494,9 +1696,9 @@ registerTool(
         if (st.floorPriceSol !== null) {
           meFloorCheck = await checkedFloor(r.meSymbol, st.floorPriceSol);
           const { floorSol, ...rest } = floorRow(meFloorCheck);
-          out.market = { ...st, floorPriceSol: floorSol, ...rest, ...(meFloorCheck.checked ? { floorNote: undefined } : {}) };
+          meOut.market = { ...st, floorPriceSol: floorSol, ...rest, ...(meFloorCheck.checked ? { floorNote: undefined } : {}) };
         } else {
-          out.market = st;
+          meOut.market = st;
         }
       } catch (e) {
         // Whether the venue said "no such symbol" or simply failed is decided
@@ -1505,7 +1707,7 @@ registerTool(
         meFailure = e;
         sourceErrors.magiceden = e instanceof Error ? e.message : String(e);
       }
-      const meta = out.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
+      const meta = meOut.market ? await me.collectionMeta(r.meSymbol).catch(() => undefined) : undefined;
       if (meta) {
         const website = profileLinkUrl(meta.website);
         // A handle is a handle: anything that is not one (a URL to some other
@@ -1516,7 +1718,7 @@ registerTool(
           ["name", "description", "twitter"],
         );
         if (typeof cleaned.data.description === "string") cleaned.data.description = withoutLinks(cleaned.data.description);
-        out.meta = {
+        meOut.meta = {
           ...cleaned.data,
           ...(cleaned.warning ? { untrustedTextWarning: cleaned.warning } : {}),
           ...(meta.website && !website ? { websiteWithheld: "The marketplace profile lists a website that is not an ordinary public page (an address literal, a look-alike name, or wording used by wallet-claim pages), so it is not passed on." } : {}),
@@ -1524,6 +1726,8 @@ registerTool(
         };
       }
     }
+    })();
+    const osOut: Record<string, unknown> = {};
     // A curated slug first, then the on-chain address joined against OpenSea's
     // own Solana index. Curation had reached 4 of 402 registry entries, so
     // nearly every collection was answering "no OpenSea slug is known" while
@@ -1531,6 +1735,7 @@ registerTool(
     let slug = openseaSlug ?? ("openseaSlug" in r ? r.openseaSlug : undefined);
     let slugNote: string | undefined;
     const coreAddress = (out.onchain as { address?: string } | undefined)?.address;
+    const openseaRead = async (): Promise<void> => {
     // What the "no slug" note may claim depends on what was actually asked.
     // It used to say the address "is not in OpenSea's ranked Solana index"
     // when OpenSea was off and the index had never been queried.
@@ -1643,7 +1848,7 @@ registerTool(
       const sameSingleContract = detail?.onchainCollections.length === 1 && Boolean(onchain?.address) && detail.onchainCollection === onchain?.address;
       const currentSize = onchain?.currentSize;
       const sizeDisagrees = sameSingleContract && typeof currentSize === "number" && typeof osSupply === "number" && osSupply > 0 && currentSize !== osSupply;
-      out.opensea = detail
+      osOut.opensea = detail
         ? {
             ...stats,
             totalSupply: supplyDisagrees ? null : osSupply,
@@ -1673,7 +1878,7 @@ registerTool(
           }
         : { ...stats, floor7d, topHolders, ...(slugNote ? { slugSource: slugNote } : {}) };
     } else if (slug) {
-      out.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
+      osOut.openseaNote = `OpenSea slug known but the cross-marketplace view was skipped: ${os.openSeaState().note}`;
     } else {
       // Silence about a second venue reads as "there is only one". Most Candy
       // collections genuinely have no OpenSea slug, and the answer has to say
@@ -1688,12 +1893,36 @@ registerTool(
             : osIndex.state === "off"
               ? `OpenSea was not read at all: ${os.openSeaState().note}`
               : "there is no on-chain collection address to search OpenSea by, so OpenSea was not searched";
-      out.openseaStatus = osIndex.state === "searched" ? "searched-no-match" : osIndex.state === "partial" ? "searched-partial-no-match" : "not-read";
-      out.openseaNote =
+      osOut.openseaStatus = osIndex.state === "searched" ? "searched-no-match" : osIndex.state === "partial" ? "searched-partial-no-match" : "not-read";
+      osOut.openseaNote =
         `No OpenSea slug is known for this collection, and ${searched}. ` +
         "That is a gap in what was searched, not evidence the collection is absent from OpenSea. " +
         "search_collections shows whether OpenSea lists it under another name; pass openseaSlug to add the second marketplace.";
     }
+    };
+    // OpenSea has a budget of its own inside this answer: it is read one
+    // request every 2 s, and a long queue there must not hold back the chain
+    // and Magic Eden figures, which are complete without it.
+    const outer = ambientSignal();
+    const osBudget = AbortSignal.timeout(STATS_OPENSEA_BUDGET_MS);
+    const osSignal = outer ? AbortSignal.any([outer, osBudget]) : osBudget;
+    const osRead = runWithSignal(osSignal, openseaRead);
+    const osLate = new Promise<"late">((resolve) => {
+      if (osSignal.aborted) resolve("late");
+      else osSignal.addEventListener("abort", () => resolve("late"), { once: true });
+    });
+    const [, osOutcome] = await Promise.all([marketDone, Promise.race([osRead.then(() => "done" as const), osLate])]);
+    if (osOutcome === "late" && !outer?.aborted) {
+      // Left to finish on its own: its reads are kept for the next question.
+      osRead.catch(() => undefined);
+      for (const k of Object.keys(osOut)) delete osOut[k];
+      osOut.openseaStatus = "not-read";
+      osOut.openseaNote =
+        `OpenSea did not finish within the ${STATS_OPENSEA_BUDGET_MS / 1000} s this answer gives it (OpenSea is read one request every 2 s, and other questions may be ahead in that queue), ` +
+        "so its view is left out rather than holding back the chain and Magic Eden figures above, which do not depend on it. That is OpenSea's pace, not a gap in this collection. " +
+        "Ask again in a minute: the OpenSea reads that finished are kept, so the next answer is faster.";
+    }
+    Object.assign(out, meOut, osOut);
     const osBlockAny = out.opensea;
     const osOk = osBlockAny !== null && typeof osBlockAny === "object" && !("error" in osBlockAny);
     if (Object.keys(sourceErrors).length) out.sourceErrors = sourceErrors;
@@ -1932,7 +2161,7 @@ registerTool(
       floors,
       summary: `Requested Magic Eden asks for ${symbols.length} collection(s). ${floors.filter(f => "floorSol" in f && typeof f.floorSol === "number").length} returned a price in SOL. Check custody and read time beside each ask.`,
       source: "magiceden",
-      readThis: `Each floorSol is Magic Eden's cheapest ask whose item the chain shows is still held by its seller or Magic Eden's escrow, when floorCheck says it was checked; venueReportedFloorSol is Magic Eden's own figure, which can be a listing left behind after the item moved. A row whose floorCheck says it was not checked carries Magic Eden's own figure. get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
+      readThis: `Each floorSol is Magic Eden's cheapest ask whose item the chain shows is still held by its seller or Magic Eden's escrow, when floorCheck says it was checked; venueReportedFloorSol is Magic Eden's own figure, which can be a listing left behind after the item moved. A row whose floorCheck says it was not checked carries Magic Eden's own figure, or, when cheaper listings were found stale, the cheapest ask not known to be stale, unchecked (floorCheck.sentence says which). get_recent_sales or get_collection_sales show paid prices. ${NOT_ADVICE}`,
     });
   }),
 );
@@ -2561,21 +2790,29 @@ registerTool(
     let market: (ReturnType<typeof marketView> & Record<string, unknown>) | null = meToken ? marketView(meToken as unknown as Record<string, unknown>) : null;
     const meOwner = market?.owner ?? null;
     let marketAgreement: string | null = null;
-    if (market && coreRead?.burned === true) {
+    // The item's own account was not read, and the asset index, read live in
+    // this same call, records it as burned. With the account read failing, a
+    // burned card came back listed at 12.5 SOL beside a summary saying two
+    // sources named "the same owner".
+    const burnedPerIndex = !core && !coreRead?.burned && indexed?.burnt === true && !indexStale;
+    if (market && (coreRead?.burned === true || burnedPerIndex)) {
       // Nothing can be listed that no longer exists. Magic Eden's index keeps
       // the row, and a burned item came back "listed" with a price beside the
       // chain's own statement that it was burned.
+      const who = burnedPerIndex ? `the chain's asset index, read just now, records it as burned (the item's own account could not be read to confirm it)` : "the chain shows it was burned";
       const staleMarketRow = {
         ownerOnRecord: meOwner,
         listedOnRecord: market.listed,
         priceSolOnRecord: market.listed ? market.priceSol : null,
         sentence: market.listed
-          ? `Magic Eden still shows this item listed${market.priceSol !== null ? ` for ${market.priceSol} SOL` : ""}, but the chain shows it was burned. The item no longer exists, so nobody can buy it through that listing.`
-          : "Magic Eden still has a record of this item, but the chain shows it was burned and no longer exists.",
+          ? `Magic Eden still shows this item listed${market.priceSol !== null ? ` for ${market.priceSol} SOL` : ""}, but ${who}. A burned item no longer exists, so nobody can buy it through that listing.`
+          : `Magic Eden still has a record of this item, but ${who}.`,
       };
       market = { ...market, owner: null, listed: false, priceSol: null, staleMarketRow };
-      marketAgreement = "Magic Eden's record is left over from before the item was burned; see market.staleMarketRow.";
-    } else if (market && !core && indexed?.zeroSupply) {
+      marketAgreement = burnedPerIndex
+        ? "Magic Eden's record is left over from before the item was burned, by the asset index's record; see market.staleMarketRow."
+        : "Magic Eden's record is left over from before the item was burned; see market.staleMarketRow.";
+    } else if (market && !core && indexed?.zeroSupply && !indexStale) {
       market = null;
       marketAgreement = `The asset index recorded zero supply at ${indexed.readAt}. The marketplace row cannot establish a current holder or an available listing.`;
     } else if (market && chainOwner) {
@@ -2615,7 +2852,7 @@ registerTool(
       } else {
         marketAgreement = "Magic Eden's record names no owner, so it could not be compared with the chain.";
       }
-    } else if (market && !core && !coreRead?.burned && indexed?.owner && !indexStale) {
+    } else if (market && !core && !coreRead?.burned && !indexed?.burnt && indexed?.owner && !indexStale) {
       // Not a Core item, so no account bytes name its owner here, but the
       // asset index read in this same call does. A Tensorian came back
       // "listed at 0.7 SOL" while the index named another owner, with only
@@ -2750,7 +2987,9 @@ registerTool(
             readAt: indexed.readAt,
             note: indexStale
               ? "The asset index did not answer, so this is the entry it last returned at readAt. An owner here is last-known, not current."
-              : "Second read from the chain's asset index; covers every standard, and only the state the index last wrote down - it can lag a transfer.",
+              : indexed.burnt
+                ? "The chain's asset index records this item as burned. The owner here is the last holder before the burn, not a current owner."
+                : "Second read from the chain's asset index; covers every standard, and only the state the index last wrote down - it can lag a transfer.",
           }
         : undefined,
       ownerAgreement,
@@ -3109,11 +3348,19 @@ registerTool(
       }
     }
     const updateAuthority = authorityRead.account?.kind === "collection" ? authorityRead.account.updateAuthority : null;
+    // A cached copy kept alive by a failed refresh names the authority as it
+    // was. An update authority can change (Candy's moved to a new key on 5 Nov
+    // 2026), so no issuer verdict rests on one: it came back "issued", Candy
+    // Digital, with the read reported as ok.
+    const authorityStale = authorityRead.stale === true;
     const issuerReadStatus: "ok" | "unavailable" | "not-applicable" =
-      authorityRead.status === "unavailable" ? "unavailable" : updateAuthority ? "ok" : "not-applicable";
+      authorityRead.status === "unavailable" || authorityStale ? "unavailable" : updateAuthority ? "ok" : "not-applicable";
+    const issuerReadReason = authorityStale
+      ? `the Solana endpoint did not answer, and only a copy of the collection account read at ${authorityRead.cachedAt} was available, so no issuer verdict is given from it`
+      : authorityRead.reason;
     // A name only on the verdict: an empty collection, or one the table does
     // not list, can name an issuer's key without being the issuer's.
-    const issuerVerdict = authorityRead.account?.kind === "collection" ? collectionIssuer(collection, authorityRead.account.updateAuthority, authorityRead.account.numMinted) : null;
+    const issuerVerdict = authorityRead.account?.kind === "collection" && !authorityStale ? collectionIssuer(collection, authorityRead.account.updateAuthority, authorityRead.account.numMinted) : null;
     const issuerName = issuerVerdict?.issuer ?? null;
 
     // A row either MATCHES the filter, or does not, or cannot be decided:
@@ -3162,7 +3409,9 @@ registerTool(
     const kindUnread = [...holderPrograms.values()].filter((p) => p.kind === "unread").length;
     const kindNotChecked = Math.max(0, ranked.length - HOLDER_KIND_CHECKS);
     const holders = ranked.map(([owner, count]) => {
-      const r = roleOf(owner, updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
+      // A copied authority names the key as it was, so it names no holder's
+      // role: roleOf calls a match "issuer" before it looks at the read status.
+      const r = roleOf(owner, authorityStale ? null : updateAuthority, issuerReadStatus === "unavailable" ? "unavailable" : "ok");
       const p = holderPrograms.get(owner);
       const openSeaListing = r.role !== "issuer" && p?.kind === "program" && p.program === sol.OPENSEA_SOLANA_PROGRAM;
       const kindUnknown = r.role === "wallet" && (!p || p.kind === "unread" || (p.kind === "program" && !sol.isWalletProgram(p.program) && !openSeaListing));
@@ -3219,12 +3468,13 @@ registerTool(
     if (issuerVerdict && issuerVerdict.keyKnownAs && issuerVerdict.verdict !== "issued") readThis.unshift(issuerVerdict.note);
     if (issuerReadStatus === "unavailable") {
       readThis.unshift(
-        `The collection account could not be read (${authorityRead.reason}), so no holder could be checked against the issuer's key: every ordinary holder's role is "unknown", heldByCollectors counts nobody, and rolesIncomplete is true. The asset rows and the holder counts are still good. Retry for the roles.`,
+        `The collection account could not be read live (${issuerReadReason}), so no holder could be checked against the issuer's key: every ordinary holder's role is "unknown", heldByCollectors counts nobody, and rolesIncomplete is true. The asset rows and the holder counts are still good. Retry for the roles.`,
       );
     }
     const coverage: string[] = [];
     if (page.truncated) coverage.push(`the read stopped at ${max} assets and the index has more: ${max < 5000 ? "raise max up to 5000" : "5000 is this tool's maximum; a complete census needs an external paged read"}. Every count and rank here covers only what was read`);
     if (page.rowsRejected > 0) coverage.push(`${page.rowsRejected} row(s) the index served had no usable id and were dropped`);
+    if (page.groupRows > 0) coverage.push(`${page.groupRows} row(s) the index listed under this collection were Metaplex Core groups, which list other accounts and are not items, so they are not in the counts`);
     if (page.conflictingRows > 0) coverage.push(`${page.conflictingRows} asset(s) came back twice with a different owner or burn state and were left out rather than guessed`);
     if (page.foreignGroupRows > 0) coverage.push(`${page.foreignGroupRows} row(s) the index served for this group named a different collection and were not counted`);
     if (page.unverifiedRows > 0) coverage.push(`${page.unverifiedRows} row(s) carried a grouping the index marks unverified and were not counted as members`);
@@ -3279,7 +3529,7 @@ registerTool(
           }
         : null,
       /** Whether the collection account was read: ok, unavailable (with the reason), or not-applicable (not a Core collection). */
-      issuerRead: { status: issuerReadStatus, ...(authorityRead.reason ? { reason: authorityRead.reason } : {}) },
+      issuerRead: { status: issuerReadStatus, ...(issuerReadReason ? { reason: issuerReadReason } : {}) },
       /** True when the authority or any holder's role could not be established. */
       rolesIncomplete: issuerReadStatus === "unavailable" || holders.some((h) => h.role === "unknown"),
       ownershipVerifiedOnchain: false,
@@ -3319,6 +3569,8 @@ registerTool(
       duplicateRows: page.duplicateRows,
       conflictingRows: page.conflictingRows,
       foreignGroupRows: page.foreignGroupRows,
+      /** Rows that were Metaplex Core groups, not items; left out of every count. */
+      coreGroupRows: page.groupRows,
       unverifiedRows: page.unverifiedRows,
       readFrom: page.readFrom,
       stale: page.stale,
@@ -3690,6 +3942,10 @@ async function openSeaSalesInWindow(
   }
   const times = read.sales.map((s) => (s.time ? Date.parse(s.time) / 1000 : NaN));
   const missingTime = times.filter(t => !Number.isFinite(t)).length;
+  // A sale timed after this machine's clock is not in the window as the
+  // clock reads it, but it is not proof of nothing either: usually the clock
+  // is behind. It is left out and said, so the count reads as a floor.
+  const futureTimed = times.filter((t) => Number.isFinite(t) && t > nowUnix).length;
   const slugRows = read.sales.filter((_, i) => Number.isFinite(times[i]) && times[i]! >= sinceUnix && times[i]! <= nowUnix);
   const oldestRead = times.filter(Number.isFinite).reduce((m, t) => Math.min(m, t), Infinity);
   // Every row read is inside the window and OpenSea had more: older sales in
@@ -3705,7 +3961,7 @@ async function openSeaSalesInWindow(
   const knownGroup = isOpenSeaGroupSlug(found.slug);
   const group = (found.solanaContracts ?? 1) > 1 || knownGroup || otherRows > 0;
   const inWindow = windowRows.length;
-  const lowerBound = moreBeyond || notChecked > 0 || missingTime > 0;
+  const lowerBound = moreBeyond || notChecked > 0 || missingTime > 0 || futureTimed > 0;
   // OpenSea lists Magic Eden's fills too. Those are already in Magic Eden's
   // count above, so the overlap is counted, by the same unique signature,
   // item, buyer and seller rule as get_recent_sales.
@@ -3747,11 +4003,12 @@ async function openSeaSalesInWindow(
     } : {}),
     countIsLowerBound: lowerBound,
     ...(missingTime ? { missingTime } : {}),
+    ...(futureTimed ? { timedAfterThisClock: futureTimed } : {}),
     rowsRead: read.sales.length,
     stale: read.stale,
     cachedAt: read.cachedAt,
     note:
-      `OpenSea's own count of this collection's sales in the same window${lowerBound ? ` (at least this many: ${[moreBeyond ? "OpenSea had older rows than were read" : "", notChecked ? `${notChecked} row(s) could not be checked against this collection` : "", missingTime ? `${missingTime} row(s) had no readable time` : ""].filter(Boolean).join(", and ")})` : ""}. ` +
+      `OpenSea's own count of this collection's sales in the same window${lowerBound ? ` (at least this many: ${[moreBeyond ? "OpenSea had older rows than were read" : "", notChecked ? `${notChecked} row(s) could not be checked against this collection` : "", missingTime ? `${missingTime} row(s) had no readable time` : "", futureTimed ? `${futureTimed} row(s) were timed after this machine's clock and left out` : ""].filter(Boolean).join(", and ")})` : ""}. ` +
       `It is a separate figure, not added to Magic Eden's above: a fill both feeds index would be counted twice. ` +
       (group
         ? `OpenSea files more than this collection under the slug "${found.slug}"${otherRows ? `: ${otherRows} of the ${slugRows.length} sales under it in the window were items of other collections, read from each item's own account, and are not counted` : ""}${(found.solanaContracts ?? 1) > 1 ? `; its record names ${found.solanaContracts} Solana contracts` : ""}. Only rows whose item names this collection are counted.`
@@ -4095,7 +4352,13 @@ registerTool(
               : `Read the ${seen.length} cheapest listings (page budget reached); higher-priced listings may carry lower serials. Ask again with trait filters to narrow the book.`,
         },
         floorMultiples: multiplesComparable
-          ? `available: both the listing pages and the floor were read live${floorCheck?.checked ? ", and the item behind the lowest ask was held by its seller or the venue escrow. Transfer rules were not checked" : "; the floor is Magic Eden's own figure, not checked against the chain (see floor.floorCheck)"}`
+          ? `available: both the listing pages and the floor were read live${
+              floorCheck?.checked
+                ? ", and the item behind the lowest ask was held by its seller or the venue escrow. Transfer rules were not checked"
+                : floorCheck && floorCheck.floorSol !== floorCheck.venueReportedFloorSol
+                  ? "; the floor is the cheapest ask not known to be stale, and its custody was not checked against the chain (see floor.floorCheck). Magic Eden's own floor is a cheaper listing the chain shows cannot be bought"
+                  : "; the floor is Magic Eden's own figure, not checked against the chain (see floor.floorCheck)"
+            }`
           : `not computed: ${[stale ? "at least one listing page came from cache after a failed refresh" : null, floorStale ? "the floor came from cache after a failed refresh" : null, floor === null ? (floorCheck?.status === "none-backed" ? "none of the cheapest listings can be bought, so there is no floor" : "no floor was returned") : null].filter(Boolean).join("; ")}. A multiple of the floor is only true if both sides were read just now, so the asks are shown as they are.`,
         floor: floorRes.ok
           ? { ...(floorCheck ? floorRow(floorCheck) : { floorSol: null }), currency: "SOL", source: "magiceden", listed: floorRes.v.listedCount, readAt: floorRes.v.cachedAt, stale: floorStale }
@@ -4718,9 +4981,12 @@ registerTool(
         summary:
           entries.length === 0 && vocabulary.length > 0
             ? `No mechanics entry matched, but ${vocabulary.length} glossary term(s) did. The answer is in vocabulary below.`
-            : `Matched ${entries.length} mechanics entries and ${vocabulary.length} glossary terms.`,
+            : `Matched ${entries.length} mechanics entries${entries.length > 8 ? ", showing the first 8" : ""} and ${vocabulary.length} glossary terms.`,
         entries: entries.slice(0, 8),
         count: entries.length,
+        // count is every match; entries holds the first 8, and a reader
+        // comparing the two saw rows missing with nothing to say why.
+        ...(entries.length > 8 ? { entriesOmitted: entries.length - 8, entriesNote: "Narrow the topic to see the rest." } : {}),
         // Every term carries the wrong answer it exists to prevent, which is
         // the part worth reading.
         vocabulary: vocabulary.slice(0, wantsAll ? GLOSSARY.length : 6),

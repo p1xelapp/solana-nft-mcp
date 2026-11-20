@@ -2,6 +2,71 @@
 
 ## 1.19.0 - 2026-11-15
 
+### 2026-11-19, evening
+
+Slow answers now say why. An answer that took 8 s or more, or met a source
+that asked this server to slow down, carries a `timing` block naming each
+source, how many requests it took, how long they waited for turns and any
+"slow down" answers. A client that asks for progress hears how a long read
+is going every 5 s. Collection stats read Magic Eden and OpenSea side by side
+and give OpenSea at most 30 s, so a slow OpenSea no longer holds back the
+chain and Magic Eden figures.
+
+Sales
+
+- OpenSea accepted offers (`take_bid_core`) are now checked sales. Four real
+  ones on Candy items, from 0.006 to 9 SOL, confirm the buyer and seller slots
+  and show the closed bid's rent going back to its maker. They used to come
+  back unverifiable.
+- A public node that answers "internal error", "behind" or "rate limited" is
+  not asked twice: the next endpoint is asked at once. One overloaded moment
+  had made a real sale unverifiable.
+- A sale instruction with no recorded inner instructions is an incomplete
+  record, never "not a sale", and the reply is not kept.
+- A scan read cut short by its own budget is counted as not read, not as
+  unreadable.
+
+Floors and counts
+
+- When cheaper listings are proven stale and the next one cannot be read, the
+  floor is that next ask, unchecked, and never Magic Eden's stale figure.
+- An OpenSea sale timed after this machine's clock is left out of the window
+  count and makes the count a lower bound.
+- Collection search counts its matches across the registry, Magic Eden's
+  directory, the chain and OpenSea, so a match outside the registry no longer
+  opens with "0 matches".
+
+Reads that failed
+
+- A burned item stays burned when its own account cannot be read and the
+  asset index, read live, records the burn.
+- Ownership history served from copies after a failed refresh says so and is
+  not marked complete.
+- An oracle or collection that was not read leaves `blockedByOracle` null, not
+  empty.
+- A collection account copied before a failed refresh gives no issuer verdict
+  and names no holder as the issuer.
+- `identify` no longer calls the index's owner of a Core item current when the
+  item's own account was not read.
+- Core groups are named as groups by the trust and history tools, and a group
+  listed under a collection is counted in `coreGroupRows`, not as an
+  unreadable row.
+- A marketplace symbol check that could not read its sources is not kept for
+  six hours.
+
+Clients
+
+- Tool schemas no longer carry a draft-07 label. The protocol reads an
+  unlabelled schema as 2020-12, and a strict 2020-12 client had refused all 42.
+- A reply a source sent back empty, cut off or as a web page is worded as that
+  source answering badly, not as the runtime's "Cannot read properties of
+  null" or "Unexpected token".
+- A Magic Eden wallet page with an empty row drops and counts the row instead
+  of failing. `explain_mechanics` says how many matching entries it left out.
+
+SECURITY.md now says the server opens no network listener, and a test holds
+the published code to it.
+
 ### 2026-11-19
 
 Local clients can request either the June or November 2025 protocol. Scripted

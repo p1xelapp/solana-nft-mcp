@@ -65,6 +65,20 @@ const ownerRow = (id) => ({
   grouping: [{ group_key: "collection", group_value: CANARY }],
 });
 
+// SECURITY.md says the server opens no network listener. Every module the
+// package ships is read, so a server or socket added later fails here before
+// the promise goes stale.
+await check("the published code opens no network listener, as SECURITY.md says", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const dist = new URL("../dist/", import.meta.url);
+  const files = fs.readdirSync(dist, { recursive: true }).filter((f) => String(f).endsWith(".js"));
+  assert.ok(files.length > 10, "the build is present");
+  const opens = files.filter((f) => /\bcreateServer\s*\(|\.listen\s*\(|from\s+["']node:(net|http|https|http2|dgram)["']/.test(fs.readFileSync(path.join(dist.pathname.replace(/^\/([A-Za-z]:)/, "$1"), String(f)), "utf8")));
+  assert.deepStrictEqual(opens, []);
+  assert.match(fs.readFileSync(new URL("../SECURITY.md", import.meta.url), "utf8"), /opens no network listener/);
+});
+
 // ------------------------------------------------------------------ D11
 // A row with no `id` became a holding with `mint: ""`, counted in
 // chainIndex.count and published with countIsATotal: true - a wrong holdings

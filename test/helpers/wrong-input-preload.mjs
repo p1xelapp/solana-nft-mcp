@@ -43,6 +43,8 @@ export const LEGACY_QUIET = id("legacy-quiet");
 export const CNFT = id("cnft");
 export const MISSING = id("missing");
 export const BUSY = id("busy");
+/** A Core item whose first read meets a public node's internal error and whose next read is answered. */
+export const BUSY_ONCE = id("busy-once");
 export const OVERSIZE = id("oversize");
 export const NOISY = id("noisy");
 export const CORE = "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d";
@@ -85,6 +87,7 @@ if (home) {
     [LEGACY_QUIET]: dasRecord(LEGACY_QUIET, "V1_NFT", "Legacy Lad #2"),
     [CNFT]: dasRecord(CNFT, "V1_NFT", "Fixture cNFT", { compression: { compressed: true, tree: OTHER, leaf_id: 1 } }),
   };
+  let busyOnceAsked = 0;
   const groupRow = (i) => ({ ...dasRecord(id(`member-${i}`), "MplCoreAsset", `Member ${i}`), grouping: [{ group_key: "collection", group_value: COL, verified: true }] });
   function rpc(b) {
     const p = b.params;
@@ -93,7 +96,8 @@ if (home) {
       case "getSlot": return { jsonrpc: "2.0", id: b.id, result: 1000 };
       case "getAccountInfo": {
         if (p[0] === BUSY) return { jsonrpc: "2.0", id: b.id, error: { code: -32603, message: "Internal error" } };
-        const a = accounts[p[0]];
+        if (p[0] === BUSY_ONCE && busyOnceAsked++ === 0) return { jsonrpc: "2.0", id: b.id, error: { code: -32603, message: "Internal error" } };
+        const a = p[0] === BUSY_ONCE ? accounts[ASSET] : accounts[p[0]];
         return { jsonrpc: "2.0", id: b.id, result: { context: { slot: 1000 }, value: a ? { owner: a.owner, data: [a.data, "base64"], lamports: 1_000_000, executable: a.executable === true } : null } };
       }
       case "getAsset": {

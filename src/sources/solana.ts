@@ -21,8 +21,8 @@
  * winners, 0 untraced.
  */
 
-import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs, plainReason } from "../lib/http.js";
-import { runWithSignal, withAmbient } from "../lib/context.js";
+import { AbortedError, cached, originGate, readBoundedJson, OversizedBodyError, sleep, assertOnline, combineSignals, requireSecureEndpoint, retryAfterMs, pauseOrigin, originPauseLeftMs, plainReason, sourceName } from "../lib/http.js";
+import { noteSourceUse, runWithSignal, withAmbient } from "../lib/context.js";
 import { clean, inspectUntrusted } from "../lib/untrusted.js";
 import { PUBLIC_RPC_ENDPOINTS } from "./catalog.js";
 import { ChainUnavailableError, NotFoundError, TypedError, WrongKindError } from "../lib/errors.js";
@@ -361,10 +361,14 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   let endpointsAsked = 0;
   let unnamedRefusals = 0;
   let unnamedRefusal = "";
+  /** Endpoints whose last answer was an overload code, and the last such answer. */
+  let busyEndpoints = 0;
+  let busyMessage = "";
   for (const ep of list) {
     const wasCooling = isCooling(ep);
     const pausedFor = originPauseLeftMs(ep.url);
     if (pausedFor > 0) {
+      noteSourceUse(sourceName(ep.url), { skippedForPause: 1 });
       problems.push(`${label(ep)} asked for a pause after a rate limit; ${Math.ceil(pausedFor / 1000)} s of it is left, so it was not asked`);
       continue;
     }
@@ -408,6 +412,7 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         }
         // A 429 that names a pause is honoured across calls. One that names
         // none is the public node's burst limit and keeps the old short retry.
+        if (res.status === 429) noteSourceUse(sourceName(ep.url), { rateLimited: 1 });
         const asked = res.status === 429 ? retryAfterMs(res.headers.get("retry-after")) : 0;
         if (asked > 0) {
           await res.body?.cancel().catch(() => undefined);
@@ -441,8 +446,12 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           // relayed. The public endpoints carry no key.
           const own = ep.url === process.env.SOLANA_RPC_URL?.trim();
           const code = Number.isSafeInteger(j.error.code) ? String(j.error.code) : "unknown";
-          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
           const msg = own ? `Solana RPC ${code} from your SOLANA_RPC_URL (its message is not relayed, because a provider can echo your key in it)` : `Solana RPC ${code}: ${upstreamMessage(j.error.message)}`;
+          // A free public node that says it is overloaded, behind or rate
+          // limiting is not asked again: the next endpoint is. Checked before
+          // the provider codes, which would ask the same node twice.
+          if (!own && BUSY_CODES.has(j.error.code)) throw new BusyAtEndpoint(msg, j.error.code);
+          if (PROVIDER_ERROR_CODES.has(j.error.code)) throw new EndpointError(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
           // The node refused to serve a transaction in a format newer than the
           // request allowed. Only the version number is taken from its text,
           // and only as digits, so a provider's message still never reaches
@@ -472,11 +481,6 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
           if (j.error.code === CURSOR_UNKNOWN && HISTORY_METHODS.has(method) && hasCursor(params)) {
             throw new CursorUnknownAtEndpoint(own ? `provider error ${code}` : `${code}: ${upstreamMessage(j.error.message)}`);
           }
-          // A free public node answers "internal error" or "busy" when it is
-          // overloaded, and that is the endpoint's state, not an answer about
-          // the account: typed so the wording says the RPC was busy instead
-          // of "try a narrower request".
-          if (!own && BUSY_CODES.has(j.error.code)) throw new ChainError(msg, true);
           throw new ChainError(msg);
         }
         // A malformed envelope with neither result nor error must not read as
@@ -515,8 +519,17 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         if (e instanceof ChainError) throw e.busy ? new ChainUnavailableError(e.message) : new Error(e.message);
         if (e instanceof OversizedBodyError) throw e;
         lastErr = e;
+        // Asked and got nothing usable: counted so a slow answer can say its
+        // time went to a source that was not answering. A cursor or format
+        // refusal is an answer, and a 429 was counted where it arrived.
+        if (e instanceof BusyAtEndpoint && e.code === -32429) noteSourceUse(sourceName(ep.url), { rateLimited: 1 });
+        else if (!(e instanceof CursorUnknownAtEndpoint) && !(e instanceof RateLimitedEndpoint) && !(e instanceof VersionBehindAtEndpoint) && !(e instanceof VersionUnnamedAtEndpoint) && !(e instanceof EndpointError && /^HTTP 429\b/.test(e.message))) noteSourceUse(sourceName(ep.url), { failed: 1 });
         if (e instanceof CursorUnknownAtEndpoint) cursorUnknown = true;
         if (e instanceof RateLimitedEndpoint) break;
+        // An overloaded public node is not asked twice; the next one is. Thrown
+        // straight out instead, one overloaded moment on 19 Nov 2026 made a
+        // real sale "unverifiable" that the same request confirmed 167 ms later.
+        if (e instanceof BusyAtEndpoint) break;
         // Asking the same node again gets the same refusal; the next one may serve it.
         if (e instanceof VersionBehindAtEndpoint) {
           versionBehind = true;
@@ -529,9 +542,16 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
         }
       }
     }
+    if (lastErr instanceof BusyAtEndpoint) {
+      busyEndpoints++;
+      busyMessage = lastErr.message;
+    }
     // Not knowing a cursor, or one transaction format, is not being unhealthy:
     // the endpoint stays in rotation for everything else it serves.
-    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint) && !(lastErr instanceof VersionBehindAtEndpoint) && !(lastErr instanceof VersionUnnamedAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
+    // A busy moment is not a broken endpoint either: putting all three public
+    // endpoints on a minute's cooldown after one overloaded read demoted the
+    // only one that keeps history.
+    if (!(lastErr instanceof RateLimitedEndpoint) && !(lastErr instanceof CursorUnknownAtEndpoint) && !(lastErr instanceof VersionBehindAtEndpoint) && !(lastErr instanceof VersionUnnamedAtEndpoint) && !(lastErr instanceof BusyAtEndpoint)) cooldown.set(ep.id, Date.now() + COOLDOWN_MS);
     // Our own error classes carry text written here. Anything else is the
     // runtime's or the endpoint's, and for the person's own endpoint that text
     // can quote the URL, key and all, so only its kind is relayed.
@@ -568,6 +588,9 @@ async function rpc<T>(method: string, params: unknown[], trace?: RpcTrace, pin?:
   if (unnamedRefusals > 0 && !versionBehind) {
     throw new ChainUnavailableError(`no Solana endpoint asked would serve this transaction in a format the request allowed (${problems.join("; ")})`);
   }
+  // Every endpoint asked said it was overloaded: the reason is that, in the
+  // node's own words, rather than "none answered".
+  if (endpointsAsked > 0 && busyEndpoints === endpointsAsked) throw new ChainUnavailableError(busyMessage);
   if (versionBehind) {
     throw new TypedError(`no Solana endpoint asked would serve this transaction in a format the request allowed (${problems.join("; ")})`, "chain-unavailable", {
       headline: "The Solana endpoints asked refused to serve this transaction in a format this server asked for and can read. That is those endpoints running older software, not a gap in the chain or a problem with what you asked.",
@@ -609,6 +632,16 @@ class ChainError extends Error {
 
 /** JSON-RPC codes a public node uses for its own overload: internal error, node behind or busy, rate limited. */
 const BUSY_CODES = new Set([-32603, -32005, -32429]);
+
+/** A public endpoint answered with one of BUSY_CODES: retried, then the next endpoint is asked. */
+class BusyAtEndpoint extends EndpointError {
+  constructor(
+    msg: string,
+    readonly code: number,
+  ) {
+    super(msg);
+  }
+}
 
 /** The node's code for "this transaction is in a format newer than the request allows". */
 const TX_VERSION_UNSUPPORTED = -32015;
@@ -1617,7 +1650,9 @@ export async function getProvenance(
       throw new WrongKindError(
         account?.kind === "collection"
           ? `${mint} is a Core COLLECTION (${account.name}). Pass an asset mint, or use get_collection_stats for collections.`
-          : `${mint} exists but does not decode as a Core asset (possibly burned).`,
+          : accountRead.group
+            ? `${mint} is a Metaplex Core group (${accountRead.group.name}), which lists collections or items under it and is not an item, so it has no ownership history of its own.`
+            : `${mint} exists but does not decode as a Core asset (possibly burned).`,
       );
     }
 
@@ -1658,6 +1693,10 @@ export async function getProvenance(
     // A verification must walk the chain now; a cached walk from two minutes
     // ago can miss the transfer that just happened. A walk cut short by an
     // unknown cursor is used once and not kept, so the next read tries again.
+    // A list served from cache after a failed refresh is the last list seen,
+    // and is said to be: carried as current and complete, it answered "who
+    // owns it now" and "has it sold since" during an outage with no gap.
+    let walkFromCache: string | null = null;
     const walk = opts.fresh
       ? await walkSignatures()
       : await cached(`sigs:${mint}`, 120_000, async () => {
@@ -1665,12 +1704,16 @@ export async function getProvenance(
           if (w.cursorGap) throw new PartialWalk(w);
           return w;
         }).then(
-          (h) => h.data,
+          (h) => {
+            if (h.stale) walkFromCache = h.cachedAt;
+            return h.data;
+          },
           (e: unknown) => {
             if (e instanceof PartialWalk) return e.walk;
             throw e;
           },
         );
+    const fromCache = accountRead.stale === true || walkFromCache !== null;
     const sigs = walk.sigs;
 
     const ok = sigs.filter((s) => !s.err);
@@ -2190,7 +2233,8 @@ export async function getProvenance(
             : "transfer involving a Magic Eden account; whether it went into escrow or came out to a buyer cannot be told, because the history before it was not read";
       }
     }
-    return { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows };
+    const cachedCopies = fromCache ? { accountReadAt: accountRead.stale ? accountRead.cachedAt : null, listReadAt: walkFromCache as string | null } : null;
+    return { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount: ok.length, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows, cachedCopies };
   };
 
   // A fresh read is a verification walk: one endpoint for the whole thing, or
@@ -2211,7 +2255,7 @@ export async function getProvenance(
     const retry = await walkOnce().catch(() => null);
     if (retry && retry.value.okCount > 0) ({ value, endpointPinned } = retry);
   }
-  const { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows } = value;
+  const { account, burned, events, skipped, abandoned, unreadable, logsDisagreed, walk, okCount, anchorSlot, slotFloorHonoured, slotNote, issuerRead, decodedRows, cachedCopies } = value;
 
   // OpenSea opens one account per listing, so unlike Magic Eden's escrow the
   // recipient cannot be recognised by address. Its owning program says it.
@@ -2310,7 +2354,15 @@ export async function getProvenance(
      */
     /** Transactions the wall-clock budget ran out on. Above zero means the newest end of the trail is unknown. */
     abandonedTransactions: abandoned,
-    historyComplete: walk.complete && unreadable === 0 && skipped === 0 && abandoned === 0 && okCount > 0,
+    historyComplete: !cachedCopies && walk.complete && unreadable === 0 && skipped === 0 && abandoned === 0 && okCount > 0,
+    ...(cachedCopies
+      ? {
+          stale: true,
+          staleNote:
+            `The Solana endpoint did not answer just now, so ${[cachedCopies.accountReadAt ? `the item's account is the copy read at ${cachedCopies.accountReadAt}` : null, cachedCopies.listReadAt ? `its transaction list is the copy read at ${cachedCopies.listReadAt}` : null].filter(Boolean).join(" and ")}. ` +
+            "The owner and the history are as they stood then: a transfer or sale since is not in them. Ask again in a minute for a live read.",
+        }
+      : {}),
     /**
      * True when a Core Create instruction for this asset was decoded, or its
      * log line seen: the BEGINNING of the history was recognised, not merely

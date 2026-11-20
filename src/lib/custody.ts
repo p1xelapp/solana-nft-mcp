@@ -252,7 +252,14 @@ export async function checkedFloor(symbol: string, venueFloorSol: number | null,
       };
     }
     if (c.state === "unread") {
-      return { ...common, status: "unread", floorSol: venueFloorSol, checked: false, sentence: `${c.why[0]!.toUpperCase()}${c.why.slice(1)}. The floor was not checked; this is Magic Eden's own figure.${skipped}` };
+      // Once a cheaper row is proven stale, Magic Eden's own floor is that
+      // stale row's price, and it is not this floor: the cheapest ask not known
+      // to be stale is shown unchecked, as when its custody cannot be told.
+      // Returning the venue's figure here published a floor the same read had
+      // just shown could not be bought.
+      return stale > 0
+        ? { ...common, status: "unread", floorSol: price, checked: false, sentence: `The cheapest listing that is not known to be stale could not be read (${c.why}), so ${price} SOL is shown unchecked.${skipped}` }
+        : { ...common, status: "unread", floorSol: venueFloorSol, checked: false, sentence: `${c.why[0]!.toUpperCase()}${c.why.slice(1)}. The floor was not checked; this is Magic Eden's own figure.` };
     }
     return {
       ...common,
