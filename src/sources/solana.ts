@@ -1052,6 +1052,7 @@ export async function getAccountRaw(address: string, signal?: AbortSignal): Prom
 
 export interface CoreAccountRead {
   account: CoreAsset | CoreCollection | null;
+  group?: { name: string; updateAuthority: string };
   /** Set when the account is a burned asset's stub: one zero byte, still owned by the Core program. */
   burned?: true;
   /**
@@ -1102,7 +1103,16 @@ export async function getCoreAccountWithMeta(
       noteOwnerProgram(address, info.value.owner);
       return { notCore: true as const, owner: info.value.owner, slot };
     }
-    if (!sliceOf(info.value)) throw new Error("Solana RPC returned unreadable account bytes");
+    const slice = sliceOf(info.value);
+    if (!slice) throw new Error("Solana RPC returned unreadable account bytes");
+    if (slice.bytes[0] === 6) {
+      const name = readString(slice.bytes, 33);
+      let end = readString(slice.bytes, name.next).next;
+      // GroupV1 ends with vectors of collections, child groups, parents and items.
+      for (let i = 0; i < 4; i++) end += 4 + 32 * slice.bytes.readUInt32LE(end);
+      if (end > slice.bytes.length) throw new Error("Incomplete Core group account");
+      return { decoded: null, group: { ...accountName(name.value), updateAuthority: base58Encode(slice.bytes.subarray(1, 33)) }, slot };
+    }
     return { decoded: decodeCoreAccount(info.value.data[0]), burned: isBurnedCoreStub(info.value.data[0]), slot };
   };
   // `fresh` bypasses the stale-on-error cache: a verification must never
@@ -1117,7 +1127,7 @@ export async function getCoreAccountWithMeta(
       `account ${address} is owned by ${data.owner}, not Metaplex Core. ` +
         `v1 decodes Metaplex Core assets only (SPL/compressed NFTs: use get_asset, which reads Magic Eden instead).`,
     );
-  return { account: data.decoded, ...(data.burned ? { burned: true as const } : {}), contextSlot: data.slot, stale: hit.stale, cachedAt: hit.cachedAt };
+  return { account: data.decoded, ...(data.group ? { group: data.group } : {}), ...(data.burned ? { burned: true as const } : {}), contextSlot: data.slot, stale: hit.stale, cachedAt: hit.cachedAt };
 }
 
 export async function getCoreAccount(
@@ -2759,8 +2769,8 @@ const natureCache = new BoundedMap<AccountNature>(5_000, 6 * 60 * 60_000);
  * ten gated RPC calls every time anyone asked for its stats, which is 3.5
  * seconds of pacing for facts that had not changed since breakfast.
  */
-export async function accountNature(address: string, opts: { signal?: AbortSignal } = {}): Promise<AccountNature> {
-  const hit = natureCache.get(address);
+export async function accountNature(address: string, opts: { signal?: AbortSignal; fresh?: boolean } = {}): Promise<AccountNature> {
+  const hit = opts.fresh ? undefined : natureCache.get(address);
   if (hit) {
     if (hit.ownerProgram) noteOwnerProgram(address, hit.ownerProgram);
     return hit;

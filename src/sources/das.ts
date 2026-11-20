@@ -293,7 +293,7 @@ interface RawAsset {
   external_plugins?: unknown[];
   creators?: { address?: string; share?: number; verified?: boolean }[];
   supply?: { print_max_supply?: number | null; print_current_supply?: number | null; edition_nonce?: number | null } | null;
-  token_info?: { supply?: number; decimals?: number };
+  token_info?: { supply?: number; decimals?: number; token_program?: string };
 }
 
 export interface DasAsset {
@@ -306,7 +306,8 @@ export interface DasAsset {
   id: string;
   interface: string;
   /** Plain-words standard, derived from the interface. */
-  standard: "metaplex-core" | "metaplex-core-collection" | "token-metadata" | "programmable-nft" | "compressed" | "fungible" | "other";
+  standard: "metaplex-core" | "metaplex-core-collection" | "metaplex-core-group" | "token-2022" | "token-metadata" | "programmable-nft" | "compressed" | "fungible" | "other";
+  zeroSupply?: true;
   name: string | null;
   symbol: string | null;
   image: string | null;
@@ -406,10 +407,15 @@ const deadlinePassed = (what: string, ms = READ_DEADLINE_MS): Error =>
     `${SOURCE} did not finish ${what} within ${ms / 1000} s (${endpointNames()}), so the read was abandoned. That is the endpoint not answering, not a problem with what you asked; the other sources still work.`,
   );
 
-function standardOf(iface: string, compressed: boolean): DasAsset["standard"] {
+function standardOf(iface: string, compressed: boolean, token?: RawAsset["token_info"]): DasAsset["standard"] {
   if (compressed || iface === "MplBubblegumV2") return "compressed";
   if (iface === "MplCoreAsset") return "metaplex-core";
   if (iface === "MplCoreCollection") return "metaplex-core-collection";
+  if (iface === "MplCoreGroup") return "metaplex-core-group";
+  if (token?.token_program === "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb") {
+    if (iface === "FungibleToken" || iface === "FungibleAsset" || (token.decimals ?? 0) > 0) return "fungible";
+    return "token-2022";
+  }
   if (iface === "ProgrammableNFT") return "programmable-nft";
   if (iface === "V1_NFT" || iface === "LEGACY_NFT" || iface === "V2_NFT") return "token-metadata";
   if (iface === "FungibleToken" || iface === "FungibleAsset") return "fungible";
@@ -507,6 +513,9 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   const traits = normaliseTraits(a.content?.metadata?.attributes);
   const iface = typeof a.interface === "string" && KNOWN_INTERFACES.has(a.interface) ? a.interface : "unknown";
   const compressed = a.compression?.compressed === true;
+  const standard = standardOf(iface, compressed, a.token_info);
+  const zeroSupply = (standard === "token-2022" || standard === "token-metadata" || standard === "programmable-nft")
+    && a.token_info?.decimals === 0 && a.token_info.supply === 0;
   // `grouping` has been observed as an object rather than an array; .find on
   // it throws and takes the whole read down.
   const grouping = Array.isArray(a.grouping) ? a.grouping : [];
@@ -535,7 +544,8 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
   return {
     id: typeof a.id === "string" ? a.id : "",
     interface: iface,
-    standard: standardOf(iface, compressed),
+    standard,
+    ...(zeroSupply ? { zeroSupply: true as const } : {}),
     name: str(a.content?.metadata?.name),
     symbol: str(a.content?.metadata?.symbol),
     image: https(a.content?.links?.image),
@@ -546,7 +556,7 @@ function normalise(a: RawAsset, endpoint: string, readAt: string): DasAsset {
     // a missing field as true is how an unverified grouping gets presented as
     // a confirmed collection membership.
     collectionVerified: typeof collection?.verified === "boolean" ? collection.verified : null,
-    owner: addr(a.ownership?.owner),
+    owner: iface === "MplCoreGroup" || zeroSupply ? null : addr(a.ownership?.owner),
     frozen: typeof a.ownership?.frozen === "boolean" ? a.ownership.frozen : null,
     delegated: typeof a.ownership?.delegated === "boolean" ? a.ownership.delegated : null,
     delegate: addr(a.ownership?.delegate),
@@ -664,6 +674,9 @@ export async function getAsset(id: string, opts: { signal?: AbortSignal } = {}):
       throw e;
     }
   }, { signal: opts.signal });
+  if (stale && data === null) {
+    throw new Error(`The asset index could not refresh its missing record for ${id} from ${cachedAt}.`);
+  }
   return { asset: data ? normalise(data.raw, data.endpoint, cachedAt) : null, stale, cachedAt };
 }
 
@@ -747,7 +760,10 @@ export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal
     // read a minute ago. Stamping every row with "now" is what turned a stale
     // owner list into a current-looking one; the oldest page sets the age.
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
-    for (const raw of data.items) items.push(normalise(raw, data.endpoint, hit.cachedAt));
+    for (const raw of data.items) {
+      const asset = normalise(raw, data.endpoint, hit.cachedAt);
+      if (asset.standard !== "metaplex-core-group" && !asset.zeroSupply) items.push(asset);
+    }
     // A short page is short of the PAGE SIZE the endpoint was asked for, so
     // dropped rows are added back before deciding whether the walk is over -
     // otherwise a page of 1,000 rows with one bad row reads as the last page.
@@ -758,7 +774,7 @@ export async function getAssetsByOwner(owner: string, max = 2000, opts: { signal
     }
     page++;
   }
-  return { items: items.slice(0, max), pagesRead: page, truncated, rowsRejected, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
+  return { items: items.slice(0, max), pagesRead: page, truncated: truncated || items.length > max, rowsRejected, readFrom: `${SOURCE} via ${readFrom}`, stale, cachedAt };
 }
 
 export interface DasGroupPage {
@@ -873,6 +889,7 @@ export async function getAssetsByGroup(
     if (hit.cachedAt < cachedAt) cachedAt = hit.cachedAt;
     for (const raw of data.items) {
       const a = normalise(raw, data.endpoint, hit.cachedAt);
+      if (a.standard === "metaplex-core-group") { rowsRejected++; continue; }
       // Membership is evidence, not the fact of being on the page. A row that
       // names another collection, or whose grouping the index itself marks
       // unverified, was being counted as a holder of THIS collection.
@@ -1002,7 +1019,7 @@ export async function getAssetNames(
       const id = chunk[idx];
       if (!id || !raw || typeof raw !== "object" || raw.id !== id) return;
       const iface = typeof raw.interface === "string" ? raw.interface : "unknown";
-      names.set(id, { name: str(raw.content?.metadata?.name), standard: standardOf(iface, raw.compression?.compressed === true) });
+      names.set(id, { name: str(raw.content?.metadata?.name), standard: standardOf(iface, raw.compression?.compressed === true, raw.token_info) });
     });
   }
   return { names, stale, unresolved: unique.length - names.size + omitted, omitted };

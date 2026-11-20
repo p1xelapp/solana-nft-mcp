@@ -314,13 +314,11 @@ export const REGISTRY: RegistryEntry[] = [
     keywords: ["clay", "claynosaurz", "dino", "solana collectibles"],
   },
   {
-    // OpenSea files every Candy MLB card under ONE collection spanning all
-    // series, so it is deliberately NOT attached to the per-series Core
-    // entries above: pairing it with one series would compare a single
-    // series' on-chain supply against every series' floor and read as if
-    // they described the same population.
+    // This OpenSea slug spans several Core collections. Pairing it with one
+    // series would compare that series' supply with a broader market.
     id: "candy-mlb-opensea",
-    name: "Candy Digital - MLB (all series, OpenSea view)",
+    name: "Candy Digital - MLB (cross-series OpenSea view)",
+    aliases: ["Candy Digital - MLB (all series, OpenSea view)"],
     platform: "Candy Digital (official MLB license)",
     openseaSlug: "candy-mlb",
     // OpenSea's record of the slug names only 2022 Leadoff ICONs, so the
@@ -340,9 +338,8 @@ export const REGISTRY: RegistryEntry[] = [
     openseaSlug: "collector-crypt",
     keywords: ["collector crypt", "collectorcrypt", "graded", "psa", "pokemon", "physical", "vault", "slab"],
     notes:
-      "Trades in DIFFERENT currencies per marketplace: SOL on Magic Eden, and both USDC and SOL on OpenSea where " +
-      "USDC dominates (100% of the last 50 sales sampled 2026-09-01). The two floors are therefore not " +
-      "directly comparable as printed - read floorCurrency per source. Magic Eden's symbol uses an " +
+      "Magic Eden reported both SOL and USDC sales on 2026-11-19. Check the payment mint on each sale " +
+      "and the currency of each venue's floor before comparing prices. Magic Eden's symbol uses an " +
       "underscore (collector_crypt); the hyphenated and unspaced variants both answer HTTP 200 with an " +
       "empty collection.",
   },

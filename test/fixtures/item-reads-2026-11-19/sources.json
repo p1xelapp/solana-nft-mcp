@@ -1,0 +1,339 @@
+{
+  "walletSlices": {
+    "at": "2026-11-19T21:20:09.555Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getMultipleAccounts",
+    "params": [
+      [
+        "58eyRGsnCPKRxepZLhJXxCp9GwHLqs9yW5sFAFRFZfov",
+        "59Yt2vMVA7oC4BXp3KKbpgjdB14VNhTT9gTeZi1mt7xp",
+        "59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4",
+        "5AbB8hGsyNJxcMLLeVt2BArCjuFczgYfgWgAaUvgrAMN",
+        "5BrjQRyvqWVjGbEcD7ZwrcvjQmGom7kVSK4XbRSF57yj",
+        "5CZ2pVvC7A4kMVWmw2gb9BeiyiGdtWa56cchJ1YXMRTB",
+        "5CrYYT5UsgcMehXYz2wLENcCEqp6Csbquf3hh6Lt3AAs",
+        "5DDgcy1o6ypAr6GbSPSaue8XUE7iap6MGjVAFvEZVBFy",
+        "5EdkP29KEvDtdziw39vUN3eYoeFGMZBKi6EZHctjCGzQ",
+        "5EdtP81qQ26MU4edpUP1DruU3zEzaoVbt8LPPQkmZvGe",
+        "5FQeAzBKLa1JUZQwijAgB7pXUh64iSf7iN4KsbW5krdL",
+        "5FicDt9Zkb8sufFPX4kSkkitnB9b3uTVfo9NuVMXyn5T",
+        "5FqGz6ugVBQeZsUiRDcWJfTscCqkpmqW2eghmBHaza2J",
+        "5J8TzYVk93DGkgf5Baw13RxaP6DLU3JaXaiiKBrbfaGk",
+        "5JeSmrb3sXA43d3hBhVkNBQGeH8WnUXnhREPy4HjwaKi",
+        "5K2f4EndG6SbU2fuCr8ujiHqiynkEp9uNynkjuL4gsi2",
+        "5LhgqkqBvtzPuxFJGmYoZgaHndQZdNNzAavZ1XBCXHry",
+        "5Lyyy2bwFERkJeQFrFx8UHqLkVAX6PEo6poTF2ZMi6nT",
+        "5Mfs2wtkySXJS2KPvqtfjMHmQRDhL8WoUG85wvR8BeHb",
+        "5N8aNPkRePLTBq2es9Lrzrr8LXx33PMyobj6FZgFXhKZ",
+        "5QAs8TVQzLjREHBb6KhN49suVWVvfFwVhxwknFgzdNG9",
+        "5R6W5DDAbMNcTE9DyjT5F2q41n6SjoNCtdeEwTUUGMFD",
+        "5RB5dXJs7fBUbgXt3nraykfFJLT4yNaQmNzCHiXnY3v4",
+        "5Ro6DvzL2DAqQweEMnKAFCz8WZMbkQe5fAM5CJPg7hS1",
+        "5RzoemAE2Tay5tseKyN66j1kHZbMhVbzxNft839iUsVS",
+        "5SAVhpZ5oSZwvzEr7yeZYVChPNCCUxDvWZEMGvJA3Je5",
+        "7hUEMZFmPtxULfaNDZmPmpVEN1uGkayx5a8JkjooEpWq",
+        "7hwL3ng8goy1eN8Wyvi3D39mTw58F26Qcif8VvkF3Lqo",
+        "7iCJ6AiXN4WLJoMbfcVMy899iQhhgY2E4dvw7dsgYooE",
+        "7j4yv111msVUBMh16WDJ1UAMLpikHW1FhHKs5mghQMqE",
+        "7j9fE2iZR4eENhARMppwsdZzG8HS75LzmpFSz8npMTzq",
+        "7jg8yTSQKzLoH2fNZw4Z2kUf6XCFvCCk3bi5buHXKq6P",
+        "7knb2SVJxeu5toe8w6nU5bCHmiBYrPa4yBbXUePLBzBC",
+        "7kzCTLTCDn4VJ1LMVjmieWNc4BtKJueQDynBSTrcLedj",
+        "7mDkC4DeagFVN1PZ7JTNiPjWybWHs6CeKaAbiaYCM2da",
+        "7mLWj8QQuxVwmeCefRdHqSZT3gC4FEr35T6Bjb5jaTTw",
+        "7mvx5C3uSoYkiY55aKpzDVHkqySqJMYvghnaXeFXNivC",
+        "7nmXKvE7CtrYSfnvUVuQD74mpC1zk4gQnUxMaDBeCbSu",
+        "7pYDCu4Z5Hhg7f6bv9wVWEsPbSVNrfDnUCWKwjbz9LDN",
+        "7puFjWiv6ci5duc72VzeVrK3vx6Xskp5R4rgMg4TmYkH",
+        "7qhTfpHon62NwY2YGVwBJjzwS1odvmHunHricSbD7JUH"
+      ],
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 33
+        }
+      }
+    ],
+    "file": "walletSlices.json"
+  },
+  "walletPrograms": {
+    "at": "2026-11-19T21:20:10.660Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getMultipleAccounts",
+    "params": [
+      [
+        "AgJbH68itZ7VzsCxhMvW3d3ebddXi3sjTMjrgPEV6n1B"
+      ],
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 0
+        }
+      }
+    ],
+    "file": "walletPrograms.json"
+  },
+  "asset": {
+    "at": "2026-11-19T20:50:00.701Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "asset.json"
+  },
+  "collection": {
+    "at": "2026-11-19T20:54:56.959Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "EmFy7YohG4GZxgE5DEDgHuuvibqXK2jRLcXcJa3RvDRX",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "collection.json"
+  },
+  "owner": {
+    "at": "2026-11-19T20:54:55.847Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "AgJbH68itZ7VzsCxhMvW3d3ebddXi3sjTMjrgPEV6n1B",
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 0
+        }
+      }
+    ],
+    "file": "owner.json"
+  },
+  "canary": {
+    "at": "2026-11-19T20:55:03.388Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "8BvHMsQZ2vihNBWFw3NcLYdpJzKsuz3kSrJUUwC5Lx4K"
+    },
+    "file": "canary.json"
+  },
+  "market": {
+    "at": "2026-11-19T20:59:23.595Z",
+    "url": "https://api-mainnet.magiceden.dev/v2/tokens/59oZornPbD1dVQLLvVRsws6YLFG5XSNBr1bmxUh2BVT4",
+    "file": "market.json"
+  },
+  "tokenAccount": {
+    "at": "2026-11-19T20:59:28.590Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "CvcmfZRfgghTPfevKstPfpMBiK6XJaNzhAZ3zbirxyBu",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "tokenAccount.json"
+  },
+  "usd": {
+    "at": "2026-11-19T20:59:26.373Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "usd.json"
+  },
+  "legacy": {
+    "at": "2026-11-19T20:59:25.260Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "ChGYexBL6Xq68eAZBZaxR8oK664Zndo5ghqEmKmFczt4",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "legacy.json"
+  },
+  "legacyOwner": {
+    "at": "2026-11-19T21:01:21.589Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "ChGYexBL6Xq68eAZBZaxR8oK664Zndo5ghqEmKmFczt4",
+      {
+        "encoding": "base64",
+        "dataSlice": {
+          "offset": 0,
+          "length": 0
+        }
+      }
+    ],
+    "file": "legacyOwner.json"
+  },
+  "leaf": {
+    "at": "2026-11-19T21:01:19.379Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "GDEC7TRDAdU1BUhSSAK2WLc5DqLSCCcq6W2b7rVpfHcS",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "leaf.json"
+  },
+  "leafDas": {
+    "at": "2026-11-19T21:01:20.488Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "GDEC7TRDAdU1BUhSSAK2WLc5DqLSCCcq6W2b7rVpfHcS"
+    },
+    "file": "leafDas.json"
+  },
+  "burn": {
+    "at": "2026-11-19T21:01:17.164Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "56D3h6UC42H2PiBppsSFJA3HqxkZiMHquud91iabW2fW",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "burn.json"
+  },
+  "burnDas": {
+    "at": "2026-11-19T21:01:18.279Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "56D3h6UC42H2PiBppsSFJA3HqxkZiMHquud91iabW2fW"
+    },
+    "file": "burnDas.json"
+  },
+  "wallet": {
+    "at": "2026-11-19T20:55:06.103Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAssetsByOwner",
+    "params": {
+      "ownerAddress": "5D6FtKAWRszBXPheGHEvA9iAMz9JPo4ocKEHLHZ2auMJ",
+      "page": 1,
+      "limit": 1000,
+      "displayOptions": {
+        "showFungible": false
+      }
+    },
+    "file": "wallet.json.gz"
+  },
+  "group": {
+    "at": "2026-11-19T21:29:51.725Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "uE51W6EKFb4c239qnjuJjeRCsnA14Uix7mTJBFfQgSg",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "group.json"
+  },
+  "groupDas": {
+    "at": "2026-11-19T21:29:52.837Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "uE51W6EKFb4c239qnjuJjeRCsnA14Uix7mTJBFfQgSg"
+    },
+    "file": "groupDas.json"
+  },
+  "zeroMint": {
+    "at": "2026-11-19T21:32:06.632Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "Axd3VxoneJPGJCJp32ZUXcUsSaQTwCQsH8ZfBamenBP2",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "zeroMint.json"
+  },
+  "zeroDas": {
+    "at": "2026-11-19T21:32:07.746Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "Axd3VxoneJPGJCJp32ZUXcUsSaQTwCQsH8ZfBamenBP2"
+    },
+    "file": "zeroDas.json"
+  },
+  "liveMint": {
+    "at": "2026-11-19T21:32:19.945Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "F8h9YQqNekrBjCaNmCEmwyhEszg4Xdaw4oTHCqokJSHg",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "liveMint.json"
+  },
+  "liveDas": {
+    "at": "2026-11-19T21:32:18.844Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAsset",
+    "params": {
+      "id": "F8h9YQqNekrBjCaNmCEmwyhEszg4Xdaw4oTHCqokJSHg"
+    },
+    "file": "liveDas.json"
+  },
+  "app": {
+    "at": "2026-11-19T21:46:57.695Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "4g36hZkwCkai2o2wE2SHEU1q98kf7tYGd8Zr1xrFkHng",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "app.json"
+  },
+  "appParent": {
+    "at": "2026-11-19T21:46:58.803Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "29K11Va3hbJQg9BsnNNAMFP9b9m2nub8rV17HG3Jtdhi",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "appParent.json"
+  },
+  "bare": {
+    "at": "2026-11-19T21:05:56.196Z",
+    "url": "https://api.mainnet-beta.solana.com",
+    "method": "getAccountInfo",
+    "params": [
+      "54gPqJvRpjNpRoLdkj1tt9yL9Eyw99quQvznSev6Q127",
+      {
+        "encoding": "base64"
+      }
+    ],
+    "file": "bare.json"
+  }
+}

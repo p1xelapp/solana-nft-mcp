@@ -755,21 +755,17 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-magiceden-help-centre",
     category: "venue",
-    title: "Magic Eden's published royalty policy could not be checked",
+    title: "Buyers can choose an optional royalty on Magic Eden",
     venue: "magiceden",
     plain:
-      "Magic Eden is widely reported to let buyers choose none, half or all of a collection's optional royalty. That is not stated here as fact because the page saying so could not be opened. The program-level facts in the neighbouring entries were read from Magic Eden's own source code and do stand.",
+      "On eligible Solana purchases, Magic Eden lets the buyer pay all, half or none of the creator's optional royalty.",
     pitfall:
-      "Repeating a percentage policy from memory. Marketplace policies change quietly and this one is unread.",
-    documented: "Not established this session.",
-    observed:
-      "help.magiceden.io and docs.magiceden.io both answered HTTP 403 to a plain fetch and to a real headless browser; only a search-engine snippet was available.",
-    verified: false,
-    unverifiedReason:
-      "Both Magic Eden documentation hosts are behind a bot wall that refused every request made this session, so no primary text was read.",
+      "Check the collection's royalty rules before applying this buyer choice to a sale.",
+    documented: "Magic Eden describes this choice for the buy flow on collections with optional royalties.",
+    verified: true,
     source: "https://help.magiceden.io/en/articles/6645652-understanding-optional-royalties-on-solana",
-    sourceRead: READ,
-    keywords: ["magic eden", "optional royalties", "help centre", "policy", "blocked", "unverified"],
+    sourceRead: "2026-11-19",
+    keywords: ["magic eden", "optional royalties", "help centre", "policy"],
   },
   {
     id: "venue-magiceden-order-book",
@@ -947,17 +943,17 @@ export const MECHANICS: MechanicsEntry[] = [
   {
     id: "venue-candy-secondary-settles-on-magiceden",
     category: "venue",
-    title: "Candy's July 2026 secondary market settled through Magic Eden",
+    title: "Where Candy secondary sales settle",
     venue: "candy",
     plain:
-      "Candy's July 2026 secondary market used Magic Eden for settlement, so those sales appear in Magic Eden's feed. Candy paused transfers on October 12, then announced marketplace connections on November 6. A wallet can now connect to several venues; do not assume every later sale settles through Magic Eden. Read the sale's source and signature, and use get_asset_trust for the item's current restrictions.",
+      "Candy's November 2026 terms describe a primary storefront. Collectors can sell through third-party marketplaces. Check the transaction signature to identify the venue for a particular sale.",
     pitfall:
-      "Treating Candy and Magic Eden as separate markets to be added together, or telling someone their Candy sale is missing because the marketplace on the record says Magic Eden.",
+      "A card displayed on Candy's website does not establish where it sold.",
     documented:
-      "The July 24 announcement described Magic Eden settlement. The November 6 guide describes connections to OpenSea, Magic Eden and Tensor.",
+      "The terms name OpenSea, Magic Eden and Tensor as examples.",
     verified: true,
-    source: "https://blog.candy.io/how-to-connect-your-candy-wallet-to-opensea-and-magic-eden/",
-    sourceRead: "2026-11-08",
+    source: "https://candy.io/terms",
+    sourceRead: "2026-11-19",
     keywords: ["candy", "secondary", "magic eden", "settles", "venue", "sale", "where did it sell"],
   },
   {
@@ -999,12 +995,12 @@ export const MECHANICS: MechanicsEntry[] = [
     title: "What opening a Candy pack has looked like on chain",
     venue: "candy",
     plain:
-      "Candy packs are Metaplex Core assets; use get_asset_trust for their current delegates. In the September 2026 observations, opened Gold Series packs went back to the issuer's wallet and still existed; base series packs were burned. These are patterns from past products, not rules the chain enforces. The October 2026 wallet move sent other items through the same wallet for reasons unrelated to opening.",
+      "Some Gold Series packs returned to the issuer and stayed live in September 2026. Base series packs were reported burned on opening. A transfer or burn alone cannot establish which cards a pack produced. During the October wallet migration, other items also passed through the issuer's wallet. Use get_asset_trust for a pack's current delegates.",
     pitfall:
       "Counting the packs in the issuer's wallet as opened, or every pack that still exists as sealed. Report what the chain shows (who holds it, whether it is burned) and leave 'opened' unknown unless something links that pack to the cards it produced.",
     documented: "Not established this session.",
     observed:
-      "Gold Series Aces packs now held by the treasury show a trail of mint, transfer to a collector, transfer back to the treasury signed by the treasury key, with burnt: false. Base series packs disappear from the collection's current size when opened.",
+      "On November 19, 2026 at 15:36 MST (22:36 UTC), all 36 Gold Series Aces packs were live across ten owner addresses. Neither the former nor the current collection authority held a pack. The September observation of packs returning to the issuer describes their history.",
     verified: true,
     source: "https://metaplex.com/docs/core/plugins/permanent-transfer-delegate",
     sourceRead: "2026-09-18",
@@ -1281,7 +1277,7 @@ export const MECHANICS: MechanicsEntry[] = [
     category: "question",
     title: "Why does my collection look quiet?",
     plain:
-      "Sales answers read Magic Eden's feed, and OpenSea's when a key is available. Magic Eden's carries neither Tensor's fills nor OpenSea's own, and a feed can miss a fill, so a collection trading mostly on Tensor or OpenSea looks quiet there. For a Metaplex Core collection, get_recent_sales with chainScan: true reads its newest transactions from the chain. A misspelled symbol is refused, not shown as quiet.",
+      "Magic Eden reports some Tensor fills. OpenSea also has its own feed when a key is available. A quiet feed can still miss sales on Tensor or OpenSea. For a Core item or collection, use get_recent_sales with chainScan set to true to check its newest transactions. For a specific sale, use verify_claim with the transaction signature and item address.",
     pitfall:
       "Calling a collection dead, or a card unsold, from one feed's silence. Say which feeds were read and how far back each one reached.",
     documented: "Tensor's API page says access to its API is requested through a form, so its feed is not read here.",

@@ -78,6 +78,11 @@ collection name or address.
 
 ## 4. A wallet
 
+Candy announced a November 18, 2026 launch for its new site, login and wallet.
+To trace a moved card, use its item address and both wallet addresses. A login
+or marketplace listing alone cannot identify who holds the card.
+[Candy's November 17 announcement](https://blog.candy.io/the-new-candy-io-launches-tomorrow/)
+
 | Question | How it is answered | Status |
 |---|---|---|
 | "what's in this wallet" | Wallet holdings as indexed by Magic Eden, with listing state | ANSWERS NOW |
@@ -165,11 +170,11 @@ collection name or address.
 | "build me a floor dashboard across both marketplaces" | Floor-dashboard recipe plus the live reconciliation rule to copy into the UI | ANSWERS NOW |
 | "a page that shows every owner a card has had" | Provenance-lookup recipe plus the live history call | ANSWERS NOW |
 | "wallet tracker for my own address" | Wallet-tracker recipe: three states held, listed and sold, plus coverage disclosure | ANSWERS NOW |
-| "live pack pull feed" | Pack-watcher recipe: page the collection from the asset index and treat ids you have not stored as the new pulls | PARTIAL (the recipe and the per-card history, not a ready-made feed) |
+| "live pack pull feed" | Pack-watcher recipe: page the collection from the asset index and check newly seen items against mint transactions. A pack opening needs its own evidence | PARTIAL (the recipe and the per-card history, not a ready-made feed) |
 | "which source should I use for what" | Source catalog with tiers and fallbacks | ANSWERS NOW |
 | "what breaks silently in this build" | Every recipe orders its pitfalls by how quietly they fail | ANSWERS NOW |
 | "can I call this from my own script instead of a chat" | It is an MCP server; any MCP client or your own agent can call it | ANSWERS NOW |
-| "give me a Tensor feed too" | Tensor requires a key, so it is not a source here | NOT YET (Tensor needs a key, and this stays keyless) |
+| "give me a Tensor feed too" | Use get_recent_sales with chainScan for recent Core sales, or verify_claim with the signature and mint for one sale. Tensor's order book requires API access | PARTIAL (bounded on-chain sales, no Tensor listing feed) |
 | "can it place the buy for me" | No signing code exists in the repository | NOT YET (never, the ability was not written) |
 
 ---
@@ -242,4 +247,4 @@ collection name or address.
 
 ---
 
-**Total: 141 questions.**
+**Total: 144 questions.**

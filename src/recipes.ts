@@ -34,7 +34,7 @@ const ME_SOURCE = {
   use: "Floors, listings, recent sale activity for any Solana collection.",
   auth: "None. Keyless.",
   rateLimit:
-    "Answers carry x-ratelimit-limit: 180 with a reset under a minute ahead (read 2026-11-10), so about 180 requests a minute, and the remaining count fell faster than one caller's own requests: it is shared by everything calling from the same IP ADDRESS, not per process. Pace at one request per 600ms and cache; five bots on one office IP share one allowance and need one shared limiter, not five. A keyless API stays usable only while its callers stay polite.",
+    "Magic Eden documents a default of 120 requests per minute and two per second. On 2026-11-19 its public v2 headers reported a limit of 180. Space calls at least 600 ms apart, cache replies and honor a 429 across callers.",
 };
 
 /**
@@ -54,9 +54,9 @@ export const SOURCE_TERMS = [
   },
   {
     source: "Magic Eden public API",
-    read: "2026-11-10",
-    urls: [],
-    asks: "Not confirmed: Magic Eden's documentation and terms pages answered with a bot check and were not read. Read them yourself before shipping.",
+    read: "2026-11-19",
+    urls: ["https://docs.magiceden.io/reference/solana-overview", "https://docs.magiceden.io/reference/solana-api-keys"],
+    asks: "Magic Eden asks API users to follow its Terms of Service. Its Solana API documentation lists the keyless rate limit. Check the terms for your intended use.",
   },
   {
     source: "Public Solana RPC",
@@ -185,7 +185,7 @@ for (const s of [...sales].reverse()) {     // oldest first, so order reads true
     pitfalls: [
       {
         trap: "Putting two marketplaces' floors side by side and calling the lower one cheaper.",
-        why: "The same collection can be quoted in different currencies per marketplace. Collector Crypt is 0.053 SOL on Magic Eden and 9 USDC on OpenSea - a 170x gap that is not a gap at all.",
+        why: "Collector Crypt trades in more than one currency. Read the currency next to each floor before comparing the two asks.",
         instead: "Use the reconciliation block from get_collection_stats. When comparable is false, show both with their currencies and say they are not comparable rather than ranking them.",
       },
       {

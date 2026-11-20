@@ -38,7 +38,7 @@ counts cannot drift from the code: `npm test` fails if they do.
 Node 22 or newer. Two ways to run it.
 
 **From npm, no clone.** Wherever a client asks for a command, give it `npx` with the arguments
-`-y solana-nft-mcp`. The first start downloads the package; later starts reuse it.
+`-y solana-nft-mcp`. This starts the published version. To run this checkout, use the source setup below.
 
 ```bash
 claude mcp add solana-nft -- npx -y solana-nft-mcp
@@ -51,35 +51,94 @@ git clone https://github.com/p1xelapp/solana-nft-mcp.git
 cd solana-nft-mcp && npm install && npm run build
 ```
 
-**Claude Code**
+Use an absolute path to the built file in each example. On Windows, a path
+such as `C:/projects/solana-nft-mcp/dist/index.js` works in JSON. If the app
+cannot find Node, use the full path to the Node executable for `command`.
 
-```bash
-claude mcp add solana-nft -- node /absolute/path/to/solana-nft-mcp/dist/index.js
-```
-
-**Claude Desktop.** Settings -> Developer -> Edit Config, add the block below, then quit the
-app fully and reopen it. Or install the `.mcpb` bundle from the latest release by dragging it
-onto Settings -> Extensions.
+**Claude Desktop.** Add this entry in Settings > Developer > Edit Config and
+restart Desktop. You can also install the release's `.mcpb` from extension settings.
 
 ```json
-{
-  "mcpServers": {
-    "solana-nft": {
-      "command": "node",
-      "args": ["/absolute/path/to/solana-nft-mcp/dist/index.js"]
-    }
-  }
-}
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
 ```
 
-**Other clients.** Tested: Claude Desktop, Claude Code, Codex CLI 0.153.4
-(`codex exec -c 'mcp_servers.solana-nft.command="node"' -c 'mcp_servers.solana-nft.args=["/absolute/path/to/dist/index.js"]'`).
-Cursor, Windsurf, Gemini CLI, Zed, Cline and VS Code take the same `command` / `args` pair in
-their own config; the server is plain stdio with no client-specific code, but those have not
-been tested here. ChatGPT on the web and Grok cannot run a local process.
-The server speaks MCP protocol revision 2025-11-25 through the official TypeScript SDK v1. A
-client that offers the newer 2026-07-28 revision gets 2025-11-25 back, which current clients
-accept; one that refuses anything older cannot use this server yet.
+**Claude Code**
+
+```sh
+claude mcp add --transport stdio solana-nft -- node "/absolute/path/to/dist/index.js"
+```
+
+**Cursor.** Add to `.cursor/mcp.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**VS Code with Copilot.** In the Copilot harness, add to the workspace root's `.mcp.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"type":"stdio","command":"node","args":["/absolute/path/to/dist/index.js"],"tools":["*"]}}}
+```
+
+**Windsurf (now Devin Desktop).** For Devin Local, add to `.devin/mcp_config.local.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Gemini CLI.** Add to `~/.gemini/settings.json`.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Codex CLI.** Add to `~/.codex/config.toml`.
+
+```toml
+[mcp_servers.solana-nft]
+command = "node"
+args = ["/absolute/path/to/dist/index.js"]
+```
+
+**Zed.** Add to Zed's settings JSON.
+
+```json
+{"context_servers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"],"env":{}}}}
+```
+
+**Cline.** Open MCP Servers, choose Configure, and add this entry in the MCP settings file.
+
+```json
+{"mcpServers":{"solana-nft":{"command":"node","args":["/absolute/path/to/dist/index.js"]}}}
+```
+
+**Goose.** Add under `extensions` in `config.yaml`.
+
+```yaml
+extensions:
+  solana-nft:
+    name: solana-nft
+    enabled: true
+    type: stdio
+    cmd: node
+    args: ["/absolute/path/to/dist/index.js"]
+```
+
+**ChatGPT developer mode.** ChatGPT accepts an HTTPS MCP URL or a Secure MCP Tunnel.
+For this stdio package, the tunnel client runs Node on your computer. Use an
+existing tunnel ID, workspace access and a Platform runtime credential supplied
+to the tunnel client. Choose Tunnel when adding the server in ChatGPT. [Tunnel guide](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels)
+
+```sh
+tunnel-client init --sample sample_mcp_stdio_local --profile solana-nft --tunnel-id YOUR_TUNNEL_ID --mcp-command "node /absolute/path/to/dist/index.js"
+tunnel-client run --profile solana-nft
+```
+
+**Claude Messages API.** Its MCP connector calls tools on a publicly reachable Streamable HTTP or SSE server. Local SDK clients can call this package over stdio. The API's programmatic tool calling feature excludes connector-provided tools. [Connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) and [programmatic calling](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling)
+
+The stdio server negotiates 2025-11-25 and 2025-06-18. Clients configured to require
+2026-07-28 need the newer protocol. For scripts, read `isError` before consuming
+`structuredContent`. Successful replies also contain the same data as JSON text.
 
 **Did it work?** Your app lists the tools near the message box (Claude Code: `/mcp`). You should
 see 21, starting with `identify`. If none: the path must be absolute and end in `dist/index.js`,
@@ -99,7 +158,7 @@ environment):
 - `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1` - skip the one startup request to npm for a newer version.
 
 In the Claude Desktop extension the same options are in the extension's settings, so there is
-no config file to edit. What the server sends, to whom, and the one file it writes are listed
+no config file to edit. What the server sends, to whom, and how it stores its key are listed
 in [PRIVACY.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/PRIVACY.md).
 
 ## Ask it anything
@@ -136,9 +195,9 @@ No account, no sign-in, no telemetry, no log of your questions, and no signing c
 the repository; every tool declares `readOnlyHint`. What leaves the machine: the public address,
 symbol or name you asked about, sent to the source that can answer it; one startup request to
 npm for the latest version number; one request to OpenSea for a free key, the first time a
-question needs it. One file may be written, the key file above. Nothing else
-touches disk. To remove everything: uninstall or delete the clone, then delete
-`~/.solana-nft-mcp/`.
+question needs it. When saving a key, the server writes a temporary file and
+renames it to `opensea-key.json`. An interrupted save can leave that temporary
+file behind. To remove the stored credentials, delete `~/.solana-nft-mcp/`.
 
 Key files use mode 600 on macOS and Linux. Windows uses the home folder's access
 permissions; mode 600 does not set a Windows ACL. Keep that folder private to your
@@ -179,7 +238,9 @@ purpose: everything they would carry is reachable by a tool the assistant calls 
 
 ## Trust and limits
 
-Candy's trading status can change. On 2026-11-08 all 401 registered collections
+Candy announced its new site and wallet for November 18. Its
+[storefront terms](https://candy.io/terms), read November 19, place secondary
+sales on third-party marketplaces. On 2026-11-19 all 401 registered collections
 carried burn-only oracle checks; the oracle still refused holder burns, while
 transfers no longer consulted it. Use `get_asset_trust` on the card for the live
 answer. A wallet migration is a transfer, not proof of a sale. Wallet indexes can
@@ -198,10 +259,15 @@ retain the old owner; `get_asset` checks current Core ownership against account 
 - Every money figure names its currency and the API it came from, on the summary and on every
   priced row, and counts keep their coverage flags beside them (`truncated`, `stale`,
   `historyComplete`). A program should refuse to act on a row whose flag says the read was partial.
+- For scripted calls, `identify` returns `lookup` with a tool name and arguments when
+  the caller supplied the exact identifier. Check for `null` before using it.
+  Names, summaries and candidate lists are display text.
 - Two error surfaces. Input that fails a tool's schema is refused before the handler runs:
   `isError: true`, no `structuredContent`. Every failure inside a handler carries
-  `structuredContent.error`, a stable category (`not-found`, `wrong-kind`, `escrow`,
-  `source-unsupported`, `bad-input`, `upstream-unavailable`, `upstream-rate-limit`, `error`).
+  `structuredContent.error`. For example, `offline` means the server did not contact
+  the source, `ambiguous` means the caller must choose a match, and
+  `upstream-rate-limit` means the source asked callers to wait. Scripts should
+  handle unknown categories and show the explanation that accompanies the error.
 - No valuations and no currency conversion. Solana only.
 
 Full detail: [docs/TRUST-AND-LIMITS.md](https://github.com/p1xelapp/solana-nft-mcp/blob/main/docs/TRUST-AND-LIMITS.md).

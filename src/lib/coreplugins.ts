@@ -96,6 +96,7 @@ export type OracleResult = (typeof ORACLE_RESULTS)[number];
 export interface DecodedExternal {
   type: string;
   authority: string;
+  appDataAuthority?: string;
   /** The lifecycle events the program consults this adapter on, and what it may do there. */
   checks: { event: string; canReject: boolean; canApprove: boolean; canListen: boolean }[];
   /** Oracles only: the account whose bytes answer each check, or the base address when it is derived per transaction. */
@@ -185,7 +186,7 @@ export interface CoreTrust {
   warnings: string[];
   /** Things that are actively good for the holder. */
   assurances: string[];
-  frozen: boolean;
+  frozen: boolean | null;
   /**
    * Actions an oracle check refused at read time (transfer, burn, update).
    * An ordinary transfer, sale or burn fails on chain while it is listed here.
@@ -196,7 +197,7 @@ export interface CoreTrust {
   /** One row per oracle check, with what its account answered when read. */
   oracleChecks: { account: string; inheritedFromCollection: boolean; events: string[]; reading: OracleReading }[];
   /** True when a party other than the owner can move, freeze or burn it without the owner's signature. */
-  ownerIsNotSoleController: boolean;
+  ownerIsNotSoleController: boolean | null;
   /** True when the custody picture is known to be incomplete (external plugins, partial registry, collection not read). */
   incomplete: boolean;
   /** Present only when the layout could not be walked to the end. */
@@ -396,6 +397,16 @@ export function decodeCoreAccountPlugins(b64: string): DecodedAccount {
           row.unreadable = true;
         }
       }
+      if (rec.type === 2) {
+        try {
+          r.seek(rec.offset);
+          if (r.u8() !== 2) throw new Error("adapter tag is not AppData");
+          const writer = authority(r);
+          const schema = r.u8();
+          if (writer.startsWith("unknown(") || schema > 2) throw new Error("unknown AppData layout");
+          row.appDataAuthority = writer;
+        } catch { row.unreadable = true; }
+      }
       decodedExternal.push(row);
     }
     if (extRecords.length) out.external = decodedExternal;
@@ -535,6 +546,10 @@ export function deriveTrust(
   const blockedVia = new Set<boolean>();
   const failing: string[] = [];
   for (const e of externals) {
+    if (e.type === "AppData" && e.appDataAuthority && !e.unreadable && e.checks.length === 0) {
+      out.assurances.push(`The AppData adapter stores application data with writer authority ${e.appDataAuthority}. It has no custody checks.`);
+      continue;
+    }
     const events = e.checks.filter((c) => c.canReject).map((c) => c.event);
     if (e.type !== "Oracle" || e.unreadable || !e.oracle || !("account" in e.oracle)) {
       // An adapter that is consulted on nothing and can reject nothing cannot
@@ -643,7 +658,8 @@ export function deriveTrust(
 
   if (has("ImmutableMetadata")) out.assurances.push("Metadata is immutable: the name and URI cannot be changed by anyone, including the issuer.");
   else if (asset.updateAuthorityIsNone) out.assurances.push("The asset's update authority is None: nobody can change its name or URI.");
-  else out.warnings.push("Metadata is mutable: the issuer can change the name, image and traits after you buy.");
+  else if (contextIncomplete) out.warnings.push("Some rules were unread. Whether the update authority can change the item's name or metadata URI is unknown.");
+  else out.warnings.push("The update authority can request a change to the on-chain name or metadata URI. Other rules can refuse that update.");
   if (has("AddBlocker")) out.assurances.push("Add-blocker present: new authority-managed plugins are blocked, but owner-managed plugins can still be added. Existing plugin settings remain subject to their own update rules.");
   const ed = has("Edition");
   if (ed?.data) out.assurances.push(`On-chain edition number ${String(ed.data.edition)}. The program stores this number but does not enforce uniqueness.${ed.authority === "none" ? " Its authority is None, so the number cannot be changed." : " Its plugin authority can change the number."}`);
@@ -674,7 +690,7 @@ export function deriveTrust(
   }
   if (unreadExternal > 0) {
     out.incomplete = true;
-    out.warnings.push(`${unreadExternal} external plugin adapter(s) attached (oracles or lifecycle hooks) that this read could not settle. They can veto or gate transfers, burns and updates, so the custody picture above is incomplete.`);
+    out.warnings.push(`The effect of ${unreadExternal} external plugin adapter(s) on transfers, burns and updates could not be established.`);
   }
   if (asset.decodeNote || collection?.decodeNote) {
     out.incomplete = true;
@@ -690,6 +706,9 @@ export function deriveTrust(
   if (!out.incomplete && !out.ownerIsNotSoleController && plugins.length === 0 && externals.length === 0) {
     out.assurances.unshift("No plugins on the asset or its collection: nothing but the owner's own signature can move, freeze or burn this asset.");
   }
+  const registryIncomplete = Boolean(asset.decodeNote || collection?.decodeNote || (asset.collection && !collection));
+  if (!out.frozen && (registryIncomplete || plugins.some((p) => p.unsupported || (p.unreadable && (p.type === "FreezeDelegate" || p.type === "PermanentFreezeDelegate"))))) out.frozen = null;
+  if (!out.ownerIsNotSoleController && (registryIncomplete || plugins.some((p) => p.unsupported))) out.ownerIsNotSoleController = null;
   return out;
 }
 

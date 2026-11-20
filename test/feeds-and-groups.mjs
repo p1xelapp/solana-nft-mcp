@@ -359,7 +359,7 @@ try {
     assert.match(ex.currencyNote, /50 USDC, Magic Eden's order price/);
     assert.equal(cc.opensea.currencyCorrections.disagreesWithMagicEden, labelledSol.length);
     assert.ok(!cc.opensea.sales.some((x) => x.currency === "SOL"), "no OpenSea row is left calling itself SOL");
-    assert.match(cc.opensea.flagsNote, new RegExp(`^${cc.opensea.sales.length} sale\\(s\\) were not paid in SOL`));
+    assert.match(cc.opensea.flagsNote, new RegExp(`^${cc.opensea.sales.length} sale\\(s\\) have another payment token or an unverified currency`));
     // Control: OpenSea's own USDC sales keep their currency and price, and Magic Eden's rows are untouched.
     const own = cc.opensea.sales.filter((x) => x.paymentToken === USDC_MINT);
     assert.ok(own.length > 0 && own.every((x) => x.currency === "USDC" && x.price > 0));
@@ -482,7 +482,7 @@ for (const [mode, why] of [
       assert.ok(!r.opensea.sales.some((x) => x.currency === "SOL"), "no OpenSea row is left calling itself SOL");
       assert.equal(r.opensea.currencyCorrections.unconfirmed, labelledSol.length);
       assert.match(r.opensea.currencyCorrectionsNote, why);
-      assert.match(r.opensea.flagsNote, new RegExp(`^${r.opensea.sales.length} sale\\(s\\) were not paid in SOL`));
+      assert.match(r.opensea.flagsNote, new RegExp(`^${r.opensea.sales.length} sale\\(s\\) have another payment token or an unverified currency`));
       if (mode === "down") assert.ok(r.sourceErrors?.magiceden, "the failed read is named");
       // Control: OpenSea's own USDC sales keep their currency and price.
       const own = r.opensea.sales.filter((x) => x.paymentToken === USDC_MINT);

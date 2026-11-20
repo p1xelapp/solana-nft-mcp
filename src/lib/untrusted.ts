@@ -42,6 +42,13 @@ const INVISIBLE = new RegExp(
  * as the zero-width characters above.
  */
 const INVISIBLE_SUPPLEMENTARY = /[\u{E0000}-\u{E0FFF}\u{13430}-\u{1343F}\u{1BCA0}-\u{1BCA3}\u{1D173}-\u{1D17A}]/gu;
+
+// Match a complete Unicode emoji before considering its joiner on its own.
+const JOINED_EMOJI_OR_CONTROL = new RegExp(`\\p{RGI_Emoji_ZWJ_Sequence}|${INVISIBLE.source}|${INVISIBLE_SUPPLEMENTARY.source}`, "gv");
+function displayText(text: string): string {
+  if (!text.includes("\u200D")) return text.replace(INVISIBLE, "").replace(INVISIBLE_SUPPLEMENTARY, "");
+  return text.replace(JOINED_EMOJI_OR_CONTROL, (s) => s.length > 1 && s.includes("\u200D") ? s : "");
+}
 /**
  * Variation selectors pick a glyph and draw nothing themselves, so a run of
  * them is a second hidden alphabet: bytes can be spelt in selectors behind one
@@ -350,12 +357,9 @@ export function inspectUntrusted(raw: unknown): Untrusted {
   if (labels.length > 0) {
     // "Human:" at the start stands as written in a name that shows no other
     // sign of posing as a turn (see ROLE_LABEL).
-    INVISIBLE.lastIndex = 0;
-    INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
     const hostile =
       BREAK_CHAR.test(v) ||
-      INVISIBLE.test(v) ||
-      INVISIBLE_SUPPLEMENTARY.test(v) ||
+      displayText(v) !== v ||
       labels.some((l) => l.disguised) ||
       STRUCTURE.some((re) => {
         re.lastIndex = 0;
@@ -365,8 +369,6 @@ export function inspectUntrusted(raw: unknown): Untrusted {
       }) ||
       IMPERATIVE.test(folded) ||
       ROLEPLAY.test(folded);
-    INVISIBLE.lastIndex = 0;
-    INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
     const defang = labels.filter((l) => !l.atStart || hostile || !NAME_ROLE.test(l.role)).sort((a, b) => b.colon - a.colon);
     if (defang.length > 0) {
       flags.push("a chat role label where a turn would start (used to fake message boundaries)");
@@ -376,12 +378,11 @@ export function inspectUntrusted(raw: unknown): Untrusted {
     }
   }
 
-  if (INVISIBLE.test(v) || INVISIBLE_SUPPLEMENTARY.test(v)) {
+  const visible = displayText(v);
+  if (visible !== v) {
     flags.push("invisible or direction-override characters");
-    v = v.replace(INVISIBLE, "").replace(INVISIBLE_SUPPLEMENTARY, "");
+    v = visible;
   }
-  INVISIBLE.lastIndex = 0; // `g` regexes are stateful across .test() calls
-  INVISIBLE_SUPPLEMENTARY.lastIndex = 0;
   if (v.includes("\uFE0F")) {
     const kept = v.replace(EMOJI_SELECTOR_MISUSE, (m) => (m.length > 1 ? "\uFE0F" : "")).replace(/^\uFE0F|(?<=\s)\uFE0F/g, "");
     if (kept !== v) {

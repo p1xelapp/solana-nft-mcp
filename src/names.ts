@@ -101,11 +101,11 @@ const liveExpired = (): boolean => liveReady !== null && Date.now() - liveReadyA
  * outcomes, so a later expiry can start a fresh one; without that, `liveWarming`
  * stayed a fulfilled promise forever and the layer could never refresh.
  */
-function warmLive(): void {
-  if (liveWarming) return;
+function warmLive(): boolean {
+  if (liveWarming) return true;
   // The offline suite must stay offline; a background walk started by a
   // pure-logic search would be the one network call nobody asked for.
-  if (process.env.SOLANA_NFT_MCP_OFFLINE === "1") return;
+  if (process.env.SOLANA_NFT_MCP_OFFLINE === "1") return false;
   liveWarming = me
     .collectionsIndex(LIVE_PAGES)
     .then((r) => {
@@ -125,6 +125,7 @@ function warmLive(): void {
     });
   // A failure here is a background miss, not a user-facing error.
   liveWarming.catch(() => undefined);
+  return true;
 }
 
 export interface NameResolution {
@@ -514,14 +515,13 @@ export function resolveName(query: string, limit = 8): NameResolution {
     searched.push(
       `Magic Eden live directory (${liveReady.collections.length.toLocaleString("en-US")} collections, read ${liveReady.cachedAt.slice(0, 16)}Z` +
         (liveCompleteLayer ? "" : ", short of the full catalogue") +
-        (expired ? ", over a day old and being re-read in the background - ask again for anything listed since" : "") +
+          (expired ? (warmLive() ? ", over a day old and being re-read in the background" : ", over a day old and offline mode prevents a refresh") : "") +
         ")",
     );
-    // Serve the old layer, labelled, and start one refresh behind it.
-    if (expired) warmLive();
   } else {
-    warmLive();
-    notSearched.push("Magic Eden live directory: refresh started in the background (about a minute); ask again for anything newer than the snapshot");
+    notSearched.push(warmLive()
+      ? "Magic Eden's live directory is loading in the background. Ask again for collections added since the snapshot."
+      : "Magic Eden's live directory was not read because offline mode is on.");
   }
 
   const directoryComplete = snapshotComplete === true || liveCompleteLayer === true;

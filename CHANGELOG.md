@@ -2,6 +2,73 @@
 
 ## 1.19.0 - 2026-11-15
 
+### 2026-11-19
+
+Local clients can request either the June or November 2025 protocol. Scripted
+callers receive a structured repair message when an identification request
+is empty after text cleanup. Replies declare their top-level fields.
+If the asset index cannot refresh an old missing record, that record can no
+longer rule out an item. A cached compressed item also leaves a current
+classification open until the index answers.
+
+Chain and index reads
+
+- Identification keeps a burned item's last holder in its history and reports
+  failed item lookups even when the index answers its health check. A token
+  holding account can no longer be mistaken for a mint.
+- Ownership receipts leave the claim open when the new owner's program is
+  unknown. Unread collection rules leave freeze and delegate permissions open.
+- Asset reads check the mint on a Magic Eden reply. A missing index reply no
+  longer rules out a collectible at an SPL mint. Wallet index reads flag a
+  short final page when the caller's limit cuts off items.
+- Core groups are identified separately. Their update authority is no longer
+  reported as an item's holder. Wallet holdings read each item's owner again
+  before reporting that it moved.
+- Token-2022 mints retain their token standard when the index files them under
+  its generic NFT interface. An index row reporting zero supply supplies no
+  current owner or listing.
+- The trust check identifies the writer of a Core AppData adapter. An adapter
+  that registers no custody checks no longer triggers a transfer-veto warning.
+- The Candy pack entry dates the September treasury transfers. On November 19
+  at 15:36 MST (22:36 UTC), neither issuer key held a Gold Series Aces pack.
+
+Group serial searches check item custody
+before ranking listings. Floor receipts compare the ask at the precision
+quoted. Sale receipts require the transaction status and instruction record.
+An OpenSea sale with an unchecked SOL label stays out of SOL figures even when
+another fill on the page matches Magic Eden. A sale without a timestamp leaves
+the window count open. Magic Eden's symbol check and price share one stats read.
+Tensor Core pool receipts count payments into the pool's shared escrow and
+exclude returned account rent from the buyer total and seller proceeds.
+When no account exists at an item's owner address, its listing stays unchecked.
+
+Claims and coverage
+
+- Ownership claims leave the seller unknown when an item's holder could be a
+  custody account. Supply claims accept zero and distinguish an unavailable
+  node from a collection that uses a different standard.
+- Sale receipts include the requested currency even without a price. A wallet
+  supplied with a sale claim gets a correction before the transaction is read.
+- A checked floor describes the listing's custody. Transfer permissions and
+  whether the order can fill need separate checks.
+- The holder census keeps its counts and trims the two detail lists to fit
+  clients. Claim receipts declare their fields in the tool schema.
+- Pasting only invisible characters into `identify` now asks for an address
+  or name before searching the collection directory.
+
+Client settings and search
+
+- `identify` provides a typed `lookup` for scripts. It can repeat an exact
+  address or symbol supplied by the caller. A name match needs a choice from
+  the caller before it can lead to another read.
+- Collection search says when it skipped the issuer list or when offline mode
+  kept it from loading the live directory. OpenSea reports partial coverage
+  when it returns a page with an unreadable cursor.
+- Privacy switches accept a numeric `1` with surrounding spaces.
+- Collection search keeps a shared OpenSea slug separate from any one Solana
+  address. Display names keep standard joined emoji, including those used in
+  the Fairy and ZomByte collections.
+
 Six weeks after launch, through the whole of Candy Digital's trading pause.
 Candy's collections stopped allowing transfers and sales on October 12 (read on
 chain), Candy moved holders' items into new MoonPay-powered wallets in late

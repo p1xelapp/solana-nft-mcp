@@ -101,17 +101,30 @@ async function verifySupply(collectionAddress: string, claimed: number): Promise
   // getCoreAccount throws for accounts that are not Core (a wallet, an SPL
   // mint). That is an unverifiable claim, not an error - catch it here so the
   // tool can say so instead of failing.
-  if (!comparable(claimed)) {
+  if (!Number.isSafeInteger(claimed) || claimed < 0) {
     return {
       ...base,
       verdict: "unverifiable",
-      explanation: unusableClaim(claimed),
+      explanation: "A supply count must be a whole number of zero or more.",
       evidence: [],
-      caveats: ["Pass a finite supply count above zero."],
+      caveats: ["Check the number of items in the claim and try again."],
     };
   }
 
-  const acct = await sol.getCoreAccount(collectionAddress, { fresh: true }).catch(() => null);
+  let acct: Awaited<ReturnType<typeof sol.getCoreAccount>>;
+  try {
+    acct = await sol.getCoreAccount(collectionAddress, { fresh: true });
+  } catch (e) {
+    if (e instanceof WrongKindError || e instanceof NotFoundError) {
+      return { ...base, verdict: "unverifiable", explanation: e instanceof NotFoundError
+        ? "The node returned no account at that address."
+        : "Another program owns this account. Its bytes do not give a Metaplex Core collection count.",
+        evidence: [], caveats: ["Check the collection address for this supply claim."] };
+    }
+    const why = plainReason(e);
+    return { ...base, verdict: "unverifiable", explanation: "The collection account could not be read. Its supply is unknown.",
+      evidence: [], caveats: [why.sentence, "Retry the same collection address."], ...(why.code ? { code: why.code } : {}) };
+  }
   if (!acct || acct.kind !== "collection") {
     return {
       ...base,
@@ -516,10 +529,11 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
   // the seller is not written anywhere this server can read. Saying
   // CONTRADICTED to the person who listed it is a confident wrong answer; the
   // honest one is that the chain cannot settle it from here.
+  const nature = acct.owner === sol.MAGIC_EDEN_ESCROW ? null : await sol.accountNature(acct.owner, { fresh: true });
   const venue =
     acct.owner === sol.MAGIC_EDEN_ESCROW
       ? "Magic Eden's escrow account, where a Magic Eden listing keeps the item"
-      : (await sol.accountNature(acct.owner).catch(() => null))?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM
+      : nature?.ownerProgram === sol.OPENSEA_SOLANA_PROGRAM
         ? `an OpenSea listing account (${acct.owner}), owned by OpenSea's Solana protocol program, where an OpenSea listing keeps the item`
         : null;
   if (venue) {
@@ -527,15 +541,25 @@ async function verifyOwnership(mint: string, wallet: string): Promise<Omit<Verif
       ...base,
       verdict: "unverifiable",
       explanation:
-        `The item is listed for sale. Its owner on chain is ${venue}, not a person's wallet. ` +
+        `The item's owner on chain is ${venue}. ` +
         `The seller of that listing cannot be read from the chain here, so whether ${wallet} is that seller, and so still owns the item, cannot be checked.`,
       evidence,
       caveats: [
-        "get_asset_provenance on this item shows the wallet that moved it into the listing account; that wallet is the seller unless it has been sold since.",
-        caveats[1]!,
+        "Use get_asset_provenance to trace the transfer into custody. That transfer alone cannot identify the current seller.",
+        ...caveats,
       ],
     };
   }
+  if (nature?.looksLikeAWallet !== true) {
+    return {
+      ...base,
+      verdict: "unverifiable",
+      explanation: `The Core account names ${acct.owner} as owner. ${nature?.ownerProgram ? `That account belongs to program ${nature.ownerProgram}.` : "Its owning program could not be established."} Whether it holds the item on behalf of ${wallet} is unknown.`,
+      evidence,
+      caveats: [...caveats, "Use get_asset_provenance to trace how the item reached its current holder."],
+    };
+  }
+
 
   return {
     ...base,
@@ -641,10 +665,8 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
       verdict: "unverifiable",
       explanation:
         check.status === "none-backed"
-          ? `Magic Eden reports a floor of ${observed} SOL, but none of the ${check.listingsChecked} cheapest listing(s) read can be bought: in every one the chain shows the seller no longer holds the item. No ask that can be paid was found among them to check the claim against.`
-          : check.status === "not-core"
-            ? `Magic Eden reports a floor of ${observed} SOL. This collection is not Metaplex Core, so whether the seller behind that listing still holds the item is not checked here, and a receipt is only given on a checked listing. get_floor_prices shows Magic Eden's figure with that label.`
-            : `Magic Eden reports a floor of ${observed} SOL, but the listing behind it could not be checked against the chain, and its floor can be a listing whose item has moved. ${check.sentence} This neither confirms nor contradicts a price someone can pay.`,
+          ? `Magic Eden reports a floor of ${observed} SOL. In each of the ${check.listingsChecked} cheapest listings read, the seller no longer holds the item and it is outside the venue escrow. None of those listings supports a floor receipt.`
+          : `Magic Eden reports a floor of ${observed} SOL. ${check.sentence} There is no checked ask to compare with the claim.`,
       evidence,
       caveats: [...caveats, ...(check.staleExamples.length ? [`Stale listings seen: ${check.staleExamples.map((s) => `${s.priceSol} SOL (${s.why})`).join("; ")}.`] : [])],
     };
@@ -656,32 +678,31 @@ async function verifyFloor(symbol: string, claimed: number): Promise<Omit<Verifi
   evidence.push({
     source: `Magic Eden collection listings for ${symbol}, each checked against its Solana account`,
     method: "The cheapest 100 listings, cheapest first; a listing counts only when the item's Core account names the seller or Magic Eden's escrow as its owner.",
-    observed: `cheapest ask that can be bought ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`,
+    observed: `lowest custody-checked ask ${floor} SOL${check.staleBelowFloor ? ` (${check.staleBelowFloor} cheaper stale listing(s) skipped)` : ""}`,
   });
-  if (check.staleBelowFloor > 0) caveats.push(`${check.staleBelowFloor} cheaper listing(s) on Magic Eden were left out: the chain shows the seller no longer holds the item, so nobody can buy at those prices.`);
+  if (check.staleBelowFloor > 0) caveats.push(`The check excluded ${check.staleBelowFloor} cheaper Magic Eden listing(s) whose custody did not match.`);
 
-  // 2% tolerance: a floor moves while the claim is being made, and calling that
-  // a lie would make the tool useless.
-  if (near(floor, claimed, claimed * 0.02)) {
+  caveats.push("Custody was checked. Order execution, transfer restrictions and buyer fees were not checked.");
+  if (near(floor, claimed, roomFor(claimed, floor, 0))) {
     return {
       ...base,
       reproduce,
       verdict: "confirmed",
-      explanation: `Confirmed within 2%: the cheapest live ask that can be bought is ${floor} SOL against a claimed ${claimed} SOL.`,
+      explanation: `The cheapest custody-backed ask read was ${floor} SOL. It matches the claimed ${claimed} SOL at the quoted precision.`,
       evidence,
       caveats,
     };
   }
 
   const dir = floor > claimed ? "higher" : "lower";
-  const staleMatch = check.staleBelowFloor > 0 && near(observed, claimed, claimed * 0.02);
+  const staleMatch = check.listingsRead.some(row => row.custody === "not-backed" && row.priceSol === observed && observed === claimed);
   return {
     ...base,
     reproduce,
     verdict: "contradicted",
     explanation:
-      `Contradicted: the cheapest live ask that can be bought is ${floor} SOL, ${dir} than the claimed ${claimed} SOL by more than 2%.` +
-      (staleMatch ? ` The claimed figure matches Magic Eden's reported floor of ${observed} SOL, which is a listing whose seller no longer holds the item.` : ""),
+      `The cheapest custody-backed ask read was ${floor} SOL, ${dir} than the claimed ${claimed} SOL at the quoted precision.` +
+      (staleMatch ? ` The claimed figure matches Magic Eden's reported floor of ${observed} SOL. For each cheaper listing excluded here, the seller no longer holds the item. The reported price alone does not identify a listing.` : ""),
     evidence,
     caveats,
   };
@@ -759,7 +780,7 @@ async function verifySale(signature: string, item: string, claimed: number | und
   const wanted = claimedCurrency(currencyArg);
   if (!wanted) throw new BadInputError("currency must be SOL, USDC, USDT, PYUSD or a token's mint address");
   const base = {
-    claim: `${item} was sold in this transaction${claimed !== undefined ? ` for ${claimed} ${wanted.label}` : ""}`,
+    claim: `${item} was sold in this transaction${claimed !== undefined ? ` for ${claimed} ${wanted.label}` : currencyArg !== undefined ? ` for payment in ${wanted.label}` : ""}`,
     subject: signature,
     reproduce:
       `Call getTransaction on ${signature} with encoding jsonParsed and maxSupportedTransactionVersion 1 against any Solana RPC. ` +

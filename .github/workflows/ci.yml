@@ -1,7 +1,6 @@
 # CI backstop: a secrets scan on EVERY push, plus strict build, lint and the
 # full offline suite on main, pull requests, release tags and manual runs.
-# Linux on all of those; macOS and Windows only on a tag or a manual run, for
-# the cost reason written above the matrix.
+# Each full check runs on Linux, macOS and Windows.
 #
 # The live smoke suite (npm run test:smoke) talks to real endpoints, so it stays
 # a local/dev command - CI must not hammer public APIs on every push, that's the
@@ -16,7 +15,7 @@ on:
   # so the scan cannot wait for a pull request.
   push:
   pull_request:
-  # Lets the macOS and Windows jobs be run on demand without waiting for a release tag.
+  # Run the full suite on demand.
   workflow_dispatch:
 
 permissions:
@@ -97,8 +96,7 @@ jobs:
     # macOS matters because a large share of the people who install a Claude
     # Desktop extension are on it, and nothing else in this project ever runs
     # there. Windows has one platform-specific path of its own (the key file is
-    # opened without O_NOFOLLOW there). Both run on every push: the repository
-    # is public, so the minutes are free.
+    # opened without O_NOFOLLOW there).
     strategy:
       fail-fast: false
       matrix:

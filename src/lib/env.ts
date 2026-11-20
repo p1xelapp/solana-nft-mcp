@@ -24,7 +24,7 @@ export function normaliseEnv(env: NodeJS.ProcessEnv = process.env): void {
   for (const name of SWITCHES) {
     const v = env[name]?.trim().toLowerCase();
     if (v === undefined) continue;
-    if (v === "true" || v === "yes" || v === "on") env[name] = "1";
+    if (v === "1" || v === "true" || v === "yes" || v === "on") env[name] = "1";
     else if (v === "false" || v === "no" || v === "off" || v === "0") delete env[name];
   }
 }

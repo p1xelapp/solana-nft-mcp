@@ -103,6 +103,10 @@ completely - put it in the MCP config's `env` block, since clients launch server
 clean environment. `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` turns the self-issue off entirely.
 
 **What about Tensor and Rarible?**
+
+For one Core item, use its mint with `get_recent_sales` and set `chainScan` to
+`true`. For a sale someone has already identified, give `verify_claim` the
+transaction signature, item address and claimed currency.
 Neither API is read. Tensor's API page (read 2026-11-14) gives access through a form, so there is
 no key to use without asking Tensor first. Tensor's sales of Metaplex Core items are read anyway,
 from the chain: each one is a transfer inside Tensor's marketplace program with the payment
@@ -181,7 +185,11 @@ neither a sale nor a theft. Indexes can still show the old owner after a move.
 
 **Can I trade my Candy card right now?**
 Ask `get_asset_trust` about the card for its current rules. Candy announced
-marketplace connections on November 6, 2026. A November 8 read of all 401 registered
+marketplace connections on November 6, 2026. Its November 17
+[launch announcement](https://blog.candy.io/the-new-candy-io-launches-tomorrow/)
+scheduled the new site for November 18. Candy's [terms](https://candy.io/terms)
+describe a primary storefront and name OpenSea, Magic Eden and Tensor as
+third-party markets. A November 19 read of all 401 registered
 collections found burn-only oracle checks: holder burns were refused, while
 transfers no longer consulted the oracle. This replaced the transfer-and-burn
 checks observed on October 26. Other plugins and marketplace requirements can
@@ -247,7 +255,7 @@ the check without trusting this server.
 **Is it safe to let an agent read NFT names?**
 Minting is permissionless, so a name can be a fake message boundary followed by
 instructions to your AI. Every name from chain or marketplace is neutralised before a
-model sees it: invisible and bidi characters stripped, newlines collapsed, delimiter
+model sees it: hidden controls and direction overrides stripped, joined emoji preserved, newlines collapsed, delimiter
 markup defanged, imperative phrasing flagged. This is tested offline in CI.
 
 **What is different between the Solana marketplaces?**

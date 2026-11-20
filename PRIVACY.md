@@ -30,7 +30,9 @@ Nothing is sent to the author of this package.
   time a question needs OpenSea, with its expiry date. Set `SOLANA_NFT_MCP_NO_AUTO_KEYS=1` and
   the key is never requested and the file never written.
 
-That is the only file. Answers are cached in memory and are gone when the process exits.
+To save the key, the server writes a temporary file beside it and renames it into place.
+An interrupted save can leave a file ending in `.tmp` in that directory. It contains the
+same credential and should have the same access restrictions. Answers stay in memory.
 
 ## Logs
 
@@ -43,6 +45,7 @@ addresses, are not logged.
 
 - `SOLANA_NFT_MCP_NO_AUTO_KEYS=1`: no OpenSea key is requested.
 - `SOLANA_NFT_MCP_NO_UPDATE_CHECK=1`: no request to npm at start.
+- `SOLANA_NFT_MCP_OFFLINE=1`: disables network reads, including the live collection directory.
 - `SOLANA_RPC_URL`, `DAS_RPC_URL`: send chain reads to an endpoint you choose.
 
 Questions: open an issue at https://github.com/p1xelapp/solana-nft-mcp/issues.

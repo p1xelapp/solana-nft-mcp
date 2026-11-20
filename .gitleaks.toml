@@ -26,6 +26,6 @@ useDefault = true
 description = "Offline test fixtures: captured public marketplace responses. Only a base58 chain address, in a fixture, for the one rule that misreads it."
 condition = "AND"
 targetRules = ["generic-api-key"]
-paths = ['''test/fixtures/.*\.json$''']
+paths = ['''^test/fixtures/.*\.json$''']
 regexTarget = "secret"
 regexes = ['''^[1-9A-HJ-NP-Za-km-z]{32,44}$''']
